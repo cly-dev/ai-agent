@@ -1,0 +1,126 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String
+  password  String
+  token     String?
+  username  String
+  createdAt DateTime @default(now())
+
+  sessions        Session[]
+  llmModelConfigs UserLlmModelConfig[]
+}
+
+model UserLlmModelConfig {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  provider    String
+  model       String
+  apiKey      String
+  baseUrl     String?
+  temperature Float?
+  maxTokens   Int?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Session {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  agentId   Int?
+  title     String?
+  createdAt DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id])
+  messages Message[]
+
+  @@index([userId])
+}
+
+model Message {
+  id        Int     @id @default(autoincrement())
+  sessionId Int
+  role      String // user / assistant / tool / system
+  content   String?
+
+  toolName   String?
+  toolInput  Json?
+  toolOutput Json?
+
+  createdAt DateTime @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
+}
+
+model Tool {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  schema      Json // 参数结构
+  createdAt   DateTime @default(now())
+
+  skillTools SkillTool[]
+}
+
+model Skill {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  prompt      String
+  config      Json?
+  createdAt   DateTime @default(now())
+
+  skillTools  SkillTool[]
+  agentSkills AgentSkill[]
+}
+
+model SkillTool {
+  id      Int @id @default(autoincrement())
+  skillId Int
+  toolId  Int
+
+  skill Skill @relation(fields: [skillId], references: [id])
+  tool  Tool  @relation(fields: [toolId], references: [id])
+
+  @@unique([skillId, toolId])
+}
+
+model Agent {
+  id        Int      @id @default(autoincrement())
+  name      String
+  config    Json?
+  createdAt DateTime @default(now())
+
+  agentSkills AgentSkill[]
+}
+
+model AgentSkill {
+  id      Int @id @default(autoincrement())
+  agentId Int
+  skillId Int
+
+  agent Agent @relation(fields: [agentId], references: [id])
+  skill Skill @relation(fields: [skillId], references: [id])
+
+  @@unique([agentId, skillId])
+}
