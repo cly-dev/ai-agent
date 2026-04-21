@@ -6,6 +6,7 @@ describe('UserController', () => {
   let controller: UserController;
   const service = {
     create: jest.fn(),
+    login: jest.fn(),
     findAll: jest.fn(),
     findOne: jest.fn(),
     update: jest.fn(),
@@ -56,5 +57,34 @@ describe('UserController', () => {
     const result = await controller.findAll();
     expect(service.findAll).toHaveBeenCalled();
     expect(result).toEqual([{ id: 1, username: 'alice' }]);
+  });
+
+  it('delegates login', async () => {
+    service.login.mockResolvedValue({
+      accessToken: 'jwt-token-1',
+      user: {
+        id: 1,
+        email: 'alice@example.com',
+        username: 'alice',
+        token: 'jwt-token-1',
+      },
+    });
+    const result = await controller.login({
+      email: 'alice@example.com',
+      password: 'pass123',
+    });
+    expect(service.login).toHaveBeenCalledWith({
+      email: 'alice@example.com',
+      password: 'pass123',
+    });
+    expect(result).toEqual({
+      accessToken: 'jwt-token-1',
+      user: {
+        id: 1,
+        email: 'alice@example.com',
+        username: 'alice',
+        token: 'jwt-token-1',
+      },
+    });
   });
 });
