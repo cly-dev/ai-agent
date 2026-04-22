@@ -47,24 +47,24 @@ describe('UserService', () => {
 
     const result = await service.create({
       email: '  alice@example.com  ',
-      password: '  pass123  ',
       username: '  alice  ',
-      token: '  token-1  ',
     });
 
     expect(prisma.user.create).toHaveBeenCalled();
     const createArg = prisma.user.create.mock.calls[0][0];
     expect(createArg.data.email).toBe('alice@example.com');
     expect(createArg.data.username).toBe('alice');
-    expect(createArg.data.token).toBe('token-1');
-    expect(createArg.data.password).not.toBe('pass123');
+    expect(createArg.data.mustChangePassword).toBe(true);
     expect(createArg.data.password).toContain(':');
+    expect(result.generatedPassword).toEqual(expect.any(String));
+    expect(result.generatedPassword.length).toBeGreaterThanOrEqual(12);
     expect(result).toEqual({
       id: 1,
       email: 'alice@example.com',
-      password: expect.any(String),
       username: 'alice',
-      token: 'token-1',
+      roleId: undefined,
+      mustChangePassword: true,
+      generatedPassword: expect.any(String),
     });
   });
 
@@ -80,27 +80,16 @@ describe('UserService', () => {
     expect(result.password).toEqual(expect.any(String));
   });
 
-  it('throws bad request for empty password', async () => {
-    await expect(
-      service.create({
-        email: 'alice@example.com',
-        password: '   ',
-        username: 'alice',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
   it('throws bad request for empty email', async () => {
-    await expect(
-      service.create({ email: '   ', password: 'pass123', username: 'alice' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.create({ email: '   ', username: 'alice' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('throws bad request for empty username', async () => {
     await expect(
       service.create({
         email: 'alice@example.com',
-        password: 'pass123',
         username: '   ',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -131,7 +120,7 @@ describe('UserService', () => {
       id: 1,
       email: 'alice@example.com',
       username: 'alice',
-      token: null,
+      mustChangePassword: true,
       password: `${salt}:${hash}`,
     });
 
@@ -151,18 +140,15 @@ describe('UserService', () => {
       email: 'alice@example.com',
       username: 'alice',
     });
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 1 },
-      data: { token: 'jwt-token-1' },
-    });
     expect(result).toEqual({
       accessToken: 'jwt-token-1',
       user: {
         id: 1,
         email: 'alice@example.com',
         username: 'alice',
-        token: null,
+        mustChangePassword: true,
       },
+      mustChangePassword: true,
     });
   });
 

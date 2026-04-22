@@ -12,16 +12,46 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ToolLevel {
+  L1
+  L2
+  L3
+}
+enum HttpMethod{
+  Get
+  Post
+  Put
+  Delete
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   email     String
   password  String
-  token     String?
   username  String
+  roleId    Int?
+  mustChangePassword Boolean @default(true)
   createdAt DateTime @default(now())
 
   sessions        Session[]
   llmModelConfigs UserLlmModelConfig[]
+  role            Role?                @relation(fields: [roleId], references: [id])
+
+  @@index([roleId])
+}
+
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  allowToolLevel ToolLevel @default(L1)
+  createdAt   DateTime @default(now())
+
+  users      User[]
+  roleSkills RoleSkill[]
+
+  @@map("role")
 }
 
 model UserLlmModelConfig {
@@ -76,10 +106,31 @@ model Tool {
   id          Int      @id @default(autoincrement())
   name        String
   description String
+  riskLevel   ToolLevel @default(L1)
   schema      Json // 参数结构
-  createdAt   DateTime @default(now())
-
   skillTools SkillTool[]
+  inputSchema   Json
+  outputSchema  Json?
+  method        HttpMethod
+  path          String
+  integrationId Int
+  integration   Integration @relation(fields: [integrationId], references: [id])
+  isActive      Boolean  @default(true)
+  timeout       Int?    
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+model Integration{
+   id        Int      @id @default(autoincrement())
+  name      String
+  baseUrl   String
+
+  // 认证信息（先简单做）
+  apiKey    String
+
+  tools     Tool[]
+
+  createdAt DateTime @default(now())
 }
 
 model Skill {
@@ -92,6 +143,19 @@ model Skill {
 
   skillTools  SkillTool[]
   agentSkills AgentSkill[]
+  roleSkills  RoleSkill[]
+}
+
+model RoleSkill {
+  id      Int @id @default(autoincrement())
+  roleId  Int
+  skillId Int
+
+  role  Role  @relation(fields: [roleId], references: [id])
+  skill Skill @relation(fields: [skillId], references: [id])
+
+  @@unique([roleId, skillId])
+  @@map("roleskill")
 }
 
 model SkillTool {

@@ -7,6 +7,8 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -16,6 +18,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Request } from 'express';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -36,10 +39,34 @@ export class UserController {
 
   @Post('login')
   @ApiOperation({ summary: '用户登录' })
-  @ApiResponse({ status: 201, description: '登录成功并返回 JWT Token' })
+  @ApiResponse({ status: 200, description: '登录成功并返回 JWT Token' })
   @ApiResponse({ status: 401, description: '邮箱或密码错误' })
   login(@Body() body: LoginUserDto) {
     return this.service.login(body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '检查是否需要首次修改密码' })
+  @ApiResponse({ status: 200, description: '返回密码提醒状态' })
+  @Get('password-reminder')
+  getPasswordReminder(@Req() req: Request & { user?: { userId?: number } }) {
+    const userId = req.user?.userId;
+    if (!userId) {
+      throw new UnauthorizedException('invalid user token');
+    }
+    return this.service.getPasswordReminder(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiParam({ name: 'id', type: Number })
+  @ApiOperation({ summary: '按角色查询用户可用工具' })
+  @ApiResponse({ status: 200, description: '查询成功，返回去重后的工具列表' })
+  @ApiResponse({ status: 404, description: '用户不存在' })
+  @Get(':id/allowed-tools')
+  getAllowedTools(@Param('id', ParseIntPipe) id: number) {
+    return this.service.getAllowedToolsByUserRole(id);
   }
 
   @UseGuards(JwtAuthGuard)

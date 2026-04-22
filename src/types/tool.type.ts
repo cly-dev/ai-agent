@@ -5,6 +5,7 @@ export interface ToolType {
   id?: number;
   name: string;
   description: string;
+  riskLevel?: RelationRef;
   schema: unknown;
   createdAt?: Date;
   skillTools: RelationRef[];

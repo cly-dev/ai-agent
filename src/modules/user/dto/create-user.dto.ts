@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateUserDto {
   @ApiProperty({
@@ -9,23 +9,13 @@ export class CreateUserDto {
   @IsEmail()
   email!: string;
 
-  @ApiProperty({
-    description: '用户登录密码（服务端会加密存储）',
-    example: 'pass123456',
-  })
-  @IsString()
-  @MinLength(6)
-  password!: string;
-
   @ApiProperty({ description: '用户名', example: 'alice' })
   @IsString()
   username!: string;
 
-  @ApiPropertyOptional({
-    description: '用户 token（可选）',
-    example: 'custom-user-token',
-  })
+  @ApiPropertyOptional({ description: '角色 ID（用于权限控制）', example: 1 })
   @IsOptional()
-  @IsString()
-  token?: string;
+  @IsInt()
+  @Min(1)
+  roleId?: number;
 }

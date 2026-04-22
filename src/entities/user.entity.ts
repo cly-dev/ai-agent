@@ -6,8 +6,10 @@ export class UserEntity {
   email: string;
   password: string;
   username: string;
-  token?: string | null;
+  roleId?: number | null;
+  mustChangePassword?: boolean;
   createdAt?: Date;
   sessions: RelationRef[];
   llmModelConfigs: RelationRef[];
+  role?: RelationRef | null;
 }

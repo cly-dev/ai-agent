@@ -10,4 +10,5 @@ export interface SkillType {
   createdAt?: Date;
   skillTools: RelationRef[];
   agentSkills: RelationRef[];
+  roleSkills: RelationRef[];
 }

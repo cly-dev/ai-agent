@@ -7,6 +7,7 @@ describe('UserController', () => {
   const service = {
     create: jest.fn(),
     login: jest.fn(),
+    getPasswordReminder: jest.fn(),
     findAll: jest.fn(),
     findOne: jest.fn(),
     update: jest.fn(),
@@ -27,28 +28,24 @@ describe('UserController', () => {
     service.create.mockResolvedValue({
       id: 1,
       email: 'alice@example.com',
-      password: 'pass123',
       username: 'alice',
-      token: 'token-1',
+      mustChangePassword: true,
+      generatedPassword: 'init-pass-123',
     });
     const result = await controller.create({
       email: 'alice@example.com',
-      password: 'pass123',
       username: 'alice',
-      token: 'token-1',
     });
     expect(service.create).toHaveBeenCalledWith({
       email: 'alice@example.com',
-      password: 'pass123',
       username: 'alice',
-      token: 'token-1',
     });
     expect(result).toEqual({
       id: 1,
       email: 'alice@example.com',
-      password: 'pass123',
       username: 'alice',
-      token: 'token-1',
+      mustChangePassword: true,
+      generatedPassword: 'init-pass-123',
     });
   });
 
@@ -66,8 +63,9 @@ describe('UserController', () => {
         id: 1,
         email: 'alice@example.com',
         username: 'alice',
-        token: 'jwt-token-1',
+        mustChangePassword: true,
       },
+      mustChangePassword: true,
     });
     const result = await controller.login({
       email: 'alice@example.com',
@@ -83,8 +81,9 @@ describe('UserController', () => {
         id: 1,
         email: 'alice@example.com',
         username: 'alice',
-        token: 'jwt-token-1',
+        mustChangePassword: true,
       },
+      mustChangePassword: true,
     });
   });
 });

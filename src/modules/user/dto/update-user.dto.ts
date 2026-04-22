@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class UpdateUserDto {
   @ApiPropertyOptional({
@@ -24,12 +24,9 @@ export class UpdateUserDto {
   @IsString()
   username?: string;
 
-  @ApiPropertyOptional({
-    description: '用户 token，可传 null 清空',
-    example: 'updated-token',
-    nullable: true,
-  })
+  @ApiPropertyOptional({ description: '角色 ID（用于权限控制）', example: 1 })
   @IsOptional()
-  @IsString()
-  token?: string | null;
+  @IsInt()
+  @Min(1)
+  roleId?: number;
 }

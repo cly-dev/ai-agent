@@ -1,0 +1,14 @@
+---
+description: Do not modify unit tests unless explicitly requested
+alwaysApply: true
+---
+
+# Unit Test Update Policy
+
+- When implementing feature or refactor requests, do not proactively edit unit test files (`*.spec.ts`, `*.test.ts`).
+- If existing tests fail after code changes, report the failure and ask whether tests should be updated.
+- Only modify unit tests when the user explicitly asks to:
+  - update tests,
+  - fix failing tests,
+  - or add new tests.
+- Keep this policy lower priority only than direct user instructions in the current chat.

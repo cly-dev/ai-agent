@@ -3,7 +3,13 @@ import type { RelationRef } from '../shared/relation-ref';
 
 export interface UserType {
   id?: number;
+  email: string;
+  password: string;
   username: string;
+  roleId?: number | null;
+  mustChangePassword?: boolean;
   createdAt?: Date;
   sessions: RelationRef[];
+  llmModelConfigs: RelationRef[];
+  role?: RelationRef | null;
 }

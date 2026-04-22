@@ -14,6 +14,12 @@ import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UserService {
+  private readonly toolLevelWeight: Record<'L1' | 'L2' | 'L3', number> = {
+    L1: 1,
+    L2: 2,
+    L3: 3,
+  };
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -25,6 +31,10 @@ export class UserService {
     return `${salt}:${hash}`;
   }
 
+  private generateInitialPassword(): string {
+    return randomBytes(12).toString('hex');
+  }
+
   private verifyPassword(
     plainPassword: string,
     storedPassword: string,
@@ -34,32 +44,42 @@ export class UserService {
       return false;
     }
 
-    const hashBuffer = Buffer.from(hash, 'hex');
-    const plainHashBuffer = scryptSync(plainPassword, salt, hashBuffer.length);
-    return timingSafeEqual(hashBuffer, plainHashBuffer);
+    const hashBytes = Uint8Array.from(Buffer.from(hash, 'hex'));
+    const plainHashBuffer = scryptSync(plainPassword, salt, hashBytes.length);
+    const plainHashBytes = Uint8Array.from(plainHashBuffer);
+    return timingSafeEqual(hashBytes, plainHashBytes);
   }
 
   async create(data: CreateUserDto) {
     const email = data.email?.trim();
-    const password = data.password?.trim();
     const username = data.username?.trim();
-    const token = data.token?.trim();
+    const roleId = data.roleId;
 
     if (!email) {
       throw new BadRequestException('email is required');
-    }
-    if (!password) {
-      throw new BadRequestException('password is required');
     }
     if (!username) {
       throw new BadRequestException('username is required');
     }
 
-    const hashedPassword = this.hashPassword(password);
-
-    return this.prisma.user.create({
-      data: { email, password: hashedPassword, username, token },
+    const initialPassword = this.generateInitialPassword();
+    const hashedPassword = this.hashPassword(initialPassword);
+    const createdUser = await this.prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        username,
+        roleId,
+        mustChangePassword: true,
+      },
     });
+
+    const safeUser = { ...createdUser };
+    delete safeUser.password;
+    return {
+      ...safeUser,
+      generatedPassword: initialPassword,
+    };
   }
 
   async findAll() {
@@ -82,8 +102,7 @@ export class UserService {
     const email = data.email?.trim();
     const password = data.password?.trim();
     const username = data.username?.trim();
-    const token =
-      typeof data.token === 'string' ? data.token.trim() : data.token;
+    const roleId = data.roleId;
 
     if (email !== undefined && !email) {
       throw new BadRequestException('email cannot be empty');
@@ -94,17 +113,19 @@ export class UserService {
     if (password !== undefined && !password) {
       throw new BadRequestException('password cannot be empty');
     }
-    if (token !== undefined && token !== null && !token) {
-      throw new BadRequestException('token cannot be empty');
-    }
-
     const hashedPassword =
       password !== undefined ? this.hashPassword(password) : undefined;
 
     try {
       return await this.prisma.user.update({
         where: { id },
-        data: { email, password: hashedPassword, username, token },
+        data: {
+          email,
+          password: hashedPassword,
+          username,
+          roleId,
+          mustChangePassword: password !== undefined ? false : undefined,
+        },
       });
     } catch (error) {
       if (
@@ -157,15 +178,75 @@ export class UserService {
       username: user.username,
     };
     const accessToken = await this.jwtService.signAsync(payload);
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { token: accessToken },
-    });
 
-    const { password: _, ...safeUser } = user;
+    const safeUser = { ...user };
+    delete safeUser.password;
     return {
       accessToken,
       user: safeUser,
+      mustChangePassword: user.mustChangePassword,
     };
+  }
+
+  async getPasswordReminder(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { mustChangePassword: true },
+    });
+    if (!user) {
+      throw new NotFoundException(`user ${userId} not found`);
+    }
+
+    return {
+      mustChangePassword: user.mustChangePassword,
+      message: user.mustChangePassword
+        ? '首次登录请尽快修改密码'
+        : '密码状态正常，无需修改',
+    };
+  }
+
+  async getAllowedToolsByUserRole(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        role: {
+          include: {
+            roleSkills: {
+              include: {
+                skill: {
+                  include: {
+                    skillTools: {
+                      include: { tool: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`user ${userId} not found`);
+    }
+
+    if (!user.role) {
+      return [];
+    }
+
+    const toolMap = new Map<number, unknown>();
+    const maxAllowedLevel = this.toolLevelWeight[user.role.allowToolLevel];
+    for (const roleSkill of user.role.roleSkills) {
+      for (const skillTool of roleSkill.skill.skillTools) {
+        const toolLevel = this.toolLevelWeight[skillTool.tool.riskLevel];
+        if (toolLevel > maxAllowedLevel) {
+          continue;
+        }
+        toolMap.set(skillTool.tool.id, skillTool.tool);
+      }
+    }
+
+    return Array.from(toolMap.values());
   }
 }

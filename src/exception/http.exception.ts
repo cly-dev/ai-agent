@@ -3,27 +3,29 @@ import {
   Catch,
   ExceptionFilter,
   HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { Response } from 'express';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
-  catch(exception: HttpException, host: ArgumentsHost): void {
+  catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
 
     try {
-      const status = exception.getStatus();
-      if (status !== 200) {
+      let status = HttpStatus.INTERNAL_SERVER_ERROR;
+      let message = 'system busy';
+      let data: unknown = null;
+
+      if (exception instanceof HttpException) {
+        status = exception.getStatus();
         const exceptionResponse = exception.getResponse();
-        let message = 'request failed';
+        data = exceptionResponse;
 
         if (typeof exceptionResponse === 'string') {
           message = exceptionResponse;
-        } else if (
-          typeof exceptionResponse === 'object' &&
-          exceptionResponse !== null
-        ) {
+        } else if (typeof exceptionResponse === 'object' && exceptionResponse) {
           const rawMessage = (
             exceptionResponse as { message?: string | string[] }
           ).message;
@@ -33,16 +35,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
             message = rawMessage;
           }
         }
-
-        res.status(200).send({
-          status,
-          data: exception.stack,
-          message,
-        });
       }
+
+      res.status(200).send({
+        status,
+        data,
+        message,
+      });
     } catch {
-      res.status(500).send({
+      res.status(200).send({
         status: 500,
+        data: null,
         message: 'system busy',
       });
     }

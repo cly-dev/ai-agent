@@ -10,4 +10,5 @@ export class SkillEntity {
   createdAt?: Date;
   skillTools: RelationRef[];
   agentSkills: RelationRef[];
+  roleSkills: RelationRef[];
 }
