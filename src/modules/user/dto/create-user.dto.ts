@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { UserRole, UserType } from '../../../../generated/prisma/client';
+import { IsEmail, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class CreateUserDto {
   @ApiProperty({
@@ -13,9 +14,19 @@ export class CreateUserDto {
   @IsString()
   username!: string;
 
-  @ApiPropertyOptional({ description: '角色 ID（用于权限控制）', example: 1 })
+  @ApiPropertyOptional({
+    description: '用户类型（C 端用户/ B 端业务用户）',
+    enum: UserType,
+  })
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  roleId?: number;
+  @IsEnum(UserType)
+  userType?: UserType;
+
+  @ApiPropertyOptional({
+    description: '业务角色（用于 Tool 子集授权）',
+    enum: UserRole,
+  })
+  @IsOptional()
+  @IsEnum(UserRole)
+  userRole?: UserRole;
 }

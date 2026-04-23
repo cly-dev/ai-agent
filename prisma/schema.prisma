@@ -17,6 +17,7 @@ enum ToolLevel {
   L2
   L3
 }
+
 enum HttpMethod{
   Get
   Post
@@ -24,20 +25,37 @@ enum HttpMethod{
   Delete
 }
 
+enum UserType {
+  C_END
+  B_END
+}
+
+enum UserRole {
+  C_END_USER
+  CUSTOMER_SERVICE
+  OPERATOR
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  OPERATOR
+  VIEWER
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   email     String
   password  String
   username  String
-  roleId    Int?
+  userType  UserType @default(C_END)
+  userRole  UserRole?
   mustChangePassword Boolean @default(true)
   createdAt DateTime @default(now())
 
   sessions        Session[]
   llmModelConfigs UserLlmModelConfig[]
-  role            Role?                @relation(fields: [roleId], references: [id])
-
-  @@index([roleId])
+  @@index([userType])
+  @@index([userRole])
 }
 
 
@@ -48,10 +66,48 @@ model Role {
   allowToolLevel ToolLevel @default(L1)
   createdAt   DateTime @default(now())
 
-  users      User[]
   roleSkills RoleSkill[]
 
   @@map("role")
+}
+
+model AdminUser {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  password  String
+  username  String
+  role      AdminRole
+  isActive  Boolean   @default(true)
+  mustChangePassword Boolean @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model AppClient {
+  id          Int      @id @default(autoincrement())
+  name        String
+  dsn         String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model LlmModelConfig {
+  id           Int      @id @default(autoincrement())
+  singletonKey Int      @unique @default(1)
+  provider     String   @default("openai-compatible")
+  model        String
+  apiKey       String?
+  baseUrl      String
+  chatPath     String   @default("/v1/chat/completions")
+  parameters   Json?
+  stream       Boolean  @default(false)
+  maxTokens    Int?
+  temperature  Float?
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model UserLlmModelConfig {
@@ -102,6 +158,19 @@ model Message {
   @@index([sessionId])
 }
 
+/// 工具业务分类（商品、订单、搜索等），由用户在后台自由增删
+model ToolCategory {
+  id          Int      @id @default(autoincrement())
+  label       String
+  description String?
+  sortOrder   Int      @default(0)
+  tools       Tool[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([sortOrder])
+}
+
 model Tool {
   id          Int      @id @default(autoincrement())
   name        String
@@ -115,10 +184,15 @@ model Tool {
   path          String
   integrationId Int
   integration   Integration @relation(fields: [integrationId], references: [id])
+  toolCategoryId Int?
+  toolCategory   ToolCategory? @relation(fields: [toolCategoryId], references: [id], onDelete: SetNull)
+  userRoleTools UserRoleTool[]
   isActive      Boolean  @default(true)
   timeout       Int?    
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([toolCategoryId])
 }
 model Integration{
    id        Int      @id @default(autoincrement())
@@ -167,6 +241,18 @@ model SkillTool {
   tool  Tool  @relation(fields: [toolId], references: [id])
 
   @@unique([skillId, toolId])
+}
+
+model UserRoleTool {
+  id        Int      @id @default(autoincrement())
+  userRole  UserRole
+  toolId    Int
+  createdAt DateTime @default(now())
+
+  tool Tool @relation(fields: [toolId], references: [id])
+
+  @@unique([userRole, toolId])
+  @@index([toolId])
 }
 
 model Agent {

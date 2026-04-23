@@ -1,0 +1,5 @@
+-- CreateEnum
+CREATE TYPE "ToolKind" AS ENUM ('HTTP_OPENAPI', 'CUSTOM');
+
+-- AlterTable
+ALTER TABLE "Tool" ADD COLUMN "toolKind" "ToolKind" NOT NULL DEFAULT 'HTTP_OPENAPI';

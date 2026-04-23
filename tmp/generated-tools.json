@@ -1,0 +1,792 @@
+[
+  {
+    "name": "S02S004",
+    "description": "商品列表",
+    "method": "Get",
+    "path": "/seller/item/list",
+    "riskLevel": "L1",
+    "schema": {
+      "parameters": [
+        {
+          "name": "aces",
+          "in": "query",
+          "description": "A-Premium Part Number",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "backCategoryId",
+          "in": "query",
+          "description": "四级后台品类ID 商品筛选器",
+          "required": false,
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "name": "backCategoryIds",
+          "in": "query",
+          "description": "四级后台品类IDs faq",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "backCategoryLike",
+          "in": "query",
+          "description": "后台品类模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "brand",
+          "in": "query",
+          "description": "品牌精确查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "brands",
+          "in": "query",
+          "description": "品牌精确批量查询",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "collectionIds",
+          "in": "query",
+          "description": "商品集ids",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "frontCategory",
+          "in": "query",
+          "description": "前台类目精确查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "frontCategoryLike",
+          "in": "query",
+          "description": "前台类目模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "frontCategoryList",
+          "in": "query",
+          "description": "前台类目批量精确查询",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "hasAPlus",
+          "in": "query",
+          "description": "是否有A+",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "hasFeatures",
+          "in": "query",
+          "description": "是否存在Features",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "hasSkuImage",
+          "in": "query",
+          "description": "是否有SKU图片",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "hasVideo",
+          "in": "query",
+          "description": "是否有视频",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "ibayBarcodeLike",
+          "in": "query",
+          "description": "iBay 出单用sku编码模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "ids",
+          "in": "query",
+          "description": "传入id集合查询多个商品",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "includeValidationPassed",
+          "in": "query",
+          "description": "车型完整性校验是否成功",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "isVehicleUniversal",
+          "in": "query",
+          "description": "是否是通用件",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "itemSourceType",
+          "in": "query",
+          "description": "商品来源类型，默认All",
+          "required": false,
+          "type": "string",
+          "enum": [
+            "ALL",
+            "SELF",
+            "DISTRIBUTION"
+          ]
+        },
+        {
+          "name": "maxAvailableStock",
+          "in": "query",
+          "description": "最大可用库存",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "maxExtStock",
+          "in": "query",
+          "description": "最大实际库存",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "minAvailableStock",
+          "in": "query",
+          "description": "最小可用库存",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "minExtStock",
+          "in": "query",
+          "description": "最小实际库存",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "multiFieldSearch",
+          "in": "query",
+          "description": "多字段搜索。目前支持：itemId精确，barcode模糊，ibayBarcode模糊",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "page",
+          "in": "query",
+          "description": "Page number",
+          "required": false,
+          "type": "integer",
+          "format": "int32",
+          "x-example": 1
+        },
+        {
+          "name": "partNumberLike",
+          "in": "query",
+          "description": "oe号模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "relationValidationPassed",
+          "in": "query",
+          "description": "车型一致性校验是否成功",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "searchForPaymentLink",
+          "in": "query",
+          "description": "支付链接查询调用",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "size",
+          "in": "query",
+          "description": "Page size",
+          "required": false,
+          "type": "integer",
+          "format": "int32",
+          "x-example": 20
+        },
+        {
+          "name": "skuImageCount",
+          "in": "query",
+          "description": "SKU图片数量",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "skuLike",
+          "in": "query",
+          "description": "sku模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "sort",
+          "in": "query",
+          "description": "排序(discountMinPrice、sales、gmtCreate、orderValue + , +desc或asc)，默认gmtCreate,desc",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "in": "query",
+          "description": "商品状态：1-上架、2-下架、3-草稿、4-存档",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "supplier",
+          "in": "query",
+          "description": "供应商精确查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "supplierBarcodeLike",
+          "in": "query",
+          "description": "供应商sku编码模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "tagId",
+          "in": "query",
+          "description": "商品标签ID 商品筛选器",
+          "required": false,
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "name": "tagIds",
+          "in": "query",
+          "description": "商品标签ID集合",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "tagLike",
+          "in": "query",
+          "description": "标签模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "titleLike",
+          "in": "query",
+          "description": "标题模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "videoCount",
+          "in": "query",
+          "description": "视频数量",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "APlusCount",
+          "in": "query",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "X-SHOP-ID",
+          "in": "header",
+          "description": "X-SHOP-ID",
+          "required": true,
+          "type": "integer",
+          "format": "int64"
+        }
+      ],
+      "requestBody": null
+    },
+    "inputSchema": {
+      "parameters": [
+        {
+          "name": "aces",
+          "in": "query",
+          "description": "A-Premium Part Number",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "backCategoryId",
+          "in": "query",
+          "description": "四级后台品类ID 商品筛选器",
+          "required": false,
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "name": "backCategoryIds",
+          "in": "query",
+          "description": "四级后台品类IDs faq",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "backCategoryLike",
+          "in": "query",
+          "description": "后台品类模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "brand",
+          "in": "query",
+          "description": "品牌精确查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "brands",
+          "in": "query",
+          "description": "品牌精确批量查询",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "collectionIds",
+          "in": "query",
+          "description": "商品集ids",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "frontCategory",
+          "in": "query",
+          "description": "前台类目精确查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "frontCategoryLike",
+          "in": "query",
+          "description": "前台类目模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "frontCategoryList",
+          "in": "query",
+          "description": "前台类目批量精确查询",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "hasAPlus",
+          "in": "query",
+          "description": "是否有A+",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "hasFeatures",
+          "in": "query",
+          "description": "是否存在Features",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "hasSkuImage",
+          "in": "query",
+          "description": "是否有SKU图片",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "hasVideo",
+          "in": "query",
+          "description": "是否有视频",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "ibayBarcodeLike",
+          "in": "query",
+          "description": "iBay 出单用sku编码模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "ids",
+          "in": "query",
+          "description": "传入id集合查询多个商品",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "includeValidationPassed",
+          "in": "query",
+          "description": "车型完整性校验是否成功",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "isVehicleUniversal",
+          "in": "query",
+          "description": "是否是通用件",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "itemSourceType",
+          "in": "query",
+          "description": "商品来源类型，默认All",
+          "required": false,
+          "type": "string",
+          "enum": [
+            "ALL",
+            "SELF",
+            "DISTRIBUTION"
+          ]
+        },
+        {
+          "name": "maxAvailableStock",
+          "in": "query",
+          "description": "最大可用库存",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "maxExtStock",
+          "in": "query",
+          "description": "最大实际库存",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "minAvailableStock",
+          "in": "query",
+          "description": "最小可用库存",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "minExtStock",
+          "in": "query",
+          "description": "最小实际库存",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "multiFieldSearch",
+          "in": "query",
+          "description": "多字段搜索。目前支持：itemId精确，barcode模糊，ibayBarcode模糊",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "page",
+          "in": "query",
+          "description": "Page number",
+          "required": false,
+          "type": "integer",
+          "format": "int32",
+          "x-example": 1
+        },
+        {
+          "name": "partNumberLike",
+          "in": "query",
+          "description": "oe号模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "relationValidationPassed",
+          "in": "query",
+          "description": "车型一致性校验是否成功",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "searchForPaymentLink",
+          "in": "query",
+          "description": "支付链接查询调用",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "size",
+          "in": "query",
+          "description": "Page size",
+          "required": false,
+          "type": "integer",
+          "format": "int32",
+          "x-example": 20
+        },
+        {
+          "name": "skuImageCount",
+          "in": "query",
+          "description": "SKU图片数量",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "skuLike",
+          "in": "query",
+          "description": "sku模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "sort",
+          "in": "query",
+          "description": "排序(discountMinPrice、sales、gmtCreate、orderValue + , +desc或asc)，默认gmtCreate,desc",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "in": "query",
+          "description": "商品状态：1-上架、2-下架、3-草稿、4-存档",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "supplier",
+          "in": "query",
+          "description": "供应商精确查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "supplierBarcodeLike",
+          "in": "query",
+          "description": "供应商sku编码模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "tagId",
+          "in": "query",
+          "description": "商品标签ID 商品筛选器",
+          "required": false,
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "name": "tagIds",
+          "in": "query",
+          "description": "商品标签ID集合",
+          "required": false,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "collectionFormat": "multi"
+        },
+        {
+          "name": "tagLike",
+          "in": "query",
+          "description": "标签模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "titleLike",
+          "in": "query",
+          "description": "标题模糊查询",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "videoCount",
+          "in": "query",
+          "description": "视频数量",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "APlusCount",
+          "in": "query",
+          "required": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        {
+          "name": "X-SHOP-ID",
+          "in": "header",
+          "description": "X-SHOP-ID",
+          "required": true,
+          "type": "integer",
+          "format": "int64"
+        }
+      ],
+      "requestBody": null
+    },
+    "outputSchema": {
+      "200": {
+        "description": "OK",
+        "schema": {
+          "originalRef": "列表返回«单个商品类»",
+          "$ref": "#/definitions/列表返回«单个商品类»"
+        }
+      },
+      "401": {
+        "description": "Unauthorized"
+      },
+      "403": {
+        "description": "Forbidden"
+      },
+      "404": {
+        "description": "Not Found"
+      }
+    },
+    "integrationId": 1,
+    "isActive": true
+  },
+  {
+    "name": "S02S001_1",
+    "description": "商品详情",
+    "method": "Get",
+    "path": "/seller/item/{id}",
+    "riskLevel": "L1",
+    "schema": {
+      "parameters": [
+        {
+          "name": "X-SHOP-ID",
+          "in": "header",
+          "description": "X-SHOP-ID",
+          "required": true,
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "name": "id",
+          "in": "path",
+          "description": "id",
+          "required": true,
+          "type": "integer",
+          "format": "int64"
+        }
+      ],
+      "requestBody": null
+    },
+    "inputSchema": {
+      "parameters": [
+        {
+          "name": "X-SHOP-ID",
+          "in": "header",
+          "description": "X-SHOP-ID",
+          "required": true,
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "name": "id",
+          "in": "path",
+          "description": "id",
+          "required": true,
+          "type": "integer",
+          "format": "int64"
+        }
+      ],
+      "requestBody": null
+    },
+    "outputSchema": {
+      "200": {
+        "description": "OK",
+        "schema": {
+          "originalRef": "商品VO",
+          "$ref": "#/definitions/商品VO"
+        }
+      },
+      "401": {
+        "description": "Unauthorized"
+      },
+      "403": {
+        "description": "Forbidden"
+      },
+      "404": {
+        "description": "Not Found"
+      }
+    },
+    "integrationId": 1,
+    "isActive": true
+  }
+]

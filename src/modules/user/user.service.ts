@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
-import { Prisma } from '../../../generated/prisma/client';
+import { Prisma, UserRole } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
@@ -14,7 +14,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UserService {
-  private readonly toolLevelWeight: Record<'L1' | 'L2' | 'L3', number> = {
+  private readonly legacyToolLevelWeight: Record<'L1' | 'L2' | 'L3', number> = {
     L1: 1,
     L2: 2,
     L3: 3,
@@ -53,7 +53,8 @@ export class UserService {
   async create(data: CreateUserDto) {
     const email = data.email?.trim();
     const username = data.username?.trim();
-    const roleId = data.roleId;
+    const userType = data.userType;
+    const userRole = data.userRole;
 
     if (!email) {
       throw new BadRequestException('email is required');
@@ -69,7 +70,8 @@ export class UserService {
         email,
         password: hashedPassword,
         username,
-        roleId,
+        userType,
+        userRole,
         mustChangePassword: true,
       },
     });
@@ -102,7 +104,8 @@ export class UserService {
     const email = data.email?.trim();
     const password = data.password?.trim();
     const username = data.username?.trim();
-    const roleId = data.roleId;
+    const userType = data.userType;
+    const userRole = data.userRole;
 
     if (email !== undefined && !email) {
       throw new BadRequestException('email cannot be empty');
@@ -123,7 +126,8 @@ export class UserService {
           email,
           password: hashedPassword,
           username,
-          roleId,
+          userType,
+          userRole,
           mustChangePassword: password !== undefined ? false : undefined,
         },
       });
@@ -176,6 +180,8 @@ export class UserService {
       sub: user.id,
       email: user.email,
       username: user.username,
+      userType: user.userType,
+      userRole: user.userRole,
     };
     const accessToken = await this.jwtService.signAsync(payload);
 
@@ -208,17 +214,50 @@ export class UserService {
   async getAllowedToolsByUserRole(userId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
+      select: { userRole: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`user ${userId} not found`);
+    }
+
+    if (!user.userRole) {
+      return [];
+    }
+
+    const authzSource = process.env.AUTHZ_SOURCE?.toLowerCase();
+    if (authzSource === 'legacy') {
+      return this.getAllowedToolsByLegacyRole(user.userRole);
+    }
+
+    return this.getAllowedToolsByRole(user.userRole);
+  }
+
+  private async getAllowedToolsByRole(userRole: UserRole) {
+    const roleToolMappings = await this.prisma.userRoleTool.findMany({
+      where: { userRole },
+      include: { tool: true },
+      orderBy: { toolId: 'asc' },
+    });
+
+    return roleToolMappings.map((mapping) => mapping.tool);
+  }
+
+  private async getAllowedToolsByLegacyRole(userRole: UserRole) {
+    const legacyRoleName = this.resolveLegacyRoleName(userRole);
+    if (!legacyRoleName) {
+      return [];
+    }
+
+    const role = await this.prisma.role.findUnique({
+      where: { name: legacyRoleName },
       include: {
-        role: {
+        roleSkills: {
           include: {
-            roleSkills: {
+            skill: {
               include: {
-                skill: {
-                  include: {
-                    skillTools: {
-                      include: { tool: true },
-                    },
-                  },
+                skillTools: {
+                  include: { tool: true },
                 },
               },
             },
@@ -227,19 +266,15 @@ export class UserService {
       },
     });
 
-    if (!user) {
-      throw new NotFoundException(`user ${userId} not found`);
-    }
-
-    if (!user.role) {
+    if (!role) {
       return [];
     }
 
     const toolMap = new Map<number, unknown>();
-    const maxAllowedLevel = this.toolLevelWeight[user.role.allowToolLevel];
-    for (const roleSkill of user.role.roleSkills) {
+    const maxAllowedLevel = this.legacyToolLevelWeight[role.allowToolLevel];
+    for (const roleSkill of role.roleSkills) {
       for (const skillTool of roleSkill.skill.skillTools) {
-        const toolLevel = this.toolLevelWeight[skillTool.tool.riskLevel];
+        const toolLevel = this.legacyToolLevelWeight[skillTool.tool.riskLevel];
         if (toolLevel > maxAllowedLevel) {
           continue;
         }
@@ -248,5 +283,18 @@ export class UserService {
     }
 
     return Array.from(toolMap.values());
+  }
+
+  private resolveLegacyRoleName(userRole: UserRole): string | null {
+    if (userRole === UserRole.OPERATOR) {
+      return 'operator';
+    }
+    if (userRole === UserRole.CUSTOMER_SERVICE) {
+      return 'viewer';
+    }
+    if (userRole === UserRole.C_END_USER) {
+      return 'viewer';
+    }
+    return null;
   }
 }

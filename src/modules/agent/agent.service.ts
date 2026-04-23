@@ -3,12 +3,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class AgentService {
-  private readonly toolLevelWeight: Record<'L1' | 'L2' | 'L3', number> = {
-    L1: 1,
-    L2: 2,
-    L3: 3,
-  };
-
   constructor(private readonly prisma: PrismaService) {}
 
   async getAllowedTools(agentId: number, userId: number) {
@@ -31,13 +25,7 @@ export class AgentService {
       }),
       this.prisma.user.findUnique({
         where: { id: userId },
-        include: {
-          role: {
-            include: {
-              roleSkills: true,
-            },
-          },
-        },
+        select: { userRole: true },
       }),
     ]);
 
@@ -47,24 +35,21 @@ export class AgentService {
     if (!user) {
       throw new NotFoundException(`user ${userId} not found`);
     }
-    if (!user.role) {
+    if (!user.userRole) {
       return [];
     }
 
-    const allowedSkillIds = new Set(
-      user.role.roleSkills.map((roleSkill) => roleSkill.skillId),
-    );
+    const userRoleTools = await this.prisma.userRoleTool.findMany({
+      where: { userRole: user.userRole },
+      select: { toolId: true },
+    });
+
+    const allowedToolIds = new Set(userRoleTools.map((item) => item.toolId));
     const toolMap = new Map<number, unknown>();
-    const maxAllowedLevel = this.toolLevelWeight[user.role.allowToolLevel];
 
     for (const agentSkill of agent.agentSkills) {
-      if (!allowedSkillIds.has(agentSkill.skillId)) {
-        continue;
-      }
-
       for (const skillTool of agentSkill.skill.skillTools) {
-        const toolLevel = this.toolLevelWeight[skillTool.tool.riskLevel];
-        if (toolLevel > maxAllowedLevel) {
+        if (!allowedToolIds.has(skillTool.tool.id)) {
           continue;
         }
         toolMap.set(skillTool.tool.id, skillTool.tool);

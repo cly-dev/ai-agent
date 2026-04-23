@@ -6,10 +6,10 @@ export interface UserType {
   email: string;
   password: string;
   username: string;
-  roleId?: number | null;
+  userType?: RelationRef;
+  userRole?: RelationRef | null;
   mustChangePassword?: boolean;
   createdAt?: Date;
   sessions: RelationRef[];
   llmModelConfigs: RelationRef[];
-  role?: RelationRef | null;
 }

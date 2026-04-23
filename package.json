@@ -15,12 +15,15 @@
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "codegen:prisma": "ts-node src/codegen/prisma-schema-codegen.ts --with-service --with-controller",
     "codegen:prisma:dry-run": "ts-node src/codegen/prisma-schema-codegen.ts --dry-run --with-service --with-controller",
+    "codegen:swagger-tools:dry-run": "ts-node src/codegen/swagger-tool-cli.ts --dry-run",
+    "codegen:swagger-tools:apply": "ts-node src/codegen/swagger-tool-cli.ts --apply",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "db:seed": "ts-node prisma/seed.ts"
+    "db:seed": "ts-node prisma/seed.ts",
+    "db:migrate:user-auth-model": "ts-node prisma/scripts/migrate-user-role-to-new-model.ts"
   },
   "dependencies": {
     "@nestjs/common": "^9.0.0",

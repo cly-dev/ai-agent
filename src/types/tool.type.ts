@@ -7,6 +7,18 @@ export interface ToolType {
   description: string;
   riskLevel?: RelationRef;
   schema: unknown;
-  createdAt?: Date;
   skillTools: RelationRef[];
+  inputSchema: unknown;
+  outputSchema?: unknown | null;
+  method: RelationRef;
+  path: string;
+  integrationId: number;
+  integration: RelationRef;
+  toolCategoryId?: number | null;
+  toolCategory?: RelationRef | null;
+  userRoleTools: RelationRef[];
+  isActive?: boolean;
+  timeout?: number | null;
+  createdAt?: Date;
+  updatedAt?: Date;
 }

@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { randomBytes, scryptSync } from 'crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
-import { PrismaClient, ToolLevel } from '../generated/prisma/client';
+import { AdminRole, PrismaClient, ToolLevel } from '../generated/prisma/client';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -64,44 +64,67 @@ async function seedRoles() {
   return adminRole;
 }
 
-async function seedAdminUser(adminRoleId: number): Promise<void> {
+async function seedAdminUser(): Promise<void> {
   const hashedPassword = hashPassword(ADMIN_PASSWORD);
-  const existingAdmin = await prisma.user.findFirst({
+  await prisma.adminUser.upsert({
     where: { email: ADMIN_EMAIL },
-    orderBy: { id: 'asc' },
-  });
-
-  if (existingAdmin) {
-    await prisma.user.update({
-      where: { id: existingAdmin.id },
-      data: {
-        username: ADMIN_USERNAME,
-        password: hashedPassword,
-        roleId: adminRoleId,
-        mustChangePassword: false,
-      },
-    });
-    return;
-  }
-
-  await prisma.user.create({
-    data: {
+    update: {
+      username: ADMIN_USERNAME,
+      password: hashedPassword,
+      role: AdminRole.SUPER_ADMIN,
+      isActive: true,
+      mustChangePassword: false,
+    },
+    create: {
       email: ADMIN_EMAIL,
       username: ADMIN_USERNAME,
       password: hashedPassword,
-      roleId: adminRoleId,
+      role: AdminRole.SUPER_ADMIN,
+      isActive: true,
       mustChangePassword: false,
+    },
+  });
+}
+
+async function seedLlmModelConfig(): Promise<void> {
+  await prisma.llmModelConfig.upsert({
+    where: { singletonKey: 1 },
+    update: {
+      provider: 'openai-compatible',
+      model: '/data/models/Qwen3-32B-AWQ',
+      apiKey: null,
+      baseUrl: 'http://172.30.30.153:8000',
+      chatPath: '/v1/chat/completions',
+      parameters: {},
+      stream: false,
+      maxTokens: 2000,
+      temperature: null,
+      enabled: true,
+    },
+    create: {
+      singletonKey: 1,
+      provider: 'openai-compatible',
+      model: '/data/models/Qwen3-32B-AWQ',
+      apiKey: null,
+      baseUrl: 'http://172.30.30.153:8000',
+      chatPath: '/v1/chat/completions',
+      parameters: {},
+      stream: false,
+      maxTokens: 2000,
+      temperature: null,
+      enabled: true,
     },
   });
 }
 
 async function main(): Promise<void> {
   try {
-    const adminRole = await seedRoles();
-    await seedAdminUser(adminRole.id);
+    await seedRoles();
+    await seedAdminUser();
+    await seedLlmModelConfig();
   } catch (error) {
     throw new Error(
-      `Failed to seed roles and admin user: ${
+      `Failed to seed defaults: ${
         error instanceof Error ? error.message : 'unknown error'
       }`,
     );

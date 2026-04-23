@@ -7,6 +7,5 @@ export interface RoleType {
   description?: string | null;
   allowToolLevel?: RelationRef;
   createdAt?: Date;
-  users: RelationRef[];
   roleSkills: RelationRef[];
 }
