@@ -3,7 +3,7 @@ import type { RelationRef } from '../shared/relation-ref';
 
 export class MessageEntity {
   id?: number;
-  sessionId: number;
+  sessionId: string;
   role: string;
   content?: string | null;
   toolName?: string | null;

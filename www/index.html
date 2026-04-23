@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <h1>Hello World</h1>
+    <input type="text" id="input" />
+    <button id="send">发送</button>
+    <pre id="events"></pre>
+  </body>
+  <script>
+    window.onload = function () {
+      const input = document.getElementById('input');
+      const send = document.getElementById('send');
+      const events = document.getElementById('events');
+      const token =
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoiYWRtaW5AcXEuY29tIiwidXNlcm5hbWUiOiJhZG1pbiIsInVzZXJUeXBlIjoiQ19FTkQiLCJ1c2VyUm9sZSI6bnVsbCwiaWF0IjoxNzc2OTE0NjEwLCJleHAiOjE3Nzc1MTk0MTB9._BB2b8RRCDjPAayH9urAcYTaC_BStHhs6OnQDNVyOnw';
+      const sessionId = '2fcc9922cda878b2c6e76c9fc415f242';
+      const decoder = new TextDecoder();
+
+      function appendEvent(text) {
+        events.textContent += text + '\n';
+      }
+
+      async function stream() {
+        const doc = await fetch('/chat/' + sessionId + '/stream', {
+          method: 'GET',
+          headers: {
+            Accept: 'text/event-stream',
+            Authorization: 'Bearer ' + token,
+          },
+        });
+        if (!doc.ok || !doc.body) {
+          appendEvent('stream connect failed: ' + doc.status);
+          return;
+        }
+        const reader = doc.body.getReader();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            appendEvent('stream closed');
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const frames = buffer.split('\n\n');
+          buffer = frames.pop() ?? '';
+          for (const frame of frames) {
+            const line = frame
+              .split('\n')
+              .find((row) => row.startsWith('data: '));
+            if (!line) {
+              continue;
+            }
+            appendEvent(line.slice(6));
+          }
+        }
+      }
+
+      void stream();
+
+      send.addEventListener('click', () => {
+        const value = input.value;
+        fetch('/chat/' + sessionId + '/messages', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            Authorization: 'Bearer ' + token,
+          },
+          body: JSON.stringify({
+            role: 'user',
+            content: value,
+          }),
+        }).then((doc) => {
+          appendEvent('send status: ' + doc.status);
+        });
+      });
+    };
+  </script>
+</html>

@@ -2,7 +2,7 @@
 import type { RelationRef } from '../shared/relation-ref';
 
 export class SessionEntity {
-  id?: number;
+  id?: string;
   userId: number;
   agentId?: number | null;
   title?: string | null;

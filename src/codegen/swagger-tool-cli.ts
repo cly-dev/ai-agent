@@ -1,7 +1,8 @@
-import 'dotenv/config';
+import '../core/env/load-env';
 import * as fs from 'fs';
-import * as path from 'path';
+import * as http from 'http';
 import * as https from 'https';
+import * as path from 'path';
 import * as readline from 'readline/promises';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
@@ -26,8 +27,14 @@ type OpenApiOperation = {
 
 type OpenApiPathItem = Partial<Record<HttpVerb, OpenApiOperation>>;
 
+type OpenApiTagObject = {
+  name?: string;
+  description?: string;
+};
+
 type OpenApiDocument = {
   paths?: Record<string, OpenApiPathItem>;
+  tags?: OpenApiTagObject[];
 };
 
 type ToolDraft = {
@@ -41,6 +48,10 @@ type ToolDraft = {
   outputSchema: Prisma.InputJsonValue | null;
   integrationId: number;
   isActive: boolean;
+  /** OpenAPI 首个 tag，用于同步 ToolCategory */
+  categoryLabel: string;
+  /** 来自 spec 顶层 tags[].description（若有） */
+  categoryDescription: string | null;
 };
 
 type OperationMeta = {
@@ -208,50 +219,216 @@ function toInputJsonValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 }
 
-function loadSpecFromHttps(
+const SPEC_DOWNLOAD_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+const SPEC_DOWNLOAD_TIMEOUT_MS = 120_000;
+const SPEC_DOWNLOAD_MAX_REDIRECTS = 10;
+const SPEC_DOWNLOAD_MAX_ATTEMPTS = 3;
+const SPEC_DOWNLOAD_RETRY_BASE_MS = 600;
+
+function headerLocation(headers: http.IncomingHttpHeaders): string | undefined {
+  const raw = headers['location'];
+  if (typeof raw === 'string') {
+    return raw;
+  }
+  if (Array.isArray(raw)) {
+    const first = raw[0];
+    return typeof first === 'string' ? first : undefined;
+  }
+  return undefined;
+}
+
+function isTransientNetworkError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') {
+    return false;
+  }
+  const code = (err as NodeJS.ErrnoException).code;
+  if (typeof code === 'string') {
+    return (
+      code === 'ECONNRESET' ||
+      code === 'ECONNREFUSED' ||
+      code === 'ETIMEDOUT' ||
+      code === 'EPIPE' ||
+      code === 'ENETUNREACH' ||
+      code === 'EAI_AGAIN'
+    );
+  }
+  return false;
+}
+
+type UrlFetchResult = {
+  statusCode: number;
+  headers: http.IncomingHttpHeaders;
+  body: string;
+};
+
+function requestUrlOnce(
   urlString: string,
   insecure: boolean,
-): Promise<string> {
+): Promise<UrlFetchResult> {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const target = new URL(urlString);
-    const req = https.request(
-      {
-        hostname: target.hostname,
-        port: target.port || 443,
-        path: `${target.pathname}${target.search}`,
-        method: 'GET',
-        rejectUnauthorized: !insecure,
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      reject(new Error(`unsupported URL protocol: ${target.protocol}`));
+      return;
+    }
+    const isHttps = target.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    const defaultPort = isHttps ? 443 : 80;
+    const options: https.RequestOptions = {
+      hostname: target.hostname,
+      port: target.port || defaultPort,
+      path: `${target.pathname}${target.search}`,
+      method: 'GET',
+      headers: {
+        Accept: 'application/json, */*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': SPEC_DOWNLOAD_USER_AGENT,
       },
-      (incoming) => {
-        if (!incoming.statusCode || incoming.statusCode >= 400) {
-          reject(
-            new Error(`failed to download spec: HTTP ${incoming.statusCode}`),
-          );
-          incoming.resume();
-          return;
-        }
-        let body = '';
-        incoming.setEncoding('utf-8');
-        incoming.on('data', (chunk: string) => {
-          body += chunk;
-        });
-        incoming.on('end', () => resolve(body));
-      },
-    );
-    req.on('error', reject);
+    };
+    if (isHttps) {
+      options.rejectUnauthorized = !insecure;
+    }
+
+    const req = lib.request(options, (incoming) => {
+      const statusCode = incoming.statusCode ?? 0;
+      const headers = incoming.headers;
+
+      if (statusCode >= 300 && statusCode < 400 && headerLocation(headers)) {
+        incoming.resume();
+        settled = true;
+        resolve({ statusCode, headers, body: '' });
+        return;
+      }
+
+      if (!statusCode || statusCode >= 400) {
+        incoming.resume();
+        settled = true;
+        resolve({ statusCode, headers, body: '' });
+        return;
+      }
+
+      let body = '';
+      incoming.setEncoding('utf-8');
+      incoming.on('data', (chunk: string) => {
+        body += chunk;
+      });
+      incoming.on('end', () => {
+        settled = true;
+        resolve({ statusCode, headers, body });
+      });
+    });
+
+    req.on('error', (err) => {
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    });
+
+    req.setTimeout(SPEC_DOWNLOAD_TIMEOUT_MS, () => {
+      req.destroy();
+      if (!settled) {
+        settled = true;
+        reject(new Error('request timeout'));
+      }
+    });
+
     req.end();
   });
+}
+
+async function loadSpecFromRemoteUrl(
+  initialUrl: string,
+  insecure: boolean,
+): Promise<string> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < SPEC_DOWNLOAD_MAX_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      const delay = SPEC_DOWNLOAD_RETRY_BASE_MS * Math.pow(2, attempt - 1);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+
+    let currentUrl = initialUrl;
+    try {
+      for (let hop = 0; hop < SPEC_DOWNLOAD_MAX_REDIRECTS; hop += 1) {
+        const res = await requestUrlOnce(currentUrl, insecure);
+        const { statusCode, headers } = res;
+
+        const nextLocation = headerLocation(headers);
+        if (statusCode >= 300 && statusCode < 400 && nextLocation) {
+          currentUrl = new URL(nextLocation, currentUrl).toString();
+          continue;
+        }
+
+        if (!statusCode || statusCode >= 400) {
+          throw new Error(
+            `failed to download spec: HTTP ${statusCode || 'unknown'}`,
+          );
+        }
+
+        return res.body;
+      }
+      throw new Error(
+        `too many redirects (max ${SPEC_DOWNLOAD_MAX_REDIRECTS})`,
+      );
+    } catch (err) {
+      lastErr = err;
+      const retriable =
+        isTransientNetworkError(err) ||
+        (err instanceof Error && err.message === 'request timeout');
+      if (retriable && attempt < SPEC_DOWNLOAD_MAX_ATTEMPTS - 1) {
+        continue;
+      }
+      if (isTransientNetworkError(err)) {
+        const code = (err as NodeJS.ErrnoException).code;
+        throw new Error(
+          `download spec failed (${code ?? 'network'}): ${
+            err instanceof Error ? err.message : String(err)
+          }. try: --insecure (TLS), retry, or curl the URL to --spec-path`,
+        );
+      }
+      throw err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
 async function loadOpenApiSpec(options: CliOptions): Promise<OpenApiDocument> {
   const raw = options.specPath
     ? fs.readFileSync(path.resolve(process.cwd(), options.specPath), 'utf-8')
-    : await loadSpecFromHttps(options.specUrl, options.insecure);
+    : await loadSpecFromRemoteUrl(options.specUrl, options.insecure);
   const parsed = JSON.parse(raw) as OpenApiDocument;
   if (!parsed.paths || typeof parsed.paths !== 'object') {
     throw new Error('invalid openapi spec: missing paths');
   }
   return parsed;
+}
+
+function operationPrimaryTag(operation: OpenApiOperation): string {
+  return operation.tags?.[0]?.trim() || 'misc';
+}
+
+function buildTagDescriptionMap(spec: OpenApiDocument): Map<string, string> {
+  const map = new Map<string, string>();
+  const rootTags = spec.tags;
+  if (!Array.isArray(rootTags)) {
+    return map;
+  }
+  for (const item of rootTags) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const name = typeof item.name === 'string' ? item.name.trim() : '';
+    const desc =
+      typeof item.description === 'string' ? item.description.trim() : '';
+    if (name && desc) {
+      map.set(name, desc);
+    }
+  }
+  return map;
 }
 
 function listOperations(spec: OpenApiDocument): OperationMeta[] {
@@ -266,7 +443,7 @@ function listOperations(spec: OpenApiDocument): OperationMeta[] {
         key: opKey(method, urlPath),
         method,
         urlPath,
-        tag: operation.tags?.[0]?.trim() || 'misc',
+        tag: operationPrimaryTag(operation),
         operation,
       });
     }
@@ -415,6 +592,7 @@ function buildToolDrafts(
   options: CliOptions,
   selectedKeys: Set<string>,
 ): ToolDraft[] {
+  const tagDescriptions = buildTagDescriptionMap(spec);
   const drafts: ToolDraft[] = [];
   for (const [urlPath, pathItem] of Object.entries(spec.paths ?? {})) {
     for (const method of HTTP_METHODS) {
@@ -434,6 +612,9 @@ function buildToolDrafts(
         ? toInputJsonValue(operation.responses)
         : null;
 
+      const categoryLabel = operationPrimaryTag(operation);
+      const categoryDescription = tagDescriptions.get(categoryLabel) ?? null;
+
       drafts.push({
         name: buildToolName(operation, method, urlPath),
         description: buildDescription(operation, method, urlPath),
@@ -445,10 +626,65 @@ function buildToolDrafts(
         outputSchema,
         integrationId: options.integrationId,
         isActive: true,
+        categoryLabel,
+        categoryDescription,
       });
     }
   }
   return drafts;
+}
+
+function draftToToolWriteData(
+  draft: ToolDraft,
+  toolCategoryId: number,
+): Prisma.ToolCreateInput {
+  return {
+    name: draft.name,
+    description: draft.description,
+    riskLevel: draft.riskLevel,
+    schema: draft.schema,
+    inputSchema: draft.inputSchema,
+    outputSchema: draft.outputSchema,
+    method: draft.method,
+    path: draft.path,
+    integration: { connect: { id: draft.integrationId } },
+    toolCategory: { connect: { id: toolCategoryId } },
+    isActive: draft.isActive,
+  };
+}
+
+async function ensureToolCategoriesByDrafts(
+  prisma: PrismaClient,
+  drafts: ToolDraft[],
+): Promise<Map<string, number>> {
+  const labelToDescription = new Map<string, string | null>();
+  for (const draft of drafts) {
+    if (!labelToDescription.has(draft.categoryLabel)) {
+      labelToDescription.set(draft.categoryLabel, draft.categoryDescription);
+    }
+  }
+
+  const idByLabel = new Map<string, number>();
+  for (const [label, specDescription] of labelToDescription) {
+    let row = await prisma.toolCategory.findFirst({
+      where: { label },
+    });
+    if (!row) {
+      row = await prisma.toolCategory.create({
+        data: {
+          label,
+          description: specDescription,
+        },
+      });
+    } else if (specDescription && !row.description) {
+      row = await prisma.toolCategory.update({
+        where: { id: row.id },
+        data: { description: specDescription },
+      });
+    }
+    idByLabel.set(label, row.id);
+  }
+  return idByLabel;
 }
 
 async function applyTools(drafts: ToolDraft[]): Promise<void> {
@@ -459,7 +695,19 @@ async function applyTools(drafts: ToolDraft[]): Promise<void> {
   const adapter = new PrismaPg(new Pool({ connectionString }));
   const prisma = new PrismaClient({ adapter });
   try {
+    const categoryIdByLabel = await ensureToolCategoriesByDrafts(
+      prisma,
+      drafts,
+    );
+
     for (const draft of drafts) {
+      const toolCategoryId = categoryIdByLabel.get(draft.categoryLabel);
+      if (toolCategoryId === undefined) {
+        throw new Error(
+          `missing tool category id for label: ${draft.categoryLabel}`,
+        );
+      }
+      const toolData = draftToToolWriteData(draft, toolCategoryId);
       const existing = await prisma.tool.findFirst({
         where: {
           integrationId: draft.integrationId,
@@ -472,17 +720,18 @@ async function applyTools(drafts: ToolDraft[]): Promise<void> {
         await prisma.tool.update({
           where: { id: existing.id },
           data: {
-            name: draft.name,
-            description: draft.description,
-            riskLevel: draft.riskLevel,
-            schema: draft.schema,
-            inputSchema: draft.inputSchema,
-            outputSchema: draft.outputSchema,
-            isActive: draft.isActive,
+            name: toolData.name,
+            description: toolData.description,
+            riskLevel: toolData.riskLevel,
+            schema: toolData.schema,
+            inputSchema: toolData.inputSchema,
+            outputSchema: toolData.outputSchema,
+            isActive: toolData.isActive,
+            toolCategory: toolData.toolCategory,
           },
         });
       } else {
-        await prisma.tool.create({ data: draft });
+        await prisma.tool.create({ data: toolData });
       }
     }
   } finally {

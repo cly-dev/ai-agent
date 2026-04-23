@@ -3,6 +3,7 @@ export * from './admin-user/admin-user.module';
 export * from './agent/agent.module';
 export * from './agent-skill/agent-skill.module';
 export * from './app-client/app-client.module';
+export * from './chat/chat.module';
 export * from './integration/integration.module';
 export * from './llm-model-config/llm-model-config.module';
 export * from './message/message.module';

@@ -1,14 +1,16 @@
-import 'dotenv/config';
+import './core/env/load-env';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { ReqInterceptor } from './interceptor/req.interceptor';
 import { HttpExceptionFilter } from './exception/http.exception';
 import { PrismaService } from './prisma/prisma.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const prisma = app.get(PrismaService);
   try {
     await prisma.$connect();
@@ -19,6 +21,7 @@ async function bootstrap() {
     );
     throw error;
   }
+  app.useStaticAssets(join(process.cwd(), 'www'));
   app.useGlobalInterceptors(new ReqInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalPipes(

@@ -718,7 +718,9 @@
       }
     },
     "integrationId": 1,
-    "isActive": true
+    "isActive": true,
+    "categoryLabel": "S02S0:B端-商品",
+    "categoryDescription": "Seller Item Controller"
   },
   {
     "name": "S02S001_1",
@@ -787,6 +789,8 @@
       }
     },
     "integrationId": 1,
-    "isActive": true
+    "isActive": true,
+    "categoryLabel": "S02S0:B端-商品",
+    "categoryDescription": "Seller Item Controller"
   }
 ]

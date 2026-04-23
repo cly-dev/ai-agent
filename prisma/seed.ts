@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import '../src/core/env/load-env';
 import { randomBytes, scryptSync } from 'crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
