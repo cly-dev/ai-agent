@@ -9,4 +9,10 @@ export interface AppClientType {
   isActive?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
+  agents: RelationRef[];
+  tools: RelationRef[];
+  sessions: RelationRef[];
+  agentRuns: RelationRef[];
+  integrations: RelationRef[];
+  userApps: RelationRef[];
 }

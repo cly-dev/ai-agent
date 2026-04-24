@@ -61,7 +61,6 @@ model User {
   sessions        Session[]
   llmModelConfigs UserLlmModelConfig[]
   userApps        UserApp[]
-  userAppRoles    UserAppRole[]
   @@index([userType])
   @@index([userRole])
 }
@@ -75,7 +74,7 @@ model Role {
   createdAt   DateTime @default(now())
 
   roleSkills RoleSkill[]
-  userAppRoles UserAppRole[]
+  userApps   UserApp[]
   roleTools RoleTool[]
 
   @@map("role")
@@ -108,7 +107,6 @@ model AppClient {
   agentRuns    AgentRun[]
   integrations Integration[]
   userApps     UserApp[]
-  userAppRoles UserAppRole[]
 }
 
 model LlmModelConfig {
@@ -276,30 +274,14 @@ model UserApp {
   id          Int      @id @default(autoincrement())
   userId      Int
   appId       Int
+  roleId      Int
   createdAt   DateTime @default(now())
 
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   appClient   AppClient @relation(fields: [appId], references: [id], onDelete: Cascade)
-  userAppRoles UserAppRole[]
+  role        Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([userId, appId])
-  @@index([userId])
-  @@index([appId])
-}
-
-model UserAppRole {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  appId     Int
-  roleId    Int
-  createdAt DateTime @default(now())
-
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  appClient AppClient @relation(fields: [appId], references: [id], onDelete: Cascade)
-  role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  userApp   UserApp   @relation(fields: [userId, appId], references: [userId, appId], onDelete: Cascade)
-
-  @@unique([userId, appId, roleId])
   @@index([userId])
   @@index([appId])
   @@index([roleId])

@@ -717,7 +717,7 @@
         "description": "Not Found"
       }
     },
-    "integrationId": 1,
+    "integrationId": 2,
     "isActive": true,
     "categoryLabel": "S02S0:B端-商品",
     "categoryDescription": "Seller Item Controller"
@@ -788,7 +788,7 @@
         "description": "Not Found"
       }
     },
-    "integrationId": 1,
+    "integrationId": 2,
     "isActive": true,
     "categoryLabel": "S02S0:B端-商品",
     "categoryDescription": "Seller Item Controller"

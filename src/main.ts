@@ -1,5 +1,5 @@
 import './core/env/load-env';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -31,6 +31,13 @@ async function bootstrap() {
       transform: true,
     }),
   );
+  app.setGlobalPrefix('admin', {
+    exclude: [
+      { path: 'chat', method: RequestMethod.ALL },
+      { path: 'user/login', method: RequestMethod.POST },
+      { path: 'chat/(.*)', method: RequestMethod.ALL },
+    ],
+  });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Agent Server API')

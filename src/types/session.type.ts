@@ -2,7 +2,7 @@
 import type { RelationRef } from '../shared/relation-ref';
 
 export interface SessionType {
-  id?: number;
+  id: string;
   userId: number;
   appClientId: number;
   agentId?: number | null;
@@ -11,4 +11,5 @@ export interface SessionType {
   user: RelationRef;
   appClient: RelationRef;
   messages: RelationRef[];
+  agentRuns: RelationRef[];
 }

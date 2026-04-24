@@ -12,4 +12,5 @@ export interface UserType {
   createdAt?: Date;
   sessions: RelationRef[];
   llmModelConfigs: RelationRef[];
+  userApps: RelationRef[];
 }

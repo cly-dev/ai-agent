@@ -8,4 +8,6 @@ export interface RoleType {
   allowToolLevel?: RelationRef;
   createdAt?: Date;
   roleSkills: RelationRef[];
+  userApps: RelationRef[];
+  roleTools: RelationRef[];
 }

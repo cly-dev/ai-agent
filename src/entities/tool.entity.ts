@@ -18,6 +18,7 @@ export class ToolEntity {
   appClient: RelationRef;
   toolCategoryId?: number | null;
   toolCategory?: RelationRef | null;
+  roleTools: RelationRef[];
   isActive?: boolean;
   timeout?: number | null;
   createdAt?: Date;

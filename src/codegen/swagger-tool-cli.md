@@ -7,7 +7,9 @@
 ## 前置条件
 
 - 已配置 **`DATABASE_URL`**（按 `NODE_ENV` 加载 `.env.test` / `.env.prod`，未命中时回退 `.env`）。
-- **`--apply`** 写入前，数据库中必须已存在对应的 **`Integration`** 记录，并使用其 **`id`** 作为 `--integration-id`。
+- `--apply` 时支持两种 Integration 方式：
+  - 传 `--integration-id`：使用已存在 Integration；
+  - 传 `--auto-integration --app-client-id`：基于 Swagger 自动创建/复用 Integration。
 - 确保已执行 Prisma 迁移，表 **`Tool`**、**`ToolCategory`** 等结构就绪。
 
 ## 运行方式
@@ -15,11 +17,14 @@
 ### npm scripts（推荐）
 
 ```bash
-# 仅生成 JSON，不写库
+# 仅生成 JSON，不写库（使用已有 Integration）
 npm run codegen:swagger-tools:dry-run -- --integration-id 1
 
-# 生成并写入数据库（upsert）
+# 生成并写入数据库（upsert，使用已有 Integration）
 npm run codegen:swagger-tools:apply -- --integration-id 1
+
+# 自动创建/复用 Integration 后再写入 Tool
+npm run codegen:swagger-tools:apply -- --auto-integration --app-client-id 1
 ```
 
 **注意：** 通过 `npm run` 传参时，**必须先写 `--`**，后面的参数才会传给脚本；否则会被 npm 吞掉。
@@ -44,7 +49,12 @@ npx ts-node src/codegen/swagger-tool-cli.ts --apply --integration-id 1
 
 | 参数 | 说明 | 默认值 / 环境变量 |
 |------|------|-------------------|
-| `--integration-id <n>` | 工具归属的集成 ID（**必填**） | `GEN_TOOL_INTEGRATION_ID` |
+| `--integration-id <n>` | 工具归属的集成 ID（与 `--auto-integration` 二选一） | `GEN_TOOL_INTEGRATION_ID` |
+| `--auto-integration` | 自动创建/复用 Integration（按 `appClientId + baseUrl`） | `GEN_TOOL_AUTO_INTEGRATION` |
+| `--app-client-id <n>` | 自动 Integration 所属 appClientId（开启自动模式时必填） | `GEN_TOOL_APP_CLIENT_ID` |
+| `--integration-name <name>` | 自动 Integration 名称（可选，默认用 `info.title`） | `GEN_TOOL_INTEGRATION_NAME` |
+| `--integration-base-url <url>` | 自动 Integration baseUrl（可选，默认 `servers[0].url`） | `GEN_TOOL_INTEGRATION_BASE_URL` |
+| `--integration-api-key <key>` | 自动 Integration apiKey（可选，默认空字符串） | `GEN_TOOL_INTEGRATION_API_KEY` |
 | `--spec-url <url>` | OpenAPI JSON 的 HTTPS 地址 | `GEN_TOOL_SPEC_URL`，缺省为内置测试 URL |
 | `--spec-path <path>` | 本地 OpenAPI JSON 文件路径（相对 cwd） | `GEN_TOOL_SPEC_PATH` |
 | `--output <path>` | 生成的草稿 JSON 路径 | `GEN_TOOL_OUTPUT`，默认 `tmp/generated-tools.json` |
@@ -58,6 +68,11 @@ npx ts-node src/codegen/swagger-tool-cli.ts --apply --integration-id 1
 | 变量 | 作用 |
 |------|------|
 | `GEN_TOOL_INTEGRATION_ID` | 同 `--integration-id` |
+| `GEN_TOOL_AUTO_INTEGRATION` | 同 `--auto-integration` |
+| `GEN_TOOL_APP_CLIENT_ID` | 同 `--app-client-id` |
+| `GEN_TOOL_INTEGRATION_NAME` | 同 `--integration-name` |
+| `GEN_TOOL_INTEGRATION_BASE_URL` | 同 `--integration-base-url` |
+| `GEN_TOOL_INTEGRATION_API_KEY` | 同 `--integration-api-key` |
 | `GEN_TOOL_SPEC_URL` | 同 `--spec-url` |
 | `GEN_TOOL_SPEC_PATH` | 同 `--spec-path` |
 | `GEN_TOOL_OUTPUT` | 同 `--output` |
@@ -88,6 +103,13 @@ npx ts-node src/codegen/swagger-tool-cli.ts --apply --integration-id 1
 - **匹配已有 Tool：** `integrationId` + `method` + `path` 唯一确定一条；存在则 **update**，不存在则 **create**。
 - **字段更新：** 名称、描述、风险等级、schema、input/output schema、是否启用、**以及由本次 spec 推导的 `toolCategoryId`** 会随同步更新。
 - **`ToolCategory`：** 对每个 draft 的 **`categoryLabel`**（见下）在表 **`ToolCategory`** 中按 **`label` 精确查找**；没有则 **创建**；若 spec 顶层 **`tags[].description`** 与当前 tag 的 `name` 匹配，会在 **新建** 或 **description 为空** 时写入说明。
+- **`RoleTool` 自动权限绑定：**
+  - `GET`：绑定给**所有角色**；
+  - `POST` / `PUT`（含 OpenAPI `patch` 映射到 `Put`）：仅绑定给 `admin` + `operator`；
+  - `DELETE`：仅绑定给 `admin`；
+  - 同步时会删除该 Tool 上不在本次策略中的旧角色绑定，避免权限残留。
+
+> 角色名按小写匹配：`admin`（也接受 `super_admin`）与 `operator`。
 
 ## 草稿 JSON 中的分类字段
 
@@ -126,7 +148,8 @@ npm run codegen:swagger-tools:apply -- \
 
 ## 故障排查
 
-- **`integration id is required`**：未传 `--integration-id` 且未设置 `GEN_TOOL_INTEGRATION_ID`。
+- **`integration id is required`**：未传 `--integration-id` 且未开启 `--auto-integration`。
+- **`app-client-id is required when using --auto-integration`**：自动模式缺少 app 归属。
 - **`choose one mode: --dry-run or --apply`**：必须二选一。
 - **`DATABASE_URL is required when using --apply`**：`--apply` 时未配置数据库连接。
 - **外键错误**：确认 `Integration` 中已有对应 `id`。

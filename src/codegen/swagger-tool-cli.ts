@@ -35,6 +35,12 @@ type OpenApiTagObject = {
 type OpenApiDocument = {
   paths?: Record<string, OpenApiPathItem>;
   tags?: OpenApiTagObject[];
+  info?: {
+    title?: string;
+  };
+  servers?: Array<{
+    url?: string;
+  }>;
 };
 
 type ToolDraft = {
@@ -66,7 +72,12 @@ type CliOptions = {
   specPath?: string;
   specUrl: string;
   outputPath: string;
-  integrationId: number;
+  integrationId: number | null;
+  appClientId: number | null;
+  autoIntegration: boolean;
+  integrationName?: string;
+  integrationBaseUrl?: string;
+  integrationApiKey: string;
   dryRun: boolean;
   apply: boolean;
   insecure: boolean;
@@ -76,6 +87,8 @@ type CliOptions = {
 };
 
 const DEFAULT_SPEC_URL = 'https://api.ads.a-premium-test.com/v3/api-docs';
+const ADMIN_ROLE_CANDIDATES = ['admin', 'super_admin'];
+const OPERATOR_ROLE_CANDIDATES = ['operator'];
 const HTTP_METHODS: HttpVerb[] = ['get', 'post', 'put', 'patch', 'delete'];
 const METHOD_ENUM_MAP: Record<HttpVerb, HttpMethod> = {
   get: HttpMethod.Get,
@@ -108,14 +121,35 @@ function parseArgs(argv: string[]): CliOptions {
 
   const integrationIdValue =
     getArgValue('--integration-id') ?? process.env.GEN_TOOL_INTEGRATION_ID;
-  if (!integrationIdValue) {
+  const autoIntegration =
+    argv.includes('--auto-integration') ||
+    process.env.GEN_TOOL_AUTO_INTEGRATION === '1' ||
+    /^true$/i.test(process.env.GEN_TOOL_AUTO_INTEGRATION ?? '');
+  let integrationId: number | null = null;
+  if (integrationIdValue) {
+    const parsed = Number(integrationIdValue);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error('integration id must be a positive integer');
+    }
+    integrationId = parsed;
+  }
+  const appClientIdValue =
+    getArgValue('--app-client-id') ?? process.env.GEN_TOOL_APP_CLIENT_ID;
+  let appClientId: number | null = null;
+  if (appClientIdValue) {
+    const parsed = Number(appClientIdValue);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error('app-client-id must be a positive integer');
+    }
+    appClientId = parsed;
+  }
+  if (!autoIntegration && integrationId === null) {
     throw new Error(
-      'integration id is required. use --integration-id <number>',
+      'integration id is required. use --integration-id <number> or enable --auto-integration',
     );
   }
-  const integrationId = Number(integrationIdValue);
-  if (!Number.isInteger(integrationId) || integrationId <= 0) {
-    throw new Error('integration id must be a positive integer');
+  if (autoIntegration && appClientId === null) {
+    throw new Error('app-client-id is required when using --auto-integration');
   }
 
   const riskLevelRaw = (
@@ -157,6 +191,18 @@ function parseArgs(argv: string[]): CliOptions {
       process.env.GEN_TOOL_OUTPUT ??
       'tmp/generated-tools.json',
     integrationId,
+    appClientId,
+    autoIntegration,
+    integrationName:
+      getArgValue('--integration-name') ??
+      process.env.GEN_TOOL_INTEGRATION_NAME,
+    integrationBaseUrl:
+      getArgValue('--integration-base-url') ??
+      process.env.GEN_TOOL_INTEGRATION_BASE_URL,
+    integrationApiKey:
+      getArgValue('--integration-api-key') ??
+      process.env.GEN_TOOL_INTEGRATION_API_KEY ??
+      '',
     dryRun,
     apply,
     insecure,
@@ -591,6 +637,7 @@ function buildToolDrafts(
   spec: OpenApiDocument,
   options: CliOptions,
   selectedKeys: Set<string>,
+  integrationId: number,
 ): ToolDraft[] {
   const tagDescriptions = buildTagDescriptionMap(spec);
   const drafts: ToolDraft[] = [];
@@ -624,7 +671,7 @@ function buildToolDrafts(
         schema: inputSchema,
         inputSchema,
         outputSchema,
-        integrationId: options.integrationId,
+        integrationId,
         isActive: true,
         categoryLabel,
         categoryDescription,
@@ -632,6 +679,87 @@ function buildToolDrafts(
     }
   }
   return drafts;
+}
+
+function normalizeBaseUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new Error('integration base url cannot be empty');
+  }
+  const parsed = new URL(trimmed);
+  const pathname =
+    parsed.pathname && parsed.pathname !== '/'
+      ? parsed.pathname.replace(/\/+$/g, '')
+      : '';
+  return `${parsed.origin}${pathname}`;
+}
+
+function resolveIntegrationBaseUrl(
+  options: CliOptions,
+  spec: OpenApiDocument,
+): string {
+  if (options.integrationBaseUrl) {
+    return normalizeBaseUrl(options.integrationBaseUrl);
+  }
+  const firstServer = spec.servers?.[0]?.url;
+  if (firstServer && firstServer.trim()) {
+    return normalizeBaseUrl(firstServer);
+  }
+  return normalizeBaseUrl(options.specUrl);
+}
+
+function resolveIntegrationName(
+  options: CliOptions,
+  spec: OpenApiDocument,
+): string {
+  const value =
+    options.integrationName?.trim() ??
+    spec.info?.title?.trim() ??
+    'swagger-integration';
+  return value.length > 0 ? value : 'swagger-integration';
+}
+
+async function resolveIntegrationId(
+  prisma: PrismaClient,
+  options: CliOptions,
+  spec: OpenApiDocument,
+): Promise<number> {
+  if (!options.autoIntegration) {
+    if (options.integrationId === null) {
+      throw new Error(
+        'integration-id is required when auto-integration is disabled',
+      );
+    }
+    return options.integrationId;
+  }
+  if (options.appClientId === null) {
+    throw new Error(
+      'app-client-id is required when auto-integration is enabled',
+    );
+  }
+  const baseUrl = resolveIntegrationBaseUrl(options, spec);
+  const name = resolveIntegrationName(options, spec);
+  const existing = await prisma.integration.findFirst({
+    where: {
+      appClientId: options.appClientId,
+      baseUrl,
+    },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+  });
+  if (existing) {
+    return existing.id;
+  }
+  const created = await prisma.integration.create({
+    data: {
+      appClientId: options.appClientId,
+      name,
+      baseUrl,
+      apiKey: options.integrationApiKey,
+    },
+    select: { id: true },
+  });
+  return created.id;
 }
 
 function draftToToolWriteData(
@@ -689,92 +817,196 @@ async function ensureToolCategoriesByDrafts(
   return idByLabel;
 }
 
-async function applyTools(drafts: ToolDraft[]): Promise<void> {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error('DATABASE_URL is required when using --apply');
+async function applyTools(
+  prisma: PrismaClient,
+  drafts: ToolDraft[],
+): Promise<void> {
+  const categoryIdByLabel = await ensureToolCategoriesByDrafts(prisma, drafts);
+  const allRoles = await prisma.role.findMany({
+    select: { id: true, name: true },
+    orderBy: { id: 'asc' },
+  });
+  if (allRoles.length === 0) {
+    throw new Error('no roles found, cannot bind tool permissions');
   }
-  const adapter = new PrismaPg(new Pool({ connectionString }));
-  const prisma = new PrismaClient({ adapter });
-  try {
-    const categoryIdByLabel = await ensureToolCategoriesByDrafts(
-      prisma,
-      drafts,
-    );
 
-    for (const draft of drafts) {
-      const toolCategoryId = categoryIdByLabel.get(draft.categoryLabel);
-      if (toolCategoryId === undefined) {
-        throw new Error(
-          `missing tool category id for label: ${draft.categoryLabel}`,
-        );
-      }
-      const integration = await prisma.integration.findUnique({
-        where: { id: draft.integrationId },
-        select: { appClientId: true },
-      });
-      if (!integration) {
-        throw new Error(`integration ${draft.integrationId} not found`);
-      }
-      const toolData = draftToToolWriteData(
-        draft,
-        toolCategoryId,
-        integration.appClientId,
+  for (const draft of drafts) {
+    const toolCategoryId = categoryIdByLabel.get(draft.categoryLabel);
+    if (toolCategoryId === undefined) {
+      throw new Error(
+        `missing tool category id for label: ${draft.categoryLabel}`,
       );
-      const existing = await prisma.tool.findFirst({
-        where: {
-          integrationId: draft.integrationId,
-          appClientId: integration.appClientId,
-          method: draft.method,
-          path: draft.path,
-        },
-        orderBy: { id: 'asc' },
-      });
-      if (existing) {
-        await prisma.tool.update({
-          where: { id: existing.id },
-          data: {
-            name: toolData.name,
-            description: toolData.description,
-            riskLevel: toolData.riskLevel,
-            schema: toolData.schema,
-            inputSchema: toolData.inputSchema,
-            outputSchema: toolData.outputSchema,
-            isActive: toolData.isActive,
-            toolCategory: toolData.toolCategory,
-          },
-        });
-      } else {
-        await prisma.tool.create({ data: toolData });
-      }
     }
-  } finally {
-    await prisma.$disconnect();
+    const integration = await prisma.integration.findUnique({
+      where: { id: draft.integrationId },
+      select: { appClientId: true },
+    });
+    if (!integration) {
+      throw new Error(`integration ${draft.integrationId} not found`);
+    }
+    const toolData = draftToToolWriteData(
+      draft,
+      toolCategoryId,
+      integration.appClientId,
+    );
+    const existing = await prisma.tool.findFirst({
+      where: {
+        integrationId: draft.integrationId,
+        appClientId: integration.appClientId,
+        method: draft.method,
+        path: draft.path,
+      },
+      orderBy: { id: 'asc' },
+    });
+    let toolId: number;
+    if (existing) {
+      await prisma.tool.update({
+        where: { id: existing.id },
+        data: {
+          name: toolData.name,
+          description: toolData.description,
+          riskLevel: toolData.riskLevel,
+          schema: toolData.schema,
+          inputSchema: toolData.inputSchema,
+          outputSchema: toolData.outputSchema,
+          isActive: toolData.isActive,
+          toolCategory: toolData.toolCategory,
+        },
+      });
+      toolId = existing.id;
+    } else {
+      const created = await prisma.tool.create({
+        data: toolData,
+        select: { id: true },
+      });
+      toolId = created.id;
+    }
+    const allowedRoleIds = resolveAllowedRoleIdsByMethod(
+      draft.method,
+      allRoles,
+    );
+    await syncRoleToolBindings(prisma, toolId, allowedRoleIds);
+  }
+}
+
+function resolveAllowedRoleIdsByMethod(
+  method: HttpMethod,
+  roles: Array<{ id: number; name: string }>,
+): number[] {
+  if (method === HttpMethod.Get) {
+    return roles.map((item) => item.id);
+  }
+
+  const normalizedRoles = roles.map((item) => ({
+    id: item.id,
+    name: item.name.trim().toLowerCase(),
+  }));
+  const adminRoleIds = normalizedRoles
+    .filter((item) => ADMIN_ROLE_CANDIDATES.includes(item.name))
+    .map((item) => item.id);
+  if (adminRoleIds.length === 0) {
+    throw new Error(
+      `admin role not found. expected one of: ${ADMIN_ROLE_CANDIDATES.join(
+        ', ',
+      )}`,
+    );
+  }
+  if (method === HttpMethod.Delete) {
+    return adminRoleIds;
+  }
+
+  const operatorRoleIds = normalizedRoles
+    .filter((item) => OPERATOR_ROLE_CANDIDATES.includes(item.name))
+    .map((item) => item.id);
+  if (operatorRoleIds.length === 0) {
+    throw new Error(
+      `operator role not found. expected one of: ${OPERATOR_ROLE_CANDIDATES.join(
+        ', ',
+      )}`,
+    );
+  }
+  if (method === HttpMethod.Post || method === HttpMethod.Put) {
+    return Array.from(new Set([...adminRoleIds, ...operatorRoleIds]));
+  }
+
+  return roles.map((item) => item.id);
+}
+
+async function syncRoleToolBindings(
+  prisma: PrismaClient,
+  toolId: number,
+  allowedRoleIds: number[],
+): Promise<void> {
+  if (allowedRoleIds.length === 0) {
+    throw new Error(`no allowed roles resolved for tool ${toolId}`);
+  }
+  await prisma.roleTool.deleteMany({
+    where: {
+      toolId,
+      roleId: { notIn: allowedRoleIds },
+    },
+  });
+  for (const roleId of allowedRoleIds) {
+    await prisma.roleTool.upsert({
+      where: {
+        roleId_toolId: {
+          roleId,
+          toolId,
+        },
+      },
+      create: { roleId, toolId },
+      update: {},
+    });
   }
 }
 
 async function run(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  const spec = await loadOpenApiSpec(options);
-  const operations = listOperations(spec);
-  const selectedKeys = await resolveSelectedOperationKeys(options, operations);
-  const drafts = buildToolDrafts(spec, options, selectedKeys);
-  if (drafts.length === 0) {
-    throw new Error('no operations matched filters');
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL is required');
   }
+  const adapter = new PrismaPg(new Pool({ connectionString }));
+  const prisma = new PrismaClient({ adapter });
+  try {
+    const spec = await loadOpenApiSpec(options);
+    const resolvedIntegrationId = await resolveIntegrationId(
+      prisma,
+      options,
+      spec,
+    );
+    const operations = listOperations(spec);
+    const selectedKeys = await resolveSelectedOperationKeys(
+      options,
+      operations,
+    );
+    const drafts = buildToolDrafts(
+      spec,
+      options,
+      selectedKeys,
+      resolvedIntegrationId,
+    );
+    if (drafts.length === 0) {
+      throw new Error('no operations matched filters');
+    }
 
-  const outputFullPath = path.resolve(process.cwd(), options.outputPath);
-  fs.mkdirSync(path.dirname(outputFullPath), { recursive: true });
-  fs.writeFileSync(outputFullPath, JSON.stringify(drafts, null, 2), 'utf-8');
+    const outputFullPath = path.resolve(process.cwd(), options.outputPath);
+    fs.mkdirSync(path.dirname(outputFullPath), { recursive: true });
+    fs.writeFileSync(outputFullPath, JSON.stringify(drafts, null, 2), 'utf-8');
 
-  if (options.apply) {
-    await applyTools(drafts);
+    if (options.apply) {
+      await applyTools(prisma, drafts);
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(`integration id: ${resolvedIntegrationId}`);
+    // eslint-disable-next-line no-console
+    console.log(`generated ${drafts.length} tools -> ${outputFullPath}`);
+    // eslint-disable-next-line no-console
+    console.log(options.apply ? 'database upsert completed' : 'dry-run only');
+  } finally {
+    await prisma.$disconnect();
   }
-
-  // eslint-disable-next-line no-console
-  console.log(`generated ${drafts.length} tools -> ${outputFullPath}`);
-  // eslint-disable-next-line no-console
-  console.log(options.apply ? 'database upsert completed' : 'dry-run only');
 }
 
 run().catch((error: unknown) => {

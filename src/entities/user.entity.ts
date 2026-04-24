@@ -12,4 +12,5 @@ export class UserEntity {
   createdAt?: Date;
   sessions: RelationRef[];
   llmModelConfigs: RelationRef[];
+  userApps: RelationRef[];
 }

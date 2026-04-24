@@ -11,6 +11,7 @@ import { PromptComposerService } from '../prompt/prompt-composer.service';
 import { ToolEngineService } from '../tool-engine/tool-engine.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChatEventsService } from '../../modules/chat/chat-events.service';
+import { AgentService } from '../../modules/agent/agent.service';
 
 type AgentRunInput = {
   userId: number;
@@ -52,10 +53,20 @@ export class AgentEngineService {
     private readonly promptComposer: PromptComposerService,
     private readonly toolEngine: ToolEngineService,
     private readonly chatEvents: ChatEventsService,
+    private readonly agentService: AgentService,
   ) {}
 
   /** 执行一次 Agent 运行。 */
   async run(input: AgentRunInput): Promise<AgentRunResult | null> {
+    /**
+     * 前置流程：
+     * 1) DSN -> appId（由 AppClientDsnGuard 写入会话所属 appClientId）
+     * 2) userId -> user role（按 UserApp.roleId 解析）
+     * 3) 获取/校验 Session 归属
+     * 4) 加载 Agent（prompt/策略）
+     * 5) 加载 Tool（按 appId）
+     * 6) 按角色过滤 Tool（allowToolLevel + RoleTool）
+     */
     // 仅允许用户访问自己的会话。
     const session = await this.prisma.session.findFirst({
       where: { id: input.sessionId, userId: input.userId },
@@ -82,20 +93,19 @@ export class AgentEngineService {
       throw new NotFoundException(`agent ${session.agentId} not found`);
     }
 
-    const tools = await this.prisma.tool.findMany({
-      where: {
-        id: { in: agent.toolIds },
-        appClientId: session.appClientId,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        inputSchema: true,
-        schema: true,
-      },
-    });
+    const allowedTools = await this.agentService.getAllowedTools(
+      agent.id,
+      input.userId,
+      session.appClientId,
+    );
+    const tools = allowedTools.map((tool) => ({
+      id: tool.id,
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      schema: tool.schema,
+    }));
+    const allowedToolIds = tools.map((tool) => tool.id);
     const toolDefinitions = this.toLlmTools(tools);
 
     // 创建运行记录，后续每个步骤会增量回写。
@@ -188,7 +198,7 @@ export class AgentEngineService {
           const toolResult = await this.toolEngine.executeByName(
             toolCall.name,
             toolCall.arguments,
-            agent.toolIds,
+            allowedToolIds,
           );
           toolObservations.push({
             name: toolResult.name,

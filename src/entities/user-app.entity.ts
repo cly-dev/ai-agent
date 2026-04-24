@@ -5,8 +5,9 @@ export class UserAppEntity {
   id?: number;
   userId: number;
   appId: number;
+  roleId: number;
   createdAt?: Date;
   user: RelationRef;
   appClient: RelationRef;
-  userAppRoles: RelationRef[];
+  role: RelationRef;
 }

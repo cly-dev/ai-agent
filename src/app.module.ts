@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import './core/env/load-env';
+import { AdminPrefixJwtGuard } from './auth/admin-prefix-jwt.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LlmModule } from './core/llm/llm.module';
@@ -15,6 +17,7 @@ import { MessageModule } from './modules/message/message.module';
 import { SkillModule } from './modules/skill/skill.module';
 import { ToolModule } from './modules/tool/tool.module';
 import { UserModule } from './modules/user/user.module';
+import { UserAppModule } from './modules/user-app/user-app.module';
 import { AuthModule } from './auth/auth.module';
 
 @Module({
@@ -27,6 +30,7 @@ import { AuthModule } from './auth/auth.module';
     AdminUserModule,
     AppClientModule,
     UserModule,
+    UserAppModule,
     AgentModule,
     ChatModule,
     MessageModule,
@@ -35,6 +39,9 @@ import { AuthModule } from './auth/auth.module';
     IntegrationModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: AdminPrefixJwtGuard },
+  ],
 })
 export class AppModule {}

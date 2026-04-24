@@ -1,10 +1,62 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ToolLevel } from '../../../generated/prisma/client';
+import type { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CreateAgentDto } from './dto/create-agent.dto';
+import { UpdateAgentDto } from './dto/update-agent.dto';
 
 @Injectable()
 export class AgentService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async create(dto: CreateAgentDto) {
+    return this.prisma.agent.create({
+      data: {
+        appClientId: dto.appClientId,
+        name: dto.name,
+        description: dto.description ?? null,
+        systemPrompt: dto.systemPrompt,
+        toolIds: dto.toolIds ?? [],
+        maxSteps: dto.maxSteps ?? 8,
+        enableToolCall: dto.enableToolCall ?? true,
+        config: dto.config as Prisma.InputJsonValue | undefined,
+      },
+    });
+  }
+
+  async findAll() {
+    return this.prisma.agent.findMany({ orderBy: { id: 'asc' } });
+  }
+
+  async findOne(id: number) {
+    const row = await this.prisma.agent.findUnique({ where: { id } });
+    if (!row) {
+      throw new NotFoundException(`agent ${id} not found`);
+    }
+    return row;
+  }
+
+  async update(id: number, dto: UpdateAgentDto) {
+    await this.findOne(id);
+    return this.prisma.agent.update({
+      where: { id },
+      data: {
+        appClientId: dto.appClientId,
+        name: dto.name,
+        description: dto.description,
+        systemPrompt: dto.systemPrompt,
+        toolIds: dto.toolIds,
+        maxSteps: dto.maxSteps,
+        enableToolCall: dto.enableToolCall,
+        config: dto.config as Prisma.InputJsonValue | undefined,
+      },
+    });
+  }
+
+  async remove(id: number) {
+    await this.findOne(id);
+    return this.prisma.agent.delete({ where: { id } });
+  }
 
   async getAllowedTools(
     agentId: number,
@@ -28,7 +80,7 @@ export class AgentService {
     if (!user) {
       throw new NotFoundException(`user ${userId} not found`);
     }
-    const userAppRoles = await this.prisma.userAppRole.findMany({
+    const userApp = await this.prisma.userApp.findFirst({
       where: { userId: user.id, appId: appClientId },
       select: {
         roleId: true,
@@ -39,14 +91,11 @@ export class AgentService {
         },
       },
     });
-    if (userAppRoles.length === 0) {
+    if (!userApp) {
       return [];
     }
-
-    const roleIds = Array.from(new Set(userAppRoles.map((item) => item.roleId)));
-    const maxLevel = this.resolveMaxToolLevel(
-      userAppRoles.map((item) => item.role.allowToolLevel),
-    );
+    const roleIds = [userApp.roleId];
+    const maxLevel = this.resolveMaxToolLevel([userApp.role.allowToolLevel]);
     const roleTools = await this.prisma.roleTool.findMany({
       where: { roleId: { in: roleIds } },
       select: { toolId: true },
