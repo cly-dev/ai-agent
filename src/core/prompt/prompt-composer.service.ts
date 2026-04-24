@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import type { Agent } from '../../../generated/prisma/client';
 import { SessionContextStore } from '../memory/session-context.store';
 import { UserMemoryStore } from '../memory/user-memory.store';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -110,42 +109,25 @@ export class PromptComposerService {
   private async loadAgentPrompt(sessionId: string): Promise<string | null> {
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
-      select: { agentId: true },
+      select: { agentId: true, appClientId: true },
     });
 
     if (!session?.agentId) {
       return null;
     }
 
-    const agent = await this.prisma.agent.findUnique({
-      where: { id: session.agentId },
-      include: {
-        agentSkills: {
-          include: {
-            skill: {
-              select: { prompt: true },
-            },
-          },
-        },
-      },
+    const agent = await this.prisma.agent.findFirst({
+      where: { id: session.agentId, appClientId: session.appClientId },
+      select: { systemPrompt: true },
     });
-    return this.composeAgentPrompt(agent);
+    return this.composeAgentPrompt(agent?.systemPrompt ?? null);
   }
 
-  private composeAgentPrompt(
-    agent:
-      | (Agent & { agentSkills: Array<{ skill: { prompt: string } }> })
-      | null,
-  ): string | null {
-    if (!agent || agent.agentSkills.length === 0) {
+  private composeAgentPrompt(systemPrompt: string | null): string | null {
+    if (!systemPrompt) {
       return null;
     }
-    const prompts = agent.agentSkills
-      .map((item) => item.skill.prompt.trim())
-      .filter((value) => value.length > 0);
-    if (prompts.length === 0) {
-      return null;
-    }
-    return prompts.join('\n\n');
+    const value = systemPrompt.trim();
+    return value.length > 0 ? value : null;
   }
 }

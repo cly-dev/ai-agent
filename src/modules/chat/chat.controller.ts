@@ -17,10 +17,12 @@ import {
   ApiParam,
   ApiProduces,
   ApiResponse,
+  ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
 import { Request } from 'express';
 import { Observable, Subscription } from 'rxjs';
+import { AppClientDsnGuard } from '../../auth/app-client-dsn.guard';
 import { UserJwtAuthGuard } from '../../auth/user-jwt-auth.guard';
 import { ChatEventsService } from './chat-events.service';
 import { ChatService } from './chat.service';
@@ -28,8 +30,9 @@ import { CreateChatDto } from './dto/create-chat.dto';
 
 @ApiTags('chat')
 @Controller('chat')
-@UseGuards(UserJwtAuthGuard)
+@UseGuards(UserJwtAuthGuard, AppClientDsnGuard)
 @ApiBearerAuth()
+@ApiSecurity('app-dsn')
 export class ChatController {
   constructor(
     private readonly chatService: ChatService,
@@ -40,6 +43,14 @@ export class ChatController {
     const id = req.user?.userId;
     if (id === undefined) {
       throw new UnauthorizedException('invalid user token');
+    }
+    return id;
+  }
+
+  private appClientId(req: Request): number {
+    const id = req.appClient?.id;
+    if (id === undefined) {
+      throw new UnauthorizedException('missing app client context');
     }
     return id;
   }
@@ -55,13 +66,22 @@ export class ChatController {
     @Req() req: Request & { user?: { userId?: number } },
     @Body() body: CreateChatDto,
   ) {
-    return this.chatService.create(this.userId(req), body);
+    return this.chatService.create(
+      this.userId(req),
+      this.appClientId(req),
+      body,
+    );
   }
 
   @Get()
-  @ApiOperation({ summary: '当前用户的会话列表' })
+  @ApiOperation({
+    summary: '当前用户在当前 DSN 对应 AppClient 下的会话列表',
+  })
   findAll(@Req() req: Request & { user?: { userId?: number } }) {
-    return this.chatService.findAllForUser(this.userId(req));
+    return this.chatService.findAllForUser(
+      this.userId(req),
+      this.appClientId(req),
+    );
   }
 
   @Get(':sessionId')
@@ -74,6 +94,7 @@ export class ChatController {
     return this.chatService.findOneForUser(
       this.normalizeSessionId(sessionId),
       this.userId(req),
+      this.appClientId(req),
     );
   }
 
@@ -88,6 +109,7 @@ export class ChatController {
     return this.chatService.remove(
       this.normalizeSessionId(sessionId),
       this.userId(req),
+      this.appClientId(req),
     );
   }
 
@@ -103,16 +125,18 @@ export class ChatController {
     @Param('sessionId') sessionId: string,
   ): Observable<MessageEvent> {
     const uid = this.userId(req);
+    const aid = this.appClientId(req);
     const normalizedSessionId = this.normalizeSessionId(sessionId);
     return new Observable<MessageEvent>((subscriber) => {
       let inner: Subscription | null = null;
       void this.chatService
-        .assertSessionOwnedByUser(normalizedSessionId, uid)
+        .assertSessionOwnedByUser(normalizedSessionId, uid, aid)
         .then((session) => {
           inner = this.chatEvents.observeSession(session.id).subscribe({
             next: (evt) => {
               subscriber.next({
-                data: JSON.stringify(evt),
+                type: evt.event,
+                data: evt.payload,
               });
             },
             error: (err: unknown) => subscriber.error(err),

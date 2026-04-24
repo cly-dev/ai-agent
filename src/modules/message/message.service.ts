@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Message } from '../../../generated/prisma/client';
 import type { Prisma } from '../../../generated/prisma/client';
+import { AgentEngineService } from '../../core/agent-engine/agent-engine.service';
 import { LlmService } from '../../core/llm/llm.service';
 import { SessionContextStore } from '../../core/memory/session-context.store';
 import { PromptComposerService } from '../../core/prompt/prompt-composer.service';
@@ -44,16 +45,19 @@ export class MessageService {
     private readonly sessionContextStore: SessionContextStore,
     private readonly promptComposer: PromptComposerService,
     private readonly llmService: LlmService,
+    private readonly agentEngine: AgentEngineService,
   ) {}
 
   async create(
     userId: number,
     sessionId: string,
     dto: SaveMessageDto,
+    appClientId: number,
   ): Promise<Message> {
     const session = await this.chatService.assertSessionOwnedByUser(
       sessionId,
       userId,
+      appClientId,
     );
     const message = await this.prisma.message.create({
       data: {
@@ -66,8 +70,6 @@ export class MessageService {
       },
     });
     await this.syncSessionContextAfterCreate(session.id, message);
-
-
     if (message.role === 'user') {
       this.chatEvents.emit(session.id, {
         event: 'result',
@@ -79,6 +81,7 @@ export class MessageService {
           }),
         },
       });
+      void this.runAgentPipeline(userId, session.id, message.content ?? '');
     }
     return message;
   }
@@ -86,10 +89,12 @@ export class MessageService {
   async findAllBySession(
     sessionId: string,
     userId: number,
+    appClientId: number,
   ): Promise<Message[]> {
     const session = await this.chatService.assertSessionOwnedByUser(
       sessionId,
       userId,
+      appClientId,
     );
     return this.prisma.message.findMany({
       where: { sessionId: session.id },
@@ -162,10 +167,12 @@ export class MessageService {
     userId: number,
     sessionId: string,
     latestUserMessage: string,
+    appClientId: number,
   ) {
     const session = await this.chatService.assertSessionOwnedByUser(
       sessionId,
       userId,
+      appClientId,
     );
     const prompt = await this.promptComposer.compose({
       userId,
@@ -175,6 +182,63 @@ export class MessageService {
     return this.llmService.chat({
       messages: prompt.messages,
     });
+  }
+
+  private async runAgentPipeline(
+    userId: number,
+    sessionId: string,
+    input: string,
+  ): Promise<void> {
+    const content = input.trim();
+    if (!content) {
+      return;
+    }
+    try {
+      const run = await this.agentEngine.run({
+        userId,
+        sessionId,
+        input: content,
+      });
+      if (!run) {
+        return;
+      }
+      const sessionRow = await this.prisma.session.findFirst({
+        where: { id: sessionId, userId },
+        select: { appClientId: true },
+      });
+      if (!sessionRow) {
+        return;
+      }
+      await this.create(
+        userId,
+        sessionId,
+        {
+          role: 'assistant',
+          content: run.output,
+        },
+        sessionRow.appClientId,
+      );
+      this.chatEvents.emit(sessionId, {
+        event: 'complete',
+        payload: {
+          source: 'agent-run',
+          runId: run.runId,
+          status: run.status,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `agent run failed for sessionId=${sessionId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      this.chatEvents.emit(sessionId, {
+        event: 'error',
+        payload: {
+          message: 'agent run failed',
+        },
+      });
+    }
   }
 
   private toJson(

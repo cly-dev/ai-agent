@@ -1,31 +1,24 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ToolLevel } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class AgentService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getAllowedTools(agentId: number, userId: number) {
+  async getAllowedTools(
+    agentId: number,
+    userId: number,
+    appClientId: number,
+  ) {
     const [agent, user] = await Promise.all([
-      this.prisma.agent.findUnique({
-        where: { id: agentId },
-        include: {
-          agentSkills: {
-            include: {
-              skill: {
-                include: {
-                  skillTools: {
-                    include: { tool: true },
-                  },
-                },
-              },
-            },
-          },
-        },
+      this.prisma.agent.findFirst({
+        where: { id: agentId, appClientId },
+        select: { toolIds: true },
       }),
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { userRole: true },
+        select: { id: true },
       }),
     ]);
 
@@ -35,27 +28,65 @@ export class AgentService {
     if (!user) {
       throw new NotFoundException(`user ${userId} not found`);
     }
-    if (!user.userRole) {
+    const userAppRoles = await this.prisma.userAppRole.findMany({
+      where: { userId: user.id, appId: appClientId },
+      select: {
+        roleId: true,
+        role: {
+          select: {
+            allowToolLevel: true,
+          },
+        },
+      },
+    });
+    if (userAppRoles.length === 0) {
       return [];
     }
 
-    const userRoleTools = await this.prisma.userRoleTool.findMany({
-      where: { userRole: user.userRole },
+    const roleIds = Array.from(new Set(userAppRoles.map((item) => item.roleId)));
+    const maxLevel = this.resolveMaxToolLevel(
+      userAppRoles.map((item) => item.role.allowToolLevel),
+    );
+    const roleTools = await this.prisma.roleTool.findMany({
+      where: { roleId: { in: roleIds } },
       select: { toolId: true },
     });
-
-    const allowedToolIds = new Set(userRoleTools.map((item) => item.toolId));
-    const toolMap = new Map<number, unknown>();
-
-    for (const agentSkill of agent.agentSkills) {
-      for (const skillTool of agentSkill.skill.skillTools) {
-        if (!allowedToolIds.has(skillTool.tool.id)) {
-          continue;
-        }
-        toolMap.set(skillTool.tool.id, skillTool.tool);
-      }
+    const roleToolIds = new Set(roleTools.map((item) => item.toolId));
+    const effectiveToolIds = agent.toolIds.filter((id) => roleToolIds.has(id));
+    if (effectiveToolIds.length === 0) {
+      return [];
     }
 
-    return Array.from(toolMap.values());
+    const tools = await this.prisma.tool.findMany({
+      where: {
+        id: { in: effectiveToolIds },
+        appClientId,
+        riskLevel: { in: this.allowedLevels(maxLevel) },
+      },
+    });
+    const toolById = new Map(tools.map((tool) => [tool.id, tool]));
+    return effectiveToolIds
+      .map((id) => toolById.get(id))
+      .filter((tool) => tool !== undefined);
+  }
+
+  private resolveMaxToolLevel(levels: ToolLevel[]): ToolLevel {
+    if (levels.includes(ToolLevel.L3)) {
+      return ToolLevel.L3;
+    }
+    if (levels.includes(ToolLevel.L2)) {
+      return ToolLevel.L2;
+    }
+    return ToolLevel.L1;
+  }
+
+  private allowedLevels(maxLevel: ToolLevel): ToolLevel[] {
+    if (maxLevel === ToolLevel.L3) {
+      return [ToolLevel.L1, ToolLevel.L2, ToolLevel.L3];
+    }
+    if (maxLevel === ToolLevel.L2) {
+      return [ToolLevel.L1, ToolLevel.L2];
+    }
+    return [ToolLevel.L1];
   }
 }

@@ -3,6 +3,7 @@ import type { RelationRef } from '../shared/relation-ref';
 
 export class ToolEntity {
   id?: number;
+  appClientId: number;
   name: string;
   description: string;
   riskLevel?: RelationRef;
@@ -14,9 +15,9 @@ export class ToolEntity {
   path: string;
   integrationId: number;
   integration: RelationRef;
+  appClient: RelationRef;
   toolCategoryId?: number | null;
   toolCategory?: RelationRef | null;
-  userRoleTools: RelationRef[];
   isActive?: boolean;
   timeout?: number | null;
   createdAt?: Date;

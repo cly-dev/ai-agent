@@ -37,6 +37,15 @@ async function bootstrap() {
     .setDescription('API docs for Agent Server')
     .setVersion('1.0.0')
     .addBearerAuth()
+    .addApiKey(
+      {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-App-Dsn',
+        description: 'AppClient DSN，用于解析接入方（须与库中 AppClient.dsn 一致）',
+      },
+      'app-dsn',
+    )
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, document);

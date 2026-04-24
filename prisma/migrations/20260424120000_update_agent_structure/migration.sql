@@ -1,0 +1,6 @@
+ALTER TABLE "Agent"
+ADD COLUMN "description" TEXT,
+ADD COLUMN "systemPrompt" TEXT NOT NULL DEFAULT 'You are a helpful AI assistant.',
+ADD COLUMN "toolIds" INTEGER[] NOT NULL DEFAULT ARRAY[]::INTEGER[],
+ADD COLUMN "maxSteps" INTEGER NOT NULL DEFAULT 8,
+ADD COLUMN "enableToolCall" BOOLEAN NOT NULL DEFAULT true;

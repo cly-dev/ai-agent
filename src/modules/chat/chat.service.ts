@@ -24,24 +24,37 @@ export class ChatService {
     private readonly sessionContextStore: SessionContextStore,
     @Inject(forwardRef(() => MessageService))
     private readonly messageService: MessageService,
-  ) { }
+  ) {}
 
   async create(
     userId: number,
+    appClientId: number,
     dto: CreateChatDto,
   ): Promise<{ sessionId: string }> {
+    if (dto.agentId != null) {
+      const agent = await this.prisma.agent.findFirst({
+        where: { id: dto.agentId, appClientId },
+        select: { id: true },
+      });
+      if (!agent) {
+        throw new BadRequestException(
+          'agent not found or does not belong to this app client',
+        );
+      }
+    }
     const id = this.createSessionId();
     const session = await this.prisma.session.create({
       data: {
         id,
         userId,
+        appClientId,
         title: dto.content.slice(0, 20),
         agentId: dto.agentId,
       },
     });
 
     try {
-      await this.messageService.create(userId, session.id, dto);
+      await this.messageService.create(userId, session.id, dto, appClientId);
     } catch (error) {
       await this.prisma.session.delete({ where: { id: session.id } });
       throw error;
@@ -49,7 +62,10 @@ export class ChatService {
     return { sessionId: session.id };
   }
 
-  async findAllForUser(userId: number): Promise<
+  async findAllForUser(
+    userId: number,
+    appClientId: number,
+  ): Promise<
     Array<{
       sessionId: string;
       title: string | null;
@@ -58,7 +74,7 @@ export class ChatService {
     }>
   > {
     const sessions = await this.prisma.session.findMany({
-      where: { userId },
+      where: { userId, appClientId },
       orderBy: { createdAt: 'desc' },
     });
     return sessions.map((session) => ({
@@ -72,6 +88,7 @@ export class ChatService {
   async findOneForUser(
     sessionId: string,
     userId: number,
+    appClientId: number,
   ): Promise<{
     sessionId: string;
     title: string | null;
@@ -80,7 +97,7 @@ export class ChatService {
     messages: Message[];
   }> {
     const row = await this.prisma.session.findFirst({
-      where: { id: sessionId, userId },
+      where: { id: sessionId, userId, appClientId },
       include: {
         messages: {
           orderBy: { createdAt: 'asc' },
@@ -99,8 +116,12 @@ export class ChatService {
     };
   }
 
-  async remove(sessionId: string, userId: number): Promise<void> {
-    const session = await this.resolveSession(sessionId, userId);
+  async remove(
+    sessionId: string,
+    userId: number,
+    appClientId: number,
+  ): Promise<void> {
+    const session = await this.resolveSession(sessionId, userId, appClientId);
     await this.prisma.$transaction([
       this.prisma.message.deleteMany({ where: { sessionId: session.id } }),
       this.prisma.session.delete({ where: { id: session.id } }),
@@ -113,17 +134,19 @@ export class ChatService {
   async assertSessionOwnedByUser(
     sessionId: string,
     userId: number,
+    appClientId: number,
   ): Promise<Session> {
-    return this.resolveSession(sessionId, userId);
+    return this.resolveSession(sessionId, userId, appClientId);
   }
 
   private async resolveSession(
     sessionId: string,
     userId: number,
+    appClientId: number,
   ): Promise<Session> {
     const normalizedSessionId = this.normalizeSessionId(sessionId);
     const row = await this.prisma.session.findFirst({
-      where: { id: normalizedSessionId, userId },
+      where: { id: normalizedSessionId, userId, appClientId },
     });
     if (!row) {
       throw new NotFoundException('chat not found');

@@ -42,6 +42,12 @@ enum AdminRole {
   VIEWER
 }
 
+enum AgentRunStatus {
+  running
+  success
+  failed
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   email     String
@@ -54,6 +60,8 @@ model User {
 
   sessions        Session[]
   llmModelConfigs UserLlmModelConfig[]
+  userApps        UserApp[]
+  userAppRoles    UserAppRole[]
   @@index([userType])
   @@index([userRole])
 }
@@ -67,6 +75,8 @@ model Role {
   createdAt   DateTime @default(now())
 
   roleSkills RoleSkill[]
+  userAppRoles UserAppRole[]
+  roleTools RoleTool[]
 
   @@map("role")
 }
@@ -91,6 +101,14 @@ model AppClient {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  agents       Agent[]
+  tools        Tool[]
+  sessions     Session[]
+  agentRuns    AgentRun[]
+  integrations Integration[]
+  userApps     UserApp[]
+  userAppRoles UserAppRole[]
 }
 
 model LlmModelConfig {
@@ -131,14 +149,18 @@ model UserLlmModelConfig {
 model Session {
   id        String   @id @db.VarChar(32)
   userId    Int
+  appClientId Int
   agentId   Int?
   title     String?
   createdAt DateTime @default(now())
 
-  user     User      @relation(fields: [userId], references: [id])
-  messages Message[]
+  user      User       @relation(fields: [userId], references: [id])
+  appClient AppClient  @relation(fields: [appClientId], references: [id])
+  messages  Message[]
+  agentRuns AgentRun[]
 
   @@index([userId])
+  @@index([appClientId])
 }
 
 model Message {
@@ -173,6 +195,7 @@ model ToolCategory {
 
 model Tool {
   id          Int      @id @default(autoincrement())
+  appClientId Int
   name        String
   description String
   riskLevel   ToolLevel @default(L1)
@@ -184,27 +207,33 @@ model Tool {
   path          String
   integrationId Int
   integration   Integration @relation(fields: [integrationId], references: [id])
+  appClient     AppClient   @relation(fields: [appClientId], references: [id])
   toolCategoryId Int?
   toolCategory   ToolCategory? @relation(fields: [toolCategoryId], references: [id], onDelete: SetNull)
-  userRoleTools UserRoleTool[]
+  roleTools     RoleTool[]
   isActive      Boolean  @default(true)
   timeout       Int?    
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([toolCategoryId])
+  @@index([appClientId])
 }
 model Integration{
    id        Int      @id @default(autoincrement())
+  appClientId Int
   name      String
   baseUrl   String
 
   // 认证信息（先简单做）
   apiKey    String
 
+  appClient AppClient @relation(fields: [appClientId], references: [id])
   tools     Tool[]
 
   createdAt DateTime @default(now())
+
+  @@index([appClientId])
 }
 
 model Skill {
@@ -243,25 +272,96 @@ model SkillTool {
   @@unique([skillId, toolId])
 }
 
-model UserRoleTool {
+model UserApp {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  appId       Int
+  createdAt   DateTime @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appClient   AppClient @relation(fields: [appId], references: [id], onDelete: Cascade)
+  userAppRoles UserAppRole[]
+
+  @@unique([userId, appId])
+  @@index([userId])
+  @@index([appId])
+}
+
+model UserAppRole {
   id        Int      @id @default(autoincrement())
-  userRole  UserRole
+  userId    Int
+  appId     Int
+  roleId    Int
+  createdAt DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appClient AppClient @relation(fields: [appId], references: [id], onDelete: Cascade)
+  role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  userApp   UserApp   @relation(fields: [userId, appId], references: [userId, appId], onDelete: Cascade)
+
+  @@unique([userId, appId, roleId])
+  @@index([userId])
+  @@index([appId])
+  @@index([roleId])
+}
+
+model RoleTool {
+  id        Int      @id @default(autoincrement())
+  roleId    Int
   toolId    Int
   createdAt DateTime @default(now())
 
-  tool Tool @relation(fields: [toolId], references: [id])
+  role      Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  tool      Tool @relation(fields: [toolId], references: [id], onDelete: Cascade)
 
-  @@unique([userRole, toolId])
+  @@unique([roleId, toolId])
+  @@index([roleId])
   @@index([toolId])
 }
 
 model Agent {
-  id        Int      @id @default(autoincrement())
-  name      String
-  config    Json?
-  createdAt DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  appClientId    Int
+  name           String
+  description    String?
+  systemPrompt   String
+  toolIds        Int[]    @default([])
+  maxSteps       Int      @default(8)
+  enableToolCall Boolean  @default(true)
+  config         Json?
+  createdAt      DateTime @default(now())
 
+  appClient   AppClient    @relation(fields: [appClientId], references: [id])
   agentSkills AgentSkill[]
+  agentRuns   AgentRun[]
+
+  @@index([appClientId])
+}
+
+model AgentRun {
+  id          Int            @id @default(autoincrement())
+  agentId     Int
+  appClientId Int
+  sessionId   String
+  input       String
+  output      String?
+  status      AgentRunStatus @default(running)
+  steps       Json
+  currentStep Int            @default(0)
+  maxSteps    Int
+  error       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  appClient AppClient @relation(fields: [appClientId], references: [id])
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  @@index([sessionId])
+  @@index([agentId])
+  @@index([appClientId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model AgentSkill {

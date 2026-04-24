@@ -16,4 +16,3 @@ export * from './tool/tool.module';
 export * from './tool-category/tool-category.module';
 export * from './user/user.module';
 export * from './user-llm-model-config/user-llm-model-config.module';
-export * from './user-role-tool/user-role-tool.module';

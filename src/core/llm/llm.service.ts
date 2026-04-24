@@ -3,7 +3,11 @@ import type { LlmModelConfig } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { LlmAdapter } from './adapters/llm-adapter.interface';
 import { LLM_ADAPTER } from './adapters/llm-adapter.interface';
-import type { LlmChatInput, LlmChatRequest } from './llm.types';
+import type {
+  LlmChatInput,
+  LlmChatRequest,
+  LlmStreamHandlers,
+} from './llm.types';
 
 @Injectable()
 export class LlmService implements OnModuleInit {
@@ -27,9 +31,9 @@ export class LlmService implements OnModuleInit {
     const request: LlmChatRequest = {
       model: config.model,
       messages: input.messages,
-      tools: input.tools,
+      tools: input.tools ?? [],
       parameters: input.parameters ?? this.normalizeParameters(config.parameters),
-      stream: input.stream ?? config.stream,
+      stream: input.stream ?? config.stream ?? false,
       maxTokens: input.maxTokens ?? config.maxTokens ?? undefined,
       temperature: input.temperature ?? config.temperature ?? undefined,
     };
@@ -38,6 +42,28 @@ export class LlmService implements OnModuleInit {
       chatPath: config.chatPath,
       apiKey: config.apiKey,
     });
+  }
+
+  async streamChat(input: LlmChatInput, handlers?: LlmStreamHandlers) {
+    const config = await this.getCachedConfig();
+    const request: LlmChatRequest = {
+      model: config.model,
+      messages: input.messages,
+      tools: input.tools ?? [],
+      parameters: input.parameters ?? this.normalizeParameters(config.parameters),
+      stream: true,
+      maxTokens: input.maxTokens ?? config.maxTokens ?? undefined,
+      temperature: input.temperature ?? config.temperature ?? undefined,
+    };
+    return this.adapter.streamChat(
+      request,
+      {
+        baseUrl: config.baseUrl,
+        chatPath: config.chatPath,
+        apiKey: config.apiKey,
+      },
+      handlers,
+    );
   }
 
   private async getCachedConfig(): Promise<LlmModelConfig> {

@@ -7,6 +7,7 @@ import { MemoryModule } from './core/memory/memory.module';
 import { PromptModule } from './core/prompt/prompt.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AdminUserModule } from './modules/admin-user/admin-user.module';
+import { AgentModule } from './modules/agent/agent.module';
 import { AppClientModule } from './modules/app-client/app-client.module';
 import { IntegrationModule } from './modules/integration/integration.module';
 import { ChatModule } from './modules/chat/chat.module';
@@ -26,6 +27,7 @@ import { AuthModule } from './auth/auth.module';
     AdminUserModule,
     AppClientModule,
     UserModule,
+    AgentModule,
     ChatModule,
     MessageModule,
     ToolModule,

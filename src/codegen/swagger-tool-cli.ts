@@ -637,6 +637,7 @@ function buildToolDrafts(
 function draftToToolWriteData(
   draft: ToolDraft,
   toolCategoryId: number,
+  appClientId: number,
 ): Prisma.ToolCreateInput {
   return {
     name: draft.name,
@@ -648,6 +649,7 @@ function draftToToolWriteData(
     method: draft.method,
     path: draft.path,
     integration: { connect: { id: draft.integrationId } },
+    appClient: { connect: { id: appClientId } },
     toolCategory: { connect: { id: toolCategoryId } },
     isActive: draft.isActive,
   };
@@ -707,10 +709,22 @@ async function applyTools(drafts: ToolDraft[]): Promise<void> {
           `missing tool category id for label: ${draft.categoryLabel}`,
         );
       }
-      const toolData = draftToToolWriteData(draft, toolCategoryId);
+      const integration = await prisma.integration.findUnique({
+        where: { id: draft.integrationId },
+        select: { appClientId: true },
+      });
+      if (!integration) {
+        throw new Error(`integration ${draft.integrationId} not found`);
+      }
+      const toolData = draftToToolWriteData(
+        draft,
+        toolCategoryId,
+        integration.appClientId,
+      );
       const existing = await prisma.tool.findFirst({
         where: {
           integrationId: draft.integrationId,
+          appClientId: integration.appClientId,
           method: draft.method,
           path: draft.path,
         },

@@ -3,13 +3,101 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Agent SSE Console</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 24px;
+      }
+      .container {
+        max-width: 960px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0 0 16px;
+        font-size: 22px;
+      }
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      #input {
+        flex: 1;
+        border: 1px solid #334155;
+        background: #111827;
+        color: #f8fafc;
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      #send {
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 16px;
+        cursor: pointer;
+        color: #fff;
+        background: linear-gradient(135deg, #2563eb, #4f46e5);
+      }
+      #events {
+        border: 1px solid #334155;
+        border-radius: 12px;
+        background: #020617;
+        min-height: 420px;
+        max-height: 70vh;
+        overflow: auto;
+        padding: 12px;
+      }
+      .event-item {
+        padding: 8px 10px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        border-left: 4px solid #475569;
+        background: #0b1220;
+      }
+      .event-think {
+        border-left-color: #f59e0b;
+        background: rgba(245, 158, 11, 0.12);
+      }
+      .event-result {
+        border-left-color: #22c55e;
+        background: rgba(34, 197, 94, 0.12);
+      }
+      .event-complete {
+        border-left-color: #3b82f6;
+        background: rgba(59, 130, 246, 0.12);
+      }
+      .event-error {
+        border-left-color: #ef4444;
+        background: rgba(239, 68, 68, 0.12);
+      }
+      .event-meta {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-bottom: 4px;
+      }
+      .event-content {
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.5;
+        font-size: 14px;
+      }
+    </style>
   </head>
   <body>
-    <h1>Hello World</h1>
-    <input type="text" id="input" />
-    <button id="send">发送</button>
-    <pre id="events"></pre>
+    <div class="container">
+      <h1>Agent SSE Console</h1>
+      <div class="toolbar">
+        <input type="text" id="input" placeholder="输入消息并发送..." />
+        <button id="send">发送</button>
+      </div>
+      <div id="events"></div>
+    </div>
   </body>
   <script>
     window.onload = function () {
@@ -18,11 +106,117 @@
       const events = document.getElementById('events');
       const token =
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoiYWRtaW5AcXEuY29tIiwidXNlcm5hbWUiOiJhZG1pbiIsInVzZXJUeXBlIjoiQ19FTkQiLCJ1c2VyUm9sZSI6bnVsbCwiaWF0IjoxNzc2OTE0NjEwLCJleHAiOjE3Nzc1MTk0MTB9._BB2b8RRCDjPAayH9urAcYTaC_BStHhs6OnQDNVyOnw';
-      const sessionId = '2fcc9922cda878b2c6e76c9fc415f242';
+      const sessionId = '0a5aef6e52a4c96530448e6cf2703ff5';
+      const appDsn = 'default';
       const decoder = new TextDecoder();
+      let finalItem = null;
 
-      function appendEvent(text) {
-        events.textContent += text + '\n';
+      function appendEvent(text, type) {
+        const item = document.createElement('div');
+        item.className = 'event-item event-' + (type || 'result');
+        const now = new Date();
+        const h = String(now.getHours()).padStart(2, '0');
+        const m = String(now.getMinutes()).padStart(2, '0');
+        const s = String(now.getSeconds()).padStart(2, '0');
+        item.innerHTML =
+          '<div class="event-meta">[' +
+          h +
+          ':' +
+          m +
+          ':' +
+          s +
+          '] ' +
+          (type || 'result').toUpperCase() +
+          '</div>' +
+          '<div class="event-content"></div>';
+        setEventContent(item, text, false);
+        events.appendChild(item);
+        events.scrollTop = events.scrollHeight;
+        return item;
+      }
+
+      function setEventContent(item, text) {
+        const contentNode = item.querySelector('.event-content');
+        contentNode.textContent = text;
+      }
+
+      function ensureFinalItem() {
+        if (!finalItem) {
+          finalItem = appendEvent('', 'result');
+        }
+        return finalItem;
+      }
+
+      function setFinalContent(content) {
+        const item = ensureFinalItem();
+        setEventContent(item, content);
+        events.scrollTop = events.scrollHeight;
+      }
+
+      function resetFinalContent() {
+        finalItem = null;
+      }
+
+      function appendSsePayload(rawText, type) {
+        try {
+          const payload = JSON.parse(rawText);
+          const evtType = type || 'result';
+          if (evtType === 'think') {
+            return;
+          }
+          if (evtType === 'result') {
+            const text = extractResultText(payload, rawText)
+            if (text) {
+              setFinalContent(text);
+            }
+            return;
+          }
+          if (evtType === 'error') {
+            if (typeof payload.message === 'string' && payload.message.trim()) {
+              setFinalContent('错误: ' + payload.message);
+            }
+            return;
+          }
+        } catch {
+          if ((type || 'result') === 'result' && rawText.trim()) {
+            setFinalContent(rawText);
+          }
+          return;
+        }
+      }
+
+      function extractResultText(payload, fallbackRaw) {
+        if (typeof payload === 'string' && payload.trim()) {
+          return payload;
+        }
+        if (!payload || typeof payload !== 'object') {
+          return fallbackRaw && fallbackRaw.trim() ? fallbackRaw : '';
+        }
+        if (typeof payload.output === 'string' && payload.output.trim()) {
+          return payload.output;
+        }
+        if (typeof payload.content === 'string' && payload.content.trim()) {
+          const contentText = payload.content.trim();
+          try {
+            const inner = JSON.parse(contentText);
+            if (typeof inner === 'string' && inner.trim()) {
+              return inner;
+            }
+            if (inner && typeof inner === 'object') {
+              if (typeof inner.output === 'string' && inner.output.trim()) {
+                return inner.output;
+              }
+              if (typeof inner.content === 'string' && inner.content.trim()) {
+                return inner.content;
+              }
+              return JSON.stringify(inner, null, 2);
+            }
+            return contentText;
+          } catch {
+            return contentText;
+          }
+        }
+        return fallbackRaw && fallbackRaw.trim() ? fallbackRaw : '';
       }
 
       async function stream() {
@@ -31,31 +225,36 @@
           headers: {
             Accept: 'text/event-stream',
             Authorization: 'Bearer ' + token,
+            'X-App-Dsn': appDsn,
           },
         });
         if (!doc.ok || !doc.body) {
-          appendEvent('stream connect failed: ' + doc.status);
+          appendEvent('stream connect failed: ' + doc.status, 'error');
           return;
         }
+        resetFinalContent();
         const reader = doc.body.getReader();
         let buffer = '';
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
-            appendEvent('stream closed');
             break;
           }
           buffer += decoder.decode(value, { stream: true });
           const frames = buffer.split('\n\n');
           buffer = frames.pop() ?? '';
           for (const frame of frames) {
-            const line = frame
-              .split('\n')
-              .find((row) => row.startsWith('data: '));
-            if (!line) {
+            const rows = frame.split('\n');
+            const dataLines = rows
+              .filter((row) => row.startsWith('data:'))
+              .map((row) => row.slice(5).trimStart());
+            if (dataLines.length === 0) {
               continue;
             }
-            appendEvent(line.slice(6));
+            const dataText = dataLines.join('\n');
+            const eventLine = rows.find((row) => row.startsWith('event: '));
+            const eventType = eventLine ? eventLine.slice(7).trim() : 'result';
+            appendSsePayload(dataText, eventType);
           }
         }
       }
@@ -64,18 +263,28 @@
 
       send.addEventListener('click', () => {
         const value = input.value;
+        if (!value.trim()) {
+          appendEvent('输入不能为空', 'error');
+          return;
+        }
         fetch('/chat/' + sessionId + '/messages', {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
             Authorization: 'Bearer ' + token,
+            'X-App-Dsn': appDsn,
           },
           body: JSON.stringify({
             role: 'user',
             content: value,
           }),
         }).then((doc) => {
-          appendEvent('send status: ' + doc.status);
+          if (doc.ok) {
+            resetFinalContent();
+          } else {
+            appendEvent('send status: ' + doc.status, 'error');
+          }
+          input.value = '';
         });
       });
     };

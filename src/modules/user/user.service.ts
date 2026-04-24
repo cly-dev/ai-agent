@@ -14,7 +14,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UserService {
-  private readonly legacyToolLevelWeight: Record<'L1' | 'L2' | 'L3', number> = {
+  private readonly toolLevelWeight: Record<'L1' | 'L2' | 'L3', number> = {
     L1: 1,
     L2: 2,
     L3: 3,
@@ -227,24 +227,39 @@ export class UserService {
 
     const authzSource = process.env.AUTHZ_SOURCE?.toLowerCase();
     if (authzSource === 'legacy') {
-      return this.getAllowedToolsByLegacyRole(user.userRole);
+      return this.getAllowedToolsBySkillGraph(user.userRole);
     }
 
     return this.getAllowedToolsByRole(user.userRole);
   }
 
   private async getAllowedToolsByRole(userRole: UserRole) {
-    const roleToolMappings = await this.prisma.userRoleTool.findMany({
-      where: { userRole },
-      include: { tool: true },
-      orderBy: { toolId: 'asc' },
+    const roleName = this.resolveRoleName(userRole);
+    if (!roleName) {
+      return [];
+    }
+    const role = await this.prisma.role.findUnique({
+      where: { name: roleName },
+      include: {
+        roleTools: {
+          include: { tool: true },
+          orderBy: { toolId: 'asc' },
+        },
+      },
     });
-
-    return roleToolMappings.map((mapping) => mapping.tool);
+    if (!role) {
+      return [];
+    }
+    const maxAllowedLevel = this.toolLevelWeight[role.allowToolLevel];
+    return role.roleTools
+      .map((mapping) => mapping.tool)
+      .filter(
+        (tool) => this.toolLevelWeight[tool.riskLevel] <= maxAllowedLevel,
+      );
   }
 
-  private async getAllowedToolsByLegacyRole(userRole: UserRole) {
-    const legacyRoleName = this.resolveLegacyRoleName(userRole);
+  private async getAllowedToolsBySkillGraph(userRole: UserRole) {
+    const legacyRoleName = this.resolveRoleName(userRole);
     if (!legacyRoleName) {
       return [];
     }
@@ -271,10 +286,10 @@ export class UserService {
     }
 
     const toolMap = new Map<number, unknown>();
-    const maxAllowedLevel = this.legacyToolLevelWeight[role.allowToolLevel];
+    const maxAllowedLevel = this.toolLevelWeight[role.allowToolLevel];
     for (const roleSkill of role.roleSkills) {
       for (const skillTool of roleSkill.skill.skillTools) {
-        const toolLevel = this.legacyToolLevelWeight[skillTool.tool.riskLevel];
+        const toolLevel = this.toolLevelWeight[skillTool.tool.riskLevel];
         if (toolLevel > maxAllowedLevel) {
           continue;
         }
@@ -285,7 +300,7 @@ export class UserService {
     return Array.from(toolMap.values());
   }
 
-  private resolveLegacyRoleName(userRole: UserRole): string | null {
+  private resolveRoleName(userRole: UserRole): string | null {
     if (userRole === UserRole.OPERATOR) {
       return 'operator';
     }

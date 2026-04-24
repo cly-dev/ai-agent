@@ -14,6 +14,11 @@ export type LlmToolDefinition = {
   };
 };
 
+export type LlmToolCall = {
+  name: string;
+  arguments: Record<string, unknown>;
+};
+
 export type LlmChatInput = {
   messages: LlmChatMessage[];
   tools?: LlmToolDefinition[];
@@ -35,6 +40,19 @@ export type LlmAdapterConfig = {
 
 export type LlmChatResult = {
   content: string;
+  toolCalls: LlmToolCall[];
   model: string;
   raw: unknown;
+};
+
+export type LlmStreamDelta = {
+  model: string;
+  contentDelta: string;
+  toolCalls: LlmToolCall[];
+  done: boolean;
+  raw: unknown;
+};
+
+export type LlmStreamHandlers = {
+  onDelta?: (delta: LlmStreamDelta) => void;
 };

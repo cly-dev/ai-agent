@@ -3,9 +3,11 @@ import type { RelationRef } from '../shared/relation-ref';
 
 export class IntegrationEntity {
   id?: number;
+  appClientId: number;
   name: string;
   baseUrl: string;
   apiKey: string;
+  appClient: RelationRef;
   tools: RelationRef[];
   createdAt?: Date;
 }
