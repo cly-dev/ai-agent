@@ -199,6 +199,7 @@ model Tool {
   riskLevel   ToolLevel @default(L1)
   schema      Json // 参数结构
   skillTools SkillTool[]
+  agentTools AgentTool[]
   inputSchema   Json
   outputSchema  Json?
   method        HttpMethod
@@ -307,7 +308,6 @@ model Agent {
   name           String
   description    String?
   systemPrompt   String
-  toolIds        Int[]    @default([])
   maxSteps       Int      @default(8)
   enableToolCall Boolean  @default(true)
   config         Json?
@@ -316,8 +316,22 @@ model Agent {
   appClient   AppClient    @relation(fields: [appClientId], references: [id])
   agentSkills AgentSkill[]
   agentRuns   AgentRun[]
+  agentTools  AgentTool[]
 
   @@index([appClientId])
+}
+
+model AgentTool {
+  id      Int @id @default(autoincrement())
+  agentId Int
+  toolId  Int
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tool  Tool  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, toolId])
+  @@index([agentId])
+  @@index([toolId])
 }
 
 model AgentRun {

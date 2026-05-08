@@ -9,9 +9,6 @@ export class AgentEntity {
   // 核心行为定义
   systemPrompt: string;
 
-  // 能力范围
-  toolIds: number[];
-
   // 执行控制
   maxSteps: number;
   enableToolCall: boolean;

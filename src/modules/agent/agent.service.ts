@@ -10,18 +10,27 @@ export class AgentService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateAgentDto) {
-    return this.prisma.agent.create({
+    const agent = await this.prisma.agent.create({
       data: {
         appClientId: dto.appClientId,
         name: dto.name,
         description: dto.description ?? null,
         systemPrompt: dto.systemPrompt,
-        toolIds: dto.toolIds ?? [],
         maxSteps: dto.maxSteps ?? 8,
         enableToolCall: dto.enableToolCall ?? true,
         config: dto.config as Prisma.InputJsonValue | undefined,
       },
     });
+    if (dto.toolIds && dto.toolIds.length > 0) {
+      await this.prisma.agentTool.createMany({
+        data: dto.toolIds.map((toolId) => ({
+          agentId: agent.id,
+          toolId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    return agent;
   }
 
   async findAll() {
@@ -38,19 +47,31 @@ export class AgentService {
 
   async update(id: number, dto: UpdateAgentDto) {
     await this.findOne(id);
-    return this.prisma.agent.update({
+    const agent = await this.prisma.agent.update({
       where: { id },
       data: {
         appClientId: dto.appClientId,
         name: dto.name,
         description: dto.description,
         systemPrompt: dto.systemPrompt,
-        toolIds: dto.toolIds,
         maxSteps: dto.maxSteps,
         enableToolCall: dto.enableToolCall,
         config: dto.config as Prisma.InputJsonValue | undefined,
       },
     });
+    if (dto.toolIds) {
+      await this.prisma.$transaction([
+        this.prisma.agentTool.deleteMany({ where: { agentId: id } }),
+        this.prisma.agentTool.createMany({
+          data: dto.toolIds.map((toolId) => ({
+            agentId: id,
+            toolId,
+          })),
+          skipDuplicates: true,
+        }),
+      ]);
+    }
+    return agent;
   }
 
   async remove(id: number) {
@@ -66,7 +87,7 @@ export class AgentService {
     const [agent, user] = await Promise.all([
       this.prisma.agent.findFirst({
         where: { id: agentId, appClientId },
-        select: { toolIds: true },
+        select: { id: true },
       }),
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -101,7 +122,13 @@ export class AgentService {
       select: { toolId: true },
     });
     const roleToolIds = new Set(roleTools.map((item) => item.toolId));
-    const effectiveToolIds = agent.toolIds.filter((id) => roleToolIds.has(id));
+    const agentTools = await this.prisma.agentTool.findMany({
+      where: { agentId: agent.id },
+      select: { toolId: true },
+    });
+    const effectiveToolIds = agentTools
+      .map((item) => item.toolId)
+      .filter((id) => roleToolIds.has(id));
     if (effectiveToolIds.length === 0) {
       return [];
     }

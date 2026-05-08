@@ -74,6 +74,7 @@ type CliOptions = {
   outputPath: string;
   integrationId: number | null;
   appClientId: number | null;
+  agentId: number | null;
   autoIntegration: boolean;
   integrationName?: string;
   integrationBaseUrl?: string;
@@ -121,10 +122,15 @@ function parseArgs(argv: string[]): CliOptions {
 
   const integrationIdValue =
     getArgValue('--integration-id') ?? process.env.GEN_TOOL_INTEGRATION_ID;
-  const autoIntegration =
-    argv.includes('--auto-integration') ||
-    process.env.GEN_TOOL_AUTO_INTEGRATION === '1' ||
-    /^true$/i.test(process.env.GEN_TOOL_AUTO_INTEGRATION ?? '');
+  const envAutoIntegration = process.env.GEN_TOOL_AUTO_INTEGRATION ?? '';
+  const autoIntegration = argv.includes('--no-auto-integration')
+    ? false
+    : /^false$/i.test(envAutoIntegration)
+    ? false
+    : argv.includes('--auto-integration') ||
+      envAutoIntegration === '' ||
+      envAutoIntegration === '1' ||
+      /^true$/i.test(envAutoIntegration);
   let integrationId: number | null = null;
   if (integrationIdValue) {
     const parsed = Number(integrationIdValue);
@@ -149,7 +155,16 @@ function parseArgs(argv: string[]): CliOptions {
     );
   }
   if (autoIntegration && appClientId === null) {
-    throw new Error('app-client-id is required when using --auto-integration');
+    // simplified UX: autoIntegration 模式下允许稍后自动推断 appClientId
+  }
+  const agentIdValue = getArgValue('--agent-id') ?? process.env.GEN_TOOL_AGENT_ID;
+  let agentId: number | null = null;
+  if (agentIdValue) {
+    const parsed = Number(agentIdValue);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error('agent-id must be a positive integer');
+    }
+    agentId = parsed;
   }
 
   const riskLevelRaw = (
@@ -171,9 +186,8 @@ function parseArgs(argv: string[]): CliOptions {
 
   const dryRun = argv.includes('--dry-run');
   const apply = argv.includes('--apply');
-  if (!dryRun && !apply) {
-    throw new Error('choose one mode: --dry-run or --apply');
-  }
+  const resolvedDryRun = dryRun || !apply;
+  const resolvedApply = apply;
 
   const insecure =
     argv.includes('--insecure') ||
@@ -192,6 +206,7 @@ function parseArgs(argv: string[]): CliOptions {
       'tmp/generated-tools.json',
     integrationId,
     appClientId,
+    agentId,
     autoIntegration,
     integrationName:
       getArgValue('--integration-name') ??
@@ -203,8 +218,8 @@ function parseArgs(argv: string[]): CliOptions {
       getArgValue('--integration-api-key') ??
       process.env.GEN_TOOL_INTEGRATION_API_KEY ??
       '',
-    dryRun,
-    apply,
+    dryRun: resolvedDryRun,
+    apply: resolvedApply,
     insecure,
     riskLevel,
     tags: parseCsv(getArgValue('--tags') ?? process.env.GEN_TOOL_TAGS),
@@ -633,6 +648,22 @@ async function resolveSelectedOperationKeys(
   return promptSelectOperationKeys(operations);
 }
 
+async function promptSwaggerSpecUrl(defaultUrl: string): Promise<string> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = await rl.question(
+      `\n请输入 tools 文档地址（Swagger URL，回车使用默认值 ${defaultUrl}）: `,
+    );
+    const value = answer.trim();
+    return value || defaultUrl;
+  } finally {
+    rl.close();
+  }
+}
+
 function buildToolDrafts(
   spec: OpenApiDocument,
   options: CliOptions,
@@ -733,8 +764,19 @@ async function resolveIntegrationId(
     return options.integrationId;
   }
   if (options.appClientId === null) {
-    throw new Error(
-      'app-client-id is required when auto-integration is enabled',
+    const fallbackAppClient = await prisma.appClient.findFirst({
+      select: { id: true, name: true },
+      orderBy: { id: 'asc' },
+    });
+    if (!fallbackAppClient) {
+      throw new Error(
+        'app-client-id is required when auto-integration is enabled and no appClient exists',
+      );
+    }
+    options.appClientId = fallbackAppClient.id;
+    // eslint-disable-next-line no-console
+    console.log(
+      `auto selected appClient: ${fallbackAppClient.id} (${fallbackAppClient.name})`,
     );
   }
   const baseUrl = resolveIntegrationBaseUrl(options, spec);
@@ -760,6 +802,70 @@ async function resolveIntegrationId(
     select: { id: true },
   });
   return created.id;
+}
+
+async function promptSelectAgentId(
+  agents: Array<{ id: number; name: string }>,
+): Promise<number> {
+  // eslint-disable-next-line no-console
+  console.log('\nAvailable agents under current appClient:');
+  for (const agent of agents) {
+    // eslint-disable-next-line no-console
+    console.log(`  ${agent.id}. ${agent.name}`);
+  }
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = await rl.question('\nSelect target agent id to bind tools: ');
+    const selected = Number(answer.trim());
+    if (!Number.isInteger(selected) || selected <= 0) {
+      throw new Error('invalid agent id');
+    }
+    const exists = agents.some((item) => item.id === selected);
+    if (!exists) {
+      throw new Error(`agent id ${selected} not found in current appClient`);
+    }
+    return selected;
+  } finally {
+    rl.close();
+  }
+}
+
+async function resolveTargetAgentId(
+  prisma: PrismaClient,
+  options: CliOptions,
+  appClientId: number,
+): Promise<number | null> {
+  if (options.agentId !== null) {
+    const exists = await prisma.agent.findFirst({
+      where: { id: options.agentId, appClientId },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new Error(
+        `agent ${options.agentId} not found under appClient ${appClientId}`,
+      );
+    }
+    return options.agentId;
+  }
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return null;
+  }
+  const agents = await prisma.agent.findMany({
+    where: { appClientId },
+    select: { id: true, name: true },
+    orderBy: { id: 'asc' },
+  });
+  if (agents.length === 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `no agents found under appClient ${appClientId}, skip agent binding`,
+    );
+    return null;
+  }
+  return promptSelectAgentId(agents);
 }
 
 function draftToToolWriteData(
@@ -820,6 +926,7 @@ async function ensureToolCategoriesByDrafts(
 async function applyTools(
   prisma: PrismaClient,
   drafts: ToolDraft[],
+  targetAgentId: number | null,
 ): Promise<void> {
   const categoryIdByLabel = await ensureToolCategoriesByDrafts(prisma, drafts);
   const allRoles = await prisma.role.findMany({
@@ -886,6 +993,21 @@ async function applyTools(
       allRoles,
     );
     await syncRoleToolBindings(prisma, toolId, allowedRoleIds);
+    if (targetAgentId !== null) {
+      await prisma.agentTool.upsert({
+        where: {
+          agentId_toolId: {
+            agentId: targetAgentId,
+            toolId,
+          },
+        },
+        create: {
+          agentId: targetAgentId,
+          toolId,
+        },
+        update: {},
+      });
+    }
   }
 }
 
@@ -962,6 +1084,9 @@ async function syncRoleToolBindings(
 
 async function run(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  if (!options.specPath && process.stdin.isTTY && process.stdout.isTTY) {
+    options.specUrl = await promptSwaggerSpecUrl(options.specUrl);
+  }
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error('DATABASE_URL is required');
@@ -974,6 +1099,18 @@ async function run(): Promise<void> {
       prisma,
       options,
       spec,
+    );
+    const integration = await prisma.integration.findUnique({
+      where: { id: resolvedIntegrationId },
+      select: { appClientId: true },
+    });
+    if (!integration) {
+      throw new Error(`integration ${resolvedIntegrationId} not found`);
+    }
+    const targetAgentId = await resolveTargetAgentId(
+      prisma,
+      options,
+      integration.appClientId,
     );
     const operations = listOperations(spec);
     const selectedKeys = await resolveSelectedOperationKeys(
@@ -995,11 +1132,15 @@ async function run(): Promise<void> {
     fs.writeFileSync(outputFullPath, JSON.stringify(drafts, null, 2), 'utf-8');
 
     if (options.apply) {
-      await applyTools(prisma, drafts);
+      await applyTools(prisma, drafts, targetAgentId);
     }
 
     // eslint-disable-next-line no-console
     console.log(`integration id: ${resolvedIntegrationId}`);
+    if (targetAgentId !== null) {
+      // eslint-disable-next-line no-console
+      console.log(`bound tools to agent id: ${targetAgentId}`);
+    }
     // eslint-disable-next-line no-console
     console.log(`generated ${drafts.length} tools -> ${outputFullPath}`);
     // eslint-disable-next-line no-console
@@ -1010,7 +1151,8 @@ async function run(): Promise<void> {
 }
 
 run().catch((error: unknown) => {
+  // Print full error details in terminal for easier troubleshooting.
   // eslint-disable-next-line no-console
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(error);
   process.exit(1);
 });
