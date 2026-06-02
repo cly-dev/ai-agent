@@ -19,7 +19,10 @@ export class CreateChatDto {
   @MaxLength(500)
   title?: string;
 
-  @ApiPropertyOptional({ description: '关联 Agent ID（须属于同一 AppClient）' })
+  @ApiPropertyOptional({
+    description: '关联 Agent ID（须属于同一 AppClient），默认 1',
+    default: 1,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

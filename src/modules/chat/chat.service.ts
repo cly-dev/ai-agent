@@ -16,6 +16,7 @@ import { CreateChatDto } from './dto/create-chat.dto';
 
 @Injectable()
 export class ChatService {
+  static readonly DEFAULT_AGENT_ID = 1;
   private static readonly SESSION_ID_HEX = /^[a-f0-9]{32}$/;
 
   constructor(
@@ -31,17 +32,7 @@ export class ChatService {
     appClientId: number,
     dto: CreateChatDto,
   ): Promise<{ sessionId: string }> {
-    if (dto.agentId != null) {
-      const agent = await this.prisma.agent.findFirst({
-        where: { id: dto.agentId, appClientId },
-        select: { id: true },
-      });
-      if (!agent) {
-        throw new BadRequestException(
-          'agent not found or does not belong to this app client',
-        );
-      }
-    }
+    const agentId = await this.resolveAgentId(dto.agentId, appClientId);
     const id = this.createSessionId();
     const session = await this.prisma.session.create({
       data: {
@@ -49,7 +40,7 @@ export class ChatService {
         userId,
         appClientId,
         title: dto.content.slice(0, 20),
-        agentId: dto.agentId,
+        agentId,
       },
     });
 
@@ -137,6 +128,49 @@ export class ChatService {
     appClientId: number,
   ): Promise<Session> {
     return this.resolveSession(sessionId, userId, appClientId);
+  }
+
+  /** 发送消息时确保会话已绑定 Agent（请求参数 > 会话已有 > 默认 1） */
+  async ensureSessionAgent(
+    session: Session,
+    agentIdOverride: number | undefined,
+    appClientId: number,
+  ): Promise<Session> {
+    const agentId = await this.resolveAgentId(
+      agentIdOverride ?? session.agentId ?? undefined,
+      appClientId,
+    );
+    if (session.agentId === agentId) {
+      return session;
+    }
+    return this.prisma.session.update({
+      where: { id: session.id },
+      data: { agentId },
+    });
+  }
+
+  private async resolveAgentId(
+    requested: number | undefined,
+    appClientId: number,
+  ): Promise<number> {
+    const agentId = requested ?? ChatService.DEFAULT_AGENT_ID;
+    await this.assertAgentBelongsToApp(agentId, appClientId);
+    return agentId;
+  }
+
+  private async assertAgentBelongsToApp(
+    agentId: number,
+    appClientId: number,
+  ): Promise<void> {
+    const agent = await this.prisma.agent.findFirst({
+      where: { id: agentId, appClientId },
+      select: { id: true },
+    });
+    if (!agent) {
+      throw new BadRequestException(
+        `agent ${agentId} not found or does not belong to this app client`,
+      );
+    }
   }
 
   private async resolveSession(

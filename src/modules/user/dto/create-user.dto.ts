@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole, UserType } from '../../../../generated/prisma/client';
-import { IsEmail, IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsOptional, IsString } from 'class-validator';
 
 export class CreateUserDto {
   @ApiProperty({
@@ -15,18 +14,10 @@ export class CreateUserDto {
   username!: string;
 
   @ApiPropertyOptional({
-    description: '用户类型（C 端用户/ B 端业务用户）',
-    enum: UserType,
+    description: '工号（业务系统唯一标识）；未传时系统自动生成',
+    example: 'YT20220217',
   })
   @IsOptional()
-  @IsEnum(UserType)
-  userType?: UserType;
-
-  @ApiPropertyOptional({
-    description: '业务角色（用于 Tool 子集授权）',
-    enum: UserRole,
-  })
-  @IsOptional()
-  @IsEnum(UserRole)
-  userRole?: UserRole;
+  @IsString()
+  employeeId?: string;
 }

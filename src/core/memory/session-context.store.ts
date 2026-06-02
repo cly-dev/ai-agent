@@ -7,6 +7,7 @@ import { assertSessionContextId } from './memory-id.util';
 import { getDefaultSessionContextTtlSec } from './memory.constants';
 import { RedisConnectionService } from './redis/redis-connection.service';
 import { sessionContextKey } from './redis/redis-keys';
+import type { SessionContextPayload } from './session-context.types';
 
 @Injectable()
 export class SessionContextStore {
@@ -48,6 +49,27 @@ export class SessionContextStore {
     const ttl = ttlSeconds ?? getDefaultSessionContextTtlSec();
     const body = JSON.stringify(payload);
     await client.set(key, body, 'EX', ttl);
+  }
+
+  /** Redis 未配置时不抛错，用于 compose 回写缓存。 */
+  async trySet(
+    sessionId: string,
+    payload: SessionContextPayload,
+    ttlSeconds?: number,
+  ): Promise<boolean> {
+    assertSessionContextId('sessionId', sessionId);
+    const client = this.redis.getClient();
+    if (!client) {
+      return false;
+    }
+    const ttl = ttlSeconds ?? getDefaultSessionContextTtlSec();
+    await client.set(
+      sessionContextKey(sessionId),
+      JSON.stringify(payload),
+      'EX',
+      ttl,
+    );
+    return true;
   }
 
   /** 浅合并顶层字段并刷新 TTL */

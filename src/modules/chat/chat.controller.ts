@@ -136,7 +136,10 @@ export class ChatController {
             next: (evt) => {
               subscriber.next({
                 type: evt.event,
-                data: evt.payload,
+                data:
+                  typeof evt.payload === 'string'
+                    ? evt.payload
+                    : JSON.stringify(evt.payload),
               });
             },
             error: (err: unknown) => subscriber.error(err),

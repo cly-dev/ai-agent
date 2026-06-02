@@ -6,8 +6,10 @@ export interface IntegrationType {
   appClientId: number;
   name: string;
   baseUrl: string;
-  apiKey: string;
+  apiKey?: string | null;
+  authMode: 'USER_ONLY' | 'SYSTEM_ONLY' | 'USER_PREFERRED';
   appClient: RelationRef;
   tools: RelationRef[];
   createdAt?: Date;
+  updatedAt?: Date;
 }

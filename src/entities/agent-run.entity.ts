@@ -1,5 +1,6 @@
-export type AgentRunStepType = 'llm' | 'tool';
+export type AgentRunStepType = 'intent' | 'llm' | 'tool';
 export type AgentRunStatus = 'running' | 'success' | 'failed';
+export type AgentRunRole = 'primary' | 'router' | 'worker' | 'reviewer';
 
 export type AgentRunStepMeta = {
   prompt?: string;
@@ -22,9 +23,14 @@ export type AgentRunConfig = {
 
 export class AgentRunEntity {
   id?: number;
+  turnId?: number;
   agentId: number;
   appClientId: number;
   sessionId: string;
+  userId?: number;
+  role?: AgentRunRole;
+  sequence?: number;
+  parentRunId?: number;
   input: string;
   output?: string;
   status: AgentRunStatus;
@@ -32,6 +38,20 @@ export class AgentRunEntity {
   currentStep: number;
   maxSteps: number;
   error?: string;
+  startedAt?: Date;
+  finishedAt?: Date;
+  durationMs?: number;
+  llmDurationMs?: number;
+  toolDurationMs?: number;
+  model?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  llmCallCount?: number;
+  toolCallCount?: number;
+  toolsUsed?: string[];
+  finishReason?: string;
+  scopedToolCount?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }

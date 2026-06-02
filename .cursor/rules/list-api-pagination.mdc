@@ -1,0 +1,33 @@
+---
+description: Admin list GET endpoints must use shared pagination, PaginatedResult, and eager-load relation data.
+globs:
+  - src/modules/**/*.controller.ts
+  - src/modules/**/*.service.ts
+  - src/modules/**/dto/query-*.dto.ts
+  - src/modules/**/*.types.ts
+  - src/modules/**/*.mapper.ts
+alwaysApply: false
+---
+
+# List API Pagination Standard
+
+When adding or changing admin CRUD under `/admin`:
+
+## Pagination
+
+1. Extend `PaginationQueryDto` from `src/common/pagination` in a `Query*Dto`.
+2. Service method name: `findPage(dto)` returning `PaginatedResult<T>`.
+3. Use `resolvePagination(dto.page, dto.pageSize)` for skip/take.
+4. Use `toPaginatedResult(items, total, page, pageSize)` for response body.
+5. Support field filters on the Query DTO; document them in Swagger `@ApiOperation`.
+6. Do **not** return unbounded `findMany()` for admin list routes.
+
+## Relations (required)
+
+7. Define `*_DETAIL_INCLUDE` in `*.types.ts` (or `*.include.ts`) with all direct Prisma relations.
+8. Use the same include for **list items, findOne, create, update, delete** responses.
+9. For junction tables, include nested entity summary (e.g. `agentTools.agent`).
+10. Do not expand reverse collections on related entities (avoid `appClient.tools` on list).
+11. Optional mapper adds UI fields such as `tags: string[]` from category label.
+
+Reference: `src/common/list-api.md`, `src/modules/tool/`.

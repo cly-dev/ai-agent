@@ -5,6 +5,7 @@ export interface SkillToolType {
   id?: number;
   skillId: number;
   toolId: number;
+  isRequired?: boolean;
   skill: RelationRef;
   tool: RelationRef;
 }

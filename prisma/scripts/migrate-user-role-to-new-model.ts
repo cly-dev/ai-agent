@@ -1,3 +1,6 @@
+/**
+ * @deprecated 历史一次性迁移脚本；User.userRole/userType 已移除，权限以 UserApp.roleId 为准。
+ */
 import '../../src/core/env/load-env';
 import { randomBytes, scryptSync } from 'crypto';
 import { PrismaPg } from '@prisma/adapter-pg';

@@ -3,6 +3,7 @@ import { randomBytes, scryptSync } from 'crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { AdminRole, PrismaClient, ToolLevel } from '../generated/prisma/client';
+import { ensureGlobalPromptTemplates } from '../src/core/prompt/ensure-global-prompt-templates';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -88,8 +89,9 @@ async function seedAdminUser(): Promise<void> {
 
 async function seedLlmModelConfig(): Promise<void> {
   await prisma.llmModelConfig.upsert({
-    where: { singletonKey: 1 },
+    where: { kind: 'chat' },
     update: {
+      singletonKey: 1,
       provider: 'openai-compatible',
       model: '/data/models/Qwen3-32B-AWQ',
       apiKey: null,
@@ -102,6 +104,7 @@ async function seedLlmModelConfig(): Promise<void> {
       enabled: true,
     },
     create: {
+      kind: 'chat',
       singletonKey: 1,
       provider: 'openai-compatible',
       model: '/data/models/Qwen3-32B-AWQ',
@@ -115,6 +118,55 @@ async function seedLlmModelConfig(): Promise<void> {
       enabled: true,
     },
   });
+
+  await prisma.llmModelConfig.upsert({
+    where: { kind: 'transformers_embedding' },
+    update: {
+      provider: 'transformers.js',
+      model:
+        'https://media.cdn.a-premium.com/static/models/all-MiniLM-L6-v2',
+      apiKey: null,
+      baseUrl: 'local',
+      chatPath: '/v1/embeddings',
+      parameters: { allowRemoteModels: true },
+      stream: false,
+      maxTokens: null,
+      temperature: null,
+      enabled: true,
+    },
+    create: {
+      kind: 'transformers_embedding',
+      singletonKey: null,
+      provider: 'transformers.js',
+      model:
+        'https://media.cdn.a-premium.com/static/models/all-MiniLM-L6-v2',
+      apiKey: null,
+      baseUrl: 'local',
+      chatPath: '/v1/embeddings',
+      parameters: { allowRemoteModels: true },
+      stream: false,
+      enabled: true,
+    },
+  });
+
+  await prisma.intentRecallConfig.upsert({
+    where: { singletonKey: 1 },
+    update: {
+      recallMode: 'auto',
+      vectorTopK: 10,
+      vectorMinScore: 0.25,
+      bindToolsMax: 25,
+      fallbackToKeyword: true,
+    },
+    create: {
+      singletonKey: 1,
+      recallMode: 'auto',
+      vectorTopK: 10,
+      vectorMinScore: 0.25,
+      bindToolsMax: 25,
+      fallbackToKeyword: true,
+    },
+  });
 }
 
 async function main(): Promise<void> {
@@ -122,6 +174,12 @@ async function main(): Promise<void> {
     await seedRoles();
     await seedAdminUser();
     await seedLlmModelConfig();
+    const prompts = await ensureGlobalPromptTemplates(prisma);
+    if (prompts.created.length > 0) {
+      console.log(
+        `Seeded prompt templates: ${prompts.created.join(', ')}`,
+      );
+    }
   } catch (error) {
     throw new Error(
       `Failed to seed defaults: ${

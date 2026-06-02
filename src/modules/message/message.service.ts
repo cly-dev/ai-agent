@@ -9,7 +9,16 @@ import type { Message } from '../../../generated/prisma/client';
 import type { Prisma } from '../../../generated/prisma/client';
 import { AgentEngineService } from '../../core/agent-engine/agent-engine.service';
 import { LlmService } from '../../core/llm/llm.service';
+import {
+  isSessionHistoryTrimTurnsAfterCompressEnabled,
+} from '../../core/memory/memory.constants';
 import { SessionContextStore } from '../../core/memory/session-context.store';
+import { trimTurnsByCompressedWatermark } from '../../core/memory/session-context-trim.util';
+import {
+  isSessionContextPayload,
+  type SessionContextPayload,
+  type SessionContextTurn,
+} from '../../core/memory/session-context.types';
 import { PromptComposerService } from '../../core/prompt/prompt-composer.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChatEventsService } from '../chat/chat-events.service';
@@ -17,25 +26,11 @@ import { ChatService } from '../chat/chat.service';
 import { SaveMessageDto } from './dto/save-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 
-type SessionContextTurn = {
-  messageId: number;
-  role: string;
-  content: string | null;
-  toolName: string | null;
-  toolInput: Prisma.JsonValue | null;
-  toolOutput: Prisma.JsonValue | null;
-  createdAt: string;
-};
-
-type SessionContextPayload = {
-  sessionId: string;
-  turns: SessionContextTurn[];
-  updatedAt: string;
-};
-
 @Injectable()
 export class MessageService {
   private readonly logger = new Logger(MessageService.name);
+  /** 同一会话串行执行 Agent，避免上一轮 assistant 未入库就开始下一轮 compose。 */
+  private readonly agentRunChains = new Map<string, Promise<void>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -71,7 +66,12 @@ export class MessageService {
     });
     await this.syncSessionContextAfterCreate(session.id, message);
     if (message.role === 'user') {
-      this.chatEvents.emit(session.id, {
+      const boundSession = await this.chatService.ensureSessionAgent(
+        session,
+        dto.agentId,
+        appClientId,
+      );
+      this.chatEvents.emit(boundSession.id, {
         event: 'result',
         payload: {
           content: JSON.stringify({
@@ -81,7 +81,14 @@ export class MessageService {
           }),
         },
       });
-      void this.runAgentPipeline(userId, session.id, message.content ?? '');
+      this.scheduleAgentRun(boundSession.id, () =>
+        this.runAgentPipeline(
+          userId,
+          boundSession.id,
+          message.content ?? '',
+          message.id,
+        ),
+      );
     }
     return message;
   }
@@ -184,10 +191,34 @@ export class MessageService {
     });
   }
 
+  private scheduleAgentRun(
+    sessionId: string,
+    task: () => Promise<void>,
+  ): void {
+    const previous = this.agentRunChains.get(sessionId) ?? Promise.resolve();
+    const current = previous
+      .catch(() => undefined)
+      .then(task)
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `agent run chain failed for sessionId=${sessionId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
+    this.agentRunChains.set(sessionId, current);
+    void current.finally(() => {
+      if (this.agentRunChains.get(sessionId) === current) {
+        this.agentRunChains.delete(sessionId);
+      }
+    });
+  }
+
   private async runAgentPipeline(
     userId: number,
     sessionId: string,
     input: string,
+    userMessageId?: number,
   ): Promise<void> {
     const content = input.trim();
     if (!content) {
@@ -198,8 +229,17 @@ export class MessageService {
         userId,
         sessionId,
         input: content,
+        userMessageId,
       });
       if (!run) {
+        this.chatEvents.emit(sessionId, {
+          event: 'error',
+          payload: {
+            message:
+              '当前会话未绑定 Agent，无法执行智能回复。请确认 agentId=1 存在且属于当前 AppClient。',
+            code: 'NO_AGENT',
+          },
+        });
         return;
       }
       const sessionRow = await this.prisma.session.findFirst({
@@ -209,7 +249,7 @@ export class MessageService {
       if (!sessionRow) {
         return;
       }
-      await this.create(
+      const assistantMessage = await this.create(
         userId,
         sessionId,
         {
@@ -218,11 +258,18 @@ export class MessageService {
         },
         sessionRow.appClientId,
       );
+      if (run.turnId) {
+        await this.prisma.messageTurn.update({
+          where: { id: run.turnId },
+          data: { outputMessageId: assistantMessage.id },
+        });
+      }
       this.chatEvents.emit(sessionId, {
         event: 'complete',
         payload: {
           source: 'agent-run',
           runId: run.runId,
+          turnId: run.turnId,
           status: run.status,
         },
       });
@@ -235,7 +282,8 @@ export class MessageService {
       this.chatEvents.emit(sessionId, {
         event: 'error',
         payload: {
-          message: 'agent run failed',
+          message: '处理你的请求时遇到问题，请稍后重试；若持续失败请联系管理员。',
+          code: 'LLM_TIMEOUT',
         },
       });
     }
@@ -265,7 +313,7 @@ export class MessageService {
     };
   }
 
-  private toSessionTurn(message: Message): SessionContextTurn {
+  private toMessageTurn(message: Message): SessionContextTurn {
     return {
       messageId: message.id,
       role: message.role,
@@ -275,26 +323,6 @@ export class MessageService {
       toolOutput: (message.toolOutput as Prisma.JsonValue | null) ?? null,
       createdAt: message.createdAt.toISOString(),
     };
-  }
-
-  private isSessionContextPayload(
-    value: Record<string, unknown>,
-  ): value is SessionContextPayload {
-    const turns = value.turns;
-    if (!Array.isArray(turns)) {
-      return false;
-    }
-    return turns.every((item) => {
-      if (!item || typeof item !== 'object' || Array.isArray(item)) {
-        return false;
-      }
-      const row = item as Record<string, unknown>;
-      return (
-        typeof row.messageId === 'number' &&
-        typeof row.role === 'string' &&
-        typeof row.createdAt === 'string'
-      );
-    });
   }
 
   private async syncSessionContextAfterCreate(
@@ -307,17 +335,22 @@ export class MessageService {
         await this.rebuildSessionContextFromDb(sessionId);
         return;
       }
-      if (!this.isSessionContextPayload(current)) {
+      if (!isSessionContextPayload(current)) {
         await this.rebuildSessionContextFromDb(sessionId);
         return;
       }
       const next: SessionContextPayload = {
         ...current,
         sessionId,
-        turns: [...current.turns, this.toSessionTurn(message)],
+        turns: [...current.turns, this.toMessageTurn(message)],
         updatedAt: new Date().toISOString(),
       };
-      await this.sessionContextStore.set(sessionId, next);
+      const cached = await this.sessionContextStore.trySet(sessionId, next);
+      if (!cached) {
+        this.logger.debug(
+          `session context not written to Redis sessionId=${sessionId}`,
+        );
+      }
     } catch (error) {
       this.logger.warn(
         `failed to sync redis session context for sessionId=${sessionId}: ${
@@ -333,12 +366,31 @@ export class MessageService {
         where: { sessionId },
         orderBy: { createdAt: 'asc' },
       });
+      const existing = await this.sessionContextStore.get(sessionId);
+      const prevPayload =
+        existing && isSessionContextPayload(existing) ? existing : undefined;
+      let turns = rows.map((row) => this.toMessageTurn(row));
+      const compressedUpToMessageId = prevPayload?.compressedUpToMessageId;
+      if (
+        isSessionHistoryTrimTurnsAfterCompressEnabled() &&
+        compressedUpToMessageId != null
+      ) {
+        turns = trimTurnsByCompressedWatermark(turns, compressedUpToMessageId);
+      }
       const payload: SessionContextPayload = {
         sessionId,
-        turns: rows.map((row) => this.toSessionTurn(row)),
+        turns,
+        workingMemory: prevPayload?.workingMemory,
+        compressedHistorySummary: prevPayload?.compressedHistorySummary,
+        compressedUpToMessageId,
         updatedAt: new Date().toISOString(),
       };
-      await this.sessionContextStore.set(sessionId, payload);
+      const cached = await this.sessionContextStore.trySet(sessionId, payload);
+      if (!cached) {
+        this.logger.debug(
+          `session context rebuild skipped (Redis unavailable) sessionId=${sessionId}`,
+        );
+      }
     } catch (error) {
       this.logger.warn(
         `failed to rebuild redis session context for sessionId=${sessionId}: ${

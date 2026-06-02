@@ -8,14 +8,22 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiHeader,
   ApiOperation,
   ApiParam,
   ApiResponse,
+  ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
+import { Request } from 'express';
+import { AppClientDsnGuard } from '../../auth/app-client-dsn.guard';
+import { APP_CLIENT_DSN_HEADER } from '../../auth/app-client-dsn.constants';
 import { AppClientService } from './app-client.service';
 import { CreateAppClientDto } from './dto/create-app-client.dto';
 import { UpdateAppClientDto } from './dto/update-app-client.dto';
@@ -25,6 +33,52 @@ import { UpdateAppClientDto } from './dto/update-app-client.dto';
 @Controller('/app-client')
 export class AppClientController {
   constructor(private readonly service: AppClientService) {}
+
+  private appClientId(req: Request): number {
+    const id = req.appClient?.id;
+    if (id === undefined) {
+      throw new UnauthorizedException('missing app client context');
+    }
+    return id;
+  }
+
+  @Post('auth')
+  @UseGuards(AppClientDsnGuard)
+  @ApiOperation({ summary: '前台 DSN 认证' })
+  @ApiSecurity('app-dsn')
+  @ApiHeader({
+    name: APP_CLIENT_DSN_HEADER,
+    description: '业务方 DSN',
+    required: true,
+  })
+  @ApiHeader({
+    name: 'x-account-token',
+    description:
+      '业务系统账号 token（必填）；外部账号校验通过且用户已绑定当前 App 时返回 accessToken',
+    required: true,
+  })
+  @ApiResponse({
+    status: 201,
+    description: '认证成功，返回本系统 accessToken 与用户信息',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'token 无效、账号未激活或用户未绑定当前 App',
+  })
+  authenticate(@Req() req: Request) {
+    const raw = req.headers['x-account-token'];
+    let accountToken = '';
+    if (typeof raw === 'string') {
+      accountToken = raw.trim();
+    } else if (Array.isArray(raw)) {
+      accountToken = raw[0]?.trim() ?? '';
+    }
+    return this.service.authenticate(
+      this.appClientId(req),
+      accountToken,
+      req.appClient,
+    );
+  }
 
   @Post()
   @ApiOperation({ summary: '管理员创建业务 AppClient' })
@@ -58,7 +112,12 @@ export class AppClientController {
 
   @Delete(':id')
   @ApiParam({ name: 'id', type: Number })
-  @ApiOperation({ summary: '管理员按 ID 删除 AppClient' })
+  @ApiOperation({
+    summary: '管理员按 ID 删除 AppClient',
+    description:
+      '若仍有关联（Agent、Tool、Integration、Skill、UserApp、Session 等）则返回 400，需先清理子资源',
+  })
+  @ApiResponse({ status: 400, description: '存在关联数据，无法删除' })
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.remove(id);
   }

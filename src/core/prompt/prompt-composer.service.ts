@@ -1,31 +1,50 @@
-import { Injectable } from '@nestjs/common';
-import type { Prisma } from '../../../generated/prisma/client';
+import { Injectable, Logger } from '@nestjs/common';
+import { SessionHistoryCompressionService } from '../memory/session-history-compression.service';
 import { UserMemoryStore } from '../memory/user-memory.store';
+import { WorkingMemoryService } from '../memory/working-memory.service';
+import {
+  dbMessageRowToMessageTurn,
+  messageTurnsToLlmMessages,
+} from '../memory/session-context.format';
+import { SessionContextStore } from '../memory/session-context.store';
+import {
+  isSessionContextPayload,
+  type SessionContextPayload,
+} from '../memory/session-context.types';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { LlmChatMessage, LlmRole } from '../llm/llm.types';
+import type { LlmChatMessage } from '../llm/llm.types';
+import { PROMPT_KEYS } from './prompt-template.keys';
+import { PromptRegistryService } from './prompt-registry.service';
 import type { PromptComposeInput, PromptComposeOutput } from './prompt.types';
 
 @Injectable()
 export class PromptComposerService {
-  /** 注入 LLM 的最近会话条数上限（数据库 Message 按时间从早到晚截断末尾窗口）。 */
+  private readonly logger = new Logger(PromptComposerService.name);
+
+  /**
+   * 会话上下文：优先 Redis；送入模型时由 `SessionHistoryCompressionService` 做摘要 + 最近轮次。
+   */
   private static readonly MAX_SESSION_MESSAGES = 80;
-  private static readonly ALLOWED_ROLES: ReadonlySet<LlmRole> = new Set([
-    'system',
-    'user',
-    'assistant',
-    'tool',
-  ]);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly userMemoryStore: UserMemoryStore,
+    private readonly workingMemoryService: WorkingMemoryService,
+    private readonly sessionHistoryCompression: SessionHistoryCompressionService,
+    private readonly sessionContextStore: SessionContextStore,
+    private readonly promptRegistry: PromptRegistryService,
   ) {}
 
   async compose(input: PromptComposeInput): Promise<PromptComposeOutput> {
-    const [agentPrompt, userMemory, conversation] = await Promise.all([
+    const sessionScope = await this.loadSessionScope(input.sessionId);
+    const [agentPrompt, userMemory, workingMemory, conversation, responseStyle, integrationSite] =
+      await Promise.all([
       this.loadAgentPrompt(input.sessionId),
       this.userMemoryStore.get(input.userId),
+      this.workingMemoryService.get(input.sessionId),
       this.loadRecentConversationMessages(input.sessionId),
+      this.promptRegistry.render(PROMPT_KEYS.PLATFORM_RESPONSE_STYLE, sessionScope),
+      this.promptRegistry.render(PROMPT_KEYS.PLATFORM_INTEGRATION_SITE, sessionScope),
     ]);
 
     const messages: LlmChatMessage[] = [];
@@ -37,6 +56,15 @@ export class PromptComposerService {
       });
     }
 
+    messages.push({
+      role: 'system',
+      content: responseStyle,
+    });
+    messages.push({
+      role: 'system',
+      content: integrationSite,
+    });
+
     if (userMemory) {
       messages.push({
         role: 'system',
@@ -44,15 +72,26 @@ export class PromptComposerService {
       });
     }
 
+    if (workingMemory) {
+      messages.push({
+        role: 'system',
+        content: `<working_memory>\n${JSON.stringify(workingMemory)}\n</working_memory>`,
+      });
+    }
+
     if (conversation.length > 0) {
       messages.push({
         role: 'system',
         content:
-          '<session_history>Below are prior messages for this chat session (chronological). Use them as working memory.</session_history>',
+          '<session_history>Earlier turns may appear as session_history_summary; recent turns follow. Prefer working_memory for task state.</session_history>',
       });
       for (const turn of conversation) {
         messages.push(turn);
       }
+    } else if (input.latestUserMessage.trim().length > 0) {
+      this.logger.debug(
+        `compose sessionId=${input.sessionId}: no prior messages (first turn or empty history)`,
+      );
     }
 
     const latest = input.latestUserMessage.trim();
@@ -70,67 +109,90 @@ export class PromptComposerService {
     return { messages };
   }
 
-  private isLlmRole(value: string): value is LlmRole {
-    return PromptComposerService.ALLOWED_ROLES.has(value as LlmRole);
-  }
-
-  /** 从数据库读取最近会话消息，作为 agent / 闲聊 的上下文记忆。 */
   private async loadRecentConversationMessages(
     sessionId: string,
   ): Promise<LlmChatMessage[]> {
+    const fromRedis = await this.loadFromRedis(sessionId);
+    if (fromRedis !== null) {
+      return fromRedis;
+    }
+
+    this.logger.debug(
+      `session context cache miss sessionId=${sessionId}, loading from DB`,
+    );
+    const { messages, payload } = await this.loadFromDatabase(sessionId);
+    const warmed = await this.sessionContextStore.trySet(sessionId, payload);
+    if (!warmed) {
+      this.logger.debug(
+        `session context not cached (Redis unavailable) sessionId=${sessionId}`,
+      );
+    }
+    return messages;
+  }
+
+  private async loadFromRedis(
+    sessionId: string,
+  ): Promise<LlmChatMessage[] | null> {
+    const raw = await this.sessionContextStore.get(sessionId);
+    if (!raw || !isSessionContextPayload(raw)) {
+      return null;
+    }
+    if (raw.sessionId !== sessionId) {
+      return null;
+    }
+    return this.sessionHistoryCompression.buildPromptHistory(
+      raw,
+      PromptComposerService.MAX_SESSION_MESSAGES,
+    );
+  }
+
+  private async loadFromDatabase(sessionId: string): Promise<{
+    messages: LlmChatMessage[];
+    payload: SessionContextPayload;
+  }> {
     const rows = await this.prisma.message.findMany({
       where: { sessionId },
-      orderBy: { createdAt: 'desc' },
-      take: PromptComposerService.MAX_SESSION_MESSAGES,
+      orderBy: { createdAt: 'asc' },
       select: {
+        id: true,
         role: true,
         content: true,
         toolName: true,
         toolInput: true,
         toolOutput: true,
+        createdAt: true,
       },
     });
-    rows.reverse();
-    const out: LlmChatMessage[] = [];
-    for (const row of rows) {
-      if (!this.isLlmRole(row.role)) {
-        continue;
-      }
-      const text = this.formatPersistedMessageBody(row);
-      if (!text.trim()) {
-        continue;
-      }
-      out.push({ role: row.role, content: text });
+    const turns = rows.map((row) => dbMessageRowToMessageTurn(row));
+    const payload: SessionContextPayload = {
+      sessionId,
+      turns,
+      updatedAt: new Date().toISOString(),
+    };
+    const cached = await this.sessionContextStore.get(sessionId);
+    if (cached && isSessionContextPayload(cached)) {
+      payload.workingMemory = cached.workingMemory;
+      payload.compressedHistorySummary = cached.compressedHistorySummary;
+      payload.compressedUpToMessageId = cached.compressedUpToMessageId;
     }
-    return out;
+    return {
+      messages: this.sessionHistoryCompression.buildPromptHistory(
+        payload,
+        PromptComposerService.MAX_SESSION_MESSAGES,
+      ),
+      payload,
+    };
   }
 
-  private formatPersistedMessageBody(row: {
-    role: string;
-    content: string | null;
-    toolName: string | null;
-    toolInput: Prisma.JsonValue | null;
-    toolOutput: Prisma.JsonValue | null;
-  }): string {
-    if (row.role === 'tool') {
-      const name = row.toolName ?? 'tool';
-      const input =
-        row.toolInput !== null && row.toolInput !== undefined
-          ? JSON.stringify(row.toolInput)
-          : '';
-      const output =
-        row.toolOutput !== null && row.toolOutput !== undefined
-          ? JSON.stringify(row.toolOutput)
-          : '';
-      const head = row.content?.trim() ?? '';
-      const parts = [
-        head || `[tool ${name}]`,
-        input ? `args: ${input}` : null,
-        output ? `result: ${output}` : null,
-      ].filter((p): p is string => p != null && p.length > 0);
-      return parts.join('\n');
-    }
-    return row.content?.trim() ?? '';
+  private async loadSessionScope(sessionId: string) {
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      select: { agentId: true, appClientId: true },
+    });
+    return {
+      appClientId: session?.appClientId ?? null,
+      agentId: session?.agentId ?? null,
+    };
   }
 
   private async loadAgentPrompt(sessionId: string): Promise<string | null> {

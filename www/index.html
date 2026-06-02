@@ -110,6 +110,7 @@
       const appDsn = 'cbc800dfdfa9684e0b1c706e7c59f3e0';
       const decoder = new TextDecoder();
       let finalItem = null;
+      let thinkItem = null;
 
       function appendEvent(text, type) {
         const item = document.createElement('div');
@@ -162,6 +163,9 @@
           const payload = JSON.parse(rawText);
           const evtType = type || 'result';
           if (evtType === 'think') {
+            if (typeof payload.content === 'string' && payload.content.trim()) {
+              setFinalContent(payload.content);
+            }
             return;
           }
           if (evtType === 'result') {

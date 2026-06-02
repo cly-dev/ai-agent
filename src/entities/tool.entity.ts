@@ -4,6 +4,8 @@ import type { RelationRef } from '../shared/relation-ref';
 export class ToolEntity {
   id?: number;
   appClientId: number;
+  /** 业务能力键：同一 appClient 内唯一，跨 App 可对齐 */
+  definitionKey: string;
   name: string;
   description: string;
   riskLevel?: RelationRef;

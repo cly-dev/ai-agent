@@ -2,6 +2,8 @@
 
 从 OpenAPI（Swagger）文档选取接口，生成 `Tool` 草稿 JSON，并可选择写入数据库。写入时会按 OpenAPI 的 **tag** 同步 **`ToolCategory`**（业务分类），并把每个 `Tool` 关联到对应分类。
 
+**路径筛选：** 支持 `--path-include` / `--path-exclude`（子串匹配，不区分大小写，逗号分隔）。默认排除 `public`、`buyer`（可用 `--no-default-path-exclude` 关闭）。仅传 `--path-include` 时，非交互环境会自动导入所有匹配接口。已入库的 public/buyer 记录可用 `npm run db:delete-public-buyer-tools` 清理。
+
 入口文件：`swagger-tool-cli.ts`。
 
 ## 前置条件
@@ -54,13 +56,15 @@ npx ts-node src/codegen/swagger-tool-cli.ts --apply --integration-id 1
 | `--app-client-id <n>` | 自动 Integration 所属 appClientId（开启自动模式时必填） | `GEN_TOOL_APP_CLIENT_ID` |
 | `--integration-name <name>` | 自动 Integration 名称（可选，默认用 `info.title`） | `GEN_TOOL_INTEGRATION_NAME` |
 | `--integration-base-url <url>` | 自动 Integration baseUrl（可选，默认 `servers[0].url`） | `GEN_TOOL_INTEGRATION_BASE_URL` |
-| `--integration-api-key <key>` | 自动 Integration apiKey（可选，默认空字符串） | `GEN_TOOL_INTEGRATION_API_KEY` |
 | `--spec-url <url>` | OpenAPI JSON 的 HTTPS 地址 | `GEN_TOOL_SPEC_URL`，缺省为内置测试 URL |
 | `--spec-path <path>` | 本地 OpenAPI JSON 文件路径（相对 cwd） | `GEN_TOOL_SPEC_PATH` |
 | `--output <path>` | 生成的草稿 JSON 路径 | `GEN_TOOL_OUTPUT`，默认 `tmp/generated-tools.json` |
 | `--risk-level <L1\|L2\|L3>` | 生成 Tool 的风险等级 | `GEN_TOOL_RISK_LEVEL`，默认 `L1` |
 | `--tags <csv>` | 只处理这些 **OpenAPI tag**（与 spec 里 `operation.tags` 首项一致） | `GEN_TOOL_TAGS`（逗号分隔） |
 | `--ops <csv>` | 只处理指定操作，格式见下文 | `GEN_TOOL_OPS`（逗号分隔） |
+| `--path-include <csv>` | 只保留 path **包含** 任一子串的接口（如 `/internal/seller`） | `GEN_TOOL_PATH_INCLUDE` |
+| `--path-exclude <csv>` | 排除 path **包含** 任一子串的接口（与默认排除合并） | `GEN_TOOL_PATH_EXCLUDE` |
+| `--no-default-path-exclude` | 不再默认排除 `public`、`buyer` | `GEN_TOOL_NO_DEFAULT_PATH_EXCLUDE=1` |
 | `--insecure` | 下载 `--spec-url` 时 **跳过** TLS 证书校验 | `GEN_TOOL_INSECURE=1` 或 `true` |
 
 ## 环境变量（与参数等价）
@@ -72,13 +76,15 @@ npx ts-node src/codegen/swagger-tool-cli.ts --apply --integration-id 1
 | `GEN_TOOL_APP_CLIENT_ID` | 同 `--app-client-id` |
 | `GEN_TOOL_INTEGRATION_NAME` | 同 `--integration-name` |
 | `GEN_TOOL_INTEGRATION_BASE_URL` | 同 `--integration-base-url` |
-| `GEN_TOOL_INTEGRATION_API_KEY` | 同 `--integration-api-key` |
 | `GEN_TOOL_SPEC_URL` | 同 `--spec-url` |
 | `GEN_TOOL_SPEC_PATH` | 同 `--spec-path` |
 | `GEN_TOOL_OUTPUT` | 同 `--output` |
 | `GEN_TOOL_RISK_LEVEL` | 同 `--risk-level` |
 | `GEN_TOOL_TAGS` | 同 `--tags`，逗号分隔 |
 | `GEN_TOOL_OPS` | 同 `--ops`，逗号分隔 |
+| `GEN_TOOL_PATH_INCLUDE` | 同 `--path-include`，逗号分隔 |
+| `GEN_TOOL_PATH_EXCLUDE` | 同 `--path-exclude`，逗号分隔 |
+| `GEN_TOOL_NO_DEFAULT_PATH_EXCLUDE` | 非空且为 `1` 或 `true` 时等同 `--no-default-path-exclude` |
 | `GEN_TOOL_INSECURE` | 非空且为 `1` 或 `true` 时等同 `--insecure` |
 
 ## 选择要导入的接口
@@ -90,13 +96,18 @@ npx ts-node src/codegen/swagger-tool-cli.ts --apply --integration-id 1
    精确指定操作，每项格式为 **`METHOD:/path`**（method 大写），path 会自动补前导 `/`，例如：  
    `GET:/api/v1/users`、`POST:/orders`。
 
-3. **交互模式**  
-   若未传 `--tags` 且未传 `--ops`，且 **stdin/stdout 为 TTY**，会打印按 tag 分组的编号列表，输入例如：  
+3. **`--path-include` / `--path-exclude`**  
+   - 在列出/导入前先按 path 过滤（与 tag、ops 可叠加）。  
+   - 默认 `--path-exclude` 等效于 `public,buyer`；额外关键字用 `--path-exclude` 追加。  
+   - 仅传 `--path-include`（未传 `--tags` / `--ops`）时：非 TTY 下自动选中所有仍可见的接口；TTY 下进入交互，但列表已缩小。
+
+4. **交互模式**  
+   若未传 `--tags`、`--ops` 且未传 `--path-include`，且 **stdin/stdout 为 TTY**，会打印按 tag 分组的编号列表，输入例如：  
    - `1,3,5`  
    - `1-8`  
    - `all` 或 `*`  
 
-   在 **非 TTY**（如 CI）下必须提供 `--tags` 或 `--ops`，否则会报错。
+   在 **非 TTY**（如 CI）下必须提供 `--tags`、`--ops` 或 `--path-include`，否则会报错。
 
 ## 数据库行为（`--apply`）
 
@@ -138,6 +149,17 @@ npm run codegen:swagger-tools:apply -- \
   --integration-id 1 \
   --spec-url https://example.com/v3/api-docs \
   --tags User,Order
+
+# 仅导入 path 含 /internal/seller 的接口（CI 无需交互）
+npm run codegen:swagger-tools:apply -- \
+  --integration-id 1 \
+  --path-include /internal/seller
+
+# 额外排除 /internal/collection，仍保留默认 public、buyer 排除
+npm run codegen:swagger-tools:dry-run -- \
+  --integration-id 1 \
+  --path-include /internal \
+  --path-exclude /internal/collection
 
 # 自签名证书的开发环境
 npm run codegen:swagger-tools:apply -- \

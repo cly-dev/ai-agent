@@ -3,16 +3,36 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { RequestAppClient } from '../../auth/request-app-client';
+import {
+  UserService,
+  type ExternalAccountProfile,
+} from '../user/user.service';
 import { CreateAppClientDto } from './dto/create-app-client.dto';
 import { UpdateAppClientDto } from './dto/update-app-client.dto';
 
+type ExternalAccountApiResponse = {
+  id?: number;
+  email?: string;
+  nickName?: string;
+  cnName?: string;
+  employeeId?: string;
+  phoneNum?: string;
+  active?: boolean;
+};
+
 @Injectable()
 export class AppClientService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly userService: UserService,
+  ) {}
 
   async create(dto: CreateAppClientDto) {
     const name = dto.name?.trim();
@@ -69,6 +89,12 @@ export class AppClientService {
 
   async remove(id: number) {
     await this.findOne(id);
+    const blockers = await this.collectAppClientDeleteBlockers(id);
+    if (blockers.length > 0) {
+      throw new BadRequestException(
+        `appClient ${id} cannot be deleted while referenced by: ${blockers.join(', ')}`,
+      );
+    }
     try {
       return await this.prisma.appClient.delete({ where: { id } });
     } catch (error) {
@@ -88,6 +114,273 @@ export class AppClientService {
       }
       throw error;
     }
+  }
+
+  /** 删除前检查各子资源是否仍有关联（有则不可删）。 */
+  private async collectAppClientDeleteBlockers(
+    appClientId: number,
+  ): Promise<string[]> {
+    const [
+      agents,
+      tools,
+      sessions,
+      messageTurns,
+      agentRuns,
+      integrations,
+      userApps,
+      promptTemplates,
+      skills,
+    ] = await this.prisma.$transaction([
+      this.prisma.agent.count({ where: { appClientId } }),
+      this.prisma.tool.count({ where: { appClientId } }),
+      this.prisma.session.count({ where: { appClientId } }),
+      this.prisma.messageTurn.count({ where: { appClientId } }),
+      this.prisma.agentRun.count({ where: { appClientId } }),
+      this.prisma.integration.count({ where: { appClientId } }),
+      this.prisma.userApp.count({ where: { appId: appClientId } }),
+      this.prisma.promptTemplate.count({ where: { appClientId } }),
+      this.prisma.skill.count({ where: { appClientId } }),
+    ]);
+
+    const parts: string[] = [];
+    if (agents > 0) {
+      parts.push(`${agents} agent(s)`);
+    }
+    if (tools > 0) {
+      parts.push(`${tools} tool(s)`);
+    }
+    if (integrations > 0) {
+      parts.push(`${integrations} integration(s)`);
+    }
+    if (skills > 0) {
+      parts.push(`${skills} skill(s)`);
+    }
+    if (userApps > 0) {
+      parts.push(`${userApps} user-app binding(s)`);
+    }
+    if (sessions > 0) {
+      parts.push(`${sessions} session(s)`);
+    }
+    if (messageTurns > 0) {
+      parts.push(`${messageTurns} message turn(s)`);
+    }
+    if (agentRuns > 0) {
+      parts.push(`${agentRuns} agent run(s)`);
+    }
+    if (promptTemplates > 0) {
+      parts.push(`${promptTemplates} prompt template(s)`);
+    }
+    return parts;
+  }
+
+  /**
+   * 前台 SDK 认证：DSN + 业务 accountToken。
+   * 校验通过后按 employeeId 自动建档/复用用户；须已绑定当前 App（UserApp）方可签发 JWT。
+   */
+  async authenticate(
+    appClientId: number,
+    accountToken: string,
+    appClient: RequestAppClient | undefined,
+  ) {
+    const token = accountToken.trim();
+    if (!token) {
+      throw new UnauthorizedException('x-account-token is required');
+    }
+
+    const profile = await this.fetchExternalAccountProfile(token);
+    if (!profile.active) {
+      throw new UnauthorizedException('external account is inactive');
+    }
+
+    const user = await this.userService.findOrCreateByExternalAccount(profile);
+    await this.assertUserBelongsToApp(user.id, appClientId);
+    await this.bindUserIntegrations(user.id, appClientId, token);
+
+    const accessToken = await this.userService.signUserAccessToken({
+      id: user.id,
+      email: user.email,
+      username: user.username,
+    });
+
+    return {
+      ok: true,
+      appClient,
+      accessToken,
+      user,
+      accountTokenBound: true,
+    };
+  }
+
+  private async fetchExternalAccountProfile(
+    accountToken: string,
+  ): Promise<ExternalAccountProfile> {
+    const appClientHost = process.env.APP_CLIENT_HOST?.trim();
+    if (!appClientHost) {
+      throw new BadRequestException('APP_CLIENT_HOST is not configured');
+    }
+
+    const accountUrl = new URL(
+      '/account/seller/account/current',
+      appClientHost.endsWith('/') ? appClientHost : `${appClientHost}/`,
+    );
+    let accountResponse: Response;
+    try {
+      accountResponse = await fetch(accountUrl, {
+        method: 'GET',
+        headers: this.buildBrowserLikeHeaders(accountUrl.origin, {
+          Authorization: `Bearer ${accountToken}`,
+        }),
+      });
+    } catch (error) {
+      const detail = this.formatFetchError(error);
+      throw new ServiceUnavailableException(
+        `无法连接外部账号服务 ${accountUrl.origin}：${detail}。请检查 APP_CLIENT_HOST、VPN/内网连通性及 x-account-token 是否有效。`,
+      );
+    }
+    const account = await this.parseFetchBody(accountResponse);
+    if (!accountResponse.ok) {
+      throw new UnauthorizedException(
+        `external account verification failed: ${accountResponse.status}`,
+      );
+    }
+
+    return this.parseExternalAccountProfile(account);
+  }
+
+  private parseExternalAccountProfile(
+    account: unknown,
+  ): ExternalAccountProfile {
+    if (!account || typeof account !== 'object' || Array.isArray(account)) {
+      throw new UnauthorizedException('invalid external account response');
+    }
+    const row = account as ExternalAccountApiResponse;
+    const employeeId = row.employeeId?.trim();
+    const email = row.email?.trim();
+    if (!employeeId) {
+      throw new UnauthorizedException(
+        'external account missing employeeId',
+      );
+    }
+    if (!email) {
+      throw new UnauthorizedException('external account missing email');
+    }
+    return {
+      employeeId,
+      email,
+      username: row.nickName?.trim() || row.cnName?.trim() || employeeId,
+      nickName: row.nickName?.trim(),
+      cnName: row.cnName?.trim(),
+      active: row.active !== false,
+    };
+  }
+
+  /** 用户须已由管理员绑定到当前 AppClient，否则拒绝认证。 */
+  private async assertUserBelongsToApp(
+    userId: number,
+    appClientId: number,
+  ): Promise<void> {
+    const binding = await this.prisma.userApp.findUnique({
+      where: {
+        userId_appId: {
+          userId,
+          appId: appClientId,
+        },
+      },
+      select: { id: true },
+    });
+    if (!binding) {
+      throw new UnauthorizedException(
+        'user is not assigned to this app client',
+      );
+    }
+  }
+
+  private async bindUserIntegrations(
+    userId: number,
+    appClientId: number,
+    accountToken: string,
+  ): Promise<void> {
+    const integrations = await this.prisma.integration.findMany({
+      where: { appClientId },
+      select: { id: true },
+    });
+    if (integrations.length === 0) {
+      return;
+    }
+    await this.prisma.$transaction(
+      integrations.map((integration) =>
+        this.prisma.userIntegration.upsert({
+          where: {
+            userId_integrationId: {
+              userId,
+              integrationId: integration.id,
+            },
+          },
+          create: {
+            userId,
+            integrationId: integration.id,
+            userApiKey: accountToken,
+            isActive: true,
+          },
+          update: {
+            userApiKey: accountToken,
+            isActive: true,
+          },
+        }),
+      ),
+    );
+  }
+
+  /** 将 fetch Response 的 body 解析为 JSON 或文本（body 只能读一次）。 */
+  private async parseFetchBody(response: Response): Promise<unknown> {
+    const text = await response.text();
+    if (!text) {
+      return null;
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        return text;
+      }
+    }
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      return text;
+    }
+  }
+
+  /** 将 fetch 网络层错误转为可读信息（TLS/ECONNRESET 等）。 */
+  private formatFetchError(error: unknown): string {
+    if (!(error instanceof Error)) {
+      return String(error);
+    }
+    const cause = (error as Error & { cause?: unknown }).cause;
+    if (cause instanceof Error) {
+      const code =
+        'code' in cause && typeof cause.code === 'string' ? cause.code : '';
+      return code ? `${cause.message} (${code})` : cause.message;
+    }
+    return error.message;
+  }
+
+  /** 模拟浏览器常见请求头，降低网关/WAF 拦截概率。 */
+  private buildBrowserLikeHeaders(
+    origin: string,
+    extra: Record<string, string> = {},
+  ): Record<string, string> {
+    const host = new URL(origin).host;
+    return {
+      Host: host,
+      Connection: 'keep-alive',
+      'User-Agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      Accept: 'application/json, text/plain, */*',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      ...extra,
+    };
   }
 
   private createRandomDsn(): string {

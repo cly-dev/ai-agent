@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Observable, Subject } from 'rxjs';
+import { Observable, ReplaySubject } from 'rxjs';
 
 /** SSE 事件：think-思考，result-结果，complete-推送完成，error-推送失败 */
 export type ChatSseEvent =
+  /** content 为当前 run 内合并后的完整思考过程（非增量片段） */
   | { event: 'think'; payload: { content: string } }
   | { event: 'result'; payload: { content: string } }
   | { event: 'complete'; payload: Record<string, unknown> }
@@ -10,10 +11,13 @@ export type ChatSseEvent =
 
 @Injectable()
 export class ChatEventsService {
-  private readonly subjects = new Map<string, Subject<ChatSseEvent>>();
+  /** 保留最近事件，避免 SSE 晚于发消息连接时收不到推送 */
+  private static readonly REPLAY_BUFFER = 64;
+  private readonly subjects = new Map<string, ReplaySubject<ChatSseEvent>>();
 
   observeSession(sessionId: string): Observable<ChatSseEvent> {
-    return this.getSubject(sessionId).asObservable();
+    const normalized = this.normalizeSessionId(sessionId);
+    return this.getSubject(normalized).asObservable();
   }
 
   emit(sessionId: string, evt: ChatSseEvent): void {
@@ -21,18 +25,24 @@ export class ChatEventsService {
   }
 
   closeSession(sessionId: string): void {
-    const sub = this.subjects.get(sessionId);
+    const normalized = this.normalizeSessionId(sessionId);
+    const sub = this.subjects.get(normalized);
     if (sub) {
       sub.complete();
-      this.subjects.delete(sessionId);
+      this.subjects.delete(normalized);
     }
   }
 
-  private getSubject(sessionId: string): Subject<ChatSseEvent> {
-    let sub = this.subjects.get(sessionId);
+  private normalizeSessionId(sessionId: string): string {
+    return sessionId.trim().toLowerCase();
+  }
+
+  private getSubject(sessionId: string): ReplaySubject<ChatSseEvent> {
+    const normalized = this.normalizeSessionId(sessionId);
+    let sub = this.subjects.get(normalized);
     if (!sub) {
-      sub = new Subject<ChatSseEvent>();
-      this.subjects.set(sessionId, sub);
+      sub = new ReplaySubject<ChatSseEvent>(ChatEventsService.REPLAY_BUFFER);
+      this.subjects.set(normalized, sub);
     }
     return sub;
   }

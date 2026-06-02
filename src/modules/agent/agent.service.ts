@@ -1,12 +1,40 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ToolLevel } from '../../../generated/prisma/client';
 import type { Prisma } from '../../../generated/prisma/client';
+import {
+  resolvePagination,
+  toPaginatedResult,
+} from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  toAgentToolBindingItemList,
+  toAgentToolsBindingResponse,
+  toAgentWithToolsResponse,
+  toAgentWithToolsResponseList,
+} from './agent.mapper';
+import {
+  AGENT_LINKED_TOOL_SELECT,
+  AGENT_WITH_TOOLS_INCLUDE,
+  type AgentToolsBindingResponse,
+  type AgentToolsPageResponse,
+} from './agent.types';
+import {
+  buildAgentToolBindingsOrderBy,
+  buildAgentToolBindingsWhere,
+} from './agent-tool-query.util';
+import type { QueryAgentToolsDto } from './dto/query-agent-tools.dto';
+import { BindAgentToolsDto } from './dto/bind-agent-tools.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 
 @Injectable()
 export class AgentService {
+  private readonly logger = new Logger(AgentService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateAgentDto) {
@@ -30,24 +58,32 @@ export class AgentService {
         skipDuplicates: true,
       });
     }
-    return agent;
+    return this.findOneWithTools(agent.id);
   }
 
   async findAll() {
-    return this.prisma.agent.findMany({ orderBy: { id: 'asc' } });
+    const rows = await this.prisma.agent.findMany({
+      orderBy: { id: 'asc' },
+      include: AGENT_WITH_TOOLS_INCLUDE,
+    });
+    return toAgentWithToolsResponseList(rows);
+  }
+
+  async findByAppClientId(appClientId: number) {
+    await this.assertAppClientExists(appClientId);
+    return this.prisma.agent.findMany({
+      where: { appClientId },
+      orderBy: { id: 'asc' },
+    });
   }
 
   async findOne(id: number) {
-    const row = await this.prisma.agent.findUnique({ where: { id } });
-    if (!row) {
-      throw new NotFoundException(`agent ${id} not found`);
-    }
-    return row;
+    return this.findOneWithTools(id);
   }
 
   async update(id: number, dto: UpdateAgentDto) {
-    await this.findOne(id);
-    const agent = await this.prisma.agent.update({
+    await this.findOneWithTools(id);
+    await this.prisma.agent.update({
       where: { id },
       data: {
         appClientId: dto.appClientId,
@@ -71,12 +107,95 @@ export class AgentService {
         }),
       ]);
     }
-    return agent;
+    return this.findOneWithTools(id);
   }
 
   async remove(id: number) {
-    await this.findOne(id);
-    return this.prisma.agent.delete({ where: { id } });
+    const row = await this.findOneWithTools(id);
+    await this.prisma.agent.delete({ where: { id } });
+    return row;
+  }
+
+  private async findOneWithTools(id: number) {
+    const row = await this.prisma.agent.findUnique({
+      where: { id },
+      include: AGENT_WITH_TOOLS_INCLUDE,
+    });
+    if (!row) {
+      throw new NotFoundException(`agent ${id} not found`);
+    }
+    return toAgentWithToolsResponse(row);
+  }
+
+  async getToolsForAgent(
+    agentId: number,
+    appClientId: number,
+    query: QueryAgentToolsDto,
+  ): Promise<AgentToolsPageResponse> {
+    await this.assertAgentInAppClient(agentId, appClientId);
+    const { page, pageSize, skip, take } = resolvePagination(
+      query.page,
+      query.pageSize,
+    );
+    const { orderBy, order } = query.resolveOrder();
+    const where = buildAgentToolBindingsWhere(agentId, appClientId, query);
+    const orderByClause = buildAgentToolBindingsOrderBy(orderBy, order);
+    const [bindings, total] = await this.prisma.$transaction([
+      this.prisma.agentTool.findMany({
+        where,
+        orderBy: orderByClause,
+        skip,
+        take,
+        include: {
+          tool: { select: AGENT_LINKED_TOOL_SELECT },
+        },
+      }),
+      this.prisma.agentTool.count({ where }),
+    ]);
+    const items = toAgentToolBindingItemList(bindings);
+    return {
+      agentId,
+      appClientId,
+      ...toPaginatedResult(items, total, page, pageSize),
+    };
+  }
+
+  async addToolsToAgent(
+    agentId: number,
+    appClientId: number,
+    dto: BindAgentToolsDto,
+  ): Promise<AgentToolsBindingResponse> {
+    await this.assertAgentInAppClient(agentId, appClientId);
+    const uniqueToolIds = [...new Set(dto.toolIds)];
+    await this.assertToolsBelongToAppClient(uniqueToolIds, appClientId);
+    await this.prisma.agentTool.createMany({
+      data: uniqueToolIds.map((toolId) => ({
+        agentId,
+        toolId,
+      })),
+      skipDuplicates: true,
+    });
+    const bindings = await this.findAgentToolBindings(agentId, appClientId);
+    return toAgentToolsBindingResponse(agentId, appClientId, bindings);
+  }
+
+  async removeToolsFromAgent(
+    agentId: number,
+    appClientId: number,
+    dto: BindAgentToolsDto,
+  ): Promise<AgentToolsBindingResponse> {
+    await this.assertAgentInAppClient(agentId, appClientId);
+    const uniqueToolIds = [...new Set(dto.toolIds)];
+    await this.assertToolsBelongToAppClient(uniqueToolIds, appClientId);
+    await this.prisma.agentTool.deleteMany({
+      where: {
+        agentId,
+        toolId: { in: uniqueToolIds },
+        tool: { appClientId },
+      },
+    });
+    const bindings = await this.findAgentToolBindings(agentId, appClientId);
+    return toAgentToolsBindingResponse(agentId, appClientId, bindings);
   }
 
   async getAllowedTools(
@@ -84,6 +203,9 @@ export class AgentService {
     userId: number,
     appClientId: number,
   ) {
+    this.logger.debug(
+      `getAllowedTools start agentId=${agentId} userId=${userId} appClientId=${appClientId}`,
+    );
     const [agent, user] = await Promise.all([
       this.prisma.agent.findFirst({
         where: { id: agentId, appClientId },
@@ -113,6 +235,9 @@ export class AgentService {
       },
     });
     if (!userApp) {
+      this.logger.warn(
+        `getAllowedTools empty: no userApp binding userId=${userId} appClientId=${appClientId}`,
+      );
       return [];
     }
     const roleIds = [userApp.roleId];
@@ -129,7 +254,13 @@ export class AgentService {
     const effectiveToolIds = agentTools
       .map((item) => item.toolId)
       .filter((id) => roleToolIds.has(id));
+    this.logger.debug(
+      `getAllowedTools candidate counts agentTools=${agentTools.length} roleTools=${roleTools.length} intersection=${effectiveToolIds.length} roleId=${userApp.roleId} maxLevel=${maxLevel}`,
+    );
     if (effectiveToolIds.length === 0) {
+      this.logger.warn(
+        `getAllowedTools empty: no intersection agentId=${agentId} userId=${userId} appClientId=${appClientId}`,
+      );
       return [];
     }
 
@@ -139,11 +270,37 @@ export class AgentService {
         appClientId,
         riskLevel: { in: this.allowedLevels(maxLevel) },
       },
+      include: {
+        integration: {
+          select: {
+            id: true,
+            name: true,
+            baseUrl: true,
+            authMode: true,
+            apiKey: true,
+          },
+        },
+      },
     });
     const toolById = new Map(tools.map((tool) => [tool.id, tool]));
-    return effectiveToolIds
+    const filtered = effectiveToolIds
       .map((id) => toolById.get(id))
       .filter((tool) => tool !== undefined);
+    this.logger.debug(
+      `getAllowedTools list ${JSON.stringify(
+        filtered.map((tool) => ({
+          id: tool.id,
+          name: tool.name,
+          definitionKey: tool.definitionKey,
+          method: tool.method,
+          path: tool.path,
+        })),
+      )}`,
+    );
+    this.logger.debug(
+      `getAllowedTools result allowed=${filtered.length} fetched=${tools.length} appClientId=${appClientId}`,
+    );
+    return filtered;
   }
 
   private resolveMaxToolLevel(levels: ToolLevel[]): ToolLevel {
@@ -164,5 +321,58 @@ export class AgentService {
       return [ToolLevel.L1, ToolLevel.L2];
     }
     return [ToolLevel.L1];
+  }
+
+  private async assertAppClientExists(appClientId: number): Promise<void> {
+    const row = await this.prisma.appClient.findUnique({
+      where: { id: appClientId },
+      select: { id: true },
+    });
+    if (!row) {
+      throw new BadRequestException(`appClient ${appClientId} not found`);
+    }
+  }
+
+  private async assertAgentInAppClient(
+    agentId: number,
+    appClientId: number,
+  ): Promise<void> {
+    await this.assertAppClientExists(appClientId);
+    const agent = await this.prisma.agent.findFirst({
+      where: { id: agentId, appClientId },
+      select: { id: true },
+    });
+    if (!agent) {
+      throw new NotFoundException(
+        `agent ${agentId} not found under appClient ${appClientId}`,
+      );
+    }
+  }
+
+  private async assertToolsBelongToAppClient(
+    toolIds: number[],
+    appClientId: number,
+  ): Promise<void> {
+    const rows = await this.prisma.tool.findMany({
+      where: { id: { in: toolIds }, appClientId },
+      select: { id: true },
+    });
+    if (rows.length !== toolIds.length) {
+      const found = new Set(rows.map((r) => r.id));
+      const missing = toolIds.filter((id) => !found.has(id));
+      throw new BadRequestException(
+        `tool id(s) not found for appClient ${appClientId}: ${missing.join(', ')}`,
+      );
+    }
+  }
+
+  private findAgentToolBindings(agentId: number, appClientId: number) {
+    return this.prisma.agentTool.findMany({
+      where: buildAgentToolBindingsWhere(agentId, appClientId, {}),
+      orderBy: { toolId: 'asc' },
+      include: {
+        tool: { select: AGENT_LINKED_TOOL_SELECT },
+      },
+    });
   }
 }

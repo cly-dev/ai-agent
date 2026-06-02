@@ -9,10 +9,3 @@ export type PromptComposeInput = {
 export type PromptComposeOutput = {
   messages: LlmChatMessage[];
 };
-
-export type SessionContextTurn = {
-  messageId: number;
-  role: string;
-  content: string | null;
-  createdAt: string;
-};

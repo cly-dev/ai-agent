@@ -3,11 +3,10 @@ import type { RelationRef } from '../shared/relation-ref';
 
 export class UserEntity {
   id?: number;
+  employeeId: string;
   email: string;
   password: string;
   username: string;
-  userType?: RelationRef;
-  userRole?: RelationRef | null;
   mustChangePassword?: boolean;
   createdAt?: Date;
   sessions: RelationRef[];

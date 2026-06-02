@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsIn,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
@@ -10,6 +12,15 @@ import {
 const MESSAGE_ROLES = ['user', 'assistant', 'tool', 'system'] as const;
 
 export class SaveMessageDto {
+  @ApiPropertyOptional({
+    description: '关联 Agent ID（须属于同一 AppClient），默认 1',
+    default: 1,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  agentId?: number;
+
   @ApiProperty({
     description: '角色',
     enum: MESSAGE_ROLES,

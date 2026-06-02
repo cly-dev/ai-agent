@@ -26,3 +26,53 @@ export function getDefaultSessionContextTtlSec(): number {
   }
   return n;
 }
+
+function readPositiveInt(
+  envKey: string,
+  defaultValue: number,
+): number {
+  const raw = process.env[envKey];
+  if (raw === undefined || raw === '') {
+    return defaultValue;
+  }
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : defaultValue;
+}
+
+/** 是否启用多轮会话历史 LLM 压缩。`SESSION_HISTORY_COMPRESS=0` 关闭。 */
+export function isSessionHistoryCompressionEnabled(): boolean {
+  const raw = process.env.SESSION_HISTORY_COMPRESS?.trim().toLowerCase();
+  if (raw === '0' || raw === 'false' || raw === 'off') {
+    return false;
+  }
+  return true;
+}
+
+/** 超过该轮次数（turn 条数）时触发压缩，默认 24。 */
+export function getSessionHistoryCompressAfterTurns(): number {
+  return readPositiveInt('SESSION_HISTORY_COMPRESS_AFTER_TURNS', 24);
+}
+
+/** 压缩后仍保留的最近轮次原文条数，默认 12。 */
+export function getSessionHistoryKeepRecentTurns(): number {
+  return readPositiveInt('SESSION_HISTORY_KEEP_RECENT_TURNS', 12);
+}
+
+/** 压缩 LLM 输出摘要 max_tokens，默认 768。 */
+export function getSessionHistoryCompressMaxSummaryTokens(): number {
+  return readPositiveInt('SESSION_HISTORY_COMPRESS_MAX_SUMMARY_TOKENS', 768);
+}
+
+/** 送入压缩 LLM 的 transcript 估算 token 上限，默认 6000。 */
+export function getSessionHistoryCompressMaxInputTokens(): number {
+  return readPositiveInt('SESSION_HISTORY_COMPRESS_MAX_INPUT_TOKENS', 6000);
+}
+
+/** 压缩成功后是否软裁剪 Redis turns（已摘要部分删除）。`0` 关闭。 */
+export function isSessionHistoryTrimTurnsAfterCompressEnabled(): boolean {
+  const raw = process.env.SESSION_HISTORY_TRIM_TURNS_AFTER_COMPRESS?.trim().toLowerCase();
+  if (raw === '0' || raw === 'false' || raw === 'off') {
+    return false;
+  }
+  return true;
+}

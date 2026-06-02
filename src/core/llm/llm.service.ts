@@ -4,15 +4,23 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
-import type { AIMessage } from '@langchain/core/messages';
+import { AIMessage, AIMessageChunk } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
-import type { LlmModelConfig } from '../../../generated/prisma/client';
+import {
+  LlmModelKind,
+  type LlmModelConfig,
+} from '../../../generated/prisma/client';
+import { readEmbeddingRuntimeParameters } from './llm-embedding-parameters.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizeToolCallArgs as normalizeToolArguments } from './tool-call-args.util';
+import {
+  estimateMessagesTokens,
+  trimMessagesToTokenBudget,
+} from './message-token-budget.util';
 import type {
   LlmChatInput,
+  LlmChatMessage,
   LlmChatResult,
-  LlmStreamDelta,
   LlmStreamHandlers,
   LlmToolCall,
   LlmToolDefinition,
@@ -21,7 +29,23 @@ import type {
 @Injectable()
 export class LlmService implements OnModuleInit {
   private readonly logger = new Logger(LlmService.name);
-  private cachedConfig: LlmModelConfig | null = null;
+  /** 单次回复默认输出上限（与上下文窗口无关）。 */
+  private static readonly DEFAULT_OUTPUT_MAX_TOKENS = 2048;
+  /** 为 tool schema / 路由预留的 token 余量。 */
+  private static readonly INVOCATION_TOKEN_BUFFER = 384;
+  private static readonly LOCAL_EMBED_BATCH_SIZE = 16;
+  private cachedChatConfig: LlmModelConfig | null = null;
+  /** undefined = 未加载；null = 已加载但无启用项 */
+  private cachedEmbeddingConfig: LlmModelConfig | null | undefined;
+  private localEmbeddingRuntime:
+    | {
+        model: string;
+        extractor: (
+          input: string | string[],
+          options?: Record<string, unknown>,
+        ) => Promise<unknown>;
+      }
+    | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -38,7 +62,9 @@ export class LlmService implements OnModuleInit {
   }
 
   async refreshConfigCache(): Promise<void> {
-    this.cachedConfig = await this.loadActiveConfigFromDb();
+    this.cachedChatConfig = await this.loadActiveConfigFromDb(LlmModelKind.chat);
+    this.cachedEmbeddingConfig = await this.loadActiveEmbeddingConfigFromDb();
+    this.localEmbeddingRuntime = null;
   }
 
   async chat(input: LlmChatInput): Promise<LlmChatResult> {
@@ -52,6 +78,210 @@ export class LlmService implements OnModuleInit {
     return this.invokeWithLangChain(input, true, handlers);
   }
 
+  /** 模型上下文窗口（parameters.contextLength 等），非输出 max_tokens。 */
+  async getContextLength(): Promise<number | null> {
+    const config = await this.getCachedConfig();
+    return this.resolveContextLength(
+      this.normalizeParameters(config.parameters),
+    );
+  }
+
+  /** 配置的输出 max_tokens（已校正：不会误用整段 context 作为输出上限）。 */
+  async getResolvedMaxTokens(): Promise<number> {
+    const config = await this.getCachedConfig();
+    const parameters = this.normalizeParameters(config.parameters);
+    const contextLength = this.resolveContextLength(parameters);
+    const raw =
+      config.maxTokens ??
+      this.pickNumber(parameters.maxTokens) ??
+      LlmService.DEFAULT_OUTPUT_MAX_TOKENS;
+    return this.normalizeConfiguredOutputMax(raw, contextLength);
+  }
+
+  /**
+   * 按「上下文窗口 − 当前输入」计算本次请求可用的 max_tokens。
+   */
+  async resolveInvocationMaxTokens(
+    messages: LlmChatMessage[],
+  ): Promise<number> {
+    const config = await this.getCachedConfig();
+    const parameters = this.normalizeParameters(config.parameters);
+    const contextLength = this.resolveContextLength(parameters);
+    const configuredOutput = this.normalizeConfiguredOutputMax(
+      config.maxTokens ??
+        this.pickNumber(parameters.maxTokens) ??
+        LlmService.DEFAULT_OUTPUT_MAX_TOKENS,
+      contextLength,
+    );
+    const inputTokens = estimateMessagesTokens(messages);
+    return this.capOutputMaxTokens(
+      configuredOutput,
+      contextLength,
+      inputTokens,
+    );
+  }
+
+  /**
+   * Input message token budget derived from model config.
+   * Uses optional contextLength (parameters) minus output reserve (maxTokens).
+   * Falls back to maxTokens when contextLength is not configured.
+   */
+  async getMessageTokenBudget(): Promise<number> {
+    const outputReserve = await this.getResolvedMaxTokens();
+    const contextLength = await this.getContextLength();
+    if (contextLength != null && contextLength > outputReserve) {
+      return contextLength - outputReserve;
+    }
+    return outputReserve;
+  }
+
+  async trimMessagesToBudget(
+    messages: LlmChatInput['messages'],
+  ): Promise<LlmChatInput['messages']> {
+    const budget = await this.getMessageTokenBudget();
+    return trimMessagesToTokenBudget(messages, budget);
+  }
+
+  /** 是否已配置 embedding（DB transformers/api 或环境变量降级）。 */
+  async isEmbeddingConfigured(): Promise<boolean> {
+    const db = await this.getCachedEmbeddingConfig();
+    if (db) {
+      return true;
+    }
+    return (
+      !!process.env.AGENT_EMBEDDING_MODEL?.trim() ||
+      !!process.env.AGENT_EMBEDDING_LOCAL_MODEL?.trim()
+    );
+  }
+
+  async embedTexts(texts: string[]): Promise<number[][]> {
+    const normalized = texts.map((text) => text.trim()).filter(Boolean);
+    if (normalized.length === 0) {
+      return [];
+    }
+
+    const dbEmbedding = await this.getCachedEmbeddingConfig();
+    if (dbEmbedding?.kind === LlmModelKind.transformers_embedding) {
+      const runtimeParams = readEmbeddingRuntimeParameters(dbEmbedding);
+      return this.embedTextsByLocalTransformer(
+        normalized,
+        dbEmbedding.model,
+        runtimeParams,
+      );
+    }
+    if (dbEmbedding?.kind === LlmModelKind.api_embedding) {
+      return this.embedTextsByRemoteApi(normalized, dbEmbedding);
+    }
+
+    const localModel = process.env.AGENT_EMBEDDING_LOCAL_MODEL?.trim();
+    if (localModel) {
+      return this.embedTextsByLocalTransformer(
+        normalized,
+        localModel,
+        readEmbeddingRuntimeParameters(null),
+      );
+    }
+    const runtime = await this.resolveEmbeddingRuntimeConfigFromEnv();
+    if (!runtime) {
+      throw new Error(
+        'embedding is not configured: enable LlmModelConfig(kind=transformers_embedding) in DB or set AGENT_EMBEDDING_LOCAL_MODEL / AGENT_EMBEDDING_MODEL',
+      );
+    }
+    return this.embedTextsByRemoteApiWithRuntime(normalized, runtime);
+  }
+
+  private async embedTextsByRemoteApi(
+    texts: string[],
+    config: LlmModelConfig,
+  ): Promise<number[][]> {
+    const runtime = await this.resolveEmbeddingRuntimeConfigFromRow(config);
+    if (!runtime) {
+      throw new Error('api_embedding config is incomplete');
+    }
+    return this.embedTextsByRemoteApiWithRuntime(texts, runtime);
+  }
+
+  private async embedTextsByRemoteApiWithRuntime(
+    texts: string[],
+    runtime: { url: string; apiKey: string; model: string },
+  ): Promise<number[][]> {
+    const response = await fetch(runtime.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${runtime.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: runtime.model,
+        input: texts,
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(
+        `embedding request failed (${response.status}): ${body.slice(0, 500)}`,
+      );
+    }
+    const payload: unknown = await response.json();
+    return this.parseEmbeddingResponse(payload, texts.length);
+  }
+
+  private async resolveEmbeddingRuntimeConfigFromEnv(): Promise<{
+    url: string;
+    apiKey: string;
+    model: string;
+  } | null> {
+    const model = process.env.AGENT_EMBEDDING_MODEL?.trim();
+    if (!model) {
+      return null;
+    }
+    const chatConfig = await this.getCachedChatConfig();
+    const baseUrl =
+      process.env.AGENT_EMBEDDING_BASE_URL?.trim() || chatConfig.baseUrl;
+    const chatPath =
+      process.env.AGENT_EMBEDDING_CHAT_PATH?.trim() || chatConfig.chatPath;
+    const embeddingPath =
+      process.env.AGENT_EMBEDDING_PATH?.trim() || '/v1/embeddings';
+    const url = this.resolveOpenAiCompatibleUrl(
+      baseUrl,
+      chatPath,
+      embeddingPath,
+    );
+    const fromEmbeddingEnv = process.env.AGENT_EMBEDDING_API_KEY
+      ? String(process.env.AGENT_EMBEDDING_API_KEY).trim()
+      : '';
+    const fromDb =
+      chatConfig.apiKey != null ? String(chatConfig.apiKey).trim() : '';
+    const fromEnv = process.env.OPENAI_API_KEY
+      ? String(process.env.OPENAI_API_KEY).trim()
+      : '';
+    const apiKey = fromEmbeddingEnv || fromDb || fromEnv || 'local-internal';
+    return { url, apiKey, model };
+  }
+
+  private async resolveEmbeddingRuntimeConfigFromRow(
+    config: LlmModelConfig,
+  ): Promise<{ url: string; apiKey: string; model: string } | null> {
+    const model = config.model?.trim();
+    if (!model) {
+      return null;
+    }
+    const embeddingPath =
+      process.env.AGENT_EMBEDDING_PATH?.trim() || '/v1/embeddings';
+    const url = this.resolveOpenAiCompatibleUrl(
+      config.baseUrl,
+      config.chatPath,
+      embeddingPath,
+    );
+    const apiKey =
+      config.apiKey != null && String(config.apiKey).trim()
+        ? String(config.apiKey).trim()
+        : process.env.AGENT_EMBEDDING_API_KEY?.trim() ||
+          process.env.OPENAI_API_KEY?.trim() ||
+          'local-internal';
+    return { url, apiKey, model };
+  }
+
   async createLangChainChatModel(options?: {
     streaming?: boolean;
     temperature?: number;
@@ -63,10 +293,14 @@ export class LlmService implements OnModuleInit {
       options?.temperature ??
       config.temperature ??
       this.pickNumber(parameters.temperature);
-    const resolvedMaxTokens =
+    const contextLength = this.resolveContextLength(parameters);
+    const configuredOutput = this.normalizeConfiguredOutputMax(
       options?.maxTokens ??
-      config.maxTokens ??
-      this.pickNumber(parameters.maxTokens);
+        config.maxTokens ??
+        this.pickNumber(parameters.maxTokens) ??
+        LlmService.DEFAULT_OUTPUT_MAX_TOKENS,
+      contextLength,
+    );
     const fromDb = config.apiKey != null ? String(config.apiKey).trim() : '';
     const fromEnv = process.env.OPENAI_API_KEY
       ? String(process.env.OPENAI_API_KEY).trim()
@@ -77,8 +311,8 @@ export class LlmService implements OnModuleInit {
       model: config.model,
       apiKey,
       temperature: resolvedTemperature ?? undefined,
-      maxTokens: resolvedMaxTokens ?? undefined,
-      streaming: options?.streaming ?? true,
+      maxTokens: configuredOutput,
+      streaming: true,
       configuration: {
         baseURL: this.resolveLangChainBaseUrl(config.baseUrl, config.chatPath),
       },
@@ -91,54 +325,43 @@ export class LlmService implements OnModuleInit {
     forceStreaming: boolean,
     handlers?: LlmStreamHandlers,
   ): Promise<LlmChatResult> {
+    const trimmedMessages = await this.trimMessagesToBudget(input.messages);
+    const invocationMaxTokens = await this.resolveInvocationMaxTokens(
+      trimmedMessages,
+    );
     const model = await this.createLangChainChatModel({
       streaming: forceStreaming || input.stream === true,
       temperature: input.temperature,
-      maxTokens: input.maxTokens,
+      maxTokens: input.maxTokens ?? invocationMaxTokens,
     });
     const runnable =
       input.tools && input.tools.length > 0
         ? model.bindTools(this.toLangChainTools(input.tools))
         : model.bindTools([]);
-    const response = (await runnable.invoke(
-      input.messages.map((message) => ({
-        role: message.role,
-        content: message.content,
-      })),
-      {
-        callbacks: handlers
-          ? [
-              {
-                handleLLMNewToken: (token: string) => {
-                  const delta: LlmStreamDelta = {
-                    model: this.extractModelName(undefined, model.model),
-                    contentDelta: token,
-                    toolCalls: [],
-                    done: false,
-                    raw: token,
-                  };
-                  handlers.onDelta?.(delta);
-                },
-              },
-            ]
-          : undefined,
-      },
-    )) as AIMessage;
+    const lcMessages = trimmedMessages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+
+    if (handlers?.onDelta) {
+      return this.invokeWithStream(
+        runnable as {
+          stream: (messages: unknown[]) => Promise<AsyncIterable<unknown>>;
+          invoke: (messages: unknown[]) => Promise<AIMessage>;
+        },
+        lcMessages,
+        model.model,
+        handlers,
+      );
+    }
+
+    const response = (await runnable.invoke(lcMessages)) as AIMessage;
     const content = this.extractAiMessageContent(response.content);
     const toolCalls = this.extractToolCalls(response);
     const modelName = this.extractModelName(
       response.response_metadata as Record<string, unknown> | undefined,
       model.model,
     );
-    if (handlers?.onDelta) {
-      handlers.onDelta({
-        model: modelName,
-        contentDelta: '',
-        toolCalls,
-        done: true,
-        raw: response,
-      });
-    }
     return {
       content,
       toolCalls,
@@ -147,23 +370,136 @@ export class LlmService implements OnModuleInit {
     };
   }
 
-  private async getCachedConfig(): Promise<LlmModelConfig> {
-    if (this.cachedConfig && this.cachedConfig.enabled) {
-      return this.cachedConfig;
+  private async invokeWithStream(
+    runnable: {
+      stream: (messages: unknown[]) => Promise<AsyncIterable<unknown>>;
+      invoke: (messages: unknown[]) => Promise<AIMessage>;
+    },
+    messages: unknown[],
+    modelFallback: string,
+    handlers: LlmStreamHandlers,
+  ): Promise<LlmChatResult> {
+    let merged: AIMessageChunk | undefined;
+    let content = '';
+    try {
+      const stream = await runnable.stream(messages);
+      for await (const chunk of stream) {
+        const row = chunk as AIMessageChunk;
+        const delta = this.extractAiMessageContent(row.content);
+        if (delta) {
+          content += delta;
+          handlers.onDelta?.({
+            model: this.extractModelName(
+              row.response_metadata as Record<string, unknown> | undefined,
+              modelFallback,
+            ),
+            contentDelta: delta,
+            toolCalls: [],
+            done: false,
+            raw: row,
+          });
+        }
+        merged = merged ? merged.concat(row) : row;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `llm stream failed, fallback invoke: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      const response = await runnable.invoke(messages);
+      content = this.extractAiMessageContent(response.content);
+      merged = undefined;
+      return {
+        content,
+        toolCalls: this.extractToolCalls(response),
+        model: this.extractModelName(
+          response.response_metadata as Record<string, unknown> | undefined,
+          modelFallback,
+        ),
+        raw: response,
+      };
     }
-    this.cachedConfig = await this.loadActiveConfigFromDb();
-    return this.cachedConfig;
+
+    const response = merged
+      ? new AIMessage({
+          content: merged.content,
+          tool_calls: merged.tool_calls,
+          additional_kwargs: merged.additional_kwargs,
+          response_metadata: merged.response_metadata,
+        })
+      : new AIMessage({ content });
+    const toolCalls = this.extractToolCalls(response);
+    const modelName = this.extractModelName(
+      response.response_metadata as Record<string, unknown> | undefined,
+      modelFallback,
+    );
+    handlers.onDelta?.({
+      model: modelName,
+      contentDelta: '',
+      toolCalls,
+      done: true,
+      raw: response,
+    });
+    return {
+      content: content || this.extractAiMessageContent(response.content),
+      toolCalls,
+      model: modelName,
+      raw: response,
+    };
   }
 
-  private async loadActiveConfigFromDb(): Promise<LlmModelConfig> {
+  private async getCachedChatConfig(): Promise<LlmModelConfig> {
+    if (this.cachedChatConfig?.enabled) {
+      return this.cachedChatConfig;
+    }
+    this.cachedChatConfig = await this.loadActiveConfigFromDb(LlmModelKind.chat);
+    return this.cachedChatConfig;
+  }
+
+  private async getCachedEmbeddingConfig(): Promise<LlmModelConfig | null> {
+    if (this.cachedEmbeddingConfig !== undefined) {
+      return this.cachedEmbeddingConfig;
+    }
+    this.cachedEmbeddingConfig = await this.loadActiveEmbeddingConfigFromDb();
+    return this.cachedEmbeddingConfig;
+  }
+
+  /** @deprecated 使用 getCachedChatConfig */
+  private async getCachedConfig(): Promise<LlmModelConfig> {
+    return this.getCachedChatConfig();
+  }
+
+  private async loadActiveConfigFromDb(
+    kind: LlmModelKind,
+  ): Promise<LlmModelConfig> {
     const config = await this.prisma.llmModelConfig.findFirst({
-      where: { enabled: true },
+      where: { enabled: true, kind },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
     });
     if (!config) {
-      throw new NotFoundException('no enabled llm model config found');
+      throw new NotFoundException(
+        `no enabled llm model config found for kind=${kind}`,
+      );
     }
     return config;
+  }
+
+  private async loadActiveEmbeddingConfigFromDb(): Promise<LlmModelConfig | null> {
+    const transformers = await this.prisma.llmModelConfig.findFirst({
+      where: {
+        enabled: true,
+        kind: LlmModelKind.transformers_embedding,
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    });
+    if (transformers) {
+      return transformers;
+    }
+    return this.prisma.llmModelConfig.findFirst({
+      where: { enabled: true, kind: LlmModelKind.api_embedding },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    });
   }
 
   private normalizeParameters(value: unknown): Record<string, unknown> {
@@ -173,11 +509,208 @@ export class LlmService implements OnModuleInit {
     return value as Record<string, unknown>;
   }
 
+  private async embedTextsByLocalTransformer(
+    texts: string[],
+    model: string,
+    runtimeParams: ReturnType<typeof readEmbeddingRuntimeParameters>,
+  ): Promise<number[][]> {
+    const runtime = await this.resolveLocalEmbeddingRuntime(model, runtimeParams);
+    const vectors: number[][] = [];
+    for (let i = 0; i < texts.length; i += LlmService.LOCAL_EMBED_BATCH_SIZE) {
+      const batch = texts.slice(i, i + LlmService.LOCAL_EMBED_BATCH_SIZE);
+      const out = await runtime.extractor(batch, {
+        pooling: 'mean',
+        normalize: true,
+      });
+      const parsed = this.parseLocalEmbeddingOutput(out, batch.length);
+      vectors.push(...parsed);
+    }
+    return vectors;
+  }
+
+  private async resolveLocalEmbeddingRuntime(
+    model: string,
+    runtimeParams: ReturnType<typeof readEmbeddingRuntimeParameters>,
+  ): Promise<{
+    model: string;
+    extractor: (
+      input: string | string[],
+      options?: Record<string, unknown>,
+    ) => Promise<unknown>;
+  }> {
+    const cacheKey = `${model}::${runtimeParams.localModelPath ?? ''}::${runtimeParams.allowRemoteModels}`;
+    if (this.localEmbeddingRuntime?.model === cacheKey) {
+      return this.localEmbeddingRuntime;
+    }
+    // transformers.js 使用动态导入，避免默认路径下增加启动成本。
+    const mod = (await import('@xenova/transformers')) as {
+      pipeline: (
+        task: string,
+        model: string,
+        options?: Record<string, unknown>,
+      ) => Promise<
+        (input: string | string[], options?: Record<string, unknown>) => Promise<unknown>
+      >;
+      env?: { allowRemoteModels?: boolean; localModelPath?: string };
+    };
+    let localModelPath = runtimeParams.localModelPath;
+    let resolvedModel = model;
+    const modelUrl = this.tryParseHttpUrl(model);
+    // 兼容完整 URL：
+    // AGENT_EMBEDDING_LOCAL_MODEL=https://host/path/all-MiniLM-L6-v2
+    // -> localModelPath=https://host/path, model=all-MiniLM-L6-v2
+    if (modelUrl && !localModelPath) {
+      const normalized = modelUrl.pathname.replace(/\/+$/, '');
+      const slash = normalized.lastIndexOf('/');
+      if (slash > 0) {
+        const modelName = normalized.slice(slash + 1);
+        const parentPath = normalized.slice(0, slash);
+        if (modelName) {
+          resolvedModel = modelName;
+          localModelPath = `${modelUrl.origin}${parentPath}`;
+          this.logger.log(
+            `embedding model URL detected, resolved model=${resolvedModel}, localModelPath=${localModelPath}`,
+          );
+        }
+      }
+    }
+    if (mod.env) {
+      mod.env.allowRemoteModels = runtimeParams.allowRemoteModels;
+      if (localModelPath) {
+        mod.env.localModelPath = localModelPath;
+      }
+    }
+    const extractor = await mod.pipeline('feature-extraction', resolvedModel);
+    this.localEmbeddingRuntime = {
+      model: cacheKey,
+      extractor,
+    };
+    this.logger.log(
+      `local embedding model loaded: ${resolvedModel} allowRemote=${runtimeParams.allowRemoteModels}`,
+    );
+    return this.localEmbeddingRuntime;
+  }
+
+  private tryParseHttpUrl(value: string): URL | null {
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private parseLocalEmbeddingOutput(out: unknown, expected: number): number[][] {
+    // transformers.js tensor path
+    const maybeData = out as {
+      data?: Float32Array | number[];
+      dims?: number[];
+      type?: string;
+    };
+    if (maybeData?.data && Array.isArray(maybeData.dims) && maybeData.dims.length === 2) {
+      const rows = maybeData.dims[0];
+      const cols = maybeData.dims[1];
+      const raw = Array.from(maybeData.data as ArrayLike<number>);
+      if (rows > 0 && cols > 0 && raw.length === rows * cols) {
+        const vectors: number[][] = [];
+        for (let r = 0; r < rows; r += 1) {
+          vectors.push(raw.slice(r * cols, (r + 1) * cols));
+        }
+        return vectors.slice(0, expected);
+      }
+    }
+
+    // Already nested array
+    if (
+      Array.isArray(out) &&
+      out.every((row) => Array.isArray(row) && row.every((n) => typeof n === 'number'))
+    ) {
+      return (out as number[][]).slice(0, expected);
+    }
+
+    // tensor.tolist() path
+    const maybeToList = out as { tolist?: () => unknown };
+    if (typeof maybeToList?.tolist === 'function') {
+      const listed = maybeToList.tolist();
+      if (
+        Array.isArray(listed) &&
+        listed.every((row) => Array.isArray(row) && row.every((n) => typeof n === 'number'))
+      ) {
+        return (listed as number[][]).slice(0, expected);
+      }
+    }
+
+    throw new Error('unable to parse local embedding output');
+  }
+
   private pickNumber(value: unknown): number | null {
     if (typeof value === 'number' && Number.isFinite(value)) {
       return value;
     }
     return null;
+  }
+
+  private resolveContextLength(
+    parameters: Record<string, unknown>,
+  ): number | null {
+    return (
+      this.pickNumber(parameters.contextLength) ??
+      this.pickNumber(parameters.maxContextTokens) ??
+      this.pickNumber(parameters.context_window)
+    );
+  }
+
+  /**
+   * maxTokens 字段表示「输出上限」；若配置成 ≥ 上下文窗口则按误配处理。
+   */
+  private normalizeConfiguredOutputMax(
+    raw: number,
+    contextLength: number | null,
+  ): number {
+    if (raw <= 0) {
+      return LlmService.DEFAULT_OUTPUT_MAX_TOKENS;
+    }
+    if (contextLength == null) {
+      // 未配置上下文窗口时，避免把整段 context（如 32768）误当输出上限透传给模型。
+      if (raw > LlmService.DEFAULT_OUTPUT_MAX_TOKENS) {
+        this.logger.warn(
+          `llm contextLength is missing; clamp maxTokens=${raw} to safe default ${LlmService.DEFAULT_OUTPUT_MAX_TOKENS}`,
+        );
+      }
+      return Math.min(raw, LlmService.DEFAULT_OUTPUT_MAX_TOKENS);
+    }
+    if (raw >= contextLength) {
+      const capped = Math.min(
+        LlmService.DEFAULT_OUTPUT_MAX_TOKENS,
+        Math.max(512, Math.floor(contextLength / 4)),
+      );
+      this.logger.warn(
+        `llm maxTokens=${raw} is >= contextLength=${contextLength}; using output cap ${capped} instead`,
+      );
+      return capped;
+    }
+    return raw;
+  }
+
+  private capOutputMaxTokens(
+    configuredOutput: number,
+    contextLength: number | null,
+    inputTokens: number,
+  ): number {
+    if (contextLength == null) {
+      return configuredOutput;
+    }
+    const available =
+      contextLength -
+      inputTokens -
+      LlmService.INVOCATION_TOKEN_BUFFER;
+    if (available < configuredOutput) {
+      return Math.max(256, available);
+    }
+    return configuredOutput;
   }
 
   private resolveLangChainBaseUrl(baseUrl: string, chatPath: string): string {
@@ -197,6 +730,78 @@ export class LlmService implements OnModuleInit {
       ? withoutChatCompletions
       : `/${withoutChatCompletions}`;
     return `${normalizedBase}${prefix}`.replace(/\/+$/, '');
+  }
+
+  private resolveOpenAiCompatibleUrl(
+    baseUrl: string,
+    chatPath: string,
+    resourcePath: string,
+  ): string {
+    const normalizedBase = baseUrl.trim().replace(/\/+$/, '');
+    const path = resourcePath.trim();
+    if (!path) {
+      return normalizedBase;
+    }
+    const absolutePath = path.startsWith('/') ? path : `/${path}`;
+    const apiPrefix = this.resolveLangChainBaseUrl(baseUrl, chatPath);
+    if (absolutePath.startsWith('/v1/') && apiPrefix.endsWith('/v1')) {
+      return `${apiPrefix}${absolutePath.slice(3)}`;
+    }
+    return `${normalizedBase}${absolutePath}`;
+  }
+
+  private parseEmbeddingResponse(
+    payload: unknown,
+    expectedCount: number,
+  ): number[][] {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new Error('invalid embedding response');
+    }
+    const data = (payload as Record<string, unknown>).data;
+    if (!Array.isArray(data)) {
+      throw new Error('embedding response missing data');
+    }
+    const rows = data
+      .map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return null;
+        }
+        const row = item as Record<string, unknown>;
+        const index =
+          typeof row.index === 'number' && Number.isInteger(row.index)
+            ? row.index
+            : null;
+        const embedding = row.embedding;
+        if (!Array.isArray(embedding)) {
+          return null;
+        }
+        const vector = embedding.filter(
+          (value): value is number =>
+            typeof value === 'number' && Number.isFinite(value),
+        );
+        if (vector.length === 0) {
+          return null;
+        }
+        return { index, vector };
+      })
+      .filter((item) => item !== null) as Array<{
+      index: number | null;
+      vector: number[];
+    }>;
+    if (rows.length === 0) {
+      throw new Error('embedding response has no vectors');
+    }
+    const ordered = new Array<number[]>(expectedCount);
+    for (const row of rows) {
+      const slot = row.index ?? ordered.findIndex((item) => item == null);
+      if (slot >= 0 && slot < expectedCount) {
+        ordered[slot] = row.vector;
+      }
+    }
+    if (ordered.some((item) => !item)) {
+      throw new Error('embedding response count mismatch');
+    }
+    return ordered;
   }
 
   private toLangChainTools(

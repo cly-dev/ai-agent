@@ -5,3 +5,6 @@ export * from './redis/redis-keys';
 export * from './redis/redis-connection.service';
 export * from './session-context.store';
 export * from './user-memory.store';
+export * from './working-memory.service';
+export * from './session-history-compression.service';
+export * from './session-context-trim.util';

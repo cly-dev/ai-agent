@@ -6,11 +6,20 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
-import { Prisma, UserRole } from '../../../generated/prisma/client';
+import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+
+export type ExternalAccountProfile = {
+  employeeId: string;
+  email: string;
+  username: string;
+  cnName?: string;
+  nickName?: string;
+  active: boolean;
+};
 
 @Injectable()
 export class UserService {
@@ -53,9 +62,6 @@ export class UserService {
   async create(data: CreateUserDto) {
     const email = data.email?.trim();
     const username = data.username?.trim();
-    const userType = data.userType;
-    const userRole = data.userRole;
-
     if (!email) {
       throw new BadRequestException('email is required');
     }
@@ -63,15 +69,17 @@ export class UserService {
       throw new BadRequestException('username is required');
     }
 
+    const employeeId =
+      data.employeeId?.trim() ||
+      `admin_${username}_${randomBytes(4).toString('hex')}`;
     const initialPassword = this.generateInitialPassword();
     const hashedPassword = this.hashPassword(initialPassword);
     const createdUser = await this.prisma.user.create({
       data: {
+        employeeId,
         email,
         password: hashedPassword,
         username,
-        userType,
-        userRole,
         mustChangePassword: true,
       },
     });
@@ -104,9 +112,6 @@ export class UserService {
     const email = data.email?.trim();
     const password = data.password?.trim();
     const username = data.username?.trim();
-    const userType = data.userType;
-    const userRole = data.userRole;
-
     if (email !== undefined && !email) {
       throw new BadRequestException('email cannot be empty');
     }
@@ -126,8 +131,6 @@ export class UserService {
           email,
           password: hashedPassword,
           username,
-          userType,
-          userRole,
           mustChangePassword: password !== undefined ? false : undefined,
         },
       });
@@ -158,6 +161,64 @@ export class UserService {
     }
   }
 
+  async findOrCreateByExternalAccount(profile: ExternalAccountProfile) {
+    const employeeId = profile.employeeId.trim();
+    if (!employeeId) {
+      throw new BadRequestException('employeeId is required');
+    }
+    const email = profile.email?.trim();
+    const username =
+      profile.nickName?.trim() ||
+      profile.cnName?.trim() ||
+      profile.username?.trim() ||
+      employeeId;
+    if (!email) {
+      throw new BadRequestException('email is required from external account');
+    }
+
+    const existing = await this.prisma.user.findUnique({
+      where: { employeeId },
+    });
+    if (existing) {
+      const updated = await this.prisma.user.update({
+        where: { id: existing.id },
+        data: { email, username },
+      });
+      return this.toSafeUser(updated);
+    }
+
+    const created = await this.prisma.user.create({
+      data: {
+        employeeId,
+        email,
+        username,
+        password: this.hashPassword(this.generateInitialPassword()),
+        mustChangePassword: false,
+      },
+    });
+    return this.toSafeUser(created);
+  }
+
+  async signUserAccessToken(user: {
+    id: number;
+    email: string;
+    username: string;
+  }): Promise<string> {
+    return this.jwtService.signAsync({
+      sub: user.id,
+      email: user.email,
+      username: user.username,
+    });
+  }
+
+  private toSafeUser<T extends { password: string }>(
+    user: T,
+  ): Omit<T, 'password'> {
+    const safeUser = { ...user };
+    delete safeUser.password;
+    return safeUser;
+  }
+
   async login(data: LoginUserDto) {
     const email = data.email?.trim();
     const password = data.password?.trim();
@@ -180,8 +241,6 @@ export class UserService {
       sub: user.id,
       email: user.email,
       username: user.username,
-      userType: user.userType,
-      userRole: user.userRole,
     };
     const accessToken = await this.jwtService.signAsync(payload);
 
@@ -211,105 +270,40 @@ export class UserService {
     };
   }
 
-  async getAllowedToolsByUserRole(userId: number) {
+  /** 用户在指定 App 下通过 UserApp.role → RoleTool 可用的工具列表。 */
+  async getAllowedToolsForApp(userId: number, appClientId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { userRole: true },
+      select: { id: true },
     });
-
     if (!user) {
       throw new NotFoundException(`user ${userId} not found`);
     }
 
-    if (!user.userRole) {
-      return [];
-    }
-
-    const authzSource = process.env.AUTHZ_SOURCE?.toLowerCase();
-    if (authzSource === 'legacy') {
-      return this.getAllowedToolsBySkillGraph(user.userRole);
-    }
-
-    return this.getAllowedToolsByRole(user.userRole);
-  }
-
-  private async getAllowedToolsByRole(userRole: UserRole) {
-    const roleName = this.resolveRoleName(userRole);
-    if (!roleName) {
-      return [];
-    }
-    const role = await this.prisma.role.findUnique({
-      where: { name: roleName },
-      include: {
-        roleTools: {
-          include: { tool: true },
-          orderBy: { toolId: 'asc' },
-        },
+    const userApp = await this.prisma.userApp.findUnique({
+      where: {
+        userId_appId: { userId, appId: appClientId },
       },
-    });
-    if (!role) {
-      return [];
-    }
-    const maxAllowedLevel = this.toolLevelWeight[role.allowToolLevel];
-    return role.roleTools
-      .map((mapping) => mapping.tool)
-      .filter(
-        (tool) => this.toolLevelWeight[tool.riskLevel] <= maxAllowedLevel,
-      );
-  }
-
-  private async getAllowedToolsBySkillGraph(userRole: UserRole) {
-    const legacyRoleName = this.resolveRoleName(userRole);
-    if (!legacyRoleName) {
-      return [];
-    }
-
-    const role = await this.prisma.role.findUnique({
-      where: { name: legacyRoleName },
       include: {
-        roleSkills: {
+        role: {
           include: {
-            skill: {
-              include: {
-                skillTools: {
-                  include: { tool: true },
-                },
-              },
+            roleTools: {
+              include: { tool: true },
+              orderBy: { toolId: 'asc' },
             },
           },
         },
       },
     });
-
-    if (!role) {
+    if (!userApp) {
       return [];
     }
 
-    const toolMap = new Map<number, unknown>();
-    const maxAllowedLevel = this.toolLevelWeight[role.allowToolLevel];
-    for (const roleSkill of role.roleSkills) {
-      for (const skillTool of roleSkill.skill.skillTools) {
-        const toolLevel = this.toolLevelWeight[skillTool.tool.riskLevel];
-        if (toolLevel > maxAllowedLevel) {
-          continue;
-        }
-        toolMap.set(skillTool.tool.id, skillTool.tool);
-      }
-    }
-
-    return Array.from(toolMap.values());
-  }
-
-  private resolveRoleName(userRole: UserRole): string | null {
-    if (userRole === UserRole.OPERATOR) {
-      return 'operator';
-    }
-    if (userRole === UserRole.CUSTOMER_SERVICE) {
-      return 'viewer';
-    }
-    if (userRole === UserRole.C_END_USER) {
-      return 'viewer';
-    }
-    return null;
+    const maxAllowedLevel = this.toolLevelWeight[userApp.role.allowToolLevel];
+    return userApp.role.roleTools
+      .map((mapping) => mapping.tool)
+      .filter(
+        (tool) => this.toolLevelWeight[tool.riskLevel] <= maxAllowedLevel,
+      );
   }
 }

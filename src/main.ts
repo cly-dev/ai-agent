@@ -3,6 +3,7 @@ import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import type { Request, Response } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { ReqInterceptor } from './interceptor/req.interceptor';
@@ -35,8 +36,48 @@ async function bootstrap() {
     exclude: [
       { path: 'chat', method: RequestMethod.ALL },
       { path: 'user/login', method: RequestMethod.POST },
+      { path: 'user/password-reminder', method: RequestMethod.GET },
       { path: 'chat/(.*)', method: RequestMethod.ALL },
+      { path: 'app-client/auth', method: RequestMethod.POST },
     ],
+  });
+  const cPublicPaths = ['/user/login', '/user/password-reminder', '/app-client/auth'];
+  app.use((req: Request, res: Response, next) => {
+    const isCPublicPath = cPublicPaths.some(
+      (path) => req.path === path || req.path.startsWith(`${path}/`),
+    );
+    if (!isCPublicPath) {
+      next();
+      return;
+    }
+    const origin = req.headers.origin;
+    if (typeof origin === 'string' && origin.length > 0) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Vary', 'Origin');
+    } else {
+      res.header('Access-Control-Allow-Origin', '*');
+    }
+    res.header(
+      'Access-Control-Allow-Headers',
+      [
+        'Content-Type',
+        'Authorization',
+        'X-App-Dsn',
+        'X-Account-Token',
+        'Accept',
+        'Accept-Language',
+      ].join(', '),
+    );
+    res.header(
+      'Access-Control-Allow-Methods',
+      'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    );
+    res.header('Access-Control-Allow-Credentials', 'true');
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(204);
+      return;
+    }
+    next();
   });
 
   const swaggerConfig = new DocumentBuilder()
@@ -49,7 +90,8 @@ async function bootstrap() {
         type: 'apiKey',
         in: 'header',
         name: 'X-App-Dsn',
-        description: 'AppClient DSN，用于解析接入方（须与库中 AppClient.dsn 一致）',
+        description:
+          'AppClient DSN，用于解析接入方（须与库中 AppClient.dsn 一致）',
       },
       'app-dsn',
     )
@@ -60,4 +102,29 @@ async function bootstrap() {
   await app.listen(3030);
   Logger.log('Swagger docs available at http://localhost:3030/docs');
 }
-bootstrap();
+
+function registerProcessErrorHandlers(): void {
+  process.on('uncaughtException', (error: Error) => {
+    Logger.error('Uncaught exception', error.stack ?? error.message);
+  });
+  process.on('unhandledRejection', (reason: unknown) => {
+    if (reason instanceof Error) {
+      Logger.error(
+        'Unhandled promise rejection',
+        reason.stack ?? reason.message,
+      );
+      return;
+    }
+    Logger.error('Unhandled promise rejection', String(reason));
+  });
+}
+
+registerProcessErrorHandlers();
+bootstrap().catch((error: unknown) => {
+  if (error instanceof Error) {
+    Logger.error('Application bootstrap failed', error.stack ?? error.message);
+  } else {
+    Logger.error('Application bootstrap failed', String(error));
+  }
+  process.exit(1);
+});
