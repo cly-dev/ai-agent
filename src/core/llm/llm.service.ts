@@ -312,7 +312,7 @@ export class LlmService implements OnModuleInit {
       apiKey,
       temperature: resolvedTemperature ?? undefined,
       maxTokens: configuredOutput,
-      streaming: true,
+      streaming: options?.streaming ?? true,
       configuration: {
         baseURL: this.resolveLangChainBaseUrl(config.baseUrl, config.chatPath),
       },
@@ -320,14 +320,33 @@ export class LlmService implements OnModuleInit {
     return model;
   }
 
+  /**
+   * 为指定消息构建 LangChain Chat 模型，并由 LlmService 统一计算本次 maxTokens。
+   * 调用方无需自行解析 contextLength / maxTokens 策略。
+   */
+  async createLangChainChatModelForMessages(
+    messages: LlmChatMessage[],
+    options?: {
+      temperature?: number;
+      maxTokens?: number;
+    },
+  ): Promise<{ model: ChatOpenAI; maxTokens: number }> {
+    const resolvedMaxTokens =
+      options?.maxTokens ?? (await this.resolveInvocationMaxTokens(messages));
+    const model = await this.createLangChainChatModel({
+      temperature: options?.temperature,
+      maxTokens: resolvedMaxTokens,
+    });
+    return { model, maxTokens: resolvedMaxTokens };
+  }
+
   private async invokeWithLangChain(
     input: LlmChatInput,
     forceStreaming: boolean,
     handlers?: LlmStreamHandlers,
   ): Promise<LlmChatResult> {
-    const trimmedMessages = await this.trimMessagesToBudget(input.messages);
     const invocationMaxTokens = await this.resolveInvocationMaxTokens(
-      trimmedMessages,
+      input.messages,
     );
     const model = await this.createLangChainChatModel({
       streaming: forceStreaming || input.stream === true,
@@ -338,10 +357,19 @@ export class LlmService implements OnModuleInit {
       input.tools && input.tools.length > 0
         ? model.bindTools(this.toLangChainTools(input.tools))
         : model.bindTools([]);
-    const lcMessages = trimmedMessages.map((message) => ({
-      role: message.role,
-      content: message.content,
-    }));
+    const lcMessages = input.messages.map((message) => {
+      if (message.role === 'tool') {
+        return {
+          role: message.role,
+          content: message.content,
+          tool_call_id: message.toolCallId ?? 'tool_result',
+        };
+      }
+      return {
+        role: message.role,
+        content: message.content,
+      };
+    });
 
     if (handlers?.onDelta) {
       return this.invokeWithStream(
@@ -381,6 +409,7 @@ export class LlmService implements OnModuleInit {
   ): Promise<LlmChatResult> {
     let merged: AIMessageChunk | undefined;
     let content = '';
+    let emittedDeltaCount = 0;
     try {
       const stream = await runnable.stream(messages);
       for await (const chunk of stream) {
@@ -388,6 +417,7 @@ export class LlmService implements OnModuleInit {
         const delta = this.extractAiMessageContent(row.content);
         if (delta) {
           content += delta;
+          emittedDeltaCount += 1;
           handlers.onDelta?.({
             model: this.extractModelName(
               row.response_metadata as Record<string, unknown> | undefined,
@@ -418,6 +448,10 @@ export class LlmService implements OnModuleInit {
           modelFallback,
         ),
         raw: response,
+        streamMeta: {
+          emittedDeltaCount,
+          fellBackToInvoke: true,
+        },
       };
     }
 
@@ -446,6 +480,10 @@ export class LlmService implements OnModuleInit {
       toolCalls,
       model: modelName,
       raw: response,
+      streamMeta: {
+        emittedDeltaCount,
+        fellBackToInvoke: false,
+      },
     };
   }
 

@@ -11,6 +11,15 @@ import {
 } from '../../generated/prisma/client';
 import type { Prisma } from '../../generated/prisma/client';
 import { buildToolDefinitionKey } from '../common/tool/tool-definition-key.util';
+import {
+  inferAgentMetadataFromOpenApi,
+  mergeDecisionRoleIntoResponseProfile,
+  parseAgentMetadata,
+} from '../core/tool-engine/tool-agent-metadata.util';
+import {
+  buildSwaggerImportResponseProfile,
+  parseConfiguredToolDecisionRole,
+} from '../core/tool-engine/tool-decision-role.enum';
 import { buildPathFilter, matchesPathFilter } from './tool-path-filter.util';
 import type { PathFilterConfig } from './tool-path-filter.util';
 
@@ -95,6 +104,9 @@ type ToolDraft = {
   schema: Prisma.InputJsonValue;
   inputSchema: Prisma.InputJsonValue;
   outputSchema: Prisma.InputJsonValue | null;
+  agentMetadata: Prisma.InputJsonValue;
+  /** 含 decisionRole（由 agentMetadata 推导）+ 占位 coreFields */
+  responseProfile: Prisma.InputJsonValue;
   integrationId: number;
   isActive: boolean;
   /** OpenAPI 首个 tag，用于同步 ToolCategory */
@@ -725,6 +737,13 @@ function buildToolDrafts(
       const categoryLabel = operationPrimaryTag(operation);
       const categoryDescription = tagDescriptions.get(categoryLabel) ?? null;
       const name = buildToolName(operation, method, urlPath);
+      const agentMetadata = inferAgentMetadataFromOpenApi({
+        method,
+        path: normalizePath(urlPath),
+        name,
+        description: buildDescription(operation, method, urlPath),
+        inputSchema,
+      });
 
       drafts.push({
         definitionKey: buildToolDefinitionKey({
@@ -742,6 +761,12 @@ function buildToolDrafts(
         schema: inputSchema,
         inputSchema,
         outputSchema,
+        agentMetadata: agentMetadata as unknown as Prisma.InputJsonValue,
+        responseProfile: mergeDecisionRoleIntoResponseProfile(
+          buildSwaggerImportResponseProfile(method, agentMetadata),
+          agentMetadata,
+          method,
+        ) as Prisma.InputJsonValue,
         integrationId,
         isActive: true,
         categoryLabel,
@@ -913,6 +938,45 @@ export async function resolveTargetAgentId(
   return promptSelectAgentId(agents);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** 更新已有 Tool 时合并 agentMetadata / decisionRole，不覆盖已有 coreFields。 */
+function mergeAgentMetadataForSwaggerImport(
+  existing: unknown,
+  incoming: Prisma.InputJsonValue,
+): Prisma.InputJsonValue {
+  if (!isRecord(existing) || !parseAgentMetadata(existing)) {
+    return incoming;
+  }
+  return existing as Prisma.InputJsonValue;
+}
+
+function mergeResponseProfileForSwaggerImport(
+  existing: unknown,
+  incoming: Prisma.InputJsonValue,
+  agentMetadata: ReturnType<typeof inferAgentMetadataFromOpenApi> | null,
+  method: string,
+): Prisma.InputJsonValue {
+  const incomingRecord = incoming as Record<string, unknown>;
+  if (!isRecord(existing)) {
+    return incoming;
+  }
+  let merged: Record<string, unknown> = { ...existing };
+  if (!parseConfiguredToolDecisionRole(existing.decisionRole)) {
+    merged.decisionRole = incomingRecord.decisionRole;
+  }
+  const existingCore = existing.coreFields;
+  const hasCore =
+    Array.isArray(existingCore) && existingCore.length > 0;
+  if (!hasCore && Array.isArray(incomingRecord.coreFields)) {
+    merged.coreFields = incomingRecord.coreFields;
+  }
+  merged = mergeDecisionRoleIntoResponseProfile(merged, agentMetadata, method);
+  return merged as Prisma.InputJsonValue;
+}
+
 function draftToToolWriteData(
   draft: ToolDraft,
   toolCategoryId: number,
@@ -926,6 +990,8 @@ function draftToToolWriteData(
     schema: draft.schema,
     inputSchema: draft.inputSchema,
     outputSchema: draft.outputSchema,
+    agentMetadata: draft.agentMetadata,
+    responseProfile: draft.responseProfile,
     method: draft.method,
     path: draft.path,
     integration: { connect: { id: draft.integrationId } },
@@ -1012,6 +1078,11 @@ export async function applyTools(
         definitionKey: draft.definitionKey,
       },
       orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        responseProfile: true,
+        agentMetadata: true,
+      },
     });
     let toolId: number;
     if (existing) {
@@ -1025,6 +1096,17 @@ export async function applyTools(
           schema: toolData.schema,
           inputSchema: toolData.inputSchema,
           outputSchema: toolData.outputSchema,
+          agentMetadata: mergeAgentMetadataForSwaggerImport(
+            existing.agentMetadata,
+            draft.agentMetadata,
+          ),
+          responseProfile: mergeResponseProfileForSwaggerImport(
+            existing.responseProfile,
+            draft.responseProfile,
+            parseAgentMetadata(existing.agentMetadata) ??
+              parseAgentMetadata(draft.agentMetadata),
+            String(draft.method),
+          ),
           isActive: toolData.isActive,
           toolCategory: toolData.toolCategory,
           method: draft.method,

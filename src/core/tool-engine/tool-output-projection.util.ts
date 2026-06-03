@@ -1,134 +1,11 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type {
   ProjectedToolOutput,
   ToolResponseFieldSpec,
   ToolResponseProfile,
 } from './tool-response-profile.types';
+import { parseConfiguredToolDecisionRole } from './tool-decision-role.enum';
 
 const DEFAULT_ARRAY_LIMIT = 5;
-const DEBUG_JSON_MAX_CHARS = 6000;
-
-export type ProjectToolOutputDebugContext = {
-  sessionId?: string;
-  runId?: number;
-  toolName?: string;
-  iteration?: number;
-};
-
-type ProjectionDebugStep = {
-  step: number;
-  name: string;
-  detail: Record<string, unknown>;
-};
-
-class ProjectionDebugLog {
-  private readonly steps: ProjectionDebugStep[] = [];
-  private seq = 0;
-
-  add(name: string, detail: Record<string, unknown>): void {
-    this.seq += 1;
-    this.steps.push({ step: this.seq, name, detail });
-  }
-
-  flush(context: ProjectToolOutputDebugContext | undefined): string | null {
-    if (!isProjectionDebugEnabled() || this.steps.length === 0) {
-      return null;
-    }
-    try {
-      const dir = resolveProjectionDebugDir(context);
-      fs.mkdirSync(dir, { recursive: true });
-      const sessionHint = sanitizeFileHint(context?.sessionId ?? 'unknown');
-      const runHint = context?.runId ?? 0;
-      const toolHint = sanitizeFileHint(context?.toolName ?? 'tool');
-      const file = path.join(
-        dir,
-        `${Date.now()}-run${runHint}-${toolHint}-${sessionHint}-projection.txt`,
-      );
-      const lines = this.steps.map((item) => {
-        const detailText = stringifyDebugValue(item.detail);
-        return `[step ${item.step}] ${item.name}\n${detailText}`;
-      });
-      const body = [
-        `# tool output projection debug`,
-        `at: ${new Date().toISOString()}`,
-        `sessionId: ${context?.sessionId ?? ''}`,
-        `runId: ${context?.runId ?? ''}`,
-        `toolName: ${context?.toolName ?? ''}`,
-        `iteration: ${context?.iteration ?? ''}`,
-        '',
-        ...lines,
-        '',
-      ].join('\n');
-      fs.writeFileSync(file, body, 'utf-8');
-      return file;
-    } catch {
-      return null;
-    }
-  }
-}
-
-function isProjectionDebugEnabled(): boolean {
-  const value = process.env.AGENT_ENGINE_DEBUG?.trim().toLowerCase();
-  if (value === '0' || value === 'false' || value === 'off') {
-    return false;
-  }
-  if (value === '1' || value === 'true' || value === 'on') {
-    return true;
-  }
-  return process.env.NODE_ENV !== 'production';
-}
-
-function sanitizeFileHint(value: string): string {
-  const trimmed = value.trim().toLowerCase();
-  return trimmed.length > 0 ? trimmed.replace(/[^a-z0-9]/g, '') : 'unknown';
-}
-
-function resolveProjectionDebugDir(
-  context: ProjectToolOutputDebugContext | undefined,
-): string {
-  const day = new Date().toISOString().slice(0, 10);
-  const sessionHint = sanitizeFileHint(context?.sessionId ?? 'unknown');
-  const runHint = context?.runId ?? 0;
-  return path.join(
-    process.cwd(),
-    'logs',
-    'tool-output-projection',
-    day,
-    `session-${sessionHint}`,
-    `run-${runHint}`,
-  );
-}
-
-function stringifyDebugValue(value: unknown): string {
-  try {
-    const text =
-      typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-    if (text.length <= DEBUG_JSON_MAX_CHARS) {
-      return text;
-    }
-    return `${text.slice(0, DEBUG_JSON_MAX_CHARS)}\n...(truncated)`;
-  } catch {
-    return String(value);
-  }
-}
-
-function summarizeValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return {
-      type: 'array',
-      length: value.length,
-      preview: value.slice(0, 2),
-    };
-  }
-  if (isRecord(value)) {
-    return {
-      type: 'object',
-      keys: Object.keys(value),
-    };
-  }
-  return value;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -243,59 +120,27 @@ function applyFieldValue(
   field: ToolResponseFieldSpec,
   rawValue: unknown,
   arrayLimits: Record<string, number>,
-): {
-  value: unknown;
-  arrayLimit: number | null;
-  arrayLimited: boolean;
-  enumApplied: boolean;
-} {
+): unknown {
   const limit = resolveArrayLimit(field.path, arrayLimits);
   let value = rawValue;
-  let arrayLimited = false;
   if (limit != null && Array.isArray(value)) {
-    const beforeLength = value.length;
     value = limitArray(value, limit);
-    arrayLimited = beforeLength !== (value as unknown[]).length;
   }
-  const beforeEnum = value;
-  value = applyEnumLabel(value, field.enumLabels);
-  return {
-    value,
-    arrayLimit: limit ?? null,
-    arrayLimited,
-    enumApplied: beforeEnum !== value,
-  };
+  return applyEnumLabel(value, field.enumLabels);
 }
 
 function pickScalarOrNestedObjectFields(
   source: Record<string, unknown>,
   fields: ToolResponseFieldSpec[],
   arrayLimits: Record<string, number>,
-  debug: ProjectionDebugLog | undefined,
   result: Record<string, unknown>,
 ): void {
   for (const field of fields) {
     const rawValue = getByPath(source, field.path);
     if (rawValue === undefined) {
-      debug?.add('pick_field_missing', {
-        path: field.path,
-        label: field.label,
-        mode: 'object',
-      });
       continue;
     }
-    const applied = applyFieldValue(field, rawValue, arrayLimits);
-    setByPath(result, field.path, applied.value);
-    debug?.add('pick_field_applied', {
-      path: field.path,
-      label: field.label,
-      mode: 'object',
-      arrayLimit: applied.arrayLimit,
-      arrayLimited: applied.arrayLimited,
-      enumApplied: applied.enumApplied,
-      rawPreview: summarizeValue(rawValue),
-      projectedPreview: summarizeValue(applied.value),
-    });
+    setByPath(result, field.path, applyFieldValue(field, rawValue, arrayLimits));
   }
 }
 
@@ -303,13 +148,8 @@ function pickFieldsOnObject(
   source: unknown,
   fields: ToolResponseFieldSpec[],
   arrayLimits: Record<string, number>,
-  debug?: ProjectionDebugLog,
 ): Record<string, unknown> {
   if (!isRecord(source)) {
-    debug?.add('pick_fields_skipped', {
-      reason: 'source is not object',
-      sourceType: source === null ? 'null' : typeof source,
-    });
     return {};
   }
 
@@ -334,19 +174,11 @@ function pickFieldsOnObject(
   }
 
   const result: Record<string, unknown> = {};
-  pickScalarOrNestedObjectFields(source, scalarFields, arrayLimits, debug, result);
+  pickScalarOrNestedObjectFields(source, scalarFields, arrayLimits, result);
 
   for (const [arrayKey, groupFields] of arrayFieldGroups) {
     const rows = source[arrayKey];
     if (!Array.isArray(rows)) {
-      for (const field of groupFields) {
-        debug?.add('pick_field_missing', {
-          path: field.path,
-          label: field.label,
-          mode: 'array_expected',
-          arrayKey,
-        });
-      }
       continue;
     }
 
@@ -356,33 +188,15 @@ function pickFieldsOnObject(
       arrayLimits.data ??
       DEFAULT_ARRAY_LIMIT;
     const sliced = rows.slice(0, Math.max(1, limit));
-    debug?.add('array_field_group_start', {
-      arrayKey,
-      rowCount: rows.length,
-      keptRowCount: sliced.length,
-      fieldPaths: groupFields.map((field) => field.path),
-    });
-
     const prefix = `${arrayKey}.`;
-    result[arrayKey] = sliced.map((row, index) => {
+    result[arrayKey] = sliced.map((row) => {
       const relativeFields = groupFields.map((field) => ({
         ...field,
         path: field.path.startsWith(prefix)
           ? field.path.slice(prefix.length)
           : field.path,
       }));
-      const rowPicked = pickFieldsOnObject(
-        row,
-        relativeFields,
-        arrayLimits,
-        debug,
-      );
-      debug?.add('array_field_row_picked', {
-        arrayKey,
-        index,
-        projectedPreview: summarizeValue(rowPicked),
-      });
-      return rowPicked;
+      return pickFieldsOnObject(row, relativeFields, arrayLimits);
     });
   }
 
@@ -392,12 +206,9 @@ function pickFieldsOnObject(
 function collectSelectedFields(
   profile: ToolResponseProfile,
   userQuestion: string,
-  debug?: ProjectionDebugLog,
 ): ToolResponseFieldSpec[] {
   const selected = [...profile.coreFields];
   const seen = new Set(selected.map((field) => field.path));
-  const matchedOptional: string[] = [];
-  const skippedOptional: string[] = [];
   for (const field of profile.optionalFields ?? []) {
     if (seen.has(field.path)) {
       continue;
@@ -405,18 +216,8 @@ function collectSelectedFields(
     if (fieldMatchesQuestion(field, userQuestion)) {
       selected.push(field);
       seen.add(field.path);
-      matchedOptional.push(field.path);
-      continue;
     }
-    skippedOptional.push(field.path);
   }
-  debug?.add('select_fields', {
-    userQuestion,
-    coreFieldPaths: profile.coreFields.map((field) => field.path),
-    matchedOptionalPaths: matchedOptional,
-    skippedOptionalPaths: skippedOptional,
-    selectedFieldPaths: selected.map((field) => field.path),
-  });
   return selected;
 }
 
@@ -516,12 +317,15 @@ export function parseResponseProfile(
         .filter((field): field is ToolResponseFieldSpec => field != null)
     : undefined;
 
+  const decisionRole = parseConfiguredToolDecisionRole(raw.decisionRole);
+
   return {
     coreFields,
     optionalFields,
     arrayLimits,
     listPath,
     listMetaFields,
+    decisionRole,
   };
 }
 
@@ -533,29 +337,8 @@ export function projectToolOutput(
   raw: unknown,
   userQuestion: string,
   profile: ToolResponseProfile | null,
-  debugContext?: ProjectToolOutputDebugContext,
 ): ProjectedToolOutput {
-  const debug = new ProjectionDebugLog();
-  debug.add('input_received', {
-    userQuestion,
-    hasProfile: profile != null,
-    rawPreview: summarizeValue(raw),
-    profile: profile
-      ? {
-          listPath: profile.listPath ?? null,
-          arrayLimits: profile.arrayLimits ?? null,
-          coreFieldPaths: profile.coreFields.map((field) => field.path),
-          optionalFieldPaths:
-            profile.optionalFields?.map((field) => field.path) ?? [],
-        }
-      : null,
-  });
-
   if (!profile) {
-    debug.add('passthrough_no_profile', {
-      reason: 'responseProfile missing or invalid',
-    });
-    debug.flush(debugContext);
     return {
       data: raw,
       fieldLabels: {},
@@ -565,14 +348,9 @@ export function projectToolOutput(
   }
 
   const arrayLimits = profile.arrayLimits ?? {};
-  const selectedFields = collectSelectedFields(profile, userQuestion, debug);
+  const selectedFields = collectSelectedFields(profile, userQuestion);
   const { fieldLabels, fieldDescriptions, enumLabelsByPath } =
     buildFieldMetadata(selectedFields);
-  debug.add('field_metadata_built', {
-    fieldLabels,
-    fieldDescriptions,
-    enumLabelsByPath,
-  });
 
   if (profile.listPath) {
     const listValue = getByPath(raw, profile.listPath);
@@ -582,22 +360,10 @@ export function projectToolOutput(
       DEFAULT_ARRAY_LIMIT;
     const sourceRows = Array.isArray(listValue) ? listValue : [];
     const rows = sourceRows.slice(0, Math.max(1, listLimit));
-    debug.add('list_slice', {
-      listPath: profile.listPath,
-      listLimit,
-      sourceRowCount: sourceRows.length,
-      keptRowCount: rows.length,
-    });
 
-    const projectedRows = rows.map((row, index) => {
-      debug.add('list_row_pick_start', { index });
-      const picked = pickFieldsOnObject(row, selectedFields, arrayLimits, debug);
-      debug.add('list_row_pick_done', {
-        index,
-        projectedPreview: summarizeValue(picked),
-      });
-      return picked;
-    });
+    const projectedRows = rows.map((row) =>
+      pickFieldsOnObject(row, selectedFields, arrayLimits),
+    );
 
     const container: Record<string, unknown> = {};
     setByPath(container, profile.listPath, projectedRows);
@@ -614,44 +380,19 @@ export function projectToolOutput(
         if (metaField.enumLabels) {
           enumLabelsByPath[metaField.path] = metaField.enumLabels;
         }
-        debug.add('list_meta_field_applied', {
-          path: metaField.path,
-          label: metaField.label,
-          rawPreview: summarizeValue(metaValue),
-          projectedPreview: summarizeValue(projectedMeta),
-        });
-      } else {
-        debug.add('list_meta_field_missing', {
-          path: metaField.path,
-          label: metaField.label,
-        });
       }
     }
 
-    const result = {
+    return {
       data: container,
       fieldLabels,
       fieldDescriptions,
       enumLabelsByPath,
     };
-    debug.add('output_final', {
-      mode: 'list',
-      projectedPreview: summarizeValue(result.data),
-      fieldCount: Object.keys(fieldLabels).length,
-    });
-    debug.flush(debugContext);
-    return result;
   }
 
-  const data = pickFieldsOnObject(raw, selectedFields, arrayLimits, debug);
-  const result = { data, fieldLabels, fieldDescriptions, enumLabelsByPath };
-  debug.add('output_final', {
-    mode: 'object',
-    projectedPreview: summarizeValue(result.data),
-    fieldCount: Object.keys(fieldLabels).length,
-  });
-  debug.flush(debugContext);
-  return result;
+  const data = pickFieldsOnObject(raw, selectedFields, arrayLimits);
+  return { data, fieldLabels, fieldDescriptions, enumLabelsByPath };
 }
 
 /** 将字段说明格式化为 summarize prompt 片段。 */

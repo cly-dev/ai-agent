@@ -26,26 +26,33 @@ async function main(): Promise<void> {
     `ALTER TABLE "LlmModelConfig" DROP CONSTRAINT IF EXISTS "LlmModelConfig_singletonKey_key"`,
   );
 
-  const row = await prisma.llmModelConfig.upsert({
+  const existing = await prisma.llmModelConfig.findFirst({
     where: { kind: 'transformers_embedding' },
-    create: {
-      kind: 'transformers_embedding',
-      singletonKey: null,
-      provider: 'transformers.js',
-      model: MODEL_URL,
-      apiKey: null,
-      baseUrl: 'local',
-      chatPath: '/v1/embeddings',
-      parameters: { allowRemoteModels: ALLOW_REMOTE },
-      stream: false,
-      enabled: true,
-    },
-    update: {
-      model: MODEL_URL,
-      parameters: { allowRemoteModels: ALLOW_REMOTE },
-      enabled: true,
-    },
+    orderBy: { id: 'asc' },
   });
+  const row = existing
+    ? await prisma.llmModelConfig.update({
+        where: { id: existing.id },
+        data: {
+          model: MODEL_URL,
+          parameters: { allowRemoteModels: ALLOW_REMOTE },
+          enabled: true,
+        },
+      })
+    : await prisma.llmModelConfig.create({
+        data: {
+          kind: 'transformers_embedding',
+          singletonKey: null,
+          provider: 'transformers.js',
+          model: MODEL_URL,
+          apiKey: null,
+          baseUrl: 'local',
+          chatPath: '/v1/embeddings',
+          parameters: { allowRemoteModels: ALLOW_REMOTE },
+          stream: false,
+          enabled: true,
+        },
+      });
 
   await prisma.intentRecallConfig.upsert({
     where: { singletonKey: 1 },

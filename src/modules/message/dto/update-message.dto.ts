@@ -19,11 +19,11 @@ export class UpdateMessageDto {
   @IsIn([...MESSAGE_ROLES])
   role?: string;
 
-  @ApiPropertyOptional({ description: '文本内容' })
+  @ApiPropertyOptional({ description: '文本内容（JSON 请先 stringify）' })
   @IsOptional()
   @IsString()
   @MaxLength(1_000_000)
-  content?: string | null;
+  content?: string;
 
   @ApiPropertyOptional({ description: '工具调用名称' })
   @IsOptional()

@@ -1,5 +1,6 @@
 import type { Prisma } from '../../../generated/prisma/client';
 import type { ToolDebugResult } from '../../core/tool-engine/tool-engine.types';
+import type { AgentMetadata } from '../../core/tool-engine/tool-agent-metadata.types';
 import type { ToolResponseProfile } from '../../core/tool-engine/tool-response-profile.types';
 
 /**
@@ -64,7 +65,9 @@ export type InitToolSchemasFromDebugResult = {
   debug: ToolDebugResult;
   outputSchema: Record<string, unknown>;
   responseProfile: ToolResponseProfile;
+  agentMetadata: AgentMetadata;
   source: 'llm' | 'fallback';
+  agentMetadataSource: 'llm' | 'heuristic' | 'existing';
   persisted: boolean;
   tool: ToolResponse;
 };

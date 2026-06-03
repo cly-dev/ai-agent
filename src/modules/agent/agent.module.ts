@@ -2,9 +2,10 @@
 import { Module } from '@nestjs/common';
 import { AgentService } from './agent.service';
 import { AgentController } from './agent.controller';
+import { AgentCacheStore } from './agent-cache.store';
 
 @Module({
-  providers: [AgentService],
+  providers: [AgentService, AgentCacheStore],
   controllers: [AgentController],
   exports: [AgentService],
 })

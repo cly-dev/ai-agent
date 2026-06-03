@@ -9,6 +9,7 @@ import type {
   ToolBindRecallRow,
   ToolCategoryRecallRow,
 } from './intent.types';
+import { buildToolEmbedTextFromMetadata } from '../tool-engine/tool-agent-metadata.util';
 import {
   buildCategoryEmbedText,
   buildToolEmbedText,
@@ -467,10 +468,17 @@ export class CategoryIntentRecallService {
   /**
    * 懒加载工具 embedding：仅对缓存缺失或 name/description 变更的工具批量 embed。
    */
+  private toolEmbedText(tool: ToolBindRecallRow): string {
+    if (tool.agentMetadata != null) {
+      return buildToolEmbedTextFromMetadata(tool);
+    }
+    return buildToolEmbedText(tool);
+  }
+
   private async ensureToolVectors(tools: ToolBindRecallRow[]): Promise<void> {
     const missing: ToolBindRecallRow[] = [];
     for (const tool of tools) {
-      const fingerprint = buildToolEmbedText(tool);
+      const fingerprint = this.toolEmbedText(tool);
       const cached = this.toolVectorCache.get(tool.id);
       if (!cached || cached.fingerprint !== fingerprint) {
         missing.push(tool);
@@ -479,7 +487,7 @@ export class CategoryIntentRecallService {
     if (missing.length === 0) {
       return;
     }
-    const texts = missing.map((tool) => buildToolEmbedText(tool));
+    const texts = missing.map((tool) => this.toolEmbedText(tool));
     const vectors = await this.llmService.embedTexts(texts);
     for (let index = 0; index < missing.length; index += 1) {
       const tool = missing[index];

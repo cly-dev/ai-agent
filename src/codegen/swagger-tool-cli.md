@@ -112,6 +112,7 @@ npx ts-node src/codegen/swagger-tool-cli.ts --apply --integration-id 1
 ## 数据库行为（`--apply`）
 
 - **匹配已有 Tool：** `integrationId` + `method` + `path` 唯一确定一条；存在则 **update**，不存在则 **create**。
+- **responseProfile.decisionRole（导入时自动写入）：** `GET` → `read-detail`，`POST` → `write-single`，`PUT` → `write-batch`，`PATCH`/`DELETE` → `write-single`；更新已有 Tool 时仅补缺失的 `decisionRole`，不覆盖已有 `coreFields`。
 - **字段更新：** 名称、描述、风险等级、schema、input/output schema、是否启用、**以及由本次 spec 推导的 `toolCategoryId`** 会随同步更新。
 - **`ToolCategory`：** 对每个 draft 的 **`categoryLabel`**（见下）在表 **`ToolCategory`** 中按 **`label` 精确查找**；没有则 **创建**；若 spec 顶层 **`tags[].description`** 与当前 tag 的 `name` 匹配，会在 **新建** 或 **description 为空** 时写入说明。
 - **`RoleTool` 自动权限绑定：**

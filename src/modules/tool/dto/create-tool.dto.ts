@@ -82,6 +82,24 @@ export class CreateToolDto {
   @IsObject()
   responseProfile?: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description:
+      'Agent 选工具元数据：mode / resource / operation / businessFields / aliases / examples / priority',
+    example: {
+      mode: 'READ',
+      resource: 'PRODUCT',
+      operation: 'DETAIL',
+      businessFields: ['productId'],
+      aliases: ['商品详情'],
+      examples: [],
+      priority: 100,
+      isMutation: false,
+    },
+  })
+  @IsOptional()
+  @IsObject()
+  agentMetadata?: Record<string, unknown>;
+
   @ApiProperty({ description: 'HTTP 方法', enum: HttpMethod })
   @IsEnum(HttpMethod)
   method!: HttpMethod;

@@ -31,11 +31,63 @@ import type { QueryAgentToolsDto } from './dto/query-agent-tools.dto';
 import { BindAgentToolsDto } from './dto/bind-agent-tools.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
+import { AgentCacheStore } from './agent-cache.store';
+import type { AgentRuntimeSnapshot } from './agent-runtime.types';
 
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly agentCacheStore: AgentCacheStore,
+  ) {}
+
+  /**
+   * Lazy cache-aside: Redis hit → return; miss → DB → trySet → return.
+   * No full-table warm; only agents actually used get cached.
+   */
+  async getRuntimeAgent(
+    appClientId: number,
+    agentId: number,
+  ): Promise<AgentRuntimeSnapshot | null> {
+    const cached = await this.agentCacheStore.get(appClientId, agentId);
+    if (cached) {
+      return cached;
+    }
+    const row = await this.prisma.agent.findFirst({
+      where: { id: agentId, appClientId },
+      select: {
+        id: true,
+        appClientId: true,
+        name: true,
+        systemPrompt: true,
+        maxSteps: true,
+        enableToolCall: true,
+        config: true,
+      },
+    });
+    if (!row) {
+      return null;
+    }
+    const snapshot: AgentRuntimeSnapshot = {
+      id: row.id,
+      appClientId: row.appClientId,
+      name: row.name,
+      systemPrompt: row.systemPrompt,
+      maxSteps: row.maxSteps,
+      enableToolCall: row.enableToolCall,
+      config: row.config,
+    };
+    await this.agentCacheStore.trySet(appClientId, agentId, snapshot);
+    return snapshot;
+  }
+
+  private async invalidateRuntimeCache(
+    appClientId: number,
+    agentId: number,
+  ): Promise<void> {
+    await this.agentCacheStore.delete(appClientId, agentId);
+  }
 
   async create(dto: CreateAgentDto) {
     const agent = await this.prisma.agent.create({
@@ -82,7 +134,7 @@ export class AgentService {
   }
 
   async update(id: number, dto: UpdateAgentDto) {
-    await this.findOneWithTools(id);
+    const existing = await this.findOneWithTools(id);
     await this.prisma.agent.update({
       where: { id },
       data: {
@@ -107,12 +159,20 @@ export class AgentService {
         }),
       ]);
     }
+    await this.invalidateRuntimeCache(existing.appClientId, id);
+    if (
+      dto.appClientId != null &&
+      dto.appClientId !== existing.appClientId
+    ) {
+      await this.invalidateRuntimeCache(dto.appClientId, id);
+    }
     return this.findOneWithTools(id);
   }
 
   async remove(id: number) {
     const row = await this.findOneWithTools(id);
     await this.prisma.agent.delete({ where: { id } });
+    await this.invalidateRuntimeCache(row.appClientId, id);
     return row;
   }
 

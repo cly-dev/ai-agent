@@ -30,7 +30,7 @@ export class SaveMessageDto {
   @IsIn([...MESSAGE_ROLES])
   role!: string;
 
-  @ApiProperty({ description: '文本内容' })
+  @ApiProperty({ description: '文本内容（JSON 请先 stringify）' })
   @IsString()
   @MaxLength(1_000_000)
   content!: string;

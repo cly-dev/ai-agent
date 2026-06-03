@@ -1,3 +1,5 @@
+import { buildToolEmbedTextFromMetadata } from '../tool-engine/tool-agent-metadata.util';
+
 /**
  * 意图召回向量工具：余弦相似度、embedding 文本拼装、关键词降级打分。
  * 不依赖外部向量库，在进程内对 dense vector 做点积计算。
@@ -54,9 +56,12 @@ export function buildToolEmbedText(row: {
  */
 export function keywordToolRecallScore(
   query: string,
-  tool: { name: string; description: string },
+  tool: { name: string; description: string; agentMetadata?: unknown },
 ): number {
-  const hay = buildToolEmbedText(tool).toLowerCase();
+  const hay =
+    tool.agentMetadata != null
+      ? buildToolEmbedTextFromMetadata(tool).toLowerCase()
+      : buildToolEmbedText(tool).toLowerCase();
   const tokens = tokenizeKeywordQuery(query);
   if (tokens.length === 0) {
     return 0;

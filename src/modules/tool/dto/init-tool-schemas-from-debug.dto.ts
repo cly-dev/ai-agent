@@ -4,7 +4,8 @@ import { DebugToolDto } from './debug-tool.dto';
 
 export class InitToolSchemasFromDebugDto extends DebugToolDto {
   @ApiPropertyOptional({
-    description: '是否将推断结果写回 Tool.outputSchema / Tool.responseProfile',
+    description:
+      '是否将推断结果写回 Tool（outputSchema、responseProfile、agentMetadata）',
     default: true,
   })
   @IsOptional()

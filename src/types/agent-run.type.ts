@@ -1,10 +1,16 @@
-export type AgentRunStepType = 'llm' | 'tool';
+export type AgentRunStepType = 'precheck' | 'intent' | 'llm' | 'tool' | 'summarize';
 export type AgentRunStatus = 'running' | 'success' | 'failed';
 
 export type AgentRunStepMeta = {
   prompt?: string;
   model?: string;
   latency?: number;
+  code?: string;
+  toolSchema?: string;
+  observations?: string;
+  agentPrompt?: string;
+  userRequest?: string;
+  duplicateToolCallsSkipped?: boolean;
 };
 
 export type AgentRunStep = {

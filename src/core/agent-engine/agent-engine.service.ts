@@ -9,14 +9,26 @@ import {
 import { AIMessage, AIMessageChunk } from '@langchain/core/messages';
 import type { DynamicStructuredTool } from '@langchain/core/tools';
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
+import { z } from 'zod';
 import { AgentRunRole, AgentRunStatus } from '../../../generated/prisma/client';
 import type { Prisma } from '../../../generated/prisma/client';
 import { normalizeToolCallArgs } from '../llm/tool-call-args.util';
 import { LlmService } from '../llm/llm.service';
-import {
-  trimMessagesToTokenBudget,
-} from '../llm/message-token-budget.util';
 import type { LlmChatMessage } from '../llm/llm.types';
+import {
+  extractAgentPromptMessages,
+  extractWorkingMemoryMessages,
+  joinAgentPromptText,
+} from './prompt-message.util';
+import {
+  dedupeObservationPayloads,
+  formatObservationForLlm,
+  isSameObservationPayload,
+  serializeObservationsBlock,
+  type LlmObservationPayload,
+} from './observation-format.util';
+import { estimateMessagesTokens } from '../llm/message-token-budget.util';
+import { summarizeToolsForLlmSchema } from './tool-schema-compact.util';
 import { PromptComposerService } from '../prompt/prompt-composer.service';
 import {
   ToolEngineService,
@@ -28,13 +40,11 @@ import type {
 } from '../tool-engine/tool-engine.service';
 import type { ToolExecutionResult } from '../tool-engine/tool-engine.types';
 import {
-  getAgentDetailReplySkipSummarizeMaxChars,
-  getAgentSummarizeSmallTalkMaxTokens,
-  getAgentSummarizeToolDetailMaxTokens,
-  getAgentSummarizeToolMaxTokens,
-} from './agent-engine.constants';
-import { renderStructuredToolDetailReply } from './tool-detail-reply.util';
-import { isUserRequestingFullDetail } from './user-response-style.util';
+  classifySummarizeScenario,
+  isLikelyReadOnlyQuestion,
+  isUserRequestingFullDetail,
+} from './user-response-style.util';
+import { filterToolsByAgentMetadata, parseAgentMetadata } from '../tool-engine/tool-agent-metadata.util';
 import { PROMPT_KEYS } from '../prompt/prompt-template.keys';
 import { PromptRegistryService } from '../prompt/prompt-registry.service';
 import {
@@ -44,9 +54,6 @@ import {
 } from '../tool-engine/tool-output-projection.util';
 import type { ProjectedToolOutput } from '../tool-engine/tool-response-profile.types';
 import type { ToolResponseProfile } from '../tool-engine/tool-response-profile.types';
-import {
-  resolveXShopIdFromUserMessage,
-} from '../../common/integration-site.util';
 import {
   buildLlmFailureUserMessage,
   buildToolErrorObservation,
@@ -63,6 +70,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ChatEventsService } from '../../modules/chat/chat-events.service';
 import { AgentService } from '../../modules/agent/agent.service';
 import { SessionHistoryCompressionService } from '../memory/session-history-compression.service';
+import type { WorkingMemoryState } from '../memory/session-context.types';
+import { WorkingMemoryUpdateContext } from '../memory/session-context.types';
 import { WorkingMemoryService } from '../memory/working-memory.service';
 import { CategoryIntentRecallService } from '../intent/category-intent-recall.service';
 import {
@@ -74,6 +83,37 @@ import {
   snapshotRunMetrics,
 } from './run-metrics.util';
 import type { RunMetricsAccumulator } from './run-metrics.util';
+import type { MessageBlock, MessageBlockPatch } from './message-blocks.types';
+import {
+  buildRuleBasedMessageBlocks,
+  ensureAtLeastOneTextBlock,
+  filterLlmBlocksAvoidDuplicatingRule,
+  isStructuredMessageBlock,
+  looksLikeBlocksJsonOutput,
+  mergeMessageBlocks,
+  messageBlocksToPlainText,
+  normalizeMessageBlocks,
+  planStructuredBlockStreaming,
+  serializeMessageBlocksForStorage,
+  shouldBufferSummarizeLlmStream,
+  stripMarkdownFenceForBlocksParse,
+  textBlock,
+  tryParseStoredMessageBlocks,
+} from './message-blocks.util';
+import {
+  isEmptyListToolObservation,
+  observationsAreOnlyEmptyLists,
+  shouldPreferSummarizeOverObservedTools,
+} from './tool-observation.util';
+import {
+  areToolCallRoundsIdentical,
+  getLastToolRoundFromSteps,
+} from './tool-call-dedupe.util';
+import { detectIntentKind as classifyIntentKind } from './intent-kind.util';
+import {
+  emitLlmPromptDebug,
+  isLlmPromptDebugEnabled,
+} from './llm-prompt-debug.util';
 
 type AgentRunInput = {
   userId: number;
@@ -83,7 +123,16 @@ type AgentRunInput = {
   userMessageId: number;
 };
 
-type AgentRunStepType = 'intent' | 'llm' | 'tool' | 'summarize';
+type AgentRunStepType = 'precheck' | 'intent' | 'llm' | 'tool' | 'summarize';
+type PrecheckReasonCode =
+  | 'HISTORY_SUFFICIENT'
+  | 'HISTORY_INSUFFICIENT'
+  | 'PRECHECK_PARSE_FAILED'
+  | 'PRECHECK_LLM_FAILED';
+const precheckDecisionSchema = z.object({
+  answerableFromObservation: z.boolean(),
+  reason: z.string().optional().nullable(),
+});
 type AgentRunStep = {
   step: number;
   type: AgentRunStepType;
@@ -92,10 +141,12 @@ type AgentRunStep = {
   output?: Record<string, unknown> | string;
   meta?: {
     prompt?: string;
+    agentPrompt?: string;
+    userRequest?: string;
     model?: string;
     latency?: number;
     quality?: 'high' | 'medium' | 'low';
-    code?: AgentMachineCode;
+    code?: AgentMachineCode | PrecheckReasonCode;
   };
 };
 
@@ -103,6 +154,7 @@ type AgentRunStep = {
 type AgentEngineTool = ToolExecutionDefinition & {
   toolCategoryId: number | null;
   responseProfile: unknown;
+  agentMetadata: unknown;
 };
 
 type ParsedIntentPayload = {
@@ -120,16 +172,22 @@ type AgentRunResult = {
   status: AgentRunStatus;
 };
 
-type AgentLlmRequestDebugRecord = {
-  sessionId: string;
-  runId: number;
-  step: number;
-  maxTokens: number;
-  toolsCount: number;
-  toolNames: string[];
-  decisionPrompt: string;
-  messages: Array<{ role: string; content: string }>;
+type ScopedToolsResult = {
+  scopedTools: AgentEngineTool[];
+  scopedLangChainTools: DynamicStructuredTool[];
+  scopedToolBundle: BuiltLangChainTools;
+  scopedAllowedToolIds: number[];
+  bindCap?: Record<string, unknown>;
+  fallbackReason?: 'bind_recall_error' | 'bind_recall_empty';
 };
+
+type CachedScopedToolsEntry = ScopedToolsResult & {
+  toolFingerprint: string;
+  expiresAt: number;
+};
+
+const SESSION_TOOL_CACHE_TTL_MS = 10 * 60 * 1000;
+const MAX_SESSION_TOOL_CACHE_ENTRIES = 256;
 
 type GraphToolCall = {
   name: string;
@@ -139,6 +197,8 @@ type GraphToolCall = {
 type ToolObservation = {
   name: string;
   output: unknown;
+  /** LLM-oriented observation (flat records); built at tool execution time. */
+  llmPayload?: LlmObservationPayload;
   quality?: 'high' | 'medium' | 'low';
   fieldLabels?: Record<string, string>;
   fieldDescriptions?: Record<string, string>;
@@ -183,14 +243,32 @@ export class AgentEngineService {
   private readonly logger = new Logger(AgentEngineService.name);
   /** SSE think 为 run 内累积全文；key = sessionId:runId */
   private readonly thinkBuffers = new Map<string, string>();
-  /** run 步骤排查日志：runId -> 文件路径 */
-  private readonly runStepsDebugFiles = new Map<number, string>();
-  /** 已写入的 steps 数组下标，避免 updateRun 重复落盘 */
-  private readonly runStepsDebugLoggedCount = new Map<number, number>();
-  /** 日志文件中的「第 x 步」序号 */
-  private readonly runStepsDebugSeq = new Map<number, number>();
+  /** SSE result 流式序号；key = sessionId:runId */
+  private readonly streamSeq = new Map<string, number>();
+  /** 本 run 已推送过 message 流式增量（key = sessionId:runId） */
+  private readonly messageStreamDeltaEmitted = new Set<string>();
+  /** 本 run 正文已通过 SSE 交付，run() 末尾无需再补 stream full */
+  private readonly runSseContentDelivered = new Set<string>();
   /** 闲聊关键词词库（来自独立文件）。 */
   private smallTalkHintsCache: string[] | null = null;
+  /** sessionId + agentId + userId → 权限内全量工具（避免每轮 run 查 DB）。 */
+  private readonly sessionAllowedToolsCache = new Map<
+    string,
+    { tools: Awaited<ReturnType<AgentService['getAllowedTools']>>; expiresAt: number }
+  >();
+  /** sessionId + 意图类目 → scoped bind 结果（避免重复 embedding + buildLangChainTools）。 */
+  private readonly sessionIntentScopedToolsCache = new Map<
+    string,
+    CachedScopedToolsEntry
+  >();
+  /** 类目 id 集合 → ToolCategory 行（进程内共享）。 */
+  private readonly toolCategoryRowsCache = new Map<
+    string,
+    {
+      rows: Array<{ id: number; label: string; description: string | null }>;
+      expiresAt: number;
+    }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -228,24 +306,47 @@ export class AgentEngineService {
       return null;
     }
 
-    const agent = await this.prisma.agent.findFirst({
-      where: { id: session.agentId, appClientId: session.appClientId },
-      select: {
-        id: true,
-        maxSteps: true,
-        enableToolCall: true,
-        config: true,
-      },
-    });
+    const startedAt = new Date();
+    const [agent, messageTokenBudget] = await Promise.all([
+      this.agentService.getRuntimeAgent(session.appClientId, session.agentId),
+      this.llmService.getMessageTokenBudget(),
+    ]);
     if (!agent) {
       throw new NotFoundException(`agent ${session.agentId} not found`);
     }
 
-    const allowedTools = await this.agentService.getAllowedTools(
-      agent.id,
-      input.userId,
-      session.appClientId,
-    );
+    const prompt = await this.promptComposer.compose({
+      userId: input.userId,
+      sessionId: input.sessionId,
+      latestUserMessage: input.input,
+      agentSystemPrompt: agent.systemPrompt,
+      sessionScope: {
+        appClientId: session.appClientId,
+        agentId: session.agentId,
+      },
+    });
+
+    const [allowedTools, turn] = await Promise.all([
+      this.getSessionAllowedTools(
+        input.sessionId,
+        agent.id,
+        input.userId,
+        session.appClientId,
+      ),
+      this.prisma.messageTurn.create({
+        data: {
+          messageId: input.userMessageId,
+          sessionId: session.id,
+          userId: input.userId,
+          appClientId: session.appClientId,
+          userInput: input.input,
+          primaryAgentId: agent.id,
+          agentRunCount: 1,
+          status: AgentRunStatus.running,
+          startedAt,
+        },
+      }),
+    ]);
     const tools: AgentEngineTool[] = allowedTools.map((tool) => ({
       id: tool.id,
       name: tool.name,
@@ -264,6 +365,7 @@ export class AgentEngineService {
       },
       toolCategoryId: tool.toolCategoryId ?? null,
       responseProfile: tool.responseProfile,
+      agentMetadata: tool.agentMetadata,
     }));
     const toolProfilesByName = Object.fromEntries(
       tools.map((tool) => [
@@ -278,22 +380,6 @@ export class AgentEngineService {
     };
     const langChainTools = this.toolEngine.buildLangChainTools(tools, toolBuildCtx);
 
-    const startedAt = new Date();
-    const turn = await this.prisma.messageTurn.create({
-      data: {
-        messageId: input.userMessageId,
-        sessionId: session.id,
-        userId: input.userId,
-        appClientId: session.appClientId,
-        userInput: input.input,
-        primaryAgentId: agent.id,
-        agentRunCount: 1,
-        status: AgentRunStatus.running,
-        startedAt,
-      },
-    });
-
-    // 创建运行记录，后续每个步骤会增量回写。
     const run = await this.prisma.agentRun.create({
       data: {
         turnId: turn.id,
@@ -316,30 +402,7 @@ export class AgentEngineService {
 
     const steps: AgentRunStep[] = [];
     this.resetThinkBuffer(input.sessionId, run.id);
-    const prompt = await this.promptComposer.compose({
-      userId: input.userId,
-      sessionId: input.sessionId,
-      latestUserMessage: input.input,
-    });
-    const messageTokenBudget = await this.llmService.getMessageTokenBudget();
-    const promptMessages = trimMessagesToTokenBudget(
-      prompt.messages,
-      messageTokenBudget,
-    );
-    this.writePromptDebugFile({
-      sessionId: input.sessionId,
-      runId: run.id,
-      userId: input.userId,
-      latestUserMessage: input.input,
-      messageCount: promptMessages.length,
-      messages: promptMessages,
-    });
-    this.initRunStepsDebugFile(input.sessionId, run.id, input.input);
-    this.appendRunStepsDebugNote(
-      run.id,
-      '准备 Agent 运行',
-      `tools=${tools.length}，promptMessages=${promptMessages.length}，maxSteps=${agent.maxSteps}，enableToolCall=${agent.enableToolCall}`,
-    );
+    const promptMessages = prompt.messages;
 
     let finalOutput = '';
     let status: AgentRunStatus = AgentRunStatus.running;
@@ -399,26 +462,16 @@ export class AgentEngineService {
         currentStep,
       });
 
-      await this.workingMemoryService.refreshFromAgentRun(input.sessionId, {
-        userInput: input.input,
-        finalOutput,
-        toolObservations: graphState.toolObservations,
-      });
-      await this.sessionHistoryCompression.maybeCompressAfterTurn(
+      this.emitRunMessageBlocksIfNeeded(
         input.sessionId,
+        run.id,
+        turn.id,
+        this.blocksFromFinalOutput(finalOutput),
       );
-
-      this.chatEvents.emit(input.sessionId, {
-        event: 'result',
-        payload: {
-          content: JSON.stringify({
-            source: 'agent-run',
-            action: 'final',
-            runId: run.id,
-            turnId: turn.id,
-            output: finalOutput,
-          }),
-        },
+      this.schedulePostRunMemoryTasks(input.sessionId, {
+        userInput: input.input,
+        finalOutput: this.finalOutputForWorkingMemory(finalOutput),
+        toolObservations: graphState.toolObservations,
       });
 
       return { runId: run.id, turnId: turn.id, output: finalOutput, status };
@@ -452,7 +505,13 @@ export class AgentEngineService {
       finalOutput = this.sanitizeFinalOutput(userFacing);
       status = AgentRunStatus.success;
       recordMachineCodeUsage(runMetrics, errorCode);
-      this.emitLlmReply(input.sessionId, finalOutput, errorCode ?? undefined);
+      this.emitLlmReply(input.sessionId, run.id, finalOutput, {
+        code: errorCode ?? undefined,
+        mode: 'full',
+      });
+      this.runSseContentDelivered.add(
+        this.thinkBufferKey(input.sessionId, run.id),
+      );
       const finishReason = resolveFinishReason({
         status,
         steps,
@@ -470,32 +529,13 @@ export class AgentEngineService {
         steps,
         currentStep,
       });
-      await this.workingMemoryService.refreshFromAgentRun(input.sessionId, {
+      this.schedulePostRunMemoryTasks(input.sessionId, {
         userInput: input.input,
         finalOutput,
         toolObservations: [],
       });
-      this.chatEvents.emit(input.sessionId, {
-        event: 'result',
-        payload: {
-          content: JSON.stringify({
-            source: 'agent-run',
-            action: 'final',
-            runId: run.id,
-            turnId: turn.id,
-            output: finalOutput,
-            code: errorCode ?? undefined,
-          }),
-        },
-      });
       return { runId: run.id, turnId: turn.id, output: finalOutput, status };
     } finally {
-      this.finalizeRunStepsDebugFile(run.id, {
-        status,
-        finalOutput,
-        currentStep,
-        error: runError,
-      });
       this.clearThinkBuffer(input.sessionId, run.id);
     }
   }
@@ -511,7 +551,6 @@ export class AgentEngineService {
       where: { id: runId },
       data: { steps: this.toJsonSteps(steps), currentStep, status },
     });
-    this.syncRunStepsDebugFromSteps(runId, steps);
   }
 
   /** 步骤数据按 JSON 存储。 */
@@ -581,10 +620,81 @@ export class AgentEngineService {
 
   private resetThinkBuffer(sessionId: string, runId: number): void {
     this.thinkBuffers.set(this.thinkBufferKey(sessionId, runId), '');
+    this.streamSeq.set(this.thinkBufferKey(sessionId, runId), 0);
   }
 
   private clearThinkBuffer(sessionId: string, runId: number): void {
-    this.thinkBuffers.delete(this.thinkBufferKey(sessionId, runId));
+    const key = this.thinkBufferKey(sessionId, runId);
+    this.thinkBuffers.delete(key);
+    this.streamSeq.delete(key);
+    this.messageStreamDeltaEmitted.delete(key);
+    this.runSseContentDelivered.delete(key);
+  }
+
+  /** 工作记忆刷新与历史压缩不阻塞 SSE complete / 下一轮 run 返回。 */
+  private schedulePostRunMemoryTasks(
+    sessionId: string,
+    ctx: WorkingMemoryUpdateContext,
+  ): void {
+    void this.workingMemoryService
+      .refreshFromAgentRun(sessionId, ctx)
+      .then(() => this.sessionHistoryCompression.maybeCompressAfterTurn(sessionId))
+      .catch((error) => {
+        this.logger.warn(
+          `post-run memory tasks failed sessionId=${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+  }
+
+  /**
+   * 兜底：未走 summarize 流式 / patch 时，在 run 结束前推一次 stream full。
+   * 不再使用 action=final；本轮结束以 complete 为准。
+   */
+  private emitRunMessageBlocksIfNeeded(
+    sessionId: string,
+    runId: number,
+    turnId: number,
+    blocks: MessageBlock[],
+  ): void {
+    const runKey = this.thinkBufferKey(sessionId, runId);
+    if (blocks.length === 0) {
+      return;
+    }
+    if (this.runSseContentDelivered.has(runKey)) {
+      return;
+    }
+    if (
+      this.messageStreamDeltaEmitted.has(runKey) &&
+      blocks.every((block) => block.type === 'text')
+    ) {
+      return;
+    }
+    this.emitMessageBlocks(sessionId, runId, blocks, {
+      action: 'stream',
+      mode: 'full',
+      turnId,
+    });
+    this.runSseContentDelivered.add(runKey);
+  }
+
+  private markRunSseContentDelivered(
+    runKey: string,
+    blocks: MessageBlock[],
+    options: { textStreamed: boolean; structuredPatches: number },
+  ): void {
+    const hasStructured = blocks.some(isStructuredMessageBlock);
+    const hasText = blocks.some((block) => block.type === 'text');
+    if (!hasStructured && hasText && options.textStreamed) {
+      this.runSseContentDelivered.add(runKey);
+      return;
+    }
+    if (
+      hasStructured &&
+      options.structuredPatches > 0 &&
+      (!hasText || options.textStreamed)
+    ) {
+      this.runSseContentDelivered.add(runKey);
+    }
   }
 
   /**
@@ -609,27 +719,114 @@ export class AgentEngineService {
     });
   }
 
-  /** LLM 有输出即通过 SSE result 推送给前端（累积全文，前端覆盖展示）。 */
+  private finalOutputForWorkingMemory(finalOutput: string): string {
+    const blocks = tryParseStoredMessageBlocks(finalOutput);
+    if (blocks?.length) {
+      return messageBlocksToPlainText(blocks);
+    }
+    return finalOutput;
+  }
+
+  private blocksFromFinalOutput(finalOutput: string): MessageBlock[] {
+    const blocks = tryParseStoredMessageBlocks(finalOutput);
+    if (blocks?.length) {
+      return blocks;
+    }
+    const text = this.sanitizeFinalOutput(finalOutput);
+    return text ? [textBlock(text)] : [];
+  }
+
+  /** Message Blocks SSE（stream 增量/整段 或 patch 前的占位）。 */
+  private emitMessageBlocks(
+    sessionId: string,
+    runId: number | undefined,
+    blocks: MessageBlock[],
+    options?: {
+      code?: AgentMachineCode;
+      mode?: 'delta' | 'full';
+      action?: 'stream';
+      turnId?: number;
+    },
+  ): void {
+    const normalized = normalizeMessageBlocks(blocks);
+    if (normalized.length === 0) {
+      return;
+    }
+    const key = runId == null ? null : this.thinkBufferKey(sessionId, runId);
+    const action = options?.action ?? 'stream';
+    const mode = options?.mode ?? 'full';
+    if (key && action === 'stream' && mode === 'delta') {
+      this.messageStreamDeltaEmitted.add(key);
+    }
+    const nextSeq = key ? (this.streamSeq.get(key) ?? 0) + 1 : undefined;
+    if (key && nextSeq != null) {
+      this.streamSeq.set(key, nextSeq);
+    }
+    this.chatEvents.emit(sessionId, {
+      event: 'message',
+      payload: {
+        source: 'agent-run',
+        action,
+        runId,
+        turnId: options?.turnId,
+        blocks: normalized,
+        code: options?.code,
+        seq: nextSeq,
+        mode,
+      },
+    });
+  }
+
+  /** 用实际 block 替换此前 loading 占位（SSE action=patch，非全量 blocks）。 */
+  private emitBlockPatch(
+    sessionId: string,
+    runId: number,
+    patch: MessageBlockPatch,
+  ): void {
+    const block = normalizeMessageBlocks([patch.block])[0];
+    if (!block || block.type === 'loading') {
+      return;
+    }
+    const key = this.thinkBufferKey(sessionId, runId);
+    const nextSeq = (this.streamSeq.get(key) ?? 0) + 1;
+    this.streamSeq.set(key, nextSeq);
+    this.chatEvents.emit(sessionId, {
+      event: 'message',
+      payload: {
+        source: 'agent-run',
+        action: 'patch',
+        runId,
+        patches: [{ replaceId: patch.replaceId, block }],
+        seq: nextSeq,
+      },
+    });
+  }
+
+  /** 决策环等流式文本：单 text block 增量。 */
   private emitLlmReply(
     sessionId: string,
+    runId: number | undefined,
     output: string,
-    code?: AgentMachineCode,
+    options?: {
+      code?: AgentMachineCode;
+      mode?: 'delta' | 'full';
+      turnId?: number;
+    },
   ): void {
     const text = this.sanitizeFinalOutput(output);
     if (!text) {
       return;
     }
-    this.chatEvents.emit(sessionId, {
-      event: 'result',
-      payload: {
-        content: JSON.stringify({
-          source: 'agent-run',
-          action: 'stream',
-          output: text,
-          code,
-        }),
+    this.emitMessageBlocks(
+      sessionId,
+      runId,
+      [textBlock(text)],
+      {
+        code: options?.code,
+        mode: options?.mode ?? 'delta',
+        turnId: options?.turnId,
       },
-    });
+    );
   }
 
   /** LangChain stream：每个 token 立即 emitLlmReply。 */
@@ -638,8 +835,9 @@ export class AgentEngineService {
       stream: (messages: unknown[]) => Promise<AsyncIterable<unknown>>;
       invoke: (messages: unknown[]) => Promise<AIMessage>;
     },
-    messages: Array<{ role: string; content: string }>,
+    messages: Array<Record<string, string>>,
     sessionId: string,
+    runId: number,
   ): Promise<AIMessage> {
     let merged: AIMessageChunk | undefined;
     let streamedText = '';
@@ -650,7 +848,7 @@ export class AgentEngineService {
         const delta = this.extractAiMessageText(row as AIMessage);
         if (delta) {
           streamedText += delta;
-          this.emitLlmReply(sessionId, streamedText);
+          this.emitLlmReply(sessionId, runId, delta, { mode: 'delta' });
         }
         merged = merged ? merged.concat(row) : row;
       }
@@ -663,7 +861,7 @@ export class AgentEngineService {
       const aiMessage = await runnable.invoke(messages);
       const text = this.extractAiMessageText(aiMessage).trim();
       if (text) {
-        this.emitLlmReply(sessionId, text);
+        this.emitLlmReply(sessionId, runId, text, { mode: 'full' });
       }
       return aiMessage;
     }
@@ -676,7 +874,7 @@ export class AgentEngineService {
       });
       const text = this.extractAiMessageText(aiMessage).trim();
       if (text && !streamedText) {
-        this.emitLlmReply(sessionId, text);
+        this.emitLlmReply(sessionId, runId, text, { mode: 'full' });
       }
       return aiMessage;
     }
@@ -684,465 +882,6 @@ export class AgentEngineService {
       return new AIMessage({ content: streamedText });
     }
     return new AIMessage({ content: '' });
-  }
-
-  /**
-   * 非 production 默认写文件；production 仅当 AGENT_ENGINE_DEBUG=1/true；
-   * 任一环境 AGENT_ENGINE_DEBUG=0/false 可关闭。
-   */
-  private isAgentPromptDebugFileEnabled(): boolean {
-    const v = process.env.AGENT_ENGINE_DEBUG?.trim().toLowerCase();
-    if (v === '0' || v === 'false' || v === 'off') {
-      return false;
-    }
-    if (v === '1' || v === 'true' || v === 'on') {
-      return true;
-    }
-    return process.env.NODE_ENV !== 'production';
-  }
-
-  private writePromptDebugFile(record: {
-    sessionId: string;
-    runId: number;
-    userId: number;
-    latestUserMessage: string;
-    messageCount: number;
-    messages: LlmChatMessage[];
-  }): void {
-    if (!this.isAgentPromptDebugFileEnabled()) {
-      return;
-    }
-    try {
-      const dir = this.resolveAgentEngineDebugDir(
-        'prompt',
-        record.sessionId,
-        record.runId,
-      );
-      fs.mkdirSync(dir, { recursive: true });
-      const sessionHint = record.sessionId
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '');
-      const file = path.join(
-        dir,
-        `${Date.now()}-run${record.runId}-${sessionHint}-prompt.json`,
-      );
-      const payload = {
-        at: new Date().toISOString(),
-        ...record,
-      };
-      fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
-      this.logger.log(`agent prompt written to ${file}`);
-    } catch (err) {
-      this.logger.warn(
-        `agent prompt debug file write failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  /** 记录“实际发送给 LLM 的请求体（近似）”，用于排查 max_tokens / 上下文问题。 */
-  private writeLlmRequestDebugFile(record: AgentLlmRequestDebugRecord): void {
-    if (!this.isAgentPromptDebugFileEnabled()) {
-      return;
-    }
-    try {
-      const dir = this.resolveAgentEngineDebugDir(
-        'llm-request',
-        record.sessionId,
-        record.runId,
-      );
-      fs.mkdirSync(dir, { recursive: true });
-      const sessionHint = record.sessionId
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '');
-      const file = path.join(
-        dir,
-        `${Date.now()}-run${record.runId}-step${record.step}-${sessionHint}-llm-request.json`,
-      );
-      const payload = {
-        at: new Date().toISOString(),
-        ...record,
-      };
-      fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
-      this.logger.log(`agent llm request written to ${file}`);
-    } catch (err) {
-      this.logger.warn(
-        `agent llm request debug file write failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  private writeToolResultsDebugFile(record: {
-    sessionId: string;
-    runId: number;
-    iteration: number;
-    latestUserMessage: string;
-    pendingToolCalls: GraphToolCall[];
-    toolResults: Array<{
-      toolId: number;
-      name: string;
-      input: Record<string, unknown>;
-      output: unknown;
-      latency: number;
-    }>;
-    /** responseProfile 裁剪后的结果，供 LLM / summarize 使用 */
-    projectedToolResults: Array<{
-      name: string;
-      input: Record<string, unknown>;
-      latency: number;
-      projected: ProjectedToolOutput;
-    }>;
-    context: {
-      userId: number;
-      maxSteps: number;
-      enableToolCall: boolean;
-      scopedToolNames: string[];
-    };
-  }): void {
-    if (!this.isAgentPromptDebugFileEnabled()) {
-      return;
-    }
-    try {
-      const dir = this.resolveAgentEngineDebugDir(
-        'tool-result',
-        record.sessionId,
-        record.runId,
-      );
-      fs.mkdirSync(dir, { recursive: true });
-      const sessionHint = record.sessionId
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '');
-      const file = path.join(
-        dir,
-        `${Date.now()}-run${record.runId}-step${record.iteration}-${sessionHint}-tool-result.json`,
-      );
-      const payload = {
-        at: new Date().toISOString(),
-        ...record,
-      };
-      fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
-      this.logger.log(`agent tool results written to ${file}`);
-      for (const row of record.projectedToolResults) {
-        this.logger.debug(
-          `tool result projected runId=${record.runId} tool=${row.name} data=${this.truncateRunStepDebugResult(
-            JSON.stringify(row.projected.data),
-          )}`,
-        );
-      }
-    } catch (err) {
-      this.logger.warn(
-        `agent tool results debug file write failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  private writeIntentRecallDebugFile(record: {
-    sessionId: string;
-    runId: number;
-    step: number;
-    userMessage: string;
-    categoryCandidates: Array<{ id: number; label: string; description: string | null }>;
-    recallResult: unknown;
-  }): void {
-    if (!this.isAgentPromptDebugFileEnabled()) {
-      return;
-    }
-    try {
-      const dir = this.resolveAgentEngineDebugDir(
-        'intent-recall',
-        record.sessionId,
-        record.runId,
-      );
-      fs.mkdirSync(dir, { recursive: true });
-      const sessionHint = record.sessionId
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '');
-      const file = path.join(
-        dir,
-        `${Date.now()}-run${record.runId}-step${record.step}-${sessionHint}-intent-recall.json`,
-      );
-      fs.writeFileSync(
-        file,
-        `${JSON.stringify(
-          {
-            at: new Date().toISOString(),
-            ...record,
-          },
-          null,
-          2,
-        )}\n`,
-        'utf-8',
-      );
-      this.logger.log(`agent intent recall written to ${file}`);
-    } catch (err) {
-      this.logger.warn(
-        `agent intent recall debug file write failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  private static readonly RUN_STEP_DEBUG_RESULT_MAX = 8000;
-
-  private initRunStepsDebugFile(
-    sessionId: string,
-    runId: number,
-    userInput: string,
-  ): void {
-    if (!this.isAgentPromptDebugFileEnabled()) {
-      return;
-    }
-    try {
-      const dir = this.resolveAgentEngineDebugDir('steps', sessionId, runId);
-      fs.mkdirSync(dir, { recursive: true });
-      const sessionHint = sessionId
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '');
-      const file = path.join(
-        dir,
-        `${Date.now()}-run${runId}-${sessionHint}-steps.txt`,
-      );
-      const header = [
-        'agent run steps debug',
-        `at: ${new Date().toISOString()}`,
-        `sessionId: ${sessionId}`,
-        `runId: ${runId}`,
-        `userInput: ${userInput}`,
-        '---',
-        '',
-      ].join('\n');
-      fs.writeFileSync(file, `${header}\n`, 'utf-8');
-      this.runStepsDebugFiles.set(runId, file);
-      this.runStepsDebugLoggedCount.set(runId, 0);
-      this.runStepsDebugSeq.set(runId, 0);
-      this.logger.log(`agent run steps debug: ${file}`);
-    } catch (err) {
-      this.logger.warn(
-        `agent run steps debug init failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  /**
-   * agent-engine 调试文件目录分层：
-   * logs/agent-engine/{prompt|steps|llm-request|tool-result}/YYYY-MM-DD/session-xxx/
-   */
-  private resolveAgentEngineDebugDir(
-    type:
-      | 'prompt'
-      | 'steps'
-      | 'llm-request'
-      | 'intent-recall'
-      | 'tool-result',
-    sessionId: string,
-    runId: number,
-  ): string {
-    const day = new Date().toISOString().slice(0, 10);
-    const sessionHint = sessionId
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '');
-    return path.join(
-      process.cwd(),
-      'logs',
-      'agent-engine',
-      type,
-      day,
-      `session-${sessionHint}`,
-      `run-${runId}`,
-    );
-  }
-
-  private appendRunStepsDebugLine(runId: number, line: string): void {
-    const file = this.runStepsDebugFiles.get(runId);
-    if (!file) {
-      return;
-    }
-    try {
-      fs.appendFileSync(file, `${line}\n`, 'utf-8');
-      this.logger.debug(`agent run step: ${line}`);
-    } catch (err) {
-      this.logger.warn(
-        `agent run steps debug append failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  private nextRunStepsDebugSeq(runId: number): number {
-    const seq = (this.runStepsDebugSeq.get(runId) ?? 0) + 1;
-    this.runStepsDebugSeq.set(runId, seq);
-    return seq;
-  }
-
-  private appendRunStepsDebugNote(
-    runId: number,
-    action: string,
-    result: string,
-    node = 'bootstrap',
-  ): void {
-    const seq = this.nextRunStepsDebugSeq(runId);
-    this.appendRunStepsDebugLine(
-      runId,
-      `第${seq}步，节点=${node}，执行了${action}，结果${this.truncateRunStepDebugResult(result)}`,
-    );
-  }
-
-  private syncRunStepsDebugFromSteps(
-    runId: number,
-    steps: AgentRunStep[],
-  ): void {
-    const logged = this.runStepsDebugLoggedCount.get(runId) ?? 0;
-    for (let index = logged; index < steps.length; index += 1) {
-      const seq = this.nextRunStepsDebugSeq(runId);
-      this.appendRunStepsDebugLine(
-        runId,
-        this.formatRunStepDebugLine(seq, steps[index]),
-      );
-    }
-    this.runStepsDebugLoggedCount.set(runId, steps.length);
-  }
-
-  private formatRunStepDebugLine(seq: number, step: AgentRunStep): string {
-    const action = this.describeRunStepAction(step);
-    const result = this.formatRunStepDebugResult(step);
-    const node = this.resolveRunStepNode(step);
-    return `第${seq}步，节点=${node}，执行了${action}，结果${result}`;
-  }
-
-  private describeRunStepAction(step: AgentRunStep): string {
-    if (step.type === 'intent') {
-      const output = step.output;
-      if (
-        output &&
-        typeof output === 'object' &&
-        !Array.isArray(output) &&
-        output.skipped === true
-      ) {
-        return '意图识别（跳过）';
-      }
-      if (
-        output &&
-        typeof output === 'object' &&
-        !Array.isArray(output) &&
-        output.fallback === true
-      ) {
-        return '意图识别（失败降级）';
-      }
-      if (
-        output &&
-        typeof output === 'object' &&
-        !Array.isArray(output) &&
-        output.intentClear === false
-      ) {
-        return '意图识别（意图不明确）';
-      }
-      return '意图识别';
-    }
-    if (step.type === 'llm') {
-      return `LLM 推理（图迭代 ${step.step}）`;
-    }
-    if (step.type === 'tool') {
-      return `工具调用 ${step.name ?? 'unknown'}`;
-    }
-    if (step.type === 'summarize') {
-      return '结果总结';
-    }
-    return step.type;
-  }
-
-  private resolveRunStepNode(step: AgentRunStep): string {
-    if (step.type === 'intent') {
-      return 'intent';
-    }
-    if (step.type === 'llm') {
-      return 'llm';
-    }
-    if (step.type === 'tool') {
-      return 'tools';
-    }
-    if (step.type === 'summarize') {
-      return 'summarize';
-    }
-    return 'unknown';
-  }
-
-  private formatRunStepDebugResult(step: AgentRunStep): string {
-    const parts: string[] = [];
-    if (step.input !== undefined) {
-      parts.push(`输入=${this.stringifyRunStepDebugValue(step.input)}`);
-    }
-    if (step.output !== undefined) {
-      parts.push(`输出=${this.stringifyRunStepDebugValue(step.output)}`);
-    }
-    if (step.meta) {
-      parts.push(`meta=${this.stringifyRunStepDebugValue(step.meta)}`);
-    }
-    return parts.length > 0
-      ? this.truncateRunStepDebugResult(parts.join('；'))
-      : '（无）';
-  }
-
-  private stringifyRunStepDebugValue(value: unknown): string {
-    if (typeof value === 'string') {
-      return value;
-    }
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-
-  private truncateRunStepDebugResult(text: string): string {
-    const trimmed = text.trim();
-    if (trimmed.length <= AgentEngineService.RUN_STEP_DEBUG_RESULT_MAX) {
-      return trimmed || '（空）';
-    }
-    return `${trimmed.slice(0, AgentEngineService.RUN_STEP_DEBUG_RESULT_MAX)}…（已截断，共 ${trimmed.length} 字符）`;
-  }
-
-  private finalizeRunStepsDebugFile(
-    runId: number,
-    summary: {
-      status: AgentRunStatus;
-      finalOutput: string;
-      currentStep: number;
-      error?: string;
-    },
-  ): void {
-    if (!this.runStepsDebugFiles.has(runId)) {
-      return;
-    }
-    const footer = [
-      '---',
-      `运行结束 status=${summary.status} currentStep=${summary.currentStep}`,
-      summary.error
-        ? `error=${this.truncateRunStepDebugResult(summary.error)}`
-        : null,
-      `finalOutput=${this.truncateRunStepDebugResult(summary.finalOutput)}`,
-      '',
-    ]
-      .filter((line): line is string => line != null)
-      .join('\n');
-    this.appendRunStepsDebugLine(runId, footer);
-    this.runStepsDebugFiles.delete(runId);
-    this.runStepsDebugLoggedCount.delete(runId);
-    this.runStepsDebugSeq.delete(runId);
   }
 
   /** 规范化步骤 input/output，便于序列化入库。 */
@@ -1161,81 +900,263 @@ export class AgentEngineService {
     return String(value);
   }
 
-  /** 主推理调用消息：会话历史 + 本轮 tool 观测 + 决策 system。 */
+  private tryParseJsonObject(value: string): Record<string, unknown> | null {
+    try {
+      const parsed = JSON.parse(value);
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed)
+      ) {
+        return parsed as Record<string, unknown>;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private buildWorkingMemoryHintForPrecheck(
+    workingMemory: WorkingMemoryState | null,
+  ): string {
+    if (!workingMemory) {
+      return '';
+    }
+    const parts: string[] = [];
+    if (workingMemory.lastToolSummary?.trim()) {
+      parts.push(`lastToolSummary=${workingMemory.lastToolSummary.trim()}`);
+    }
+    const facts = Array.isArray(workingMemory.facts)
+      ? workingMemory.facts
+          .filter((item) => item && item.key && item.value)
+          .slice(-6)
+          .map((item) => `${item.key}: ${item.value}`)
+      : [];
+    if (facts.length > 0) {
+      parts.push(`facts=${facts.join(' | ')}`);
+    }
+    return parts.join('; ');
+  }
+
+  private buildWorkingMemoryObservationForSummary(
+    workingMemory: WorkingMemoryState | null,
+  ): ToolObservation | null {
+    if (!workingMemory) {
+      return null;
+    }
+    const facts = Array.isArray(workingMemory.facts)
+      ? workingMemory.facts.slice(-10)
+      : [];
+    const entities =
+      workingMemory.entities &&
+      typeof workingMemory.entities === 'object' &&
+      !Array.isArray(workingMemory.entities)
+        ? workingMemory.entities
+        : {};
+    if (!workingMemory.lastToolSummary?.trim() && facts.length === 0) {
+      return null;
+    }
+    return {
+      name: 'working_memory',
+      output: {
+        summary: workingMemory.lastToolSummary ?? '',
+        facts,
+        entities,
+        updatedAt: workingMemory.updatedAt,
+      },
+      quality: 'medium',
+    };
+  }
+
+  /** 主推理调用：Agent → Memory → Observations → Tool schema → User。 */
   private buildLlmInvokeMessages(
     promptMessages: LlmChatMessage[],
     observations: ToolObservation[],
-    decisionPrompt: string,
+    latestUserMessage: string,
+    toolSchemaJson: string,
+    toolDecisionPrompt: string,
     messageTokenBudget: number,
-  ): Array<{ role: string; content: string }> {
-    const messages: LlmChatMessage[] = promptMessages.map((item) => ({
-      role: item.role,
-      content: item.content,
-    }));
-    for (const observation of observations) {
+  ): {
+    messages: Array<{ role: string; content: string; toolCallId?: string }>;
+    trimMeta: {
+      configuredBudget: number;
+      effectiveBudget: number;
+      estimatedTokensBefore: number;
+      estimatedTokensAfter: number;
+      trimmed: boolean;
+      droppedMessageIndexes: number[];
+      truncatedMessageIndexes: number[];
+    };
+  } {
+    const messages: LlmChatMessage[] = [];
+
+    for (const item of extractAgentPromptMessages(promptMessages)) {
+      messages.push({ role: item.role, content: item.content });
+    }
+
+    for (const item of extractWorkingMemoryMessages(promptMessages)) {
+      messages.push({ role: item.role, content: item.content });
+    }
+
+    const observationPayloads = dedupeObservationPayloads(
+      observations.map(
+        (observation) =>
+          observation.llmPayload ??
+          formatObservationForLlm({
+            toolName: observation.name,
+            output: observation.output,
+            fieldLabels: observation.fieldLabels,
+          }),
+      ),
+    );
+    if (observationPayloads.length > 0) {
       messages.push({
-        role: 'user',
-        content: this.buildToolObservationMessage(observation),
+        role: 'assistant',
+        content: `<observations>\n${serializeObservationsBlock(observationPayloads)}\n</observations>`,
       });
     }
-    messages.push({ role: 'system', content: decisionPrompt });
-    return trimMessagesToTokenBudget(messages, messageTokenBudget).map(
-      (item) => ({
+
+    messages.push({
+      role: 'tool',
+      content: `<tool_schema>\n${toolSchemaJson}\n</tool_schema>`,
+      toolCallId: 'decision_tool_schema',
+    });
+    messages.push({
+      role: 'system',
+      content: `<tool_decision>\n${toolDecisionPrompt}\n</tool_decision>`,
+    });
+
+    const pinnedUser = this.buildPinnedUserRequestMessage(latestUserMessage);
+    if (pinnedUser) {
+      messages.push(pinnedUser);
+    }
+
+    const estimatedTokens = estimateMessagesTokens(messages);
+
+    return {
+      messages: messages.map((item) => ({
         role: item.role,
         content: item.content,
-      }),
-    );
+        ...(item.toolCallId ? { toolCallId: item.toolCallId } : {}),
+      })),
+      trimMeta: {
+        configuredBudget: messageTokenBudget,
+        effectiveBudget: messageTokenBudget,
+        estimatedTokensBefore: estimatedTokens,
+        estimatedTokensAfter: estimatedTokens,
+        trimmed: false,
+        droppedMessageIndexes: [],
+        truncatedMessageIndexes: [],
+      },
+    };
   }
 
-  /** 每轮推理前拼接决策提示词（DB 模板 + 动态工具/观测）。 */
+  private buildPinnedUserRequestMessage(
+    latestUserMessage: string,
+  ): LlmChatMessage | null {
+    const trimmed = latestUserMessage.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return {
+      role: 'user',
+      content: `<current_user_request>\n${trimmed}\n</current_user_request>`,
+    };
+  }
+
+  private toLangChainInvokeMessage(message: {
+    role: string;
+    content: string;
+    toolCallId?: string;
+  }): Record<string, string> {
+    if (message.role === 'tool') {
+      return {
+        role: 'tool',
+        content: message.content,
+        tool_call_id: message.toolCallId ?? 'decision_tool_schema',
+      };
+    }
+    return {
+      role: message.role,
+      content: message.content,
+    };
+  }
+
+  /** 工具决策提示 + 精简 schema（观测与用户问句由 buildLlmInvokeMessages 单独注入）。 */
   private async buildDecisionPrompt(
+    promptMessages: LlmChatMessage[],
     tools: Array<{
       id: number;
       name: string;
       description: string;
       inputSchema: unknown;
+      schema: unknown;
+      responseProfile: unknown;
+      agentMetadata: unknown;
+      method: string;
     }>,
     observations: ToolObservation[],
     enableToolCall: boolean,
     scope: { appClientId: number; agentId: number },
-  ): Promise<string> {
-    const summarizedTools = this.summarizeToolsForDecisionPrompt(tools);
+  ): Promise<{
+    toolDecisionPrompt: string;
+    toolSchemaJson: string;
+    observationsJson: string;
+    agentPrompt: string | null;
+  }> {
+    const agentPrompt = joinAgentPromptText(promptMessages);
+    const toolSchema = summarizeToolsForLlmSchema(
+      tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        schema: tool.schema,
+        responseProfile: tool.responseProfile,
+        agentMetadata: tool.agentMetadata,
+        method: tool.method,
+      })),
+    );
     const toolCallInstruction = enableToolCall
-      ? 'If a tool is needed, use native tool_calls. If not needed, answer in message content.'
-      : 'Tool calling is disabled. Reply directly in message content.';
-    const base = await this.promptRegistry.render(
+      ? 'If a tool is needed, use native tool_calls. If not needed, answer in message content with empty tool_calls.'
+      : 'Tool calling is disabled. Reply directly in message content with empty tool_calls.';
+    const toolDecisionPrompt = await this.renderToolDecisionTemplate(
+      scope,
+      toolCallInstruction,
+    );
+    const observationPayloads = observations.map((observation) =>
+      observation.llmPayload ??
+      formatObservationForLlm({
+        toolName: observation.name,
+        output: observation.output,
+        fieldLabels: observation.fieldLabels,
+      }),
+    );
+    return {
+      toolDecisionPrompt,
+      toolSchemaJson: JSON.stringify(toolSchema),
+      observationsJson: serializeObservationsBlock(observationPayloads),
+      agentPrompt,
+    };
+  }
+
+  private async renderToolDecisionTemplate(
+    scope: { appClientId: number; agentId: number },
+    toolCallInstruction: string,
+  ): Promise<string> {
+    const variables = { toolCallInstruction };
+    const toolDecision = await this.promptRegistry.render(
+      PROMPT_KEYS.AGENT_TOOL_DECISION,
+      scope,
+      variables,
+    );
+    if (toolDecision.trim().length > 0) {
+      return toolDecision;
+    }
+    return this.promptRegistry.render(
       PROMPT_KEYS.AGENT_DECISION_LOOP,
       scope,
-      { toolCallInstruction },
+      variables,
     );
-    return [
-      base,
-      `Available tools (compact): ${JSON.stringify(summarizedTools)}`,
-      `Previous tool observations: ${this.serializeObservationsForPrompt(observations)}`,
-    ].join('\n');
-  }
-
-  private buildToolObservationMessage(observation: ToolObservation): string {
-    const parts = [`[tool_result:${observation.name}]`];
-    const fieldLabelText = formatFieldLabelsForPrompt(
-      observation.fieldLabels ?? {},
-      observation.enumLabelsByPath ?? {},
-      observation.fieldDescriptions ?? {},
-    );
-    if (fieldLabelText.trim()) {
-      parts.push(`字段说明:\n${fieldLabelText}`);
-    }
-    parts.push(this.stringifyForPrompt(observation.output));
-    return parts.join('\n');
-  }
-
-  private serializeObservationsForPrompt(observations: ToolObservation[]): string {
-    const compact = observations.map((item) => ({
-      name: item.name,
-      fieldLabels: item.fieldLabels ?? {},
-      output: this.stringifyForPrompt(item.output),
-    }));
-    return JSON.stringify(compact);
   }
 
   private stringifyForPrompt(value: unknown): string {
@@ -1250,25 +1171,6 @@ export class AgentEngineService {
     } catch {
       return String(value);
     }
-  }
-
-  private summarizeToolsForDecisionPrompt(
-    tools: Array<{
-      id: number;
-      name: string;
-      description: string;
-      inputSchema: unknown;
-    }>,
-  ): Array<{
-    name: string;
-    description: string;
-    requiredParams: string[];
-  }> {
-    return tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      requiredParams: this.extractRequiredParamNames(tool.inputSchema),
-    }));
   }
 
   private extractRequiredParamNames(inputSchema: unknown): string[] {
@@ -1343,15 +1245,130 @@ export class AgentEngineService {
 
   /** 在本轮可用工具拉取关联的 ToolCategory 说明，供向量召回使用。 */
   private async fetchToolCategoriesForAllowedTools(toolCategoryIds: number[]) {
-    const uniq = Array.from(new Set(toolCategoryIds));
+    const uniq = Array.from(new Set(toolCategoryIds)).sort((a, b) => a - b);
     if (uniq.length === 0) {
       return [];
     }
-    return this.prisma.toolCategory.findMany({
+    const cacheKey = uniq.join(',');
+    const cached = this.toolCategoryRowsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.rows;
+    }
+    const rows = await this.prisma.toolCategory.findMany({
       where: { id: { in: uniq } },
       orderBy: { sortOrder: 'asc' },
       select: { id: true, label: true, description: true },
     });
+    this.toolCategoryRowsCache.set(cacheKey, {
+      rows,
+      expiresAt: Date.now() + SESSION_TOOL_CACHE_TTL_MS,
+    });
+    this.pruneTimedCacheMap(this.toolCategoryRowsCache);
+    return rows;
+  }
+
+  private async getSessionAllowedTools(
+    sessionId: string,
+    agentId: number,
+    userId: number,
+    appClientId: number,
+  ): Promise<Awaited<ReturnType<AgentService['getAllowedTools']>>> {
+    const cacheKey = `${sessionId}:${agentId}:${userId}`;
+    const cached = this.sessionAllowedToolsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.tools;
+    }
+    const tools = await this.agentService.getAllowedTools(
+      agentId,
+      userId,
+      appClientId,
+    );
+    this.sessionAllowedToolsCache.set(cacheKey, {
+      tools,
+      expiresAt: Date.now() + SESSION_TOOL_CACHE_TTL_MS,
+    });
+    this.pruneTimedCacheMap(this.sessionAllowedToolsCache);
+    return tools;
+  }
+
+  private buildToolIdsFingerprint(tools: AgentEngineTool[]): string {
+    return tools
+      .map((tool) => tool.id)
+      .sort((a, b) => a - b)
+      .join(',');
+  }
+
+  private buildIntentScopeCacheKey(
+    sessionId: string,
+    matchedCategoryIds: number[],
+    userMessage: string,
+  ): string {
+    const cats = [...matchedCategoryIds].sort((a, b) => a - b).join(',');
+    // bind Top-K 依赖 userMessage；缓存键必须包含问句，避免同类目下错绑工具。
+    const msg = userMessage.trim().toLowerCase().replace(/\s+/g, ' ');
+    return `${sessionId}:intent:${cats || 'none'}:${msg}`;
+  }
+
+  private async resolveScopedToolsForIntent(input: {
+    sessionId: string;
+    userMessage: string;
+    tools: AgentEngineTool[];
+    toolBuildCtx: ToolBuildContext;
+    matchedCategoryIds: number[];
+  }): Promise<ScopedToolsResult & { fromCache: boolean }> {
+    const toolFingerprint = this.buildToolIdsFingerprint(input.tools);
+    const cacheKey = this.buildIntentScopeCacheKey(
+      input.sessionId,
+      input.matchedCategoryIds,
+      input.userMessage,
+    );
+    const cached = this.sessionIntentScopedToolsCache.get(cacheKey);
+    if (
+      cached &&
+      cached.expiresAt > Date.now() &&
+      cached.toolFingerprint === toolFingerprint
+    ) {
+      return {
+        scopedTools: cached.scopedTools,
+        scopedLangChainTools: cached.scopedLangChainTools,
+        scopedToolBundle: cached.scopedToolBundle,
+        scopedAllowedToolIds: cached.scopedAllowedToolIds,
+        bindCap: cached.bindCap,
+        fallbackReason: cached.fallbackReason,
+        fromCache: true,
+      };
+    }
+    const scoped = await this.scopeToolsForMainLoop(
+      input.tools,
+      input.userMessage,
+      input.toolBuildCtx,
+      input.matchedCategoryIds,
+    );
+    this.sessionIntentScopedToolsCache.set(cacheKey, {
+      ...scoped,
+      toolFingerprint,
+      expiresAt: Date.now() + SESSION_TOOL_CACHE_TTL_MS,
+    });
+    this.pruneTimedCacheMap(this.sessionIntentScopedToolsCache);
+    return { ...scoped, fromCache: false };
+  }
+
+  private pruneTimedCacheMap<K, V extends { expiresAt: number }>(
+    map: Map<K, V>,
+  ): void {
+    const now = Date.now();
+    for (const [key, entry] of map) {
+      if (entry.expiresAt <= now) {
+        map.delete(key);
+      }
+    }
+    while (map.size > MAX_SESSION_TOOL_CACHE_ENTRIES) {
+      const first = map.keys().next().value;
+      if (first === undefined) {
+        break;
+      }
+      map.delete(first);
+    }
   }
 
   /** 在已通过角色/Agent 权限过滤后的工具集合上，再按意图分类收窄 bindTools 范围。 */
@@ -1408,24 +1425,26 @@ export class AgentEngineService {
         scopedAllowedToolIds: scopedIds,
       };
     };
+    const metadataScoped = filterToolsByAgentMetadata(tools, userMessage);
     try {
       const bindRecall = await this.categoryIntentRecall.recallTopToolsForBind(
-        tools.map((tool) => ({
+        metadataScoped.map((tool) => ({
           id: tool.id,
           name: tool.name,
           description: tool.description,
           toolCategoryId: tool.toolCategoryId,
+          agentMetadata: tool.agentMetadata,
         })),
         userMessage,
         undefined,
         preferredCategoryIds,
       );
-      const toolById = new Map(tools.map((tool) => [tool.id, tool]));
+      const toolById = new Map(metadataScoped.map((tool) => [tool.id, tool]));
       const scopedTools = bindRecall.tools
         .map((row) => toolById.get(row.id))
         .filter((tool): tool is AgentEngineTool => tool != null);
       const effectiveTools =
-        scopedTools.length > 0 ? scopedTools : tools;
+        scopedTools.length > 0 ? scopedTools : metadataScoped;
       const scopedIds = effectiveTools.map((tool) => tool.id);
       const scopedToolBundle = this.toolEngine.buildLangChainTools(
         effectiveTools,
@@ -1571,6 +1590,130 @@ export class AgentEngineService {
         reducer: (_state, update) => update,
       }),
     });
+    // 节点0：前置短路检查。仅在已有 observation 时，借助 LLM 判断是否可直接进入 summarize。
+    const preCheck = async (state: AgentGraphState): Promise<AgentGraphState> => {
+      const step = state.steps.length + 1;
+      const workingMemory = await this.workingMemoryService.get(input.sessionId);
+      const workingMemoryHint = this.buildWorkingMemoryHintForPrecheck(workingMemory);
+      // 仅按 working memory 决定是否触发 precheck。
+      if (!workingMemoryHint) {
+        return state;
+      }
+
+      try {
+        const startedAt = Date.now();
+        const precheckPrompt = await this.promptRegistry.render(
+          PROMPT_KEYS.AGENT_PRECHECK_HISTORY_ANSWERABLE,
+          promptScope,
+        );
+        const precheckMessages: LlmChatMessage[] = [
+          {
+            role: 'system',
+            content: precheckPrompt,
+          },
+          {
+            role: 'user',
+            content: [
+              `Latest user message: ${input.latestUserMessage}`,
+              `Working memory hints: ${workingMemoryHint || 'none'}`,
+            ].join('\n'),
+          },
+        ];
+        let modelName: string | undefined;
+        let parsedAnswerable: boolean | undefined;
+        let reason: string | null = null;
+        try {
+          const { model } = await this.llmService.createLangChainChatModelForMessages(
+            precheckMessages,
+          );
+          const structuredModel = model.withStructuredOutput(precheckDecisionSchema);
+          const structured = await structuredModel.invoke(precheckMessages);
+          parsedAnswerable = structured.answerableFromObservation;
+          reason =
+            typeof structured.reason === 'string' ? structured.reason : null;
+        } catch {
+          const precheckResult = await this.llmService.chat({
+            messages: precheckMessages,
+            tools: [],
+          });
+          modelName = precheckResult.model;
+          const parsed = this.tryParseJsonObject(precheckResult.content);
+          if (typeof parsed?.['answerableFromObservation'] === 'boolean') {
+            parsedAnswerable = parsed['answerableFromObservation'];
+          }
+          reason = typeof parsed?.['reason'] === 'string' ? parsed['reason'] : null;
+        }
+        const latency = Date.now() - startedAt;
+        const answerableFromObservation =
+          typeof parsedAnswerable === 'boolean'
+            ? parsedAnswerable
+            : false;
+        const reasonCode: PrecheckReasonCode =
+          typeof parsedAnswerable !== 'boolean'
+            ? 'PRECHECK_PARSE_FAILED'
+            : answerableFromObservation
+              ? 'HISTORY_SUFFICIENT'
+              : 'HISTORY_INSUFFICIENT';
+        const chosenObservation = answerableFromObservation
+          ? this.pickObservationForFinalSummary(state.toolObservations) ??
+            this.buildWorkingMemoryObservationForSummary(workingMemory)
+          : null;
+        const precheckStep: AgentRunStep = {
+          step,
+          type: 'precheck',
+          output: this.normalizeJsonLike({
+            precheck: true,
+            answerableFromObservation,
+            reasonCode,
+            reason,
+            observationCount: state.toolObservations.length,
+            selectedObservationName: chosenObservation?.name ?? null,
+          }),
+          meta: {
+            model: modelName,
+            latency,
+            code: reasonCode,
+          },
+        };
+        const steps = [...state.steps, precheckStep];
+        await this.updateRun(input.runId, steps, state.iteration, AgentRunStatus.running);
+        return {
+          ...state,
+          steps,
+          pendingSummaryObservation: chosenObservation,
+        };
+      } catch (error) {
+        const precheckStep: AgentRunStep = {
+          step,
+          type: 'precheck',
+          output: this.normalizeJsonLike({
+            precheck: true,
+            answerableFromObservation: false,
+            reasonCode: 'PRECHECK_LLM_FAILED',
+            reason:
+              error instanceof Error ? error.message : 'precheck llm call failed',
+            observationCount: state.toolObservations.length,
+            selectedObservationName: null,
+          }),
+          meta: {
+            code: 'PRECHECK_LLM_FAILED',
+          },
+        };
+        const steps = [...state.steps, precheckStep];
+        await this.updateRun(input.runId, steps, state.iteration, AgentRunStatus.running);
+        this.logger.warn(
+          `precheck failed runId=${input.runId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        // 失败时兜底走原流程（intent），不阻断主链路。
+        return {
+          ...state,
+          steps,
+        };
+      }
+    };
+
     // 节点1：意图识别 + 工具收窄（按 toolCategory），必要时直接结束并返回引导语。
     const intent = async (state: AgentGraphState): Promise<AgentGraphState> => {
       const idx = state.steps.length + 1;
@@ -1579,7 +1722,10 @@ export class AgentEngineService {
       const baseIds = input.allowedToolIds;
 
       const skipRecognition = !input.enableToolCall || input.tools.length === 0;
-      const intentKind = this.detectIntentKind(input.latestUserMessage);
+      const intentKind = classifyIntentKind(
+        input.latestUserMessage,
+        this.getSmallTalkHints(),
+      );
 
       if (skipRecognition) {
         // 工具关闭或无工具可用：跳过识别，沿用初始 scoped 集合。
@@ -1677,7 +1823,9 @@ export class AgentEngineService {
             recallSource: 'none',
           }),
         };
-        this.emitLlmReply(input.sessionId, guidance);
+        this.emitLlmReply(input.sessionId, input.runId, guidance, {
+          mode: 'full',
+        });
         await this.updateRun(
           input.runId,
           [...state.steps, intentStep],
@@ -1704,14 +1852,6 @@ export class AgentEngineService {
           categories,
           input.latestUserMessage,
         );
-        this.writeIntentRecallDebugFile({
-          sessionId: input.sessionId,
-          runId: input.runId,
-          step: idx,
-          userMessage: input.latestUserMessage,
-          categoryCandidates: categories,
-          recallResult,
-        });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(`category intent recall failed: ${message}`);
@@ -1732,20 +1872,25 @@ export class AgentEngineService {
           meta: { code: 'INTENT_RECALL_FAILED' },
         };
         recordMachineCodeUsage(input.runMetrics, 'INTENT_RECALL_FAILED');
-        const scoped = await this.scopeToolsForMainLoop(
-          baseScopedTools,
-          input.latestUserMessage,
-          input.toolBuildCtx,
-        );
-        if (scoped.bindCap) {
-          fallbackStep.output = this.normalizeJsonLike({
-            error: message,
-            fallback: true,
-            fallbackReason: 'category_recall_error',
-            bindToolsCap: scoped.bindCap,
-            bindFallbackReason: scoped.fallbackReason,
-          });
-        }
+        const scoped = await this.resolveScopedToolsForIntent({
+          sessionId: input.sessionId,
+          userMessage: input.latestUserMessage,
+          tools: baseScopedTools,
+          toolBuildCtx: input.toolBuildCtx,
+          matchedCategoryIds: [],
+        });
+        fallbackStep.output = this.normalizeJsonLike({
+          error: message,
+          fallback: true,
+          fallbackReason: 'category_recall_error',
+          scopeFromCache: scoped.fromCache,
+          ...(scoped.bindCap
+            ? {
+                bindToolsCap: scoped.bindCap,
+                bindFallbackReason: scoped.fallbackReason,
+              }
+            : {}),
+        });
         await this.updateRun(
           input.runId,
           [...state.steps, fallbackStep],
@@ -1775,12 +1920,13 @@ export class AgentEngineService {
       };
 
       const narrowed = this.filterToolsByIntent(input.tools, parsed);
-      const scoped = await this.scopeToolsForMainLoop(
-        narrowed,
-        input.latestUserMessage,
-        input.toolBuildCtx,
+      const scoped = await this.resolveScopedToolsForIntent({
+        sessionId: input.sessionId,
+        userMessage: input.latestUserMessage,
+        tools: narrowed,
+        toolBuildCtx: input.toolBuildCtx,
         matchedCategoryIds,
-      );
+      });
 
       const intentOutput: Record<string, unknown> = {
         intentClear: true,
@@ -1790,6 +1936,7 @@ export class AgentEngineService {
         toolsAfterIntentNarrow: narrowed.length,
         toolsAfterBindCap: scoped.scopedTools.length,
         recallSource: recallResult.source,
+        scopeFromCache: scoped.fromCache,
         recallMatches: recallResult.matches.map((item) => ({
           id: item.id,
           label: item.label,
@@ -1832,43 +1979,60 @@ export class AgentEngineService {
       const step = state.iteration + 1;
       try {
         const toolsForPrompt = state.scopedTools;
-        const decisionPrompt = await this.buildDecisionPrompt(
+        const decision = await this.buildDecisionPrompt(
+          input.promptMessages,
           toolsForPrompt,
           state.toolObservations,
           input.enableToolCall,
           promptScope,
         );
-        const invokeMessages = this.buildLlmInvokeMessages(
+        const { messages: invokeMessages, trimMeta } = this.buildLlmInvokeMessages(
           input.promptMessages,
           state.toolObservations,
-          decisionPrompt,
+          input.latestUserMessage,
+          decision.toolSchemaJson,
+          decision.toolDecisionPrompt,
           input.messageTokenBudget,
         );
+        const promptDebugFile = emitLlmPromptDebug(
+          (message) => this.logger.log(message),
+          {
+            runId: input.runId,
+            sessionId: input.sessionId,
+            phase: 'decision',
+            step,
+            iteration: state.iteration,
+            messageTokenBudget: input.messageTokenBudget,
+            meta: {
+              enableToolCall: input.enableToolCall,
+              scopedToolCount: state.scopedTools.length,
+              observationCount: state.toolObservations.length,
+              estimatedTokens: trimMeta.estimatedTokensAfter,
+            },
+            messages: invokeMessages,
+          },
+        );
+        if (promptDebugFile) {
+          this.logger.log(
+            `LLM decision prompt file runId=${input.runId} step=${step} path=${promptDebugFile}`,
+          );
+        } else if (isLlmPromptDebugEnabled()) {
+          this.logger.warn(
+            `LLM decision prompt debug file write failed runId=${input.runId} step=${step}`,
+          );
+        }
         const llmStartedAt = Date.now();
-        const invocationMaxTokens =
-          await this.llmService.resolveInvocationMaxTokens(
+        const langChainInvokeMessages = invokeMessages.map((message) =>
+          this.toLangChainInvokeMessage(message),
+        );
+        const { model } =
+          await this.llmService.createLangChainChatModelForMessages(
             invokeMessages.map((message) => ({
               role: message.role as LlmChatMessage['role'],
               content: message.content,
+              toolCallId: message.toolCallId,
             })),
           );
-        const model = await this.llmService.createLangChainChatModel({
-          streaming: true,
-          maxTokens: invocationMaxTokens,
-        });
-        this.writeLlmRequestDebugFile({
-          sessionId: input.sessionId,
-          runId: input.runId,
-          step,
-          maxTokens: invocationMaxTokens,
-          toolsCount: toolsForPrompt.length,
-          toolNames: toolsForPrompt.map((tool) => tool.name),
-          decisionPrompt,
-          messages: invokeMessages.map((message) => ({
-            role: String(message.role),
-            content: message.content,
-          })),
-        });
         const runnable = input.enableToolCall
           ? model.bindTools(state.scopedLangChainTools as unknown[])
           : model.bindTools([]);
@@ -1877,8 +2041,9 @@ export class AgentEngineService {
             stream: (messages: unknown[]) => Promise<AsyncIterable<unknown>>;
             invoke: (messages: unknown[]) => Promise<AIMessage>;
           },
-          invokeMessages,
+          langChainInvokeMessages,
           input.sessionId,
+          input.runId,
         );
         const responseMeta = aiMessage.response_metadata as
           | Record<string, unknown>
@@ -1914,25 +2079,101 @@ export class AgentEngineService {
                 typeof responseMeta?.model_name === 'string'
                   ? responseMeta.model_name
                   : undefined,
-              prompt: decisionPrompt,
+              prompt: decision.toolDecisionPrompt,
+              toolSchema: decision.toolSchemaJson,
+              observations: decision.observationsJson,
+              agentPrompt: decision.agentPrompt ?? undefined,
+              userRequest: input.latestUserMessage,
             },
           },
         ];
         await this.updateRun(input.runId, steps, step, AgentRunStatus.running);
+        if (toolCalls.length > 0) {
+          const lastToolRound = getLastToolRoundFromSteps(state.steps);
+          if (areToolCallRoundsIdentical(toolCalls, lastToolRound)) {
+            const observation = this.mergeObservationsForSummary(
+              state.toolObservations,
+            );
+            if (observation) {
+              const dedupeSteps = [
+                ...steps.slice(0, -1),
+                {
+                  ...steps[steps.length - 1],
+                  output: this.normalizeJsonLike({
+                    content: llmText,
+                    toolCalls,
+                    duplicateToolCallsSkipped: true,
+                  }),
+                },
+              ];
+              await this.updateRun(
+                input.runId,
+                dedupeSteps,
+                step,
+                AgentRunStatus.running,
+              );
+              this.emitThink(
+                input.sessionId,
+                input.runId,
+                '检测到与上一轮完全相同的工具调用，强制汇总已有结果…\n',
+                'append',
+              );
+              return {
+                ...state,
+                iteration: step,
+                steps: dedupeSteps,
+                pendingToolCalls: [],
+                pendingSummaryObservation: observation,
+              };
+            }
+          }
+        }
         if (toolCalls.length === 0) {
-          const summaryObservation = this.pickObservationForFinalSummary(
-            state.toolObservations,
-          );
-          if (summaryObservation) {
+          if (!llmText) {
+            const emptyReply =
+              '我这次没有拿到有效结果，请你换个问法，或补充更具体的条件后我再试一次。';
+            this.logger.warn(
+              `llm returned empty content and no toolCalls runId=${input.runId} step=${step} model=${
+                typeof responseMeta?.model_name === 'string'
+                  ? responseMeta.model_name
+                  : 'unknown'
+              }`,
+            );
             return {
               ...state,
               iteration: step,
               steps,
               pendingToolCalls: [],
-              pendingSummaryObservation: summaryObservation,
+              finalOutput: emptyReply,
+              status: AgentRunStatus.success,
+              finished: true,
             };
           }
-          // 无 tool_calls 且无工具观测：本轮产出即最终答案，流程结束。
+          const completion = this.resolveLlmCompletionAfterTools(
+            input.latestUserMessage,
+            llmText,
+            state.toolObservations,
+          );
+          if (completion?.kind === 'text') {
+            return {
+              ...state,
+              iteration: step,
+              steps,
+              pendingToolCalls: [],
+              finalOutput: completion.finalOutput,
+              status: AgentRunStatus.success,
+              finished: true,
+            };
+          }
+          if (completion?.kind === 'summarize') {
+            return {
+              ...state,
+              iteration: step,
+              steps,
+              pendingToolCalls: [],
+              pendingSummaryObservation: completion.observation,
+            };
+          }
           return {
             ...state,
             iteration: step,
@@ -1977,7 +2218,10 @@ export class AgentEngineService {
           AgentRunStatus.success,
         );
         recordMachineCodeUsage(input.runMetrics, code);
-        this.emitLlmReply(input.sessionId, userMessage, code);
+        this.emitLlmReply(input.sessionId, input.runId, userMessage, {
+          code,
+          mode: 'full',
+        });
         return {
           ...state,
           iteration: step,
@@ -1994,6 +2238,53 @@ export class AgentEngineService {
     const tools = async (state: AgentGraphState): Promise<AgentGraphState> => {
       const nextSteps = [...state.steps];
       const observations = [...state.toolObservations];
+      if (state.pendingToolCalls.length > 0) {
+        const lastToolRound = getLastToolRoundFromSteps(state.steps);
+        if (areToolCallRoundsIdentical(state.pendingToolCalls, lastToolRound)) {
+          const observation = this.mergeObservationsForSummary(observations);
+          this.emitThink(
+            input.sessionId,
+            input.runId,
+            '检测到与上一轮完全相同的工具调用，强制汇总已有结果…\n',
+            'append',
+          );
+          const skipSteps: AgentRunStep[] = state.pendingToolCalls.map(
+            (toolCall) => ({
+              step: state.iteration,
+              type: 'tool',
+              name: toolCall.name,
+              input: toolCall.arguments,
+              output: this.normalizeJsonLike({
+                skipped: true,
+                reason: 'duplicate_tool_call_round',
+              }),
+            }),
+          );
+          const mergedSteps = [...nextSteps, ...skipSteps];
+          await this.updateRun(
+            input.runId,
+            mergedSteps,
+            state.iteration,
+            AgentRunStatus.running,
+          );
+          if (observation) {
+            return {
+              ...state,
+              steps: mergedSteps,
+              toolObservations: observations,
+              pendingToolCalls: [],
+              pendingSummaryObservation: observation,
+            };
+          }
+          return {
+            ...state,
+            steps: mergedSteps,
+            toolObservations: observations,
+            pendingToolCalls: [],
+            pendingSummaryObservation: null,
+          };
+        }
+      }
       for (const toolCall of state.pendingToolCalls) {
         this.emitThink(
           input.sessionId,
@@ -2008,16 +2299,12 @@ export class AgentEngineService {
           userId: input.userId,
           allowedToolIds: state.scopedAllowedToolIds,
         });
-      const workingMemory = await this.workingMemoryService.get(input.sessionId);
-      const wmShopId = workingMemory?.entities?.xShopId;
       const toolResults = await Promise.all(
         state.pendingToolCalls.map((toolCall) =>
           this.invokeToolSafely(
             langChainBundle,
             state.scopedTools,
             toolCall,
-            wmShopId,
-            input.latestUserMessage,
           ),
         ),
       );
@@ -2037,12 +2324,6 @@ export class AgentEngineService {
           toolResult.output,
           input.latestUserMessage,
           profile,
-          {
-            sessionId: input.sessionId,
-            runId: input.runId,
-            toolName: toolResult.name,
-            iteration: state.iteration,
-          },
         );
         projectedToolResults.push({
           name: toolResult.name,
@@ -2050,14 +2331,30 @@ export class AgentEngineService {
           latency: toolResult.latency,
           projected,
         });
-        observations.push({
+        const llmPayload = formatObservationForLlm({
+          toolName: toolResult.name,
+          output: projected.data,
+          fieldLabels: projected.fieldLabels,
+        });
+        const nextObservation: ToolObservation = {
           name: toolResult.name,
           output: projected.data,
+          llmPayload,
           quality: this.assessObservationQuality(projected.data),
           fieldLabels: projected.fieldLabels,
           fieldDescriptions: projected.fieldDescriptions,
           enumLabelsByPath: projected.enumLabelsByPath,
-        });
+        };
+        const duplicateObservationIndex = observations.findIndex(
+          (row) =>
+            row.llmPayload != null &&
+            isSameObservationPayload(row.llmPayload, llmPayload),
+        );
+        if (duplicateObservationIndex >= 0) {
+          observations[duplicateObservationIndex] = nextObservation;
+        } else {
+          observations.push(nextObservation);
+        }
         const quality = this.assessObservationQuality(projected.data);
         const toolCode = this.resolveToolStepCode(quality, projected.data);
         nextSteps.push({
@@ -2074,12 +2371,6 @@ export class AgentEngineService {
           latencyMs: toolResult.latency,
           quality,
         });
-        await this.updateRun(
-          input.runId,
-          nextSteps,
-          state.iteration,
-          AgentRunStatus.running,
-        );
         const toolFailed = isAgentToolErrorObservation(toolResult.output);
         this.emitThink(
           input.sessionId,
@@ -2090,21 +2381,13 @@ export class AgentEngineService {
           'append',
         );
       }
-      this.writeToolResultsDebugFile({
-        sessionId: input.sessionId,
-        runId: input.runId,
-        iteration: state.iteration,
-        latestUserMessage: input.latestUserMessage,
-        pendingToolCalls: state.pendingToolCalls,
-        toolResults,
-        projectedToolResults,
-        context: {
-          userId: input.userId,
-          maxSteps: input.maxSteps,
-          enableToolCall: input.enableToolCall,
-          scopedToolNames: state.scopedTools.map((tool) => tool.name),
-        },
-      });
+
+      await this.updateRun(
+        input.runId,
+        nextSteps,
+        state.iteration,
+        AgentRunStatus.running,
+      );
 
       const failedObservation = observations.find((row) =>
         isAgentToolErrorObservation(row.output),
@@ -2167,8 +2450,14 @@ export class AgentEngineService {
           buildToolFailureUserMessage(failedObservation.output);
         this.emitLlmReply(
           input.sessionId,
+          input.runId,
           userHint,
-          extractToolErrorCode(failedObservation.output) ?? 'TOOL_EMPTY_RESULT',
+          {
+            code:
+              extractToolErrorCode(failedObservation.output) ??
+              'TOOL_EMPTY_RESULT',
+            mode: 'full',
+          },
         );
         return {
           ...state,
@@ -2182,20 +2471,16 @@ export class AgentEngineService {
         };
       }
 
-      const summaryObservation = this.pickObservationForAutoSummary(
-        input.latestUserMessage,
-        state.pendingToolCalls,
-        observations,
-      );
       return {
         ...state,
         steps: nextSteps,
-        // 把工具结果沉淀为 observation，供下一轮 llm 决策使用。
+        // 一律回 llm：是否再调 tool、何时 summarize 由决策环 + resolveLlmCompletionAfterTools 决定。
         toolObservations: observations,
         pendingToolCalls: [],
-        pendingSummaryObservation: summaryObservation,
+        pendingSummaryObservation: null,
       };
     };
+     // 节点4：汇总节点。将本轮工具执行结果汇总为最终答案。
     const summarize = async (
       state: AgentGraphState,
     ): Promise<AgentGraphState> => {
@@ -2206,12 +2491,13 @@ export class AgentEngineService {
         state.pendingSummaryObservation.output,
       );
       if (toolErrorHint) {
-        this.emitLlmReply(
-          input.sessionId,
+        const errorBlocks = buildRuleBasedMessageBlocks({
+          output: state.pendingSummaryObservation.output,
+          userMessage: input.latestUserMessage,
+          fieldLabels: {},
           toolErrorHint,
-          extractToolErrorCode(state.pendingSummaryObservation.output) ??
-            'TOOL_EMPTY_RESULT',
-        );
+        });
+        const stored = serializeMessageBlocksForStorage(errorBlocks);
         const summaryStep: AgentRunStep = {
           step: state.iteration + 1,
           type: 'summarize',
@@ -2229,7 +2515,7 @@ export class AgentEngineService {
           ...state,
           steps: nextSteps,
           pendingSummaryObservation: null,
-          finalOutput: toolErrorHint,
+          finalOutput: stored,
           status: AgentRunStatus.success,
           finished: true,
         };
@@ -2243,6 +2529,7 @@ export class AgentEngineService {
               input.latestUserMessage,
               input.promptMessages,
               input.sessionId,
+              input.runId,
               promptScope,
             )
           : await this.summarizeToolOutputForUser(
@@ -2255,6 +2542,7 @@ export class AgentEngineService {
               state.pendingSummaryObservation.enumLabelsByPath ?? {},
               input.promptMessages,
               input.sessionId,
+              input.runId,
               promptScope,
             );
       if (!summarized || summarized.trim().length === 0) {
@@ -2263,11 +2551,16 @@ export class AgentEngineService {
           pendingSummaryObservation: null,
         };
       }
+      const summarizedBlocks = tryParseStoredMessageBlocks(summarized);
+      const stepPlain =
+        summarizedBlocks && summarizedBlocks.length > 0
+          ? messageBlocksToPlainText(summarizedBlocks)
+          : summarized;
       const summaryStep: AgentRunStep = {
         step: state.iteration + 1,
         type: 'summarize',
         name: state.pendingSummaryObservation.name,
-        output: summarized,
+        output: stepPlain,
       };
       const nextSteps = [...state.steps, summaryStep];
       await this.updateRun(
@@ -2293,7 +2586,17 @@ export class AgentEngineService {
       .addNode('llm', llm)
       .addNode('tools', tools)
       .addNode('summarize', summarize)
-      .addEdge(START, 'intent')
+      .addNode('preCheck', preCheck)
+      .addEdge(START, 'preCheck')
+      .addConditionalEdges('preCheck', (s: AgentGraphState) => {
+        if (s.finished) {
+          return END;
+        }
+        if (s.pendingSummaryObservation) {
+          return 'summarize';
+        }
+        return 'intent';
+      })
       .addConditionalEdges('intent', (s: AgentGraphState) => {
         if (s.finished) {
           return END;
@@ -2358,6 +2661,9 @@ export class AgentEngineService {
     if (isAgentToolErrorObservation(observation.output)) {
       return true;
     }
+    if (isEmptyListToolObservation(observation.output)) {
+      return false;
+    }
     const output = observation.output;
     if (output == null) {
       return true;
@@ -2377,7 +2683,7 @@ export class AgentEngineService {
     }
     const data = row['data'];
     if (Array.isArray(data) && data.length === 0) {
-      return true;
+      return false;
     }
     if (data && typeof data === 'object' && !Array.isArray(data)) {
       return Object.keys(data as Record<string, unknown>).length === 0;
@@ -2424,7 +2730,7 @@ export class AgentEngineService {
     }
     const data = row['data'];
     if (Array.isArray(data) && data.length === 0) {
-      return 'low';
+      return 'medium';
     }
     if (data && typeof data === 'object' && !Array.isArray(data)) {
       const dataRow = data as Record<string, unknown>;
@@ -2486,6 +2792,9 @@ export class AgentEngineService {
     if (isAgentToolErrorObservation(output)) {
       return extractToolErrorCode(output);
     }
+    if (isEmptyListToolObservation(output)) {
+      return null;
+    }
     if (quality === 'low') {
       return 'TOOL_EMPTY_RESULT';
     }
@@ -2508,111 +2817,84 @@ export class AgentEngineService {
     return '';
   }
 
+  /** 多笔 tool 观测合并为一条，供 summarize / 规则化 table 使用。 */
+  private mergeObservationsForSummary(
+    observations: ToolObservation[],
+  ): ToolObservation | null {
+    const usable = observations.filter(
+      (row) =>
+        row.output != null && !isAgentToolErrorObservation(row.output),
+    );
+    if (usable.length === 0) {
+      return null;
+    }
+    if (usable.length === 1) {
+      return usable[0];
+    }
+    const tail = usable[usable.length - 1];
+    const rows = usable
+      .map((row) => this.normalizeObservationToRecord(row.output))
+      .filter((row): row is Record<string, unknown> => row != null);
+    return {
+      name: 'merged_tool_results',
+      output: rows.length >= 2 ? rows : usable.map((row) => row.output),
+      quality: 'high',
+      fieldLabels: tail.fieldLabels,
+      fieldDescriptions: tail.fieldDescriptions,
+      enumLabelsByPath: tail.enumLabelsByPath,
+    };
+  }
+
+  private normalizeObservationToRecord(
+    output: unknown,
+  ): Record<string, unknown> | null {
+    if (output == null) {
+      return null;
+    }
+    if (typeof output === 'object' && !Array.isArray(output)) {
+      return output as Record<string, unknown>;
+    }
+    return null;
+  }
+
+  /**
+   * llm 不再调工具时：有观测则合并 summarize；只读且模型已用文字答清、无需结构化块时用正文。
+   */
+  private resolveLlmCompletionAfterTools(
+    userMessage: string,
+    llmText: string,
+    observations: ToolObservation[],
+  ):
+    | { kind: 'text'; finalOutput: string }
+    | { kind: 'summarize'; observation: ToolObservation }
+    | null {
+    const merged = this.mergeObservationsForSummary(observations);
+    if (!merged) {
+      return null;
+    }
+    if (shouldPreferSummarizeOverObservedTools(llmText, observations)) {
+      return { kind: 'summarize', observation: merged };
+    }
+    const ruleBlocks = buildRuleBasedMessageBlocks({
+      output: merged.output,
+      userMessage,
+      fieldLabels: merged.fieldLabels ?? {},
+    });
+    const needsStructured = ruleBlocks.some(isStructuredMessageBlock);
+    if (
+      isLikelyReadOnlyQuestion(userMessage) &&
+      llmText.trim().length > 0 &&
+      !needsStructured
+    ) {
+      return { kind: 'text', finalOutput: llmText };
+    }
+    return { kind: 'summarize', observation: merged };
+  }
+
   private pickObservationForFinalSummary(
     observations: ToolObservation[],
   ): ToolObservation | null {
-    if (observations.length === 0) {
-      return null;
-    }
-    const latest = observations[observations.length - 1];
-    if (latest.output == null) {
-      return null;
-    }
-    return latest;
-  }
-
-  private pickObservationForAutoSummary(
-    userMessage: string,
-    pendingToolCalls: GraphToolCall[],
-    observations: ToolObservation[],
-  ): ToolObservation | null {
-    if (pendingToolCalls.length !== 1 || observations.length === 0) {
-      return null;
-    }
-    if (!this.isLikelyReadOnlyQuestion(userMessage)) {
-      return null;
-    }
-    const latest = observations[observations.length - 1];
-    if (latest.output == null) {
-      return null;
-    }
-    return latest;
-  }
-
-  private isLikelyReadOnlyQuestion(userMessage: string): boolean {
-    const text = userMessage.trim().toLowerCase();
-    if (!text) {
-      return false;
-    }
-    const writeHints = [
-      '修改',
-      '更新',
-      '创建',
-      '新增',
-      '删除',
-      '批量',
-      '上架',
-      '下架',
-      '回滚',
-      'set',
-      'update',
-      'create',
-      'delete',
-      'rollback',
-    ];
-    if (writeHints.some((hint) => text.includes(hint))) {
-      return false;
-    }
-    const readHints = [
-      '查',
-      '查询',
-      '详情',
-      '信息',
-      '库存',
-      '状态',
-      '多少',
-      '是什么',
-      'get',
-      'detail',
-      'status',
-      'inventory',
-    ];
-    return readHints.some((hint) => text.includes(hint));
-  }
-
-  private detectIntentKind(
-    userMessage: string,
-  ): 'task' | 'smalltalk' | 'unclear' {
-    const text = userMessage.trim().toLowerCase();
-    if (!text) {
-      return 'unclear';
-    }
-    const taskHints = [
-      '查',
-      '查询',
-      '详情',
-      '库存',
-      '状态',
-      '修改',
-      '更新',
-      '创建',
-      '删除',
-      '商品',
-      'tool',
-      'api',
-      'id',
-    ];
-    if (taskHints.some((hint) => text.includes(hint))) {
-      return 'task';
-    }
-    const smallTalkHints = this.getSmallTalkHints();
-    if (smallTalkHints.some((hint) => text.includes(hint))) {
-      return 'smalltalk';
-    }
-    if (text.length <= 6) {
-      return 'smalltalk';
-    }
-    return 'task';
+    return this.mergeObservationsForSummary(observations);
   }
 
   private getSmallTalkHints(): string[] {
@@ -2653,43 +2935,47 @@ export class AgentEngineService {
     userMessage: string,
     promptMessages: LlmChatMessage[],
     sessionId: string,
+    runId: number,
     scope: { appClientId: number; agentId: number },
   ): Promise<string> {
     const agentPrompts = promptMessages.filter(
       (message) =>
         message.role === 'system' && message.content.includes('<agent_prompt>'),
     );
+    const fallback = 'Hello! How can I help you?';
+    const summarizeMessages: LlmChatMessage[] = [
+      ...agentPrompts,
+      {
+        role: 'system',
+        content: await this.promptRegistry.render(
+          PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK,
+          scope,
+        ),
+      },
+      { role: 'user', content: userMessage },
+    ];
     try {
-      const content = await this.streamSummarizerResult(
-        [
-          ...agentPrompts,
-          {
-            role: 'system',
-            content: await this.promptRegistry.render(
-              PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK,
-              scope,
-            ),
-          },
-          {
-            role: 'user',
-            content: userMessage,
-          },
-        ],
+      const blocks = await this.streamSummarizeMessageBlocks(
+        summarizeMessages,
         sessionId,
-        0.7,
-        getAgentSummarizeSmallTalkMaxTokens(),
+        runId,
+        [],
+        fallback,
       );
-      if (content) {
-        return content;
-      }
+      return serializeMessageBlocksForStorage(blocks);
     } catch (error) {
       this.logger.warn(
         `smalltalk summarize fallback: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
+      const blocks = [textBlock(fallback)];
+      this.emitMessageBlocks(sessionId, runId, blocks, {
+        action: 'stream',
+        mode: 'full',
+      });
+      return serializeMessageBlocksForStorage(blocks);
     }
-    return '你好呀，我在这儿。你可以直接说你想查询或处理什么，我来帮你。';
   }
 
   private async summarizeToolOutputForUser(
@@ -2702,21 +2988,11 @@ export class AgentEngineService {
     enumLabelsByPath: Record<string, Record<string, string>>,
     promptMessages: LlmChatMessage[],
     sessionId: string,
+    runId: number,
     scope: { appClientId: number; agentId: number },
   ): Promise<string> {
     const fullDetail = isUserRequestingFullDetail(userMessage);
-
-    if (fullDetail) {
-      const direct = renderStructuredToolDetailReply(output, {
-        toolName,
-        fieldLabels,
-        maxChars: getAgentDetailReplySkipSummarizeMaxChars(),
-      });
-      if (direct) {
-        this.emitLlmReply(sessionId, direct);
-        return direct;
-      }
-    }
+    const summarizeScenario = classifySummarizeScenario(userMessage);
 
     const serialized = this.stringifyForPrompt(output);
     const fieldLabelText = formatFieldLabelsForPrompt(
@@ -2728,6 +3004,11 @@ export class AgentEngineService {
       (message) =>
         message.role === 'system' && message.content.includes('<agent_prompt>'),
     );
+    const ruleBlocks = buildRuleBasedMessageBlocks({
+      output,
+      userMessage,
+      fieldLabels,
+    });
     const summarizeMessages: LlmChatMessage[] = [
       ...agentPrompts,
       {
@@ -2735,35 +3016,43 @@ export class AgentEngineService {
         content: await this.promptRegistry.render(
           fullDetail
             ? PROMPT_KEYS.AGENT_SUMMARIZE_TOOL_FULL
-            : PROMPT_KEYS.AGENT_SUMMARIZE_TOOL_BRIEF,
+            : summarizeScenario === 'action'
+              ? PROMPT_KEYS.AGENT_SUMMARIZE_ACTION
+              : PROMPT_KEYS.AGENT_SUMMARIZE_READ,
           scope,
         ),
       },
       {
         role: 'user',
         content: [
-          `用户问题: ${userMessage}`,
-          `工具名: ${toolName}`,
-          toolDescription ? `工具说明: ${toolDescription}` : null,
-          fieldLabelText ? `字段说明:\n${fieldLabelText}` : null,
-          `工具结果: ${serialized}`,
+          `User request: ${userMessage}`,
+          `Tool: ${toolName}`,
+          toolDescription ? `Tool description: ${toolDescription}` : null,
+          fieldLabelText ? `Field labels:\n${fieldLabelText}` : null,
+          ruleBlocks.length > 0
+            ? `Suggested rule-based blocks (avoid duplicating the same table): ${JSON.stringify(ruleBlocks)}`
+            : null,
+          `Tool result: ${serialized}`,
         ]
           .filter((line): line is string => line != null && line.length > 0)
           .join('\n'),
       },
     ];
+    const fallbackPlainText = this.buildSummarizeFallbackPlainText(
+      toolName,
+      output,
+      ruleBlocks,
+    );
+
     try {
-      const content = await this.streamSummarizerResult(
+      const blocks = await this.streamSummarizeMessageBlocks(
         summarizeMessages,
         sessionId,
-        0,
-        fullDetail
-          ? getAgentSummarizeToolDetailMaxTokens()
-          : getAgentSummarizeToolMaxTokens(),
+        runId,
+        ruleBlocks,
+        fallbackPlainText,
       );
-      if (content) {
-        return content;
-      }
+      return serializeMessageBlocksForStorage(blocks);
     } catch (error) {
       this.logger.warn(
         `tool result summarize fallback: ${
@@ -2772,66 +3061,189 @@ export class AgentEngineService {
       );
     }
 
+    const fallbackBlocks = mergeMessageBlocks(
+      ruleBlocks,
+      ensureAtLeastOneTextBlock([], fallbackPlainText),
+    );
+    return serializeMessageBlocksForStorage(fallbackBlocks);
+  }
+
+  /** LLM summarize failure fallback: rule blocks or raw payload — no locale-specific templates. */
+  private buildSummarizeFallbackPlainText(
+    toolName: string,
+    output: unknown,
+    ruleBlocks: MessageBlock[],
+  ): string {
+    if (ruleBlocks.length > 0) {
+      const fromBlocks = messageBlocksToPlainText(ruleBlocks);
+      if (fromBlocks.trim().length > 0) {
+        return fromBlocks;
+      }
+    }
     if (typeof output === 'string') {
       const trimmed = output.trim();
-      if (!trimmed) {
-        return '';
+      return trimmed.length > 0 ? trimmed : `[${toolName}] (empty result)`;
+    }
+    const serialized = this.stringifyForPrompt(output);
+    return `[${toolName}]\n${serialized}`;
+  }
+
+  private async streamSummarizeMessageBlocks(
+    messages: LlmChatMessage[],
+    sessionId: string,
+    runId: number,
+    ruleBlocks: MessageBlock[],
+    fallbackPlainText: string,
+  ): Promise<MessageBlock[]> {
+    const runKey = this.thinkBufferKey(sessionId, runId);
+    const summarizeDebugFile = emitLlmPromptDebug(
+      (message) => this.logger.log(message),
+      {
+        runId,
+        sessionId,
+        phase: 'summarize',
+        messages,
+        meta: { ruleBlockCount: ruleBlocks.length },
+      },
+    );
+    if (summarizeDebugFile) {
+      this.logger.log(
+        `LLM summarize prompt file runId=${runId} path=${summarizeDebugFile}`,
+      );
+    }
+    const { placeholders, patches } = planStructuredBlockStreaming(
+      runId,
+      ruleBlocks,
+    );
+    for (const placeholder of placeholders) {
+      this.emitMessageBlocks(sessionId, runId, [placeholder], {
+        action: 'stream',
+        mode: 'full',
+      });
+    }
+
+    let streamTextDeltas = !shouldBufferSummarizeLlmStream(ruleBlocks);
+    let streamed = '';
+    const result = await this.llmService.streamChat(
+      {
+        messages,
+        tools: [],
+      },
+      {
+        onDelta: (delta) => {
+          if (!delta.contentDelta) {
+            return;
+          }
+          streamed += delta.contentDelta;
+          if (!streamTextDeltas) {
+            return;
+          }
+          if (looksLikeBlocksJsonOutput(streamed)) {
+            streamTextDeltas = false;
+            return;
+          }
+          this.emitMessageBlocks(
+            sessionId,
+            runId,
+            [textBlock(delta.contentDelta)],
+            { mode: 'delta', action: 'stream' },
+          );
+        },
+      },
+    );
+    const normalizedResultText = this.sanitizeFinalOutput(result.content ?? '');
+    if (!streamed.trim() && normalizedResultText) {
+      const streamMeta = result.streamMeta;
+      if (streamMeta?.fellBackToInvoke) {
+        this.logger.warn(
+          `summarize stream fallback to invoke runId=${runId} model=${result.model}`,
+        );
+      } else {
+        this.logger.warn(
+          `summarize stream no delta runId=${runId} model=${result.model} emittedDeltaCount=${streamMeta?.emittedDeltaCount ?? 0}`,
+        );
       }
-      return `已查询到结果（${toolName}）：\n${trimmed}`;
     }
-    if (!output || typeof output !== 'object' || Array.isArray(output)) {
-      return `已查询到结果（${toolName}）：${JSON.stringify(output)}`;
-    }
-    const row = output as Record<string, unknown>;
-    const lines: string[] = [];
-    const id = this.pickString(row.id);
-    const title = this.pickString(row.title);
-    const brand = this.pickString(row.brand);
-    const status = this.pickString(row.status);
-    const shopId = this.pickString(row.shopId);
-    const category = this.pickString(row.backCategory);
-    const updatedAt = this.pickString(row.gmtModify);
-    if (id) lines.push(`- 商品ID: ${id}`);
-    if (title) lines.push(`- 标题: ${title}`);
-    if (brand) lines.push(`- 品牌: ${brand}`);
-    if (status) lines.push(`- 状态: ${status}`);
-    if (shopId) lines.push(`- 站点店铺ID: ${shopId}`);
-    if (category) lines.push(`- 类目: ${category}`);
-    if (updatedAt) lines.push(`- 更新时间: ${updatedAt}`);
 
-    const mediaCount = this.pickArrayCount(row.mediaAttributes);
-    const seoCount = this.pickArrayCount(row.seoList);
-    const logisticsCount = this.pickArrayCount(row.logisticsList);
-    if (mediaCount != null) lines.push(`- 媒体数量: ${mediaCount}`);
-    if (seoCount != null) lines.push(`- SEO条目数: ${seoCount}`);
-    if (logisticsCount != null) lines.push(`- 物流配置数: ${logisticsCount}`);
+    const rawLlmText =
+      streamed.trim() || normalizedResultText || fallbackPlainText;
+    const parsedLlmBlocks = tryParseStoredMessageBlocks(
+      stripMarkdownFenceForBlocksParse(rawLlmText),
+    );
+    const llmBlocksFromParse = parsedLlmBlocks
+      ? filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, parsedLlmBlocks)
+      : [];
 
-    if (lines.length === 0) {
-      const compact = JSON.stringify(row);
-      return `已查询到结果（${toolName}）：${
-        compact.length > 1200 ? `${compact.slice(0, 1200)}...(truncated)` : compact
-      }`;
+    for (const patch of patches) {
+      this.emitBlockPatch(sessionId, runId, patch);
     }
-    return [`已查询到商品详情（${toolName}）：`, ...lines].join('\n');
+
+    const textStreamedViaDelta =
+      streamTextDeltas && streamed.trim().length > 0;
+
+    if (llmBlocksFromParse.length > 0) {
+      const structuredFromLlm = llmBlocksFromParse.filter(
+        isStructuredMessageBlock,
+      );
+      const textFromLlm = llmBlocksFromParse.filter(
+        (block) => block.type === 'text',
+      );
+      if (structuredFromLlm.length > 0) {
+        this.emitMessageBlocks(sessionId, runId, structuredFromLlm, {
+          action: 'stream',
+          mode: 'full',
+        });
+      }
+      if (textFromLlm.length > 0 && !textStreamedViaDelta) {
+        this.emitMessageBlocks(sessionId, runId, textFromLlm, {
+          action: 'stream',
+          mode: 'full',
+        });
+      }
+    } else if (!textStreamedViaDelta && rawLlmText.trim()) {
+      if (!looksLikeBlocksJsonOutput(rawLlmText)) {
+        this.emitMessageBlocks(
+          sessionId,
+          runId,
+          [textBlock(rawLlmText, 'markdown')],
+          {
+            action: 'stream',
+            mode: 'full',
+          },
+        );
+      }
+    }
+
+    const llmBlocksForStorage =
+      llmBlocksFromParse.length > 0
+        ? llmBlocksFromParse
+        : rawLlmText.trim() && !looksLikeBlocksJsonOutput(rawLlmText)
+          ? [textBlock(rawLlmText, 'markdown')]
+          : [];
+    const merged = mergeMessageBlocks(
+      ruleBlocks,
+      ensureAtLeastOneTextBlock(llmBlocksForStorage, fallbackPlainText),
+    );
+    this.markRunSseContentDelivered(runKey, merged, {
+      textStreamed:
+        textStreamedViaDelta ||
+        llmBlocksForStorage.some((block) => block.type === 'text'),
+      structuredPatches: patches.length,
+    });
+    return merged;
   }
 
   private async invokeToolSafely(
     bundle: BuiltLangChainTools,
     scopedTools: AgentEngineTool[],
     toolCall: GraphToolCall,
-    wmShopId: unknown,
-    userMessage: string,
   ): Promise<ToolExecutionResult> {
     const startedAt = Date.now();
     try {
       return await this.toolEngine.invokeLangChainTool(
         bundle,
         toolCall.name,
-        this.mergeDefaultShopHeader(
-          toolCall.arguments,
-          wmShopId,
-          userMessage,
-        ),
+        toolCall.arguments,
       );
     } catch (error) {
       const def = scopedTools.find((tool) => tool.name === toolCall.name);
@@ -2848,65 +3260,6 @@ export class AgentEngineService {
         latency: Date.now() - startedAt,
       };
     }
-  }
-
-  private mergeDefaultShopHeader(
-    args: Record<string, unknown>,
-    wmShopId: unknown,
-    userMessage: string,
-  ): Record<string, unknown> {
-    if (args['X-SHOP-ID'] !== undefined && args['X-SHOP-ID'] !== null) {
-      return args;
-    }
-    let shopId: number;
-    if (wmShopId != null && String(wmShopId).trim() !== '') {
-      shopId = Number(wmShopId);
-    } else {
-      shopId = resolveXShopIdFromUserMessage(userMessage);
-    }
-    if (!Number.isFinite(shopId)) {
-      return args;
-    }
-    return { ...args, 'X-SHOP-ID': Math.trunc(shopId) };
-  }
-
-  private pickString(value: unknown): string | null {
-    if (value == null) {
-      return null;
-    }
-    const text = String(value).trim();
-    return text.length > 0 ? text : null;
-  }
-
-  private pickArrayCount(value: unknown): number | null {
-    return Array.isArray(value) ? value.length : null;
-  }
-
-  private async streamSummarizerResult(
-    messages: LlmChatMessage[],
-    sessionId: string,
-    temperature: number,
-    maxTokens: number,
-  ): Promise<string> {
-    let streamed = '';
-    await this.llmService.streamChat(
-      {
-        messages,
-        tools: [],
-        temperature,
-        maxTokens,
-      },
-      {
-        onDelta: (delta) => {
-          if (!delta.contentDelta) {
-            return;
-          }
-          streamed += delta.contentDelta;
-          this.emitLlmReply(sessionId, streamed);
-        },
-      },
-    );
-    return streamed.trim();
   }
 
   private extractToolCalls(message: AIMessage): GraphToolCall[] {

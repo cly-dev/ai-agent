@@ -121,7 +121,7 @@ model AppClient {
 
 model LlmModelConfig {
   id           Int          @id @default(autoincrement())
-  kind         LlmModelKind @unique @default(chat)
+  kind         LlmModelKind @default(chat)
   /** @deprecated 保留兼容旧数据；新配置以 kind 区分。 */
   singletonKey Int?
   provider     String       @default("openai-compatible")
@@ -236,6 +236,8 @@ model Tool {
   outputSchema   Json?
   /// 工具响应裁剪与字段语义（coreFields / optionalFields / arrayLimits）
   responseProfile Json?
+  /// Agent 选工具：mode / resource / operation / businessFields / aliases 等
+  agentMetadata   Json?
   method         HttpMethod
   path           String
   integrationId  Int

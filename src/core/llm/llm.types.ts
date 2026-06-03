@@ -3,6 +3,8 @@ export type LlmRole = 'system' | 'user' | 'assistant' | 'tool';
 export type LlmChatMessage = {
   role: LlmRole;
   content: string;
+  /** Required when role is `tool` for OpenAI-compatible APIs. */
+  toolCallId?: string;
 };
 
 export type LlmToolDefinition = {
@@ -43,6 +45,10 @@ export type LlmChatResult = {
   toolCalls: LlmToolCall[];
   model: string;
   raw: unknown;
+  streamMeta?: {
+    emittedDeltaCount: number;
+    fellBackToInvoke: boolean;
+  };
 };
 
 export type LlmStreamDelta = {

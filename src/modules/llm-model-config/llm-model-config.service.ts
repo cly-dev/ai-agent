@@ -9,6 +9,7 @@ import { IntentRecallConfigService } from '../../core/intent/intent-recall-confi
 import { LlmService } from '../../core/llm/llm.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { UpdateIntentRecallConfigDto } from './dto/update-intent-recall-config.dto';
+import type { UpdateLlmModelConfigDto } from './dto/update-llm-model-config.dto';
 import type { UpsertLlmModelConfigDto } from './dto/upsert-llm-model-config.dto';
 
 @Injectable()
@@ -25,42 +26,92 @@ export class LlmModelConfigService {
     });
   }
 
-  async findByKind(kind: LlmModelKind): Promise<LlmModelConfig> {
-    const row = await this.prisma.llmModelConfig.findUnique({ where: { kind } });
-    if (!row) {
+  async findByKind(kind: LlmModelKind): Promise<LlmModelConfig[]> {
+    const rows = await this.prisma.llmModelConfig.findMany({
+      where: { kind },
+      orderBy: [{ enabled: 'desc' }, { updatedAt: 'desc' }, { id: 'desc' }],
+    });
+    if (rows.length === 0) {
       throw new NotFoundException(`llm model config kind=${kind} not found`);
     }
+    return rows;
+  }
+
+  async create(dto: UpsertLlmModelConfigDto): Promise<LlmModelConfig> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const nextEnabled = dto.enabled ?? true;
+      if (nextEnabled) {
+        await tx.llmModelConfig.updateMany({
+          where: { kind: dto.kind, enabled: true },
+          data: { enabled: false },
+        });
+      }
+      return tx.llmModelConfig.create({
+        data: {
+          kind: dto.kind,
+          provider: dto.provider ?? this.defaultProvider(dto.kind),
+          model: dto.model,
+          apiKey: dto.apiKey ?? null,
+          baseUrl: dto.baseUrl,
+          chatPath: dto.chatPath ?? '/v1/chat/completions',
+          parameters: (dto.parameters ?? undefined) as Prisma.InputJsonValue | undefined,
+          stream: dto.stream ?? false,
+          maxTokens: dto.maxTokens ?? null,
+          temperature: dto.temperature ?? null,
+          enabled: nextEnabled,
+        },
+      });
+    });
+    await this.llmService.refreshConfigCache();
     return row;
   }
 
-  async upsertByKind(dto: UpsertLlmModelConfigDto): Promise<LlmModelConfig> {
-    const row = await this.prisma.llmModelConfig.upsert({
-      where: { kind: dto.kind },
-      create: {
-        kind: dto.kind,
-        provider: dto.provider ?? this.defaultProvider(dto.kind),
-        model: dto.model,
-        apiKey: dto.apiKey ?? null,
-        baseUrl: dto.baseUrl,
-        chatPath: dto.chatPath ?? '/v1/chat/completions',
-        parameters: (dto.parameters ?? undefined) as Prisma.InputJsonValue | undefined,
-        stream: dto.stream ?? false,
-        maxTokens: dto.maxTokens ?? null,
-        temperature: dto.temperature ?? null,
-        enabled: dto.enabled ?? true,
-      },
-      update: {
-        provider: dto.provider ?? undefined,
-        model: dto.model,
-        apiKey: dto.apiKey,
-        baseUrl: dto.baseUrl,
-        chatPath: dto.chatPath,
-        parameters: (dto.parameters ?? undefined) as Prisma.InputJsonValue | undefined,
-        stream: dto.stream,
-        maxTokens: dto.maxTokens,
-        temperature: dto.temperature,
-        enabled: dto.enabled,
-      },
+  async update(id: number, dto: UpdateLlmModelConfigDto): Promise<LlmModelConfig> {
+    const existing = await this.prisma.llmModelConfig.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`llm model config id=${id} not found`);
+    }
+    const row = await this.prisma.$transaction(async (tx) => {
+      if (dto.enabled === true) {
+        await tx.llmModelConfig.updateMany({
+          where: { kind: existing.kind, enabled: true, id: { not: id } },
+          data: { enabled: false },
+        });
+      }
+      return tx.llmModelConfig.update({
+        where: { id },
+        data: {
+          provider: dto.provider,
+          model: dto.model,
+          apiKey: dto.apiKey,
+          baseUrl: dto.baseUrl,
+          chatPath: dto.chatPath,
+          parameters: (dto.parameters ?? undefined) as Prisma.InputJsonValue | undefined,
+          stream: dto.stream,
+          maxTokens: dto.maxTokens,
+          temperature: dto.temperature,
+          enabled: dto.enabled,
+        },
+      });
+    });
+    await this.llmService.refreshConfigCache();
+    return row;
+  }
+
+  async activate(id: number): Promise<LlmModelConfig> {
+    const existing = await this.prisma.llmModelConfig.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`llm model config id=${id} not found`);
+    }
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.llmModelConfig.updateMany({
+        where: { kind: existing.kind, enabled: true, id: { not: id } },
+        data: { enabled: false },
+      });
+      return tx.llmModelConfig.update({
+        where: { id },
+        data: { enabled: true },
+      });
     });
     await this.llmService.refreshConfigCache();
     return row;

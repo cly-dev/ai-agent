@@ -9,6 +9,12 @@ import {
   assertValidResponseProfile,
   RESPONSE_PROFILE_LIST_PATH_CANDIDATES,
 } from '../../core/tool-engine/tool-response-profile.spec.util';
+import {
+  applyDecisionRoleToResponseProfile,
+  resolveInferredAgentMetadata,
+} from '../../core/tool-engine/tool-agent-metadata.util';
+import type { AgentMetadata } from '../../core/tool-engine/tool-agent-metadata.types';
+import { inferDecisionRoleFromHttpMethod } from '../../core/tool-engine/tool-decision-role.enum';
 import type { ToolResponseProfile } from '../../core/tool-engine/tool-response-profile.types';
 
 const CORE_FIELD_CANDIDATES = [
@@ -34,13 +40,19 @@ type InferSchemasInput = {
   path: string;
   httpStatus: number;
   sampleData: unknown;
+  inputSchema?: unknown;
   hint?: string;
+  agentMetadata?: unknown;
 };
 
 export type InferredToolSchemas = {
   outputSchema: Record<string, unknown>;
   responseProfile: ToolResponseProfile;
+  agentMetadata: AgentMetadata;
+  /** outputSchema + responseProfile 推断来源 */
   source: 'llm' | 'fallback';
+  /** agentMetadata 来源 */
+  agentMetadataSource: 'llm' | 'heuristic' | 'existing';
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -422,22 +434,45 @@ function extractJsonObject(content: string): Record<string, unknown> | null {
 
 function buildFallbackSchemas(input: InferSchemasInput): InferredToolSchemas {
   const context = toFieldContext(input);
-  return {
-    outputSchema: buildOutputSchema(
-      input.httpStatus,
-      input.sampleData,
-      context,
-    ),
-    responseProfile: buildFallbackResponseProfile(input.sampleData, context),
-    source: 'fallback',
-  };
+  const { metadata, source: agentMetadataSource } = resolveInferredAgentMetadata(
+    undefined,
+    {
+      method: input.method,
+      path: input.path,
+      toolName: input.toolName,
+      toolDescription: input.toolDescription,
+      inputSchema: input.inputSchema,
+      existingAgentMetadata: input.agentMetadata,
+    },
+  );
+  return finalizeInferredSchemas(
+    buildOutputSchema(input.httpStatus, input.sampleData, context),
+    buildFallbackResponseProfile(input.sampleData, context),
+    metadata,
+    input,
+    'fallback',
+    agentMetadataSource,
+  );
+}
+
+function applyDecisionRoleFromHttpMethod(
+  profile: ToolResponseProfile,
+  method: string,
+): ToolResponseProfile {
+  if (profile.decisionRole && profile.decisionRole !== 'unknown') {
+    return profile;
+  }
+  const inferred = inferDecisionRoleFromHttpMethod(method);
+  return inferred ? { ...profile, decisionRole: inferred } : profile;
 }
 
 function finalizeInferredSchemas(
   outputSchema: Record<string, unknown>,
   responseProfile: ToolResponseProfile,
+  agentMetadata: AgentMetadata,
   input: InferSchemasInput,
   source: 'llm' | 'fallback',
+  agentMetadataSource: 'llm' | 'heuristic' | 'existing',
 ): InferredToolSchemas {
   const context = toFieldContext(input);
   const enriched = enrichResponseProfile(
@@ -445,14 +480,23 @@ function finalizeInferredSchemas(
     input.sampleData,
     context,
   );
+  const withHttpRole = applyDecisionRoleFromHttpMethod(enriched, input.method);
+  const withRole = applyDecisionRoleToResponseProfile(withHttpRole, {
+    agentMetadata,
+    method: input.method,
+    name: input.toolName,
+    description: input.toolDescription,
+  });
   return {
     outputSchema: enrichOutputSchema(
       outputSchema,
       input.sampleData,
       context,
     ),
-    responseProfile: assertValidResponseProfile(enriched, input.sampleData),
+    responseProfile: assertValidResponseProfile(withRole, input.sampleData),
+    agentMetadata,
     source,
+    agentMetadataSource,
   };
 }
 
@@ -480,6 +524,9 @@ export async function inferToolSchemasFromSample(
             `path: ${input.path}`,
             `httpStatus: ${input.httpStatus}`,
             input.hint ? `hint: ${input.hint}` : null,
+            input.agentMetadata
+              ? `existingAgentMetadata: ${JSON.stringify(truncateSample(input.agentMetadata, 0))}`
+              : null,
             `sample: ${JSON.stringify(sample)}`,
           ]
             .filter((line): line is string => line != null)
@@ -493,12 +540,7 @@ export async function inferToolSchemasFromSample(
 
     const parsed = extractJsonObject(result.content ?? '');
     if (!parsed) {
-      return finalizeInferredSchemas(
-        fallback.outputSchema,
-        fallback.responseProfile,
-        input,
-        'fallback',
-      );
+      return buildFallbackSchemas(input);
     }
 
     const outputSchema = isRecord(parsed.outputSchema)
@@ -506,19 +548,27 @@ export async function inferToolSchemasFromSample(
       : fallback.outputSchema;
     const responseProfile =
       parseResponseProfile(parsed.responseProfile) ?? fallback.responseProfile;
+    const { metadata, source: agentMetadataSource } = resolveInferredAgentMetadata(
+      parsed.agentMetadata,
+      {
+        method: input.method,
+        path: input.path,
+        toolName: input.toolName,
+        toolDescription: input.toolDescription,
+        inputSchema: input.inputSchema,
+        existingAgentMetadata: input.agentMetadata,
+      },
+    );
 
     return finalizeInferredSchemas(
       outputSchema,
       responseProfile,
+      metadata,
       input,
       'llm',
+      agentMetadataSource,
     );
   } catch {
-    return finalizeInferredSchemas(
-      fallback.outputSchema,
-      fallback.responseProfile,
-      input,
-      'fallback',
-    );
+    return buildFallbackSchemas(input);
   }
 }

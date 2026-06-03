@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
-  getDefaultXShopId,
   resolveXShopIdFromUserMessage,
 } from '../../common/integration-site.util';
 import { LlmService } from '../llm/llm.service';
@@ -18,6 +17,10 @@ import {
 const MAX_SUMMARY_CHARS = 800;
 const MAX_FACTS = 32;
 const REFRESH_MAX_TOKENS = 1024;
+const MAX_ENTITY_OBJECT_DEPTH = 4;
+const MAX_ENTITY_ARRAY_ITEMS = 8;
+const MAX_ENTITY_KEYS = 24;
+const MAX_ENTITY_TEXT_CHARS = 300;
 
 @Injectable()
 export class WorkingMemoryService {
@@ -174,9 +177,14 @@ export class WorkingMemoryService {
     const fallbackLastTool = this.lastToolSummaryFromObservations(
       ctx.toolObservations,
     );
+    const extracted = this.extractCoreMemoryFromObservations(ctx.toolObservations);
+    for (const fact of extracted.facts) {
+      this.upsertFact(facts, fact.key, fact.value);
+    }
     const entities = {
       ...(prev?.entities ?? {}),
       ...(parsed.entities ?? {}),
+      ...extracted.entities,
     };
     this.ensureXShopIdEntity(entities, ctx.userInput);
 
@@ -209,16 +217,16 @@ export class WorkingMemoryService {
     const entities = { ...(prev?.entities ?? {}) };
 
     let lastToolSummary = prev?.lastToolSummary;
-    for (const observation of ctx.toolObservations) {
-      const summary = this.summarizeToolOutput(observation.output);
-      lastToolSummary = `[${observation.name}] ${summary}`;
-      this.upsertFact(facts, `tool:${observation.name}`, summary);
-      if (
-        observation.output &&
-        typeof observation.output === 'object' &&
-        !Array.isArray(observation.output)
-      ) {
-        entities[observation.name] = observation.output;
+    const extracted = this.extractCoreMemoryFromObservations(ctx.toolObservations);
+    for (const fact of extracted.facts) {
+      this.upsertFact(facts, fact.key, fact.value);
+    }
+    Object.assign(entities, extracted.entities);
+    if (ctx.toolObservations.length > 0) {
+      const last = ctx.toolObservations[ctx.toolObservations.length - 1];
+      const summary = this.summarizeToolOutput(last?.output);
+      if (last && summary) {
+        lastToolSummary = `[${last.name}] ${summary}`;
       }
     }
 
@@ -310,6 +318,97 @@ export class WorkingMemoryService {
     }
     const summary = this.summarizeToolOutput(last.output);
     return summary ? `[${last.name}] ${summary}` : undefined;
+  }
+
+  private extractCoreMemoryFromObservations(
+    observations: WorkingMemoryUpdateContext['toolObservations'],
+  ): {
+    entities: Record<string, unknown>;
+    facts: WorkingMemoryFact[];
+  } {
+    const entities: Record<string, unknown> = {};
+    const facts: WorkingMemoryFact[] = [];
+    for (const observation of observations) {
+      const summary = this.summarizeToolOutput(observation.output);
+      if (summary) {
+        facts.push({
+          key: `tool:${observation.name}`,
+          value: summary,
+        });
+      }
+      if (
+        observation.output &&
+        typeof observation.output === 'object' &&
+        !Array.isArray(observation.output)
+      ) {
+        const compact = this.compactEntityValue(observation.output, 0);
+        if (compact && typeof compact === 'object' && !Array.isArray(compact)) {
+          const compactRecord = compact as Record<string, unknown>;
+          entities[observation.name] = compactRecord;
+          this.appendCoreFieldFacts(facts, observation.name, compactRecord);
+        }
+      }
+    }
+    return { entities, facts };
+  }
+
+  private appendCoreFieldFacts(
+    facts: WorkingMemoryFact[],
+    toolName: string,
+    value: Record<string, unknown>,
+  ): void {
+    const interestingKeys = ['id', 'productId', 'title', 'name', 'status', 'updatedAt'];
+    for (const key of interestingKeys) {
+      const raw = value[key];
+      if (raw == null) {
+        continue;
+      }
+      if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') {
+        facts.push({
+          key: `${toolName}:${key}`,
+          value: this.truncate(String(raw)),
+        });
+      }
+    }
+  }
+
+  private compactEntityValue(value: unknown, depth: number): unknown {
+    if (value == null) {
+      return value;
+    }
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return typeof value === 'string'
+        ? value.slice(0, MAX_ENTITY_TEXT_CHARS)
+        : value;
+    }
+    if (depth >= MAX_ENTITY_OBJECT_DEPTH) {
+      return undefined;
+    }
+    if (Array.isArray(value)) {
+      return value
+        .slice(0, MAX_ENTITY_ARRAY_ITEMS)
+        .map((item) => this.compactEntityValue(item, depth + 1))
+        .filter((item) => item !== undefined);
+    }
+    if (typeof value !== 'object') {
+      return undefined;
+    }
+    const entries = Object.entries(value as Record<string, unknown>).slice(
+      0,
+      MAX_ENTITY_KEYS,
+    );
+    const output: Record<string, unknown> = {};
+    for (const [key, item] of entries) {
+      const compact = this.compactEntityValue(item, depth + 1);
+      if (compact !== undefined) {
+        output[key] = compact;
+      }
+    }
+    return output;
   }
 
   private extractJsonObjectText(content: string): string {

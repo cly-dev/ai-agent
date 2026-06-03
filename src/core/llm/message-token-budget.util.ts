@@ -59,33 +59,100 @@ function isToolResultMessage(message: LlmChatMessage): boolean {
   );
 }
 
+function isObservationsBlockMessage(message: LlmChatMessage): boolean {
+  return message.content.includes('<observations>');
+}
+
+function isToolSchemaBlockMessage(message: LlmChatMessage): boolean {
+  return message.content.includes('<tool_schema>');
+}
+
+function isToolDecisionBlockMessage(message: LlmChatMessage): boolean {
+  return message.content.includes('<tool_decision>');
+}
+
+function isAgentPromptMessage(message: LlmChatMessage): boolean {
+  return (
+    message.role === 'system' && message.content.includes('<agent_prompt>')
+  );
+}
+
+function isDecisionLoopPinnedMessage(message: LlmChatMessage): boolean {
+  return (
+    isAgentPromptMessage(message) ||
+    isPinnedUserRequestMessage(message) ||
+    isToolSchemaBlockMessage(message) ||
+    isToolDecisionBlockMessage(message)
+  );
+}
+
+/** Current-turn user question; must survive budget trimming ahead of older history. */
+function isPinnedUserRequestMessage(message: LlmChatMessage): boolean {
+  return (
+    message.role === 'user' &&
+    message.content.includes('<current_user_request>')
+  );
+}
+
 function cloneMessages(messages: LlmChatMessage[]): LlmChatMessage[] {
   return messages.map((message) => ({ ...message }));
 }
 
+export type TrimMessagesResult = {
+  messages: LlmChatMessage[];
+  estimatedTokensBefore: number;
+  estimatedTokensAfter: number;
+  trimmed: boolean;
+  droppedMessageIndexes: number[];
+  truncatedMessageIndexes: number[];
+};
+
 /**
  * Trim messages to fit an estimated input token budget.
- * Keeps the tail (latest turns / decision prompt) and drops or truncates older content first.
+ * Decision-loop blocks (agent/tool_schema/tool_decision/user) are never dropped.
+ * Observations may be truncated but not dropped.
  */
-export function trimMessagesToTokenBudget(
+export function trimMessagesToTokenBudgetDetailed(
   messages: LlmChatMessage[],
   maxTokens: number,
-): LlmChatMessage[] {
+): TrimMessagesResult {
+  const estimatedTokensBefore = estimateMessagesTokens(messages);
   if (messages.length === 0 || maxTokens <= 0) {
-    return messages;
-  }
-  const working = cloneMessages(messages);
-  if (estimateMessagesTokens(working) <= maxTokens) {
-    return working;
+    return {
+      messages,
+      estimatedTokensBefore,
+      estimatedTokensAfter: estimatedTokensBefore,
+      trimmed: false,
+      droppedMessageIndexes: [],
+      truncatedMessageIndexes: [],
+    };
   }
 
-  // Drop oldest non-tail messages first (preserve the final message).
+  const working = cloneMessages(messages);
+  const droppedMessageIndexes: number[] = [];
+  const truncatedMessageIndexes: number[] = [];
+
+  if (estimateMessagesTokens(working) <= maxTokens) {
+    return {
+      messages: working,
+      estimatedTokensBefore,
+      estimatedTokensAfter: estimatedTokensBefore,
+      trimmed: false,
+      droppedMessageIndexes,
+      truncatedMessageIndexes,
+    };
+  }
+
+  // Drop only non-decision messages (e.g. old session history if ever injected here).
   while (working.length > 1 && estimateMessagesTokens(working) > maxTokens) {
     const dropIndex = working.findIndex((message, index) => {
       if (index === working.length - 1) {
         return false;
       }
-      if (index === 0 && message.role === 'system') {
+      if (isDecisionLoopPinnedMessage(message)) {
+        return false;
+      }
+      if (isObservationsBlockMessage(message)) {
         return false;
       }
       return true;
@@ -93,16 +160,56 @@ export function trimMessagesToTokenBudget(
     if (dropIndex < 0) {
       break;
     }
+    droppedMessageIndexes.push(dropIndex);
     working.splice(dropIndex, 1);
   }
 
-  // Prefer truncating tool results, then other large messages (never drop the tail).
+  // Truncate observations first — they are the largest block and safe to shorten.
+  while (working.length > 0 && estimateMessagesTokens(working) > maxTokens) {
+    const observationIndex = working.findIndex((message) =>
+      isObservationsBlockMessage(message),
+    );
+    if (observationIndex < 0) {
+      break;
+    }
+    const message = working[observationIndex];
+    const excess = estimateMessagesTokens(working) - maxTokens;
+    const nextContentBudget = Math.max(
+      estimateTextTokens(message.content) - excess,
+      64,
+    );
+    const truncated = truncateContentToTokenBudget(
+      message.content,
+      nextContentBudget,
+    );
+    if (truncated === message.content) {
+      break;
+    }
+    working[observationIndex] = { ...message, content: truncated };
+    truncatedMessageIndexes.push(observationIndex);
+    if (
+      estimateMessageTokens(working[observationIndex]) >=
+      estimateMessageTokens(message)
+    ) {
+      break;
+    }
+  }
+
+  // Truncate other large non-pinned messages (legacy tool_result user messages).
   while (working.length > 0 && estimateMessagesTokens(working) > maxTokens) {
     let targetIndex = -1;
     let targetSize = 0;
     for (let index = 0; index < working.length - 1; index += 1) {
+      if (isDecisionLoopPinnedMessage(working[index])) {
+        continue;
+      }
+      if (isObservationsBlockMessage(working[index])) {
+        continue;
+      }
       const size = estimateTextTokens(working[index].content);
-      const priority = isToolResultMessage(working[index]) ? 1_000_000 + size : size;
+      const priority = isToolResultMessage(working[index])
+        ? 1_000_000 + size
+        : size;
       if (priority > targetSize) {
         targetSize = priority;
         targetIndex = index;
@@ -112,7 +219,6 @@ export function trimMessagesToTokenBudget(
       break;
     }
     const message = working[targetIndex];
-    const currentTokens = estimateMessageTokens(message);
     const excess = estimateMessagesTokens(working) - maxTokens;
     const nextContentBudget = Math.max(
       estimateTextTokens(message.content) - excess,
@@ -126,23 +232,29 @@ export function trimMessagesToTokenBudget(
       break;
     }
     working[targetIndex] = { ...message, content: truncated };
-    if (estimateMessageTokens(working[targetIndex]) >= currentTokens) {
+    truncatedMessageIndexes.push(targetIndex);
+    if (
+      estimateMessageTokens(working[targetIndex]) >=
+      estimateMessageTokens(message)
+    ) {
       break;
     }
   }
 
-  // Last resort: truncate the final message.
-  if (estimateMessagesTokens(working) > maxTokens) {
-    const lastIndex = working.length - 1;
-    const last = working[lastIndex];
-    const otherTokens =
-      estimateMessagesTokens(working) - estimateMessageTokens(last);
-    const contentBudget = Math.max(maxTokens - otherTokens - 4, 32);
-    working[lastIndex] = {
-      ...last,
-      content: truncateContentToTokenBudget(last.content, contentBudget),
-    };
-  }
+  const estimatedTokensAfter = estimateMessagesTokens(working);
+  return {
+    messages: working,
+    estimatedTokensBefore,
+    estimatedTokensAfter,
+    trimmed: estimatedTokensAfter < estimatedTokensBefore,
+    droppedMessageIndexes,
+    truncatedMessageIndexes,
+  };
+}
 
-  return working;
+export function trimMessagesToTokenBudget(
+  messages: LlmChatMessage[],
+  maxTokens: number,
+): LlmChatMessage[] {
+  return trimMessagesToTokenBudgetDetailed(messages, maxTokens).messages;
 }

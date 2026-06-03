@@ -74,9 +74,9 @@ export class ToolController {
   @ApiParam({ name: 'appClientId', type: Number, description: 'AppClient ID' })
   @ApiParam({ name: 'id', type: Number, description: 'Tool ID' })
   @ApiOperation({
-    summary: '调试 Tool 并由大模型初始化 outputSchema / responseProfile',
+    summary: '调试 Tool 并由大模型初始化 schema / responseProfile / agentMetadata',
     description:
-      '先按工具配置发起真实 HTTP 调试请求；成功后调用大模型根据响应样本推断 outputSchema 与 responseProfile，并默认写回该 Tool（persist=true）。工具必须属于路径中的 appClientId。',
+      '先按工具配置发起真实 HTTP 调试请求；成功后由大模型根据响应样本推断 outputSchema、responseProfile、agentMetadata（含 mode/resource/operation/businessFields 等），默认写回该 Tool（persist=true）。LLM 未返回合法 agentMetadata 时使用启发式或保留已有配置。工具必须属于路径中的 appClientId。',
   })
   @ApiResponse({ status: 200, description: '推断并更新成功' })
   initSchemasFromDebug(

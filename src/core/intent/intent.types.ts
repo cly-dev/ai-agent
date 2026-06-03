@@ -16,6 +16,7 @@ export type ToolBindRecallRow = {
   name: string;
   description: string;
   toolCategoryId: number | null;
+  agentMetadata?: unknown;
 };
 
 /** 单条类目召回命中项（含相似度分数与召回来源）。 */

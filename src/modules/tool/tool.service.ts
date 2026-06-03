@@ -39,6 +39,7 @@ import type {
   ToolDetailRow,
   ToolResponse,
 } from './tool.types';
+import { normalizeAgentMetadata } from '../../core/tool-engine/tool-agent-metadata.util';
 import { parseAndNormalizeResponseProfile } from '../../core/tool-engine/tool-response-profile.spec.util';
 import { inferToolSchemasFromSample } from './tool-schema-inference.util';
 
@@ -139,6 +140,7 @@ export class ToolService {
         responseProfile: this.resolveResponseProfileForPersist(
           dto.responseProfile,
         ),
+        agentMetadata: this.resolveAgentMetadataForPersist(dto.agentMetadata),
         method: dto.method,
         path: dto.path.trim(),
         integrationId: dto.integrationId,
@@ -228,6 +230,10 @@ export class ToolService {
           responseProfile: this.resolveResponseProfileForPersist(
             dto.responseProfile,
           ),
+          agentMetadata:
+            dto.agentMetadata === undefined
+              ? undefined
+              : this.resolveAgentMetadataForPersist(dto.agentMetadata),
           method: dto.method,
           path: dto.path?.trim(),
           integrationId: dto.integrationId,
@@ -333,7 +339,9 @@ export class ToolService {
         path: tool.path,
         httpStatus: debug.response.status,
         sampleData: debug.response.data,
+        inputSchema: tool.inputSchema,
         hint: dto.hint,
+        agentMetadata: tool.agentMetadata,
       },
       schemaPrompt,
     );
@@ -349,6 +357,9 @@ export class ToolService {
             inferred.responseProfile,
             debug.response.data,
           )!,
+          agentMetadata: this.resolveAgentMetadataForPersist(
+            inferred.agentMetadata,
+          )!,
         },
         include: TOOL_DETAIL_INCLUDE,
       });
@@ -361,7 +372,9 @@ export class ToolService {
       debug,
       outputSchema: inferred.outputSchema,
       responseProfile: inferred.responseProfile,
+      agentMetadata: inferred.agentMetadata,
       source: inferred.source,
+      agentMetadataSource: inferred.agentMetadataSource,
       persisted: persist,
       tool: updatedTool,
     };
@@ -381,6 +394,21 @@ export class ToolService {
       );
     }
     return profile as unknown as Prisma.InputJsonValue;
+  }
+
+  private resolveAgentMetadataForPersist(
+    raw: unknown,
+  ): Prisma.InputJsonValue | undefined {
+    if (raw === undefined) {
+      return undefined;
+    }
+    const normalized = normalizeAgentMetadata(raw);
+    if (!normalized) {
+      throw new BadRequestException(
+        'agentMetadata invalid: mode, resource, and operation are required',
+      );
+    }
+    return normalized as unknown as Prisma.InputJsonValue;
   }
 
   async remove(id: number): Promise<ToolResponse> {

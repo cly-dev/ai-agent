@@ -1,27 +1,76 @@
 import { Injectable } from '@nestjs/common';
-import { Observable, ReplaySubject } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
+import type {
+  MessageBlock,
+  MessageBlockPatch,
+} from '../../core/agent-engine/message-blocks.types';
 
-/** SSE 事件：think-思考，result-结果，complete-推送完成，error-推送失败 */
+/** SSE 事件：think-思考，message-结果/信息，complete-完成，error-错误 */
 export type ChatSseEvent =
   /** content 为当前 run 内合并后的完整思考过程（非增量片段） */
   | { event: 'think'; payload: { content: string } }
-  | { event: 'result'; payload: { content: string } }
+  | {
+      event: 'message';
+      payload:
+        | {
+            source: 'agent-run';
+            action: 'stream' | 'patch';
+            runId?: number;
+            turnId?: number;
+            /** 主路径：Message Blocks */
+            blocks?: MessageBlock[];
+            /** action=patch：按 replaceId 替换 loading 占位 */
+            patches?: MessageBlockPatch[];
+            /** 决策环等流式文本增量时的兼容字段（SSE 层会包成 text block） */
+            output?: string;
+            code?: string;
+            seq?: number;
+            mode?: 'delta' | 'full';
+          }
+        | {
+            source: 'message';
+            action: 'created' | 'updated' | 'deleted';
+            message?: Record<string, unknown>;
+            id?: number;
+          }
+        | Record<string, unknown>;
+    }
   | { event: 'complete'; payload: Record<string, unknown> }
   | { event: 'error'; payload: { message: string; code?: string } };
 
 @Injectable()
 export class ChatEventsService {
   /** 保留最近事件，避免 SSE 晚于发消息连接时收不到推送 */
-  private static readonly REPLAY_BUFFER = 64;
-  private readonly subjects = new Map<string, ReplaySubject<ChatSseEvent>>();
+  private static readonly REPLAY_BUFFER = 8;
+  private readonly subjects = new Map<string, Subject<ChatSseEvent>>();
+  /** 晚连接时重放最近事件（条数有限） */
+  private readonly replayBuffers = new Map<string, ChatSseEvent[]>();
 
   observeSession(sessionId: string): Observable<ChatSseEvent> {
     const normalized = this.normalizeSessionId(sessionId);
-    return this.getSubject(normalized).asObservable();
+    const subject = this.getSubject(normalized);
+    return new Observable<ChatSseEvent>((subscriber) => {
+      for (const evt of this.replayBuffers.get(normalized) ?? []) {
+        subscriber.next(evt);
+      }
+      const inner = subject.subscribe({
+        next: (evt) => subscriber.next(evt),
+        error: (err: unknown) => subscriber.error(err),
+        complete: () => subscriber.complete(),
+      });
+      return () => inner.unsubscribe();
+    });
   }
 
   emit(sessionId: string, evt: ChatSseEvent): void {
-    this.getSubject(sessionId).next(evt);
+    const normalized = this.normalizeSessionId(sessionId);
+    const buffer = this.replayBuffers.get(normalized) ?? [];
+    buffer.push(evt);
+    while (buffer.length > ChatEventsService.REPLAY_BUFFER) {
+      buffer.shift();
+    }
+    this.replayBuffers.set(normalized, buffer);
+    this.getSubject(normalized).next(evt);
   }
 
   closeSession(sessionId: string): void {
@@ -31,19 +80,21 @@ export class ChatEventsService {
       sub.complete();
       this.subjects.delete(normalized);
     }
+    this.replayBuffers.delete(normalized);
   }
 
   private normalizeSessionId(sessionId: string): string {
     return sessionId.trim().toLowerCase();
   }
 
-  private getSubject(sessionId: string): ReplaySubject<ChatSseEvent> {
+  private getSubject(sessionId: string): Subject<ChatSseEvent> {
     const normalized = this.normalizeSessionId(sessionId);
     let sub = this.subjects.get(normalized);
     if (!sub) {
-      sub = new ReplaySubject<ChatSseEvent>(ChatEventsService.REPLAY_BUFFER);
+      sub = new Subject<ChatSseEvent>();
       this.subjects.set(normalized, sub);
     }
     return sub;
   }
+
 }

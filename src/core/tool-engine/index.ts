@@ -18,13 +18,45 @@ export {
   formatFieldLabelsForPrompt,
   parseResponseProfile,
   projectToolOutput,
-  type ProjectToolOutputDebugContext,
 } from './tool-output-projection.util';
 export type {
   ProjectedToolOutput,
   ToolResponseFieldSpec,
   ToolResponseProfile,
 } from './tool-response-profile.types';
+export {
+  ToolDecisionRoleEnum,
+  TOOL_DECISION_ROLE_META,
+  TOOL_DECISION_ROLES,
+  CONFIGURED_TOOL_DECISION_ROLES,
+  inferDecisionRoleFromHttpMethod,
+  deriveDecisionRoleFromAgentMetadata,
+  buildSwaggerImportResponseProfile,
+  parseConfiguredToolDecisionRole,
+} from './tool-decision-role.enum';
+export type {
+  ConfiguredToolDecisionRole,
+  ToolDecisionRole,
+} from './tool-decision-role.enum';
+export {
+  parseAgentMetadata,
+  normalizeAgentMetadata,
+  inferAgentMetadataFromOpenApi,
+  resolveToolDecisionRole,
+  filterToolsByAgentMetadata,
+  parseUserToolIntent,
+  buildToolEmbedTextFromMetadata,
+  extractProvidesFromResponseProfile,
+  applyDecisionRoleToResponseProfile,
+  mergeDecisionRoleIntoResponseProfile,
+} from './tool-agent-metadata.util';
+export type {
+  AgentMetadata,
+  ToolMode,
+  ResourceType,
+  OperationType,
+  ParsedUserToolIntent,
+} from './tool-agent-metadata.types';
 export {
   assertValidResponseProfile,
   normalizeResponseProfile,

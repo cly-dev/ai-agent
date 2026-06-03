@@ -25,6 +25,7 @@ import { Observable, Subscription } from 'rxjs';
 import { AppClientDsnGuard } from '../../auth/app-client-dsn.guard';
 import { UserJwtAuthGuard } from '../../auth/user-jwt-auth.guard';
 import { ChatEventsService } from './chat-events.service';
+import { serializeChatSseData } from './chat-sse-payload.util';
 import { ChatService } from './chat.service';
 import { CreateChatDto } from './dto/create-chat.dto';
 
@@ -116,7 +117,7 @@ export class ChatController {
   @Sse(':sessionId/stream')
   @ApiOperation({
     summary:
-      'SSE：think-思考 / result-结果 / complete-推送完成 / error-推送失败',
+      'SSE：think-思考 / message-结果和信息 / complete-推送完成 / error-推送失败',
   })
   @ApiParam({ name: 'sessionId', type: String, description: '会话 ID（hex）' })
   @ApiProduces('text/event-stream')
@@ -136,10 +137,7 @@ export class ChatController {
             next: (evt) => {
               subscriber.next({
                 type: evt.event,
-                data:
-                  typeof evt.payload === 'string'
-                    ? evt.payload
-                    : JSON.stringify(evt.payload),
+                data: serializeChatSseData(evt),
               });
             },
             error: (err: unknown) => subscriber.error(err),

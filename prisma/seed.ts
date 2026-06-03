@@ -88,66 +88,61 @@ async function seedAdminUser(): Promise<void> {
 }
 
 async function seedLlmModelConfig(): Promise<void> {
-  await prisma.llmModelConfig.upsert({
+  const chatData = {
+    singletonKey: 1,
+    provider: 'openai-compatible',
+    model: '/data/models/Qwen3-32B-AWQ',
+    apiKey: null,
+    baseUrl: 'http://172.30.30.153:8000',
+    chatPath: '/v1/chat/completions',
+    parameters: {},
+    stream: false,
+    maxTokens: 2000,
+    temperature: null,
+    enabled: true,
+  };
+  const existingChat = await prisma.llmModelConfig.findFirst({
     where: { kind: 'chat' },
-    update: {
-      singletonKey: 1,
-      provider: 'openai-compatible',
-      model: '/data/models/Qwen3-32B-AWQ',
-      apiKey: null,
-      baseUrl: 'http://172.30.30.153:8000',
-      chatPath: '/v1/chat/completions',
-      parameters: {},
-      stream: false,
-      maxTokens: 2000,
-      temperature: null,
-      enabled: true,
-    },
-    create: {
-      kind: 'chat',
-      singletonKey: 1,
-      provider: 'openai-compatible',
-      model: '/data/models/Qwen3-32B-AWQ',
-      apiKey: null,
-      baseUrl: 'http://172.30.30.153:8000',
-      chatPath: '/v1/chat/completions',
-      parameters: {},
-      stream: false,
-      maxTokens: 2000,
-      temperature: null,
-      enabled: true,
-    },
+    orderBy: { id: 'asc' },
   });
+  if (existingChat) {
+    await prisma.llmModelConfig.update({
+      where: { id: existingChat.id },
+      data: chatData,
+    });
+  } else {
+    await prisma.llmModelConfig.create({
+      data: { kind: 'chat', ...chatData },
+    });
+  }
 
-  await prisma.llmModelConfig.upsert({
+  const embeddingData = {
+    singletonKey: null,
+    provider: 'transformers.js',
+    model: 'https://media.cdn.a-premium.com/static/models/all-MiniLM-L6-v2',
+    apiKey: null,
+    baseUrl: 'local',
+    chatPath: '/v1/embeddings',
+    parameters: { allowRemoteModels: true },
+    stream: false,
+    maxTokens: null,
+    temperature: null,
+    enabled: true,
+  };
+  const existingEmbedding = await prisma.llmModelConfig.findFirst({
     where: { kind: 'transformers_embedding' },
-    update: {
-      provider: 'transformers.js',
-      model:
-        'https://media.cdn.a-premium.com/static/models/all-MiniLM-L6-v2',
-      apiKey: null,
-      baseUrl: 'local',
-      chatPath: '/v1/embeddings',
-      parameters: { allowRemoteModels: true },
-      stream: false,
-      maxTokens: null,
-      temperature: null,
-      enabled: true,
-    },
-    create: {
-      kind: 'transformers_embedding',
-      singletonKey: null,
-      provider: 'transformers.js',
-      model:
-        'https://media.cdn.a-premium.com/static/models/all-MiniLM-L6-v2',
-      apiKey: null,
-      baseUrl: 'local',
-      chatPath: '/v1/embeddings',
-      parameters: { allowRemoteModels: true },
-      stream: false,
-      enabled: true,
-    },
+    orderBy: { id: 'asc' },
   });
+  if (existingEmbedding) {
+    await prisma.llmModelConfig.update({
+      where: { id: existingEmbedding.id },
+      data: embeddingData,
+    });
+  } else {
+    await prisma.llmModelConfig.create({
+      data: { kind: 'transformers_embedding', ...embeddingData },
+    });
+  }
 
   await prisma.intentRecallConfig.upsert({
     where: { singletonKey: 1 },

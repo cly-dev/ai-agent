@@ -49,6 +49,19 @@ export class AgentRunController {
     return this.service.findPage(appClientId, query);
   }
 
+  @Get('by-app-client/:appClientId/ops-metrics')
+  @ApiParam({ name: 'appClientId', type: Number, description: 'AppClient ID' })
+  @ApiOperation({ summary: '运维看板核心指标（近 N 天）' })
+  @ApiResponse({ status: 200, description: '查询成功' })
+  getOpsMetrics(
+    @Param('appClientId', ParseIntPipe) appClientId: number,
+    @Query('days') days?: string,
+  ) {
+    const parsedDays =
+      days == null || days.trim() === '' ? 7 : Math.max(1, Number(days));
+    return this.service.getOpsMetrics(appClientId, parsedDays);
+  }
+
   @Get('by-app-client/:appClientId/:id')
   @ApiParam({ name: 'appClientId', type: Number, description: 'AppClient ID' })
   @ApiParam({ name: 'id', type: Number, description: 'AgentRun ID' })

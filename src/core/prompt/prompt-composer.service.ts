@@ -4,7 +4,6 @@ import { UserMemoryStore } from '../memory/user-memory.store';
 import { WorkingMemoryService } from '../memory/working-memory.service';
 import {
   dbMessageRowToMessageTurn,
-  messageTurnsToLlmMessages,
 } from '../memory/session-context.format';
 import { SessionContextStore } from '../memory/session-context.store';
 import {
@@ -36,16 +35,29 @@ export class PromptComposerService {
   ) {}
 
   async compose(input: PromptComposeInput): Promise<PromptComposeOutput> {
-    const sessionScope = await this.loadSessionScope(input.sessionId);
-    const [agentPrompt, userMemory, workingMemory, conversation, responseStyle, integrationSite] =
-      await Promise.all([
-      this.loadAgentPrompt(input.sessionId),
+    const sessionScope =
+      input.sessionScope ?? (await this.loadSessionScope(input.sessionId));
+    const agentPromptSource =
+      input.agentSystemPrompt !== undefined
+        ? this.composeAgentPrompt(input.agentSystemPrompt)
+        : await this.loadAgentPrompt(input.sessionId);
+    const [
+      userMemory,
+      workingMemory,
+      conversation,
+      responseStyle,
+      messageBlocksSpec,
+    ] = await Promise.all([
       this.userMemoryStore.get(input.userId),
       this.workingMemoryService.get(input.sessionId),
       this.loadRecentConversationMessages(input.sessionId),
       this.promptRegistry.render(PROMPT_KEYS.PLATFORM_RESPONSE_STYLE, sessionScope),
-      this.promptRegistry.render(PROMPT_KEYS.PLATFORM_INTEGRATION_SITE, sessionScope),
+      this.promptRegistry.render(
+        PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC,
+        sessionScope,
+      ),
     ]);
+    const agentPrompt = agentPromptSource;
 
     const messages: LlmChatMessage[] = [];
 
@@ -60,9 +72,10 @@ export class PromptComposerService {
       role: 'system',
       content: responseStyle,
     });
+
     messages.push({
       role: 'system',
-      content: integrationSite,
+      content: messageBlocksSpec,
     });
 
     if (userMemory) {

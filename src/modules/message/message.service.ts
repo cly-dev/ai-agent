@@ -58,7 +58,7 @@ export class MessageService {
       data: {
         sessionId: session.id,
         role: dto.role,
-        content: dto.content ?? null,
+        content: this.normalizeMessageContentForStorage(dto.content),
         toolName: dto.toolName ?? null,
         toolInput: this.toJson(dto.toolInput),
         toolOutput: this.toJson(dto.toolOutput),
@@ -71,16 +71,6 @@ export class MessageService {
         dto.agentId,
         appClientId,
       );
-      this.chatEvents.emit(boundSession.id, {
-        event: 'result',
-        payload: {
-          content: JSON.stringify({
-            source: 'message',
-            action: 'created',
-            message,
-          }),
-        },
-      });
       this.scheduleAgentRun(boundSession.id, () =>
         this.runAgentPipeline(
           userId,
@@ -130,7 +120,10 @@ export class MessageService {
       where: { id },
       data: {
         role: dto.role,
-        content: dto.content,
+        content:
+          dto.content === undefined
+            ? undefined
+            : this.normalizeMessageContentForStorage(dto.content),
         toolName: dto.toolName,
         toolInput:
           dto.toolInput === undefined ? undefined : this.toJson(dto.toolInput),
@@ -141,13 +134,11 @@ export class MessageService {
       },
     });
     this.chatEvents.emit(existing.sessionId, {
-      event: 'result',
+      event: 'message',
       payload: {
-        content: JSON.stringify({
-          source: 'message',
-          action: 'updated',
-          message,
-        }),
+        source: 'message',
+        action: 'updated',
+        message,
       },
     });
     await this.rebuildSessionContextFromDb(existing.sessionId);
@@ -158,13 +149,11 @@ export class MessageService {
     const existing = await this.findOne(id, userId);
     await this.prisma.message.delete({ where: { id } });
     this.chatEvents.emit(existing.sessionId, {
-      event: 'result',
+      event: 'message',
       payload: {
-        content: JSON.stringify({
-          source: 'message',
-          action: 'deleted',
-          id,
-        }),
+        source: 'message',
+        action: 'deleted',
+        id,
       },
     });
     await this.rebuildSessionContextFromDb(existing.sessionId);
@@ -242,28 +231,6 @@ export class MessageService {
         });
         return;
       }
-      const sessionRow = await this.prisma.session.findFirst({
-        where: { id: sessionId, userId },
-        select: { appClientId: true },
-      });
-      if (!sessionRow) {
-        return;
-      }
-      const assistantMessage = await this.create(
-        userId,
-        sessionId,
-        {
-          role: 'assistant',
-          content: run.output,
-        },
-        sessionRow.appClientId,
-      );
-      if (run.turnId) {
-        await this.prisma.messageTurn.update({
-          where: { id: run.turnId },
-          data: { outputMessageId: assistantMessage.id },
-        });
-      }
       this.chatEvents.emit(sessionId, {
         event: 'complete',
         payload: {
@@ -273,6 +240,39 @@ export class MessageService {
           status: run.status,
         },
       });
+
+      try {
+        const sessionRow = await this.prisma.session.findFirst({
+          where: { id: sessionId, userId },
+          select: { appClientId: true },
+        });
+        if (!sessionRow) {
+          return;
+        }
+        const assistantMessage = await this.create(
+          userId,
+          sessionId,
+          {
+            role: 'assistant',
+            content: run.output,
+          },
+          sessionRow.appClientId,
+        );
+        if (run.turnId) {
+          await this.prisma.messageTurn.update({
+            where: { id: run.turnId },
+            data: { outputMessageId: assistantMessage.id },
+          });
+        }
+      } catch (persistError) {
+        this.logger.warn(
+          `assistant persist failed after complete sessionId=${sessionId} runId=${run.runId}: ${
+            persistError instanceof Error
+              ? persistError.message
+              : String(persistError)
+          }`,
+        );
+      }
     } catch (error) {
       this.logger.warn(
         `agent run failed for sessionId=${sessionId}: ${
@@ -296,6 +296,20 @@ export class MessageService {
       return undefined;
     }
     return value as Prisma.InputJsonValue;
+  }
+
+  private normalizeMessageContentForStorage(value: unknown): string | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
   }
 
   private stripSession(

@@ -1,3 +1,23 @@
+import type {
+  ConfiguredToolDecisionRole,
+  ToolDecisionRole,
+} from './tool-decision-role.enum';
+import {
+  CONFIGURED_TOOL_DECISION_ROLES,
+  parseConfiguredToolDecisionRole,
+} from './tool-decision-role.enum';
+
+export type { ConfiguredToolDecisionRole, ToolDecisionRole };
+export {
+  CONFIGURED_TOOL_DECISION_ROLES,
+  parseConfiguredToolDecisionRole,
+  ToolDecisionRoleEnum,
+  TOOL_DECISION_ROLE_META,
+  TOOL_DECISION_ROLES,
+  inferDecisionRoleFromHttpMethod,
+  buildSwaggerImportResponseProfile,
+} from './tool-decision-role.enum';
+
 /** 单个输出字段的裁剪与语义说明。 */
 export type ToolResponseFieldSpec = {
   /** JSON 路径，如 id / list / data.items */
@@ -27,6 +47,11 @@ export type ToolResponseProfile = {
   listPath?: string;
   /** listPath 存在时，列表容器上的根级字段（如 total、page），不要放进 coreFields */
   listMetaFields?: ToolResponseFieldSpec[];
+  /**
+   * 决策环语义角色（语言无关枚举，供 agent 选 tool / 停手，勿依赖 description 文本匹配）。
+   * 未配置时 compact 清单中 role=unknown。
+   */
+  decisionRole?: ToolDecisionRole;
 };
 
 export type ProjectedToolOutput = {
