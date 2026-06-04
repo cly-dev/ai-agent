@@ -7,13 +7,13 @@ import {
   extractProvidesFromResponseProfile,
   parseAgentMetadata,
   resolveToolDecisionRole,
-} from '../tool-engine/tool-agent-metadata.util';
+} from '../../tool-engine/tool-agent-metadata.util';
 import {
   buildCompactToolInput,
   listRequiredParamNames,
-} from '../tool-engine/tool-decision-input.util';
-import { parseResponseProfile } from '../tool-engine/tool-output-projection.util';
-import type { ToolDecisionRole } from '../tool-engine/tool-decision-role.enum';
+} from '../../tool-engine/tool-decision-input.util';
+import { parseResponseProfile } from '../../tool-engine/tool-output-projection.util';
+import type { ToolDecisionRole } from '../../tool-engine/tool-decision-role.enum';
 
 export type ToolSchemaCompact = {
   name: string;

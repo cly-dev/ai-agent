@@ -1,6 +1,6 @@
-import { normalizeToolCallArgs } from '../llm/tool-call-args.util';
-import type { LlmObservationPayload } from './observation-format.util';
-import { isLikelyReadOnlyQuestion } from './user-response-style.util';
+import { normalizeToolCallArgs } from '../../llm/tool-call-args.util';
+import type { LlmObservationPayload } from '../observation-format.util';
+import { isLikelyReadOnlyQuestion } from '../user-response-style.util';
 
 export type ToolCallLike = {
   name: string;

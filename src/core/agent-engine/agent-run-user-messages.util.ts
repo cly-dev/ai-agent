@@ -6,7 +6,8 @@ export type AgentMachineCode =
   | 'TOOL_TIMEOUT'
   | 'TOOL_EMPTY_RESULT'
   | 'LLM_TIMEOUT'
-  | 'LLM_RATE_LIMIT';
+  | 'LLM_RATE_LIMIT'
+  | 'WRITE_CONFIRMATION_REQUIRED';
 
 /** 工具节点写入 observation 的标准错误结构。 */
 export type AgentToolErrorObservation = {

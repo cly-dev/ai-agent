@@ -2,7 +2,7 @@ import {
   extractToolErrorUserHint,
   isAgentToolErrorObservation,
 } from './agent-run-user-messages.util';
-import { isEmptyListToolObservation } from './tool-observation.util';
+import { isEmptyListToolObservation } from './tool/tool-observation.util';
 
 export type LlmObservationPayload = {
   tool: string;

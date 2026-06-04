@@ -139,7 +139,7 @@ export class AppClientService {
       this.prisma.integration.count({ where: { appClientId } }),
       this.prisma.userApp.count({ where: { appId: appClientId } }),
       this.prisma.promptTemplate.count({ where: { appClientId } }),
-      this.prisma.skill.count({ where: { appClientId } }),
+      this.prisma.skill.count({ where: { agent: { appClientId } } }),
     ]);
 
     const parts: string[] = [];

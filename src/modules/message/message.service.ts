@@ -71,12 +71,16 @@ export class MessageService {
         dto.agentId,
         appClientId,
       );
+      const confirmWrite = dto.confirmWrite === true;
+      const cancelWrite = dto.cancelWrite === true;
       this.scheduleAgentRun(boundSession.id, () =>
         this.runAgentPipeline(
           userId,
           boundSession.id,
           message.content ?? '',
           message.id,
+          confirmWrite && !cancelWrite,
+          cancelWrite,
         ),
       );
     }
@@ -208,9 +212,15 @@ export class MessageService {
     sessionId: string,
     input: string,
     userMessageId?: number,
+    confirmWrite?: boolean,
+    cancelWrite?: boolean,
   ): Promise<void> {
+    if (cancelWrite) {
+      await this.agentEngine.cancelPendingWriteConfirmation(userId, sessionId);
+      return;
+    }
     const content = input.trim();
-    if (!content) {
+    if (!content && !confirmWrite) {
       return;
     }
     try {
@@ -219,8 +229,12 @@ export class MessageService {
         sessionId,
         input: content,
         userMessageId,
+        confirmWrite,
       });
       if (!run) {
+        if (confirmWrite) {
+          return;
+        }
         this.chatEvents.emit(sessionId, {
           event: 'error',
           payload: {

@@ -3,7 +3,7 @@ import { Observable, Subject } from 'rxjs';
 import type {
   MessageBlock,
   MessageBlockPatch,
-} from '../../core/agent-engine/message-blocks.types';
+} from '../../core/agent-engine/message/message-blocks.types';
 
 /** SSE 事件：think-思考，message-结果/信息，complete-完成，error-错误 */
 export type ChatSseEvent =
@@ -26,6 +26,21 @@ export type ChatSseEvent =
             code?: string;
             seq?: number;
             mode?: 'delta' | 'full';
+          }
+        | {
+            source: 'agent-run';
+            action: 'confirmation_required';
+            runId: number;
+            turnId?: number;
+            /** 弹窗提示文案；具体 Tool 不返回，由服务端缓存待执行列表 */
+            message: string;
+          }
+        | {
+            source: 'agent-run';
+            action: 'write_confirmation_cancelled';
+            runId?: number;
+            turnId?: number;
+            message: string;
           }
         | {
             source: 'message';

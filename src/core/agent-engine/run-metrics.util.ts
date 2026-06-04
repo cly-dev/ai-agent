@@ -66,6 +66,7 @@ export function createRunMetricsAccumulator(): RunMetricsAccumulator {
       TOOL_EMPTY_RESULT: 0,
       LLM_TIMEOUT: 0,
       LLM_RATE_LIMIT: 0,
+      WRITE_CONFIRMATION_REQUIRED: 0,
     },
     startedAtMs: Date.now(),
   };
@@ -151,6 +152,8 @@ export function snapshotRunMetrics(
         TOOL_EMPTY_RESULT: acc.machineCodeCounts.TOOL_EMPTY_RESULT,
         LLM_TIMEOUT: acc.machineCodeCounts.LLM_TIMEOUT,
         LLM_RATE_LIMIT: acc.machineCodeCounts.LLM_RATE_LIMIT,
+        WRITE_CONFIRMATION_REQUIRED:
+          acc.machineCodeCounts.WRITE_CONFIRMATION_REQUIRED,
       },
     },
   };
@@ -172,6 +175,7 @@ export function aggregateRunMetrics(
     TOOL_EMPTY_RESULT: 0,
     LLM_TIMEOUT: 0,
     LLM_RATE_LIMIT: 0,
+    WRITE_CONFIRMATION_REQUIRED: 0,
   };
   let llmCallCount = 0;
   let toolCallCount = 0;

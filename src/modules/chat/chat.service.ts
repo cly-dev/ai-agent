@@ -13,6 +13,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MessageService } from '../message/message.service';
 import { ChatEventsService } from './chat-events.service';
 import { CreateChatDto } from './dto/create-chat.dto';
+import { DeleteChatResponseDto } from './dto/delete-chat-response.dto';
+import { SessionPrepareService } from './session-prepare.service';
+import { SessionPrepareStore } from './session-prepare.store';
 
 @Injectable()
 export class ChatService {
@@ -23,6 +26,8 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly chatEvents: ChatEventsService,
     private readonly sessionContextStore: SessionContextStore,
+    private readonly sessionPrepareStore: SessionPrepareStore,
+    private readonly sessionPrepareService: SessionPrepareService,
     @Inject(forwardRef(() => MessageService))
     private readonly messageService: MessageService,
   ) {}
@@ -45,9 +50,15 @@ export class ChatService {
     });
 
     try {
+      await this.sessionPrepareService.warm(
+        session.id,
+        userId,
+        appClientId,
+      );
       await this.messageService.create(userId, session.id, dto, appClientId);
     } catch (error) {
       await this.prisma.session.delete({ where: { id: session.id } });
+      await this.sessionPrepareStore.delete(session.id);
       throw error;
     }
     return { sessionId: session.id };
@@ -111,14 +122,20 @@ export class ChatService {
     sessionId: string,
     userId: number,
     appClientId: number,
-  ): Promise<void> {
+  ): Promise<DeleteChatResponseDto> {
     const session = await this.resolveSession(sessionId, userId, appClientId);
     await this.prisma.$transaction([
       this.prisma.message.deleteMany({ where: { sessionId: session.id } }),
       this.prisma.session.delete({ where: { id: session.id } }),
     ]);
     await this.clearSessionContext(session.id);
+    await this.sessionPrepareStore.delete(session.id);
+    this.chatEvents.emit(session.id, {
+      event: 'complete',
+      payload: { reason: 'session_deleted', sessionId: session.id },
+    });
     this.chatEvents.closeSession(session.id);
+    return { sessionId: session.id };
   }
 
   /** 供 Message 等模块校验会话归属 */

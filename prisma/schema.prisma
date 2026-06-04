@@ -116,7 +116,6 @@ model AppClient {
   integrations    Integration[]
   userApps        UserApp[]
   promptTemplates PromptTemplate[]
-  skills          Skill[]
 }
 
 model LlmModelConfig {
@@ -293,25 +292,29 @@ model UserIntegration {
   @@index([integrationId])
 }
 
-/// 应用内技能包：意图命中时注入指引文案；工具能力通过 SkillTool 标注（gate），不替代 RoleTool/AgentTool 授权。
+/// Agent 专属技能包：意图命中时注入 prompt；SkillTool 须为 AgentTool 子集（gate），不替代 RoleTool 授权。
 model Skill {
-  id          Int      @id @default(autoincrement())
-  appClientId Int
-  name        String
-  description String?
-  prompt      String   @db.Text
-  config      Json?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  agentId       Int
+  name          String
+  /// 跨 Agent 对齐的能力键（可选）；供后续 Role 按 capability 授权。
+  capabilityKey String?
+  description   String?
+  prompt        String   @db.Text
+  /// 与 Tool.riskLevel 同语义；L2/L3 表示含写操作，运行前需用户确认。
+  riskLevel     ToolLevel @default(L1)
+  config        Json?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  appClient   AppClient    @relation(fields: [appClientId], references: [id], onDelete: Cascade)
-  skillTools  SkillTool[]
-  agentSkills AgentSkill[]
-  roleSkills  RoleSkill[]
+  agent      Agent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  skillTools SkillTool[]
+  roleSkills RoleSkill[]
 
-  @@unique([appClientId, name])
-  @@index([appClientId, isActive])
+  @@unique([agentId, name])
+  @@unique([agentId, capabilityKey])
+  @@index([agentId, isActive])
 }
 
 /// Role 可用的 Skill 白名单（可选；与 RoleTool 并列，不间接授权 Tool）。
@@ -387,7 +390,7 @@ model Agent {
   createdAt      DateTime @default(now())
 
   appClient    AppClient     @relation(fields: [appClientId], references: [id])
-  agentSkills  AgentSkill[]
+  skills       Skill[]
   agentRuns       AgentRun[]
   agentTools      AgentTool[]
   messageTurns    MessageTurn[]
@@ -529,18 +532,4 @@ model AgentTool {
   @@unique([agentId, toolId])
   @@index([agentId])
   @@index([toolId])
-}
-
-/// Agent 候选 Skill（运行时还需意图召回 + tool gate；可选再与 RoleSkill 求交）。
-model AgentSkill {
-  id      Int @id @default(autoincrement())
-  agentId Int
-  skillId Int
-
-  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
-
-  @@unique([agentId, skillId])
-  @@index([agentId])
-  @@index([skillId])
 }

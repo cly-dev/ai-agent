@@ -10,7 +10,11 @@ import { AIMessage, AIMessageChunk } from '@langchain/core/messages';
 import type { DynamicStructuredTool } from '@langchain/core/tools';
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 import { z } from 'zod';
-import { AgentRunRole, AgentRunStatus } from '../../../generated/prisma/client';
+import {
+  AgentRunRole,
+  AgentRunStatus,
+  ToolLevel,
+} from '../../../generated/prisma/client';
 import type { Prisma } from '../../../generated/prisma/client';
 import { normalizeToolCallArgs } from '../llm/tool-call-args.util';
 import { LlmService } from '../llm/llm.service';
@@ -28,7 +32,7 @@ import {
   type LlmObservationPayload,
 } from './observation-format.util';
 import { estimateMessagesTokens } from '../llm/message-token-budget.util';
-import { summarizeToolsForLlmSchema } from './tool-schema-compact.util';
+import { summarizeToolsForLlmSchema } from './tool/tool-schema-compact.util';
 import { PromptComposerService } from '../prompt/prompt-composer.service';
 import {
   ToolEngineService,
@@ -68,6 +72,12 @@ import {
 import type { AgentMachineCode } from './agent-run-user-messages.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChatEventsService } from '../../modules/chat/chat-events.service';
+import { SessionPrepareStore } from '../../modules/chat/session-prepare.store';
+import { PendingWriteConfirmationStore } from '../../modules/chat/pending-write-confirmation.store';
+import {
+  buildWriteConfirmationUserMessage,
+  collectWriteConfirmationRequired,
+} from './write-confirmation-gate.util';
 import { AgentService } from '../../modules/agent/agent.service';
 import { SessionHistoryCompressionService } from '../memory/session-history-compression.service';
 import type { WorkingMemoryState } from '../memory/session-context.types';
@@ -83,7 +93,7 @@ import {
   snapshotRunMetrics,
 } from './run-metrics.util';
 import type { RunMetricsAccumulator } from './run-metrics.util';
-import type { MessageBlock, MessageBlockPatch } from './message-blocks.types';
+import type { MessageBlock, MessageBlockPatch } from './message/message-blocks.types';
 import {
   buildRuleBasedMessageBlocks,
   ensureAtLeastOneTextBlock,
@@ -99,17 +109,23 @@ import {
   stripMarkdownFenceForBlocksParse,
   textBlock,
   tryParseStoredMessageBlocks,
-} from './message-blocks.util';
+} from './message/message-blocks.util';
 import {
   isEmptyListToolObservation,
   observationsAreOnlyEmptyLists,
   shouldPreferSummarizeOverObservedTools,
-} from './tool-observation.util';
+} from './tool/tool-observation.util';
 import {
   areToolCallRoundsIdentical,
   getLastToolRoundFromSteps,
-} from './tool-call-dedupe.util';
+} from './tool/tool-call-dedupe.util';
 import { detectIntentKind as classifyIntentKind } from './intent-kind.util';
+import { loadSmallTalkHints } from '../intent/smalltalk-hints.util';
+import {
+  buildIntentClarificationGuidance,
+  isUserIntentClear as isUserIntentMessageClear,
+} from '../intent/intent-scope.util';
+import { IntentScopeService } from '../intent/intent-scope.service';
 import {
   emitLlmPromptDebug,
   isLlmPromptDebugEnabled,
@@ -121,6 +137,8 @@ type AgentRunInput = {
   input: string;
   /** 触发本轮的 user Message.id */
   userMessageId: number;
+  /** 为 true 时尝试执行上一轮缓存的待确认写操作 Tool */
+  confirmWrite?: boolean;
 };
 
 type AgentRunStepType = 'precheck' | 'intent' | 'llm' | 'tool' | 'summarize';
@@ -153,6 +171,7 @@ type AgentRunStep = {
 /** 运行期 scoped 工具：含 HTTP 执行字段与 responseProfile，全程存于 graph state。 */
 type AgentEngineTool = ToolExecutionDefinition & {
   toolCategoryId: number | null;
+  riskLevel: ToolLevel;
   responseProfile: unknown;
   agentMetadata: unknown;
 };
@@ -188,6 +207,8 @@ type CachedScopedToolsEntry = ScopedToolsResult & {
 
 const SESSION_TOOL_CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_SESSION_TOOL_CACHE_ENTRIES = 256;
+/** 可用工具数低于此值时跳过 intent 召回，直接 bind 全量 scoped tools。 */
+const INTENT_FULL_BIND_TOOL_THRESHOLD = 20;
 
 type GraphToolCall = {
   name: string;
@@ -236,6 +257,8 @@ type AgentGraphState = {
   toolProfilesByName: Record<string, ToolResponseProfile | null>;
   /** 首轮低质量结果时仅允许一次“放宽工具集”重试。 */
   hasExpandedOnce: boolean;
+  /** 写操作 Tool 待用户确认，图提前结束。 */
+  awaitingWriteConfirmation?: boolean;
 };
 
 @Injectable()
@@ -249,9 +272,6 @@ export class AgentEngineService {
   private readonly messageStreamDeltaEmitted = new Set<string>();
   /** 本 run 正文已通过 SSE 交付，run() 末尾无需再补 stream full */
   private readonly runSseContentDelivered = new Set<string>();
-  /** 闲聊关键词词库（来自独立文件）。 */
-  private smallTalkHintsCache: string[] | null = null;
-  /** sessionId + agentId + userId → 权限内全量工具（避免每轮 run 查 DB）。 */
   private readonly sessionAllowedToolsCache = new Map<
     string,
     { tools: Awaited<ReturnType<AgentService['getAllowedTools']>>; expiresAt: number }
@@ -281,7 +301,55 @@ export class AgentEngineService {
     private readonly sessionHistoryCompression: SessionHistoryCompressionService,
     private readonly categoryIntentRecall: CategoryIntentRecallService,
     private readonly promptRegistry: PromptRegistryService,
+    private readonly sessionPrepareStore: SessionPrepareStore,
+    private readonly intentScopeService: IntentScopeService,
+    private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
   ) {}
+
+  /** 用户取消待确认的写操作：清除缓存并通知前端关闭确认弹窗。 */
+  async cancelPendingWriteConfirmation(
+    userId: number,
+    sessionId: string,
+  ): Promise<void> {
+    const pending = await this.pendingWriteConfirmationStore.get(
+      sessionId,
+      userId,
+    );
+    await this.pendingWriteConfirmationStore.clear(sessionId);
+    if (!pending) {
+      return;
+    }
+    const message = '已取消操作。';
+    this.chatEvents.emit(sessionId, {
+      event: 'message',
+      payload: {
+        source: 'agent-run',
+        action: 'write_confirmation_cancelled',
+        runId: pending.runId,
+        turnId: pending.turnId,
+        message,
+      },
+    });
+    this.chatEvents.emit(sessionId, {
+      event: 'complete',
+      payload: {
+        source: 'agent-run',
+        runId: pending.runId,
+        turnId: pending.turnId,
+        status: 'success',
+      },
+    });
+  }
+
+  private emitWriteConfirmationExpired(sessionId: string): void {
+    this.chatEvents.emit(sessionId, {
+      event: 'error',
+      payload: {
+        message: '写操作确认已过期或不存在，请重新发起请求。',
+        code: 'WRITE_CONFIRMATION_EXPIRED',
+      },
+    });
+  }
 
   /** 执行一次 Agent 运行。 */
   async run(input: AgentRunInput): Promise<AgentRunResult | null> {
@@ -305,6 +373,21 @@ export class AgentEngineService {
     if (!session.agentId) {
       return null;
     }
+
+    if (input.confirmWrite) {
+      const resumed = await this.resumePendingWriteConfirmation(input, {
+        sessionId: session.id,
+        agentId: session.agentId,
+        appClientId: session.appClientId,
+      });
+      if (resumed) {
+        return resumed;
+      }
+      this.emitWriteConfirmationExpired(input.sessionId);
+      return null;
+    }
+
+    await this.pendingWriteConfirmationStore.clear(input.sessionId);
 
     const startedAt = new Date();
     const [agent, messageTokenBudget] = await Promise.all([
@@ -364,6 +447,7 @@ export class AgentEngineService {
         apiKey: tool.integration.apiKey,
       },
       toolCategoryId: tool.toolCategoryId ?? null,
+      riskLevel: tool.riskLevel,
       responseProfile: tool.responseProfile,
       agentMetadata: tool.agentMetadata,
     }));
@@ -427,10 +511,38 @@ export class AgentEngineService {
         messageTokenBudget,
         runMetrics,
         toolProfilesByName,
+        turnId: turn.id,
+        confirmWrite: input.confirmWrite ?? false,
       });
       currentStep = graphState.iteration;
       status = graphState.status;
       finalOutput = graphState.finalOutput;
+      if (graphState.awaitingWriteConfirmation) {
+        finalOutput = this.sanitizeFinalOutput(finalOutput);
+        const finishReason = resolveFinishReason({
+          status,
+          steps: graphState.steps,
+          finishedEarly: false,
+        });
+        await this.finalizeRunAndTurn({
+          turnId: turn.id,
+          runId: run.id,
+          runMetrics,
+          finalOutput,
+          status,
+          finishReason,
+          scopedToolCount: graphState.scopedTools.length,
+          steps: graphState.steps,
+          currentStep: graphState.iteration,
+        });
+        this.emitRunMessageBlocksIfNeeded(
+          input.sessionId,
+          run.id,
+          turn.id,
+          this.blocksFromFinalOutput(finalOutput),
+        );
+        return { runId: run.id, turnId: turn.id, output: finalOutput, status };
+      }
       steps.splice(0, steps.length, ...graphState.steps);
 
       // 超步数时尝试 fallbackReply 兜底。
@@ -538,6 +650,232 @@ export class AgentEngineService {
     } finally {
       this.clearThinkBuffer(input.sessionId, run.id);
     }
+  }
+
+  /** 用户确认后执行缓存的写操作 Tool，并汇总到原 AgentRun。 */
+  private async resumePendingWriteConfirmation(
+    input: AgentRunInput,
+    session: {
+      sessionId: string;
+      agentId: number;
+      appClientId: number;
+    },
+  ): Promise<AgentRunResult | null> {
+    const pending = await this.pendingWriteConfirmationStore.get(
+      input.sessionId,
+      input.userId,
+    );
+    if (!pending) {
+      return null;
+    }
+
+    const run = await this.prisma.agentRun.findFirst({
+      where: {
+        id: pending.runId,
+        sessionId: pending.sessionId,
+        userId: input.userId,
+      },
+      select: { id: true, turnId: true, steps: true, currentStep: true },
+    });
+    if (!run?.turnId) {
+      return null;
+    }
+
+    const agent = await this.agentService.getRuntimeAgent(
+      session.appClientId,
+      session.agentId,
+    );
+    if (!agent) {
+      return null;
+    }
+
+    const consumed = await this.pendingWriteConfirmationStore.consume(
+      input.sessionId,
+      input.userId,
+    );
+    if (!consumed || consumed.runId !== pending.runId) {
+      return null;
+    }
+    const [allowedTools, prompt] = await Promise.all([
+      this.agentService.getAllowedTools(
+        session.agentId,
+        input.userId,
+        session.appClientId,
+      ),
+      this.promptComposer.compose({
+        userId: input.userId,
+        sessionId: input.sessionId,
+        latestUserMessage: consumed.latestUserMessage,
+        agentSystemPrompt: agent.systemPrompt,
+        sessionScope: {
+          appClientId: session.appClientId,
+          agentId: session.agentId,
+        },
+      }),
+    ]);
+
+    const tools: AgentEngineTool[] = allowedTools.map((tool) => ({
+      id: tool.id,
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      schema: tool.schema,
+      method: tool.method,
+      path: tool.path,
+      timeout: tool.timeout,
+      integration: {
+        id: tool.integration.id,
+        name: tool.integration.name,
+        baseUrl: tool.integration.baseUrl,
+        authMode: tool.integration.authMode,
+        apiKey: tool.integration.apiKey,
+      },
+      toolCategoryId: tool.toolCategoryId ?? null,
+      riskLevel: tool.riskLevel,
+      responseProfile: tool.responseProfile,
+      agentMetadata: tool.agentMetadata,
+    }));
+    const allowedToolIds = tools.map((tool) => tool.id);
+    const toolBuildCtx: ToolBuildContext = {
+      userId: input.userId,
+      allowedToolIds,
+    };
+    const langChainBundle = this.toolEngine.buildLangChainTools(tools, toolBuildCtx);
+    const toolProfilesByName = Object.fromEntries(
+      tools.map((tool) => [
+        tool.name,
+        parseResponseProfile(tool.responseProfile),
+      ]),
+    ) as Record<string, ToolResponseProfile | null>;
+
+    const pendingCalls: GraphToolCall[] = consumed.toolCalls.map((call) => ({
+      name: call.name,
+      arguments: call.arguments,
+    }));
+    const toolResults = await Promise.all(
+      pendingCalls.map((toolCall) =>
+        this.invokeToolSafely(langChainBundle, tools, toolCall),
+      ),
+    );
+
+    const observations: ToolObservation[] = [];
+    const steps = this.parseStepsFromRun(run.steps);
+    const runMetrics = createRunMetricsAccumulator();
+    let lastObservation: ToolObservation | null = null;
+
+    for (let idx = 0; idx < toolResults.length; idx += 1) {
+      const toolResult = toolResults[idx];
+      const toolCall = pendingCalls[idx];
+      const profile = toolProfilesByName[toolResult.name] ?? null;
+      const projected = projectToolOutput(
+        toolResult.output,
+        consumed.latestUserMessage,
+        profile,
+      );
+      recordToolUsage(runMetrics, {
+        name: toolResult.name,
+        latencyMs: toolResult.latency,
+        quality: this.assessObservationQuality(projected.data),
+      });
+      const llmPayload = formatObservationForLlm({
+        toolName: toolResult.name,
+        output: projected.data,
+        fieldLabels: projected.fieldLabels,
+      });
+      const observation: ToolObservation = {
+        name: toolResult.name,
+        output: projected.data,
+        llmPayload,
+        quality: this.assessObservationQuality(projected.data),
+        fieldLabels: projected.fieldLabels,
+        fieldDescriptions: projected.fieldDescriptions,
+        enumLabelsByPath: projected.enumLabelsByPath,
+      };
+      observations.push(observation);
+      lastObservation = observation;
+      steps.push({
+        step: run.currentStep + 1,
+        type: 'tool',
+        name: toolCall.name,
+        input: toolCall.arguments,
+        output: projected.data as Record<string, unknown>,
+        meta: { latency: toolResult.latency },
+      });
+    }
+
+    if (!lastObservation) {
+      return null;
+    }
+
+    const toolDef = tools.find((tool) => tool.name === lastObservation.name);
+    const promptScope = {
+      appClientId: session.appClientId,
+      agentId: session.agentId,
+    };
+    const summarized = await this.summarizeToolOutputForUser(
+      lastObservation.name,
+      toolDef?.description,
+      consumed.latestUserMessage,
+      lastObservation.output,
+      lastObservation.fieldLabels ?? {},
+      lastObservation.fieldDescriptions ?? {},
+      lastObservation.enumLabelsByPath ?? {},
+      prompt.messages,
+      input.sessionId,
+      consumed.runId,
+      promptScope,
+    );
+    const finalOutput = this.sanitizeFinalOutput(
+      summarized?.trim() || '操作已完成。',
+    );
+    steps.push({
+      step: run.currentStep + 2,
+      type: 'summarize',
+      name: lastObservation.name,
+      output: finalOutput,
+    });
+
+    const finishReason = resolveFinishReason({
+      status: AgentRunStatus.success,
+      steps,
+      finishedEarly: false,
+    });
+    await this.finalizeRunAndTurn({
+      turnId: run.turnId,
+      runId: consumed.runId,
+      runMetrics,
+      finalOutput,
+      status: AgentRunStatus.success,
+      finishReason,
+      scopedToolCount: tools.length,
+      steps,
+      currentStep: run.currentStep + 2,
+    });
+    this.emitRunMessageBlocksIfNeeded(
+      input.sessionId,
+      consumed.runId,
+      run.turnId,
+      this.blocksFromFinalOutput(finalOutput),
+    );
+    this.schedulePostRunMemoryTasks(input.sessionId, {
+      userInput: consumed.latestUserMessage,
+      finalOutput: this.finalOutputForWorkingMemory(finalOutput),
+      toolObservations: observations,
+    });
+
+    return {
+      runId: consumed.runId,
+      turnId: run.turnId,
+      output: finalOutput,
+      status: AgentRunStatus.success,
+    };
+  }
+
+  private parseStepsFromRun(steps: unknown): AgentRunStep[] {
+    if (!Array.isArray(steps)) {
+      return [];
+    }
+    return steps as AgentRunStep[];
   }
 
   /** 增量更新 AgentRun 当前步骤与状态。 */
@@ -1226,23 +1564,6 @@ export class AgentEngineService {
     return withoutThink || trimmed;
   }
 
-  /** 向量召回前的轻量规则：过短或无可读字符视为意图不明确。 */
-  private isUserIntentClear(userMessage: string): boolean {
-    const trimmed = userMessage.trim();
-    if (trimmed.length < 2) {
-      return false;
-    }
-    return /[\p{L}\p{N}]/u.test(trimmed);
-  }
-
-  private buildIntentClarificationGuidance(userMessage: string): string {
-    const trimmed = userMessage.trim();
-    if (trimmed.length === 0) {
-      return '请先描述你的问题或希望完成的操作。';
-    }
-    return '你的描述还不够明确，请说明具体场景、对象或你希望完成的操作，我再继续处理。';
-  }
-
   /** 在本轮可用工具拉取关联的 ToolCategory 说明，供向量召回使用。 */
   private async fetchToolCategoriesForAllowedTools(toolCategoryIds: number[]) {
     const uniq = Array.from(new Set(toolCategoryIds)).sort((a, b) => a - b);
@@ -1278,6 +1599,19 @@ export class AgentEngineService {
     if (cached && cached.expiresAt > Date.now()) {
       return cached.tools;
     }
+    const fromRedis = await this.sessionPrepareStore.get(
+      sessionId,
+      userId,
+      appClientId,
+      agentId,
+    );
+    if (fromRedis) {
+      this.sessionAllowedToolsCache.set(cacheKey, {
+        tools: fromRedis,
+        expiresAt: Date.now() + SESSION_TOOL_CACHE_TTL_MS,
+      });
+      return fromRedis;
+    }
     const tools = await this.agentService.getAllowedTools(
       agentId,
       userId,
@@ -1288,6 +1622,13 @@ export class AgentEngineService {
       expiresAt: Date.now() + SESSION_TOOL_CACHE_TTL_MS,
     });
     this.pruneTimedCacheMap(this.sessionAllowedToolsCache);
+    void this.sessionPrepareStore.trySet(
+      sessionId,
+      userId,
+      appClientId,
+      agentId,
+      tools,
+    );
     return tools;
   }
 
@@ -1412,80 +1753,27 @@ export class AgentEngineService {
     bindCap?: Record<string, unknown>;
     fallbackReason?: 'bind_recall_error' | 'bind_recall_empty';
   }> {
-    const fallbackBundle = () => {
-      const scopedIds = tools.map((tool) => tool.id);
-      const scopedToolBundle = this.toolEngine.buildLangChainTools(tools, {
+    const result = await this.intentScopeService.scopeToolsForMainLoop(
+      tools,
+      userMessage,
+      toolBuildCtx,
+      preferredCategoryIds,
+      true,
+    );
+    const scopedToolBundle =
+      result.scopedToolBundle ??
+      this.toolEngine.buildLangChainTools(tools, {
         ...toolBuildCtx,
-        allowedToolIds: scopedIds,
+        allowedToolIds: tools.map((tool) => tool.id),
       });
-      return {
-        scopedTools: tools,
-        scopedLangChainTools: scopedToolBundle.tools,
-        scopedToolBundle,
-        scopedAllowedToolIds: scopedIds,
-      };
+    return {
+      scopedTools: result.scopedTools as AgentEngineTool[],
+      scopedLangChainTools: result.scopedLangChainTools,
+      scopedToolBundle,
+      scopedAllowedToolIds: result.scopedAllowedToolIds,
+      bindCap: result.bindCap,
+      fallbackReason: result.fallbackReason,
     };
-    const metadataScoped = filterToolsByAgentMetadata(tools, userMessage);
-    try {
-      const bindRecall = await this.categoryIntentRecall.recallTopToolsForBind(
-        metadataScoped.map((tool) => ({
-          id: tool.id,
-          name: tool.name,
-          description: tool.description,
-          toolCategoryId: tool.toolCategoryId,
-          agentMetadata: tool.agentMetadata,
-        })),
-        userMessage,
-        undefined,
-        preferredCategoryIds,
-      );
-      const toolById = new Map(metadataScoped.map((tool) => [tool.id, tool]));
-      const scopedTools = bindRecall.tools
-        .map((row) => toolById.get(row.id))
-        .filter((tool): tool is AgentEngineTool => tool != null);
-      const effectiveTools =
-        scopedTools.length > 0 ? scopedTools : metadataScoped;
-      const scopedIds = effectiveTools.map((tool) => tool.id);
-      const scopedToolBundle = this.toolEngine.buildLangChainTools(
-        effectiveTools,
-        {
-          ...toolBuildCtx,
-          allowedToolIds: scopedIds,
-        },
-      );
-      const bindCap = bindRecall.capped
-        ? {
-            before: tools.length,
-            after: effectiveTools.length,
-            source: bindRecall.source,
-            matches: bindRecall.matches.map((item) => ({
-              id: item.id,
-              name: item.name,
-              score: Number(item.score.toFixed(4)),
-              source: item.source,
-            })),
-          }
-        : undefined;
-      return {
-        scopedTools: effectiveTools,
-        scopedLangChainTools: scopedToolBundle.tools,
-        scopedToolBundle,
-        scopedAllowedToolIds: scopedIds,
-        bindCap,
-        fallbackReason:
-          scopedTools.length === 0 ? 'bind_recall_empty' : undefined,
-      };
-    } catch (error) {
-      this.logger.warn(
-        `tool bind recall failed, use full tool set: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return {
-        ...fallbackBundle(),
-        fallbackReason: 'bind_recall_error',
-      };
-    }
   }
 
   private async runWithLangGraph(input: {
@@ -1519,10 +1807,41 @@ export class AgentEngineService {
     toolProfilesByName: Record<string, ToolResponseProfile | null>;
     appClientId: number;
     agentId: number;
+    turnId: number;
+    confirmWrite: boolean;
   }): Promise<AgentGraphState> {
     const promptScope = {
       appClientId: input.appClientId,
       agentId: input.agentId,
+    };
+    const shouldSkipIntentNode = (): boolean =>
+      input.enableToolCall &&
+      input.tools.length > 0 &&
+      input.tools.length < INTENT_FULL_BIND_TOOL_THRESHOLD;
+    const buildFullBindIntentState = (
+      state: AgentGraphState,
+      idx: number,
+      reason: string,
+    ): AgentGraphState => {
+      const intentStep: AgentRunStep = {
+        step: idx,
+        type: 'intent',
+        output: this.normalizeJsonLike({
+          skipped: true,
+          reason,
+          toolCount: input.tools.length,
+          bindToolCount: input.tools.length,
+        }),
+      };
+      return {
+        ...state,
+        steps: [...state.steps, intentStep],
+        intentKind: 'task',
+        scopedTools: input.tools,
+        scopedLangChainTools: input.langChainTools.tools,
+        scopedToolBundle: input.langChainTools,
+        scopedAllowedToolIds: input.allowedToolIds,
+      };
     };
     // LangGraph 状态定义：每个字段的 reducer 采用“直接覆盖最新值”。
     const State = Annotation.Root({
@@ -1587,6 +1906,10 @@ export class AgentEngineService {
       }),
       hasExpandedOnce: Annotation<boolean>({
         default: () => false,
+        reducer: (_state, update) => update,
+      }),
+      awaitingWriteConfirmation: Annotation<boolean | undefined>({
+        default: () => undefined,
         reducer: (_state, update) => update,
       }),
     });
@@ -1724,7 +2047,7 @@ export class AgentEngineService {
       const skipRecognition = !input.enableToolCall || input.tools.length === 0;
       const intentKind = classifyIntentKind(
         input.latestUserMessage,
-        this.getSmallTalkHints(),
+        loadSmallTalkHints(),
       );
 
       if (skipRecognition) {
@@ -1757,6 +2080,27 @@ export class AgentEngineService {
           scopedToolBundle: input.langChainTools,
           scopedAllowedToolIds: baseIds,
         };
+      }
+
+      if (shouldSkipIntentNode()) {
+        this.emitThink(
+          input.sessionId,
+          input.runId,
+          '正在处理你的请求…\n',
+          'replace',
+        );
+        const next = buildFullBindIntentState(
+          state,
+          idx,
+          'few_tools_full_bind',
+        );
+        await this.updateRun(
+          input.runId,
+          next.steps,
+          0,
+          AgentRunStatus.running,
+        );
+        return next;
       }
 
       if (intentKind === 'smalltalk') {
@@ -1810,9 +2154,9 @@ export class AgentEngineService {
         categoryIds,
       );
 
-      const intentClear = this.isUserIntentClear(input.latestUserMessage);
+      const intentClear = isUserIntentMessageClear(input.latestUserMessage);
       if (!intentClear) {
-        const guidance = this.buildIntentClarificationGuidance(
+        const guidance = buildIntentClarificationGuidance(
           input.latestUserMessage,
         );
         const intentStep: AgentRunStep = {
@@ -1976,19 +2320,43 @@ export class AgentEngineService {
 
     // 节点2：主推理节点。基于当前 observation 决定“直接回答”或“发起 tool_calls”。
     const llm = async (state: AgentGraphState): Promise<AgentGraphState> => {
-      const step = state.iteration + 1;
+      let graphState = state;
+      if (
+        shouldSkipIntentNode() &&
+        !graphState.steps.some((row) => row.type === 'intent')
+      ) {
+        this.emitThink(
+          input.sessionId,
+          input.runId,
+          '正在处理你的请求…\n',
+          'replace',
+        );
+        const idx = graphState.steps.length + 1;
+        graphState = buildFullBindIntentState(
+          graphState,
+          idx,
+          'few_tools_full_bind',
+        );
+        await this.updateRun(
+          input.runId,
+          graphState.steps,
+          0,
+          AgentRunStatus.running,
+        );
+      }
+      const step = graphState.iteration + 1;
       try {
-        const toolsForPrompt = state.scopedTools;
+        const toolsForPrompt = graphState.scopedTools;
         const decision = await this.buildDecisionPrompt(
           input.promptMessages,
           toolsForPrompt,
-          state.toolObservations,
+          graphState.toolObservations,
           input.enableToolCall,
           promptScope,
         );
         const { messages: invokeMessages, trimMeta } = this.buildLlmInvokeMessages(
           input.promptMessages,
-          state.toolObservations,
+          graphState.toolObservations,
           input.latestUserMessage,
           decision.toolSchemaJson,
           decision.toolDecisionPrompt,
@@ -2001,12 +2369,12 @@ export class AgentEngineService {
             sessionId: input.sessionId,
             phase: 'decision',
             step,
-            iteration: state.iteration,
+            iteration: graphState.iteration,
             messageTokenBudget: input.messageTokenBudget,
             meta: {
               enableToolCall: input.enableToolCall,
-              scopedToolCount: state.scopedTools.length,
-              observationCount: state.toolObservations.length,
+              scopedToolCount: graphState.scopedTools.length,
+              observationCount: graphState.toolObservations.length,
               estimatedTokens: trimMeta.estimatedTokensAfter,
             },
             messages: invokeMessages,
@@ -2034,7 +2402,7 @@ export class AgentEngineService {
             })),
           );
         const runnable = input.enableToolCall
-          ? model.bindTools(state.scopedLangChainTools as unknown[])
+          ? model.bindTools(graphState.scopedLangChainTools as unknown[])
           : model.bindTools([]);
         const aiMessage = await this.streamRunnableMessages(
           runnable as {
@@ -2066,7 +2434,7 @@ export class AgentEngineService {
           responseMeta,
         });
         const steps = [
-          ...state.steps,
+          ...graphState.steps,
           {
             step,
             type: 'llm' as const,
@@ -2089,10 +2457,10 @@ export class AgentEngineService {
         ];
         await this.updateRun(input.runId, steps, step, AgentRunStatus.running);
         if (toolCalls.length > 0) {
-          const lastToolRound = getLastToolRoundFromSteps(state.steps);
+          const lastToolRound = getLastToolRoundFromSteps(graphState.steps);
           if (areToolCallRoundsIdentical(toolCalls, lastToolRound)) {
             const observation = this.mergeObservationsForSummary(
-              state.toolObservations,
+              graphState.toolObservations,
             );
             if (observation) {
               const dedupeSteps = [
@@ -2119,7 +2487,7 @@ export class AgentEngineService {
                 'append',
               );
               return {
-                ...state,
+                ...graphState,
                 iteration: step,
                 steps: dedupeSteps,
                 pendingToolCalls: [],
@@ -2140,7 +2508,7 @@ export class AgentEngineService {
               }`,
             );
             return {
-              ...state,
+              ...graphState,
               iteration: step,
               steps,
               pendingToolCalls: [],
@@ -2152,11 +2520,11 @@ export class AgentEngineService {
           const completion = this.resolveLlmCompletionAfterTools(
             input.latestUserMessage,
             llmText,
-            state.toolObservations,
+            graphState.toolObservations,
           );
           if (completion?.kind === 'text') {
             return {
-              ...state,
+              ...graphState,
               iteration: step,
               steps,
               pendingToolCalls: [],
@@ -2167,7 +2535,7 @@ export class AgentEngineService {
           }
           if (completion?.kind === 'summarize') {
             return {
-              ...state,
+              ...graphState,
               iteration: step,
               steps,
               pendingToolCalls: [],
@@ -2175,7 +2543,7 @@ export class AgentEngineService {
             };
           }
           return {
-            ...state,
+            ...graphState,
             iteration: step,
             steps,
             pendingToolCalls: [],
@@ -2185,7 +2553,7 @@ export class AgentEngineService {
           };
         }
         return {
-          ...state,
+          ...graphState,
           iteration: step,
           steps,
           // 交给 tools 节点执行（本轮可能包含多个调用）。
@@ -2200,7 +2568,7 @@ export class AgentEngineService {
           }`,
         );
         const steps = [
-          ...state.steps,
+          ...graphState.steps,
           {
             step,
             type: 'llm' as const,
@@ -2223,7 +2591,7 @@ export class AgentEngineService {
           mode: 'full',
         });
         return {
-          ...state,
+          ...graphState,
           iteration: step,
           steps,
           pendingToolCalls: [],
@@ -2285,6 +2653,55 @@ export class AgentEngineService {
           };
         }
       }
+      if (!input.confirmWrite) {
+        const writeCalls = collectWriteConfirmationRequired(
+          state.pendingToolCalls,
+          state.scopedTools,
+        );
+        if (writeCalls.length > 0) {
+          const message = buildWriteConfirmationUserMessage();
+          await this.pendingWriteConfirmationStore.set({
+            runId: input.runId,
+            turnId: input.turnId,
+            sessionId: input.sessionId,
+            userId: input.userId,
+            appClientId: input.appClientId,
+            agentId: input.agentId,
+            latestUserMessage: input.latestUserMessage,
+            toolCalls: writeCalls,
+            createdAt: new Date().toISOString(),
+          });
+          this.chatEvents.emit(input.sessionId, {
+            event: 'message',
+            payload: {
+              source: 'agent-run',
+              action: 'confirmation_required',
+              runId: input.runId,
+              turnId: input.turnId,
+              message,
+            },
+          });
+          this.emitLlmReply(input.sessionId, input.runId, message, {
+            code: 'WRITE_CONFIRMATION_REQUIRED',
+            mode: 'full',
+          });
+          if (input.runId != null) {
+            this.runSseContentDelivered.add(
+              this.thinkBufferKey(input.sessionId, input.runId),
+            );
+          }
+          return {
+            ...state,
+            steps: nextSteps,
+            pendingToolCalls: [],
+            awaitingWriteConfirmation: true,
+            finalOutput: message,
+            status: AgentRunStatus.success,
+            finished: true,
+          };
+        }
+      }
+
       for (const toolCall of state.pendingToolCalls) {
         this.emitThink(
           input.sessionId,
@@ -2579,7 +2996,8 @@ export class AgentEngineService {
       };
     };
     // 图路由：
-    // START -> intent -> llm -> tools -> llm ...
+    // START -> preCheck -> intent|llm -> llm -> tools -> llm ...
+    // 可用工具 < INTENT_FULL_BIND_TOOL_THRESHOLD 时 preCheck 直连 llm（全量 bindTools）。
     // 任一节点置 finished=true 或达到 maxSteps 时终止。
     const graph = new StateGraph(State)
       .addNode('intent', intent)
@@ -2594,6 +3012,9 @@ export class AgentEngineService {
         }
         if (s.pendingSummaryObservation) {
           return 'summarize';
+        }
+        if (shouldSkipIntentNode()) {
+          return 'llm';
         }
         return 'intent';
       })
@@ -2895,40 +3316,6 @@ export class AgentEngineService {
     observations: ToolObservation[],
   ): ToolObservation | null {
     return this.mergeObservationsForSummary(observations);
-  }
-
-  private getSmallTalkHints(): string[] {
-    if (this.smallTalkHintsCache) {
-      return this.smallTalkHintsCache;
-    }
-    const file = path.join(
-      process.cwd(),
-      'src',
-      'core',
-      'intent',
-      'smalltalk-hints.json',
-    );
-    try {
-      const raw = fs.readFileSync(file, 'utf-8');
-      const parsed = JSON.parse(raw) as { hints?: unknown };
-      const hints = Array.isArray(parsed?.hints)
-        ? parsed.hints
-            .map((item) =>
-              typeof item === 'string' ? item.trim().toLowerCase() : '',
-            )
-            .filter((item) => item.length > 0)
-        : [];
-      this.smallTalkHintsCache = hints;
-      return hints;
-    } catch (error) {
-      this.logger.warn(
-        `smalltalk hints load failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      this.smallTalkHintsCache = [];
-      return this.smallTalkHintsCache;
-    }
   }
 
   private async summarizeSmallTalkMessage(

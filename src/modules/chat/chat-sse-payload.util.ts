@@ -5,7 +5,37 @@ export function serializeChatSseData(evt: ChatSseEvent): string {
   if (evt.event === 'think') {
     return JSON.stringify({ content: evt.payload.content });
   }
-  if (evt.event === 'message' && evt.payload.source === 'agent-run') {
+  if (
+    evt.event === 'message' &&
+    evt.payload.source === 'agent-run' &&
+    evt.payload.action === 'confirmation_required'
+  ) {
+    return JSON.stringify({
+      action: 'confirmation_required',
+      runId: evt.payload.runId,
+      turnId: evt.payload.turnId,
+      message: evt.payload.message,
+      code: 'WRITE_CONFIRMATION_REQUIRED',
+    });
+  }
+  if (
+    evt.event === 'message' &&
+    evt.payload.source === 'agent-run' &&
+    evt.payload.action === 'write_confirmation_cancelled'
+  ) {
+    return JSON.stringify({
+      action: 'write_confirmation_cancelled',
+      runId: evt.payload.runId,
+      turnId: evt.payload.turnId,
+      message: evt.payload.message,
+      code: 'WRITE_CONFIRMATION_CANCELLED',
+    });
+  }
+  if (
+    evt.event === 'message' &&
+    evt.payload.source === 'agent-run' &&
+    (evt.payload.action === 'stream' || evt.payload.action === 'patch')
+  ) {
     const p = evt.payload;
     const body: Record<string, unknown> = {};
     if (Array.isArray(p.blocks) && p.blocks.length > 0) {

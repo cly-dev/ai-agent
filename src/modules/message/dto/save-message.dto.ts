@@ -50,4 +50,20 @@ export class SaveMessageDto {
   @IsOptional()
   @IsObject()
   toolOutput?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description:
+      '为 true 时确认并执行上一轮缓存的写操作（见 SSE confirmation_required）；content 可为空',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  confirmWrite?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      '为 true 时取消上一轮待确认的写操作，不执行 Tool；与 confirmWrite 同时为 true 时仅取消',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  cancelWrite?: boolean;
 }

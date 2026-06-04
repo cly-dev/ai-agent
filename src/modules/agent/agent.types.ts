@@ -14,6 +14,7 @@ export const AGENT_LINKED_TOOL_SELECT = {
   integrationId: true,
   toolCategoryId: true,
   isActive: true,
+  agentMetadata: true,
   timeout: true,
   createdAt: true,
   updatedAt: true,

@@ -1,16 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  MessageEvent,
-  Param,
-  Post,
-  Req,
-  Sse,
-  UnauthorizedException,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, MessageEvent, Param, Post, Req, Sse, UnauthorizedException, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -28,6 +16,9 @@ import { ChatEventsService } from './chat-events.service';
 import { serializeChatSseData } from './chat-sse-payload.util';
 import { ChatService } from './chat.service';
 import { CreateChatDto } from './dto/create-chat.dto';
+import { DeleteChatResponseDto } from './dto/delete-chat-response.dto';
+import { PrepareChatResponseDto } from './dto/prepare-chat-response.dto';
+import { SessionPrepareService } from './session-prepare.service';
 
 @ApiTags('chat')
 @Controller('chat')
@@ -38,6 +29,7 @@ export class ChatController {
   constructor(
     private readonly chatService: ChatService,
     private readonly chatEvents: ChatEventsService,
+    private readonly sessionPrepareService: SessionPrepareService,
   ) {}
 
   private userId(req: Request & { user?: { userId?: number } }): number {
@@ -85,6 +77,23 @@ export class ChatController {
     );
   }
 
+  @Post(':sessionId/prepare')
+  @ApiOperation({
+    summary: '预热会话：Agent runtime、权限内 tools、会话 history（Redis 5 分钟）',
+  })
+  @ApiParam({ name: 'sessionId', type: String, description: '会话 ID（32 位 hex）' })
+  @ApiResponse({ status: 200, description: '预热完成', type: PrepareChatResponseDto })
+  prepare(
+    @Req() req: Request & { user?: { userId?: number } },
+    @Param('sessionId') sessionId: string,
+  ): Promise<PrepareChatResponseDto> {
+    return this.sessionPrepareService.warm(
+      this.normalizeSessionId(sessionId),
+      this.userId(req),
+      this.appClientId(req),
+    );
+  }
+
   @Get(':sessionId')
   @ApiOperation({ summary: '按 sessionId 获取会话详情（含历史消息）' })
   @ApiParam({ name: 'sessionId', type: String })
@@ -100,13 +109,13 @@ export class ChatController {
   }
 
   @Delete(':sessionId')
-  @ApiOperation({ summary: '删除会话及下属消息' })
-  @ApiParam({ name: 'sessionId', type: String })
-  @ApiResponse({ status: 200, description: '删除成功' })
+  @ApiOperation({ summary: 'C 端删除会话（含消息、运行记录及会话上下文）' })
+  @ApiParam({ name: 'sessionId', type: String, description: '会话 ID（32 位 hex）' })
+  @ApiResponse({ status: 200, description: '删除成功', type: DeleteChatResponseDto })
   remove(
     @Req() req: Request & { user?: { userId?: number } },
     @Param('sessionId') sessionId: string,
-  ) {
+  ): Promise<DeleteChatResponseDto> {
     return this.chatService.remove(
       this.normalizeSessionId(sessionId),
       this.userId(req),
@@ -133,6 +142,11 @@ export class ChatController {
       void this.chatService
         .assertSessionOwnedByUser(normalizedSessionId, uid, aid)
         .then((session) => {
+          this.sessionPrepareService.warmInBackground(
+            session.id,
+            uid,
+            aid,
+          );
           inner = this.chatEvents.observeSession(session.id).subscribe({
             next: (evt) => {
               subscriber.next({

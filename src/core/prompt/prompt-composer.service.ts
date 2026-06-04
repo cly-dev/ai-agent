@@ -122,6 +122,19 @@ export class PromptComposerService {
     return { messages };
   }
 
+  /** 将会话历史写入 Redis，供后续 compose / run 命中。 */
+  async warmSessionContext(sessionId: string): Promise<boolean> {
+    const fromRedis = await this.loadFromRedis(sessionId);
+    if (fromRedis !== null) {
+      return true;
+    }
+    const { payload } = await this.loadFromDatabase(sessionId);
+    if (payload.turns.length === 0) {
+      return false;
+    }
+    return this.sessionContextStore.trySet(sessionId, payload);
+  }
+
   private async loadRecentConversationMessages(
     sessionId: string,
   ): Promise<LlmChatMessage[]> {

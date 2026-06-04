@@ -24,6 +24,7 @@
     "test:e2e": "NODE_ENV=test jest --config ./test/jest-e2e.json",
     "memory:redis-smoke": "ts-node -r tsconfig-paths/register src/core/memory/redis/redis-smoke.ts",
     "db:seed": "ts-node prisma/seed.ts",
+    "db:seed-sample-skill": "ts-node prisma/scripts/seed-sample-skill.ts",
     "db:seed-prompts": "ts-node prisma/scripts/seed-prompt-templates.ts",
     "db:upsert-embedding": "ts-node prisma/scripts/upsert-transformers-embedding.ts",
     "db:migrate:user-auth-model": "ts-node prisma/scripts/migrate-user-role-to-new-model.ts",
