@@ -3,7 +3,11 @@ import type { ChatSseEvent } from './chat-events.service';
 /** 将内部 SSE 事件序列化为前端约定的 data 字符串。 */
 export function serializeChatSseData(evt: ChatSseEvent): string {
   if (evt.event === 'think') {
-    return JSON.stringify({ content: evt.payload.content });
+    const body: Record<string, unknown> = { content: evt.payload.content };
+    if (evt.payload.mode) {
+      body.mode = evt.payload.mode;
+    }
+    return JSON.stringify(body);
   }
   if (
     evt.event === 'message' &&

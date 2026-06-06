@@ -175,7 +175,7 @@ export class AppClientService {
 
   /**
    * 前台 SDK 认证：DSN + 业务 accountToken。
-   * 校验通过后按 employeeId 自动建档/复用用户；须已绑定当前 App（UserApp）方可签发 JWT。
+   * 外部账号校验通过后：按 employeeId 自动建档/复用 User；若无 UserApp 则自动绑定当前 App（默认 operator 角色）。
    */
   async authenticate(
     appClientId: number,
@@ -193,7 +193,8 @@ export class AppClientService {
     }
 
     const user = await this.userService.findOrCreateByExternalAccount(profile);
-    await this.assertUserBelongsToApp(user.id, appClientId);
+    this.userService.assertUserIsActive(user.status);
+    const userAppCreated = await this.ensureUserAppBinding(user.id, appClientId);
     await this.bindUserIntegrations(user.id, appClientId, token);
 
     const accessToken = await this.userService.signUserAccessToken({
@@ -208,6 +209,7 @@ export class AppClientService {
       accessToken,
       user,
       accountTokenBound: true,
+      userAppCreated,
     };
   }
 
@@ -274,12 +276,12 @@ export class AppClientService {
     };
   }
 
-  /** 用户须已由管理员绑定到当前 AppClient，否则拒绝认证。 */
-  private async assertUserBelongsToApp(
+  /** 外部鉴权通过后确保 UserApp 存在；缺失时按默认角色自动绑定。 */
+  private async ensureUserAppBinding(
     userId: number,
     appClientId: number,
-  ): Promise<void> {
-    const binding = await this.prisma.userApp.findUnique({
+  ): Promise<boolean> {
+    const existing = await this.prisma.userApp.findUnique({
       where: {
         userId_appId: {
           userId,
@@ -288,11 +290,45 @@ export class AppClientService {
       },
       select: { id: true },
     });
-    if (!binding) {
-      throw new UnauthorizedException(
-        'user is not assigned to this app client',
+    if (existing) {
+      return false;
+    }
+    const roleId = await this.resolveAutoBindRoleId();
+    try {
+      await this.prisma.userApp.create({
+        data: {
+          userId,
+          appId: appClientId,
+          roleId,
+        },
+      });
+      return true;
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        // 并发重复 auth：另一请求已创建同一 userId+appId 绑定
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  private async resolveAutoBindRoleId(): Promise<number> {
+    const roleName =
+      process.env.APP_CLIENT_AUTO_BIND_ROLE?.trim().toLowerCase() ||
+      'operator';
+    const role = await this.prisma.role.findUnique({
+      where: { name: roleName },
+      select: { id: true },
+    });
+    if (!role) {
+      throw new BadRequestException(
+        `default auth role "${roleName}" not found; run db:seed or set APP_CLIENT_AUTO_BIND_ROLE`,
       );
     }
+    return role.id;
   }
 
   private async bindUserIntegrations(

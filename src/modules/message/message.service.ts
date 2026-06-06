@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Message } from '../../../generated/prisma/client';
 import type { Prisma } from '../../../generated/prisma/client';
-import { AgentEngineService } from '../../core/agent-engine/agent-engine.service';
+import { AgentEngineService } from '../../core/agent-engine/engine/agent-engine.service';
 import { LlmService } from '../../core/llm/llm.service';
 import {
   isSessionHistoryTrimTurnsAfterCompressEnabled,
@@ -224,13 +224,18 @@ export class MessageService {
       return;
     }
     try {
-      const run = await this.agentEngine.run({
-        userId,
-        sessionId,
-        input: content,
-        userMessageId,
-        confirmWrite,
-      });
+      const run = confirmWrite
+        ? await this.agentEngine.resumeAfterWriteConfirm({
+            userId,
+            sessionId,
+            userMessageId,
+          })
+        : await this.agentEngine.run({
+            userId,
+            sessionId,
+            input: content,
+            userMessageId: userMessageId!,
+          });
       if (!run) {
         if (confirmWrite) {
           return;

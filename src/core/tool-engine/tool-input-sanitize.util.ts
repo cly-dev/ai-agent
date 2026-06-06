@@ -3,6 +3,7 @@
  */
 
 import { getDefaultXShopId } from '../../common/integration-site.util';
+import { applyListPaginationDefaults } from './tool-list-pagination-defaults.util';
 
 export type OpenApiParamSpec = {
   name: string;
@@ -54,10 +55,11 @@ export function collectOpenApiParameterSpecs(schema: unknown): OpenApiParamSpec[
   return out;
 }
 
-/** 补全 OpenAPI default / 全局站点头，在 sanitize 之前调用。 */
+/** 补全 OpenAPI default / 全局站点头 / LIST 分页，在 sanitize 之前调用。 */
 export function applyToolParameterDefaults(
   input: Record<string, unknown>,
   specs: OpenApiParamSpec[],
+  options?: { agentMetadata?: unknown },
 ): Record<string, unknown> {
   const out = { ...input };
   for (const spec of specs) {
@@ -72,7 +74,7 @@ export function applyToolParameterDefaults(
       out[spec.name] = spec.default;
     }
   }
-  return out;
+  return applyListPaginationDefaults(out, specs, options?.agentMetadata);
 }
 
 /** 在 resolve URL / header / body 之前调用。 */

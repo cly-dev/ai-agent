@@ -1,15 +1,10 @@
 /** Language-neutral intent kind for the intent node (no locale-specific keywords in code). */
 
-const SMALLTALK_GREETING_RE =
-  /^(hi|hello|hey|yo|sup|howdy|good morning|good afternoon|good evening|good night)[\s!.?,]*$/i;
-
-const SMALLTALK_THANKS_RE = /^(thanks|thank you|thx)[\s!.?,]*$/i;
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function isLikelySmallTalk(
+function matchesSmallTalkHint(
   normalized: string,
   configurableHints: readonly string[],
 ): boolean {
@@ -21,23 +16,19 @@ function isLikelySmallTalk(
     if (normalized === token) {
       return true;
     }
-    if (new RegExp(`^${escapeRegExp(token)}[\\s!.?,]*$`, 'i').test(normalized)) {
+    if (new RegExp(`^${escapeRegExp(token)}[\\s!.?,，？]*$`, 'iu').test(normalized)) {
       return true;
     }
-  }
-  if (SMALLTALK_GREETING_RE.test(normalized)) {
-    return true;
-  }
-  if (SMALLTALK_THANKS_RE.test(normalized)) {
-    return true;
   }
   return false;
 }
 
 /**
  * Classify user message before tool routing.
- * Default is `task` unless the message is clearly small talk.
- * Optional hints come from `smalltalk-hints.json` (tenant-configurable).
+ * Default is `task` unless the message matches a configured small-talk hint.
+ *
+ * Hints MUST come from config (`src/core/intent/smalltalk-hints.json`), not hardcoded
+ * keywords in agent code. See `.cursor/rules/no-hardcoded-intent-matching.mdc`.
  */
 export function detectIntentKind(
   userMessage: string,
@@ -51,7 +42,7 @@ export function detectIntentKind(
     return 'unclear';
   }
   const normalized = text.toLowerCase();
-  if (isLikelySmallTalk(normalized, configurableHints)) {
+  if (matchesSmallTalkHint(normalized, configurableHints)) {
     return 'smalltalk';
   }
   return 'task';

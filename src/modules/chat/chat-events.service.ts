@@ -3,12 +3,15 @@ import { Observable, Subject } from 'rxjs';
 import type {
   MessageBlock,
   MessageBlockPatch,
-} from '../../core/agent-engine/message/message-blocks.types';
+} from '../../core/agent-engine/engine/message/message-blocks.types';
 
 /** SSE 事件：think-思考，message-结果/信息，complete-完成，error-错误 */
 export type ChatSseEvent =
-  /** content 为当前 run 内合并后的完整思考过程（非增量片段） */
-  | { event: 'think'; payload: { content: string } }
+  /** content 为增量片段（delta）或整段替换（replace）；由前端拼接展示 */
+  | {
+      event: 'think';
+      payload: { content: string; mode?: 'delta' | 'replace' };
+    }
   | {
       event: 'message';
       payload:

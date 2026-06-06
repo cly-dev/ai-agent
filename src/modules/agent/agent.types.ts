@@ -77,3 +77,10 @@ export type AgentWithToolsResponse = Omit<AgentWithToolsRow, 'agentTools'> & {
   /** 中间表 + 嵌套 tool，与 list-api 约定一致 */
   agentTools: AgentToolBindingItem[];
 };
+
+/** C 端 Agent 列表项（仅展示基础信息） */
+export type AgentClientListItem = {
+  id: number;
+  name: string;
+  description: string | null;
+};

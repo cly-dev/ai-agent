@@ -1,3 +1,4 @@
+import { sanitizeTextForStorage } from '../llm-output-sanitize.util';
 import {
   messageBlockSchema,
   messageBlocksPayloadSchema,
@@ -80,6 +81,167 @@ export function stripMarkdownFenceForBlocksParse(text: string): string {
   return match ? match[1].trim() : trimmed;
 }
 
+function looksLikeMarkdownPipeTable(content: string): boolean {
+  const lines = content
+    .trim()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const pipeLines = lines.filter(
+    (line) => (line.match(/\|/g) ?? []).length >= 2,
+  );
+  return pipeLines.length >= 2;
+}
+
+function textEchoesRuleTable(
+  ruleBlocks: MessageBlock[],
+  content: string,
+): boolean {
+  const table = ruleBlocks.find(
+    (block): block is Extract<MessageBlock, { type: 'table' }> =>
+      block.type === 'table',
+  );
+  if (!table || !looksLikeMarkdownPipeTable(content)) {
+    return false;
+  }
+  const headerLine =
+    content
+      .trim()
+      .split('\n')
+      .find((line) => line.includes('|'))
+      ?.trim() ?? '';
+  if (!headerLine) {
+    return false;
+  }
+  const labelHits = table.columns.filter(
+    (column) =>
+      headerLine.includes(column.label) || headerLine.includes(column.key),
+  ).length;
+  return labelHits >= Math.min(2, table.columns.length);
+}
+
+function isOnlyMarkdownPipeTableEcho(content: string): boolean {
+  if (!looksLikeMarkdownPipeTable(content)) {
+    return false;
+  }
+  const lines = content
+    .trim()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const proseLines = lines.filter(
+    (line) =>
+      (line.match(/\|/g) ?? []).length < 2 &&
+      line.length >= 20 &&
+      !/^[-|:\s]+$/.test(line),
+  );
+  if (proseLines.length > 0) {
+    return false;
+  }
+  if (/^#{1,3}\s/m.test(content)) {
+    return false;
+  }
+  return true;
+}
+
+/** 去掉 text 中与 rule table 重复的 markdown pipe 表格，保留分析正文。 */
+export function normalizeSupplementaryTextContent(
+  content: string,
+  ruleBlocks: MessageBlock[],
+): string {
+  if (!ruleBlocks.some((block) => block.type === 'table')) {
+    return content.trim();
+  }
+  if (!looksLikeMarkdownPipeTable(content)) {
+    return content.trim();
+  }
+  const lines = content.split('\n');
+  const kept = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return true;
+    }
+    if ((trimmed.match(/\|/g) ?? []).length < 2) {
+      return true;
+    }
+    return !textEchoesRuleTable(ruleBlocks, trimmed);
+  });
+  return kept.join('\n').trim();
+}
+
+function isRedundantSummarizeTextBlock(
+  content: string,
+  ruleBlocks: MessageBlock[] = [],
+): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return true;
+  }
+  if (looksLikeBlocksJsonOutput(trimmed)) {
+    return true;
+  }
+  if (/^data\s*\|/im.test(trimmed) && trimmed.includes('[{"')) {
+    return true;
+  }
+  if (trimmed.startsWith('[{') && trimmed.includes('"id"')) {
+    return true;
+  }
+  if (isOnlyMarkdownPipeTableEcho(trimmed)) {
+    return true;
+  }
+  if (ruleBlocks.length > 0 && textEchoesRuleTable(ruleBlocks, trimmed)) {
+    return true;
+  }
+  return false;
+}
+
+/** 落库前去掉与 rule table 重复的 text block。 */
+export function stripRedundantSummarizeTextBlocks(
+  ruleBlocks: MessageBlock[],
+  blocks: MessageBlock[],
+): MessageBlock[] {
+  const hasRuleTable = ruleBlocks.some((block) => block.type === 'table');
+  if (!hasRuleTable) {
+    return blocks;
+  }
+  return blocks.filter((block) => {
+    if (block.type !== 'text') {
+      return true;
+    }
+    return !isRedundantSummarizeTextBlock(block.content, ruleBlocks);
+  });
+}
+
+/** summarize 落库 blocks：合并 rule + LLM，去掉重复 table/text。 */
+export function mergeSummarizeBlocksForStorage(
+  ruleBlocks: MessageBlock[],
+  llmBlocks: MessageBlock[],
+  fallbackPlainText: string,
+): MessageBlock[] {
+  const normalizedLlm = llmBlocks.map((block) => {
+    if (block.type !== 'text') {
+      return block;
+    }
+    const normalized = normalizeSupplementaryTextContent(
+      block.content,
+      ruleBlocks,
+    );
+    return normalized ? { ...block, content: normalized } : block;
+  });
+  const filteredLlm = filterLlmBlocksAvoidDuplicatingRule(
+    ruleBlocks,
+    normalizedLlm,
+  );
+  const fallback = ruleBlocks.some(isStructuredMessageBlock)
+    ? ''
+    : fallbackPlainText;
+  const merged = mergeMessageBlocks(
+    ruleBlocks,
+    ensureAtLeastOneTextBlock(filteredLlm, fallback),
+  );
+  return stripRedundantSummarizeTextBlocks(ruleBlocks, merged);
+}
+
 /** 避免 LLM 再输出与规则化结果同类型的 structured block。 */
 export function filterLlmBlocksAvoidDuplicatingRule(
   ruleBlocks: MessageBlock[],
@@ -88,7 +250,11 @@ export function filterLlmBlocksAvoidDuplicatingRule(
   const ruleStructuredTypes = new Set(
     ruleBlocks.filter(isStructuredMessageBlock).map((block) => block.type),
   );
+  const hasRuleTable = ruleBlocks.some((block) => block.type === 'table');
   return llmBlocks.filter((block) => {
+    if (block.type === 'text' && hasRuleTable) {
+      return !isRedundantSummarizeTextBlock(block.content, ruleBlocks);
+    }
     if (!isStructuredMessageBlock(block)) {
       return true;
     }
@@ -172,11 +338,61 @@ export function tryParseStoredMessageBlocks(
   }
 }
 
+function sanitizeMessageBlock(block: MessageBlock): MessageBlock {
+  switch (block.type) {
+    case 'text':
+      return { ...block, content: sanitizeTextForStorage(block.content) };
+    case 'quote':
+      return { ...block, content: sanitizeTextForStorage(block.content) };
+    case 'code':
+      return { ...block, content: sanitizeTextForStorage(block.content) };
+    case 'alert':
+      return {
+        ...block,
+        message: sanitizeTextForStorage(block.message),
+        title: block.title
+          ? sanitizeTextForStorage(block.title)
+          : block.title,
+      };
+    case 'list':
+      return {
+        ...block,
+        title: block.title
+          ? sanitizeTextForStorage(block.title)
+          : block.title,
+        items: block.items.map((item) => ({
+          ...item,
+          text: sanitizeTextForStorage(item.text),
+        })),
+      };
+    default:
+      return block;
+  }
+}
+
+/** 落库前逐 block 剥离思考标签内容。 */
+export function sanitizeMessageBlocks(blocks: MessageBlock[]): MessageBlock[] {
+  return normalizeMessageBlocks(blocks).map(sanitizeMessageBlock);
+}
+
 export function serializeMessageBlocksForStorage(
   blocks: MessageBlock[],
 ): string {
-  const normalized = normalizeMessageBlocks(blocks);
-  return JSON.stringify({ blocks: normalized });
+  const sanitized = sanitizeMessageBlocks(blocks);
+  return JSON.stringify({ blocks: sanitized });
+}
+
+/** 最终落库字符串：支持 message blocks JSON 与纯文本。 */
+export function sanitizeStoredFinalOutput(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+  const blocks = tryParseStoredMessageBlocks(trimmed);
+  if (blocks?.length) {
+    return serializeMessageBlocksForStorage(blocks);
+  }
+  return sanitizeTextForStorage(trimmed);
 }
 
 export function messageBlocksToPlainText(blocks: MessageBlock[]): string {
@@ -269,27 +485,101 @@ export function mergeMessageBlocks(
   return normalizeMessageBlocks(merged);
 }
 
-function extractListRows(output: unknown): Record<string, unknown>[] {
-  if (Array.isArray(output)) {
-    return output.filter(
-      (row): row is Record<string, unknown> =>
-        row != null && typeof row === 'object' && !Array.isArray(row),
-    );
-  }
-  if (!output || typeof output !== 'object') {
+const LIST_ROW_KEYS = ['data', 'list', 'items', 'records', 'rows'] as const;
+const LIST_META_KEYS = new Set([
+  'total',
+  'count',
+  'page',
+  'pageSize',
+  'pages',
+  'matchedCount',
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function looksLikeListContainer(row: Record<string, unknown>): boolean {
+  return LIST_ROW_KEYS.some((key) => {
+    const candidate = row[key];
+    return Array.isArray(candidate) && candidate.length > 0;
+  });
+}
+
+function normalizeListRowCandidate(item: unknown): Record<string, unknown>[] {
+  if (!isRecord(item)) {
     return [];
   }
-  const row = output as Record<string, unknown>;
-  for (const key of ['data', 'list', 'items', 'records', 'rows']) {
-    const candidate = row[key];
+  if (Object.keys(item).length === 0) {
+    return [];
+  }
+  if (looksLikeListContainer(item)) {
+    return extractListRows(item);
+  }
+  return [item];
+}
+
+function normalizeListRowObjects(items: unknown[]): Record<string, unknown>[] {
+  const merged: Record<string, unknown>[] = [];
+  for (const item of items) {
+    merged.push(...normalizeListRowCandidate(item));
+  }
+  return merged;
+}
+
+/** 从工具输出（含分页容器或多段合并结果）提取表格行。 */
+export function extractListRowsFromToolOutput(
+  output: unknown,
+): Record<string, unknown>[] {
+  if (Array.isArray(output)) {
+    return normalizeListRowObjects(output);
+  }
+  if (!isRecord(output)) {
+    return [];
+  }
+  for (const key of LIST_ROW_KEYS) {
+    const candidate = output[key];
     if (Array.isArray(candidate) && candidate.length > 0) {
-      return candidate.filter(
-        (item): item is Record<string, unknown> =>
-          item != null && typeof item === 'object' && !Array.isArray(item),
-      );
+      return normalizeListRowObjects(candidate);
     }
   }
   return [];
+}
+
+/** 多工具观测合并为单一列表容器，供 summarize / 规则化 table 使用。 */
+export function mergeToolOutputsForSummary(outputs: unknown[]): unknown {
+  if (outputs.length === 0) {
+    return null;
+  }
+  if (outputs.length === 1) {
+    return outputs[0];
+  }
+  const rows: Record<string, unknown>[] = [];
+  let total: number | undefined;
+  for (const output of outputs) {
+    rows.push(...extractListRowsFromToolOutput(output));
+    if (isRecord(output) && typeof output.total === 'number') {
+      total = Math.max(total ?? 0, output.total);
+    }
+  }
+  if (rows.length === 0) {
+    return outputs;
+  }
+  return {
+    data: rows,
+    total: total ?? rows.length,
+  };
+}
+
+function extractListRows(output: unknown): Record<string, unknown>[] {
+  return extractListRowsFromToolOutput(output);
+}
+
+function isContainerOnlyColumnKeys(keys: string[]): boolean {
+  const meaningful = keys.filter(
+    (key) => key !== 'data' && !LIST_META_KEYS.has(key),
+  );
+  return meaningful.length === 0;
 }
 
 function labelForKey(
@@ -299,25 +589,52 @@ function labelForKey(
   return fieldLabels[key] ?? fieldLabels[`data.${key}`] ?? key;
 }
 
+function formatTableCellValue(val: unknown): string {
+  if (val == null) {
+    return '';
+  }
+  if (Array.isArray(val)) {
+    if (val.length === 0) {
+      return '';
+    }
+    if (
+      val.every(
+        (item) =>
+          item != null &&
+          typeof item === 'object' &&
+          !Array.isArray(item) &&
+          'type' in (item as Record<string, unknown>),
+      )
+    ) {
+      return String(val.length);
+    }
+    return JSON.stringify(val);
+  }
+  if (typeof val === 'object') {
+    return JSON.stringify(val);
+  }
+  return String(val);
+}
+
 export function tryBuildTableBlockFromOutput(
   output: unknown,
   fieldLabels: Record<string, string>,
   maxRows = 50,
 ): MessageBlock | null {
   const rows = extractListRows(output);
-  if (rows.length < 2) {
+  if (rows.length < 1) {
     return null;
   }
   const keys = new Set<string>();
   for (const row of rows.slice(0, 5)) {
     for (const key of Object.keys(row)) {
-      if (!key.startsWith('_')) {
+      if (!key.startsWith('_') && !LIST_META_KEYS.has(key)) {
         keys.add(key);
       }
     }
   }
   const columnKeys = [...keys].slice(0, 12);
-  if (columnKeys.length === 0) {
+  if (columnKeys.length === 0 || isContainerOnlyColumnKeys(columnKeys)) {
     return null;
   }
   const columns: TableColumn[] = columnKeys.map((key) => ({
@@ -327,13 +644,7 @@ export function tryBuildTableBlockFromOutput(
   const data = rows.slice(0, maxRows).map((row) => {
     const out: Record<string, unknown> = {};
     for (const key of columnKeys) {
-      const val = row[key];
-      out[key] =
-        val == null
-          ? ''
-          : typeof val === 'object'
-            ? JSON.stringify(val)
-            : String(val);
+      out[key] = formatTableCellValue(row[key]);
     }
     return out;
   });

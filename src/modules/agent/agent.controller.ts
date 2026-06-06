@@ -16,6 +16,7 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiHeader,
   ApiQuery,
   ApiResponse,
   ApiSecurity,
@@ -23,7 +24,9 @@ import {
 } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AppClientDsnGuard } from '../../auth/app-client-dsn.guard';
+import { APP_CLIENT_DSN_HEADER } from '../../auth/app-client-dsn.constants';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { UserJwtAuthGuard } from '../../auth/user-jwt-auth.guard';
 import { AgentService } from './agent.service';
 import { BindAgentToolsDto } from './dto/bind-agent-tools.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
@@ -65,6 +68,24 @@ export class AgentController {
   @ApiResponse({ status: 200, description: '查询成功' })
   findByAppClient(@Param('appClientId', ParseIntPipe) appClientId: number) {
     return this.service.findByAppClientId(appClientId);
+  }
+
+  @Get('client/list')
+  @UseGuards(UserJwtAuthGuard, AppClientDsnGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('app-dsn')
+  @ApiHeader({
+    name: APP_CLIENT_DSN_HEADER,
+    description: '业务方 DSN',
+    required: true,
+  })
+  @ApiOperation({
+    summary: 'C 端：查询当前 App 下的 Agent 列表',
+    description: '返回 id、name、description；需用户 JWT + x-app-dsn',
+  })
+  @ApiResponse({ status: 200, description: '查询成功' })
+  listForClient(@Req() req: Request) {
+    return this.service.findClientListByAppClientId(this.appClientId(req));
   }
 
   @Get(':agentId/app-client/:appClientId/tools')

@@ -7,7 +7,12 @@ import type {
   BuiltLangChainTools,
   ToolBuildContext,
 } from '../tool-engine/tool-engine.types';
+import {
+  readBindToolsTierConfig,
+  resolveBindToolsTopK,
+} from './bind-tools-tier.util';
 import { CategoryIntentRecallService } from './category-intent-recall.service';
+import { IntentRecallConfigService } from './intent-recall-config.service';
 import { detectIntentKind as classifyIntentKind } from '../agent-engine/intent-kind.util';
 import {
   buildIntentClarificationGuidance,
@@ -40,6 +45,7 @@ export class IntentScopeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly categoryIntentRecall: CategoryIntentRecallService,
+    private readonly intentRecallConfig: IntentRecallConfigService,
     private readonly toolEngine: ToolEngineService,
   ) {}
 
@@ -215,6 +221,9 @@ export class IntentScopeService {
       };
     };
     const metadataScoped = filterToolsByAgentMetadata(tools, userMessage);
+    const recallSettings = await this.intentRecallConfig.get();
+    const tierCfg = readBindToolsTierConfig(recallSettings);
+    const bindTier = resolveBindToolsTopK(metadataScoped.length, tierCfg);
     try {
       const bindRecall = await this.categoryIntentRecall.recallTopToolsForBind(
         metadataScoped.map((tool) => ({
@@ -225,7 +234,7 @@ export class IntentScopeService {
           agentMetadata: tool.agentMetadata,
         })),
         userMessage,
-        undefined,
+        bindTier.topK,
         preferredCategoryIds,
       );
       const toolById = new Map(metadataScoped.map((tool) => [tool.id, tool]));
@@ -241,19 +250,24 @@ export class IntentScopeService {
             allowedToolIds: scopedIds,
           })
         : null;
-      const bindCap = bindRecall.capped
-        ? {
-            before: tools.length,
-            after: effectiveTools.length,
-            source: bindRecall.source,
-            matches: bindRecall.matches.map((item) => ({
-              id: item.id,
-              name: item.name,
-              score: Number(item.score.toFixed(4)),
-              source: item.source,
-            })),
-          }
-        : undefined;
+      const bindCap =
+        bindRecall.capped || bindTier.recallRequired
+          ? {
+              before: metadataScoped.length,
+              after: effectiveTools.length,
+              source: bindRecall.source,
+              tier: bindTier.tier,
+              tierTopK: bindTier.topK,
+              recallRequired: bindTier.recallRequired,
+              matches: bindRecall.matches.map((item) => ({
+                id: item.id,
+                name: item.name,
+                ...(item.description ? { description: item.description } : {}),
+                score: Number(item.score.toFixed(4)),
+                source: item.source,
+              })),
+            }
+          : undefined;
       return {
         scopedTools: effectiveTools,
         scopedLangChainTools: scopedToolBundle?.tools ?? [],

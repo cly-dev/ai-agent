@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
-import { Prisma } from '../../../generated/prisma/client';
+import { Prisma, UserStatus } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
@@ -131,6 +131,7 @@ export class UserService {
           email,
           password: hashedPassword,
           username,
+          status: data.status,
           mustChangePassword: password !== undefined ? false : undefined,
         },
       });
@@ -180,6 +181,7 @@ export class UserService {
       where: { employeeId },
     });
     if (existing) {
+      this.assertUserIsActive(existing.status);
       const updated = await this.prisma.user.update({
         where: { id: existing.id },
         data: { email, username },
@@ -211,6 +213,12 @@ export class UserService {
     });
   }
 
+  assertUserIsActive(status: UserStatus): void {
+    if (status !== UserStatus.ACTIVE) {
+      throw new UnauthorizedException('user account is disabled');
+    }
+  }
+
   private toSafeUser<T extends { password: string }>(
     user: T,
   ): Omit<T, 'password'> {
@@ -236,6 +244,7 @@ export class UserService {
     if (!verified) {
       throw new UnauthorizedException('invalid email or password');
     }
+    this.assertUserIsActive(user.status);
 
     const payload = {
       sub: user.id,

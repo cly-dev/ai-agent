@@ -1,0 +1,32 @@
+---
+description: Do not hardcode locale-specific intent/smalltalk matching in agent code
+alwaysApply: true
+---
+
+# No Hardcoded Intent / Smalltalk Matching
+
+Agent、intent、skill 相关 **TypeScript 代码** 中禁止硬编码：
+
+- 特定语言的关键词、寒暄句、正则表达式
+- 中英文问候/感谢/身份问句等 phrase list
+- 按 locale 写死的 `if (message.includes('你好'))` 类逻辑
+
+## 正确做法
+
+| 需求 | 配置位置 |
+|------|----------|
+| 闲聊 / smalltalk 短语 | `src/core/intent/smalltalk-hints.json`（通过 `loadSmallTalkHints()` 加载） |
+| 意图召回阈值、跳过规则 | 环境变量 + `IntentRecallConfig` / skill recall config |
+| 复杂意图分类 | LLM prompt / structured output，或向量召回 |
+| 租户/站点差异 | DB 配置、Prompt 模板，而非代码分支 |
+
+## 实现约束
+
+- `detectIntentKind()` 只消费外部传入的 `configurableHints`，不在 util 内维护语言词表。
+- 新增寒暄或意图规则时：**改 JSON / env / DB / prompt**，不要改 agent 引擎里的匹配逻辑。
+- Code review：若 PR 在 `src/core/agent-engine/`、`src/core/intent/`、`src/core/skill/` 引入固定语句或 regex 词表，应拒绝并改为配置化。
+
+## 参考
+
+- 闲聊 hint 配置：`src/core/intent/smalltalk-hints.json`
+- 意图模块说明：`src/core/intent/intent.md` →「Smalltalk 分类」

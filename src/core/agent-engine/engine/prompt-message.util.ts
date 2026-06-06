@@ -1,4 +1,4 @@
-import type { LlmChatMessage } from '../llm/llm.types';
+import type { LlmChatMessage } from '../../llm/llm.types';
 
 export function isAgentPromptMessage(message: LlmChatMessage): boolean {
   return (

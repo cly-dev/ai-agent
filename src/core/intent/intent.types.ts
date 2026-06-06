@@ -54,6 +54,7 @@ export type CategoryRecallResult = {
 export type ToolBindRecallMatch = {
   id: number;
   name: string;
+  description?: string;
   score: number;
   source: 'vector' | 'keyword';
 };

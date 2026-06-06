@@ -44,6 +44,11 @@ enum AgentRunRole {
   reviewer
 }
 
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
 enum IntegrationAuthMode {
   USER_ONLY
   SYSTEM_ONLY
@@ -63,6 +68,7 @@ model User {
   email              String
   password           String
   username           String
+  status             UserStatus @default(ACTIVE)
   mustChangePassword Boolean   @default(true)
   createdAt          DateTime  @default(now())
 

@@ -1,5 +1,26 @@
 import { PROMPT_KEYS, type PromptTemplateKey } from './prompt-template.keys';
 
+/** summarize 阶段 Message Blocks / table 硬性约束（tool 与 direct 路径共用）。 */
+const AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH = `
+表格与列表（硬性）：
+- 若 user 消息中 Suggested rule-based blocks 已含 type=table，禁止再输出 type=table
+- 禁止把 Tool result 原样 JSON.stringify 或整段 JSON 放进 table 单元格
+- table.columns 必须是业务字段（如 id、title、content），每行一条记录；禁止用 data/total 两列包装整段列表 JSON
+- 总记录数（total/count）用 metric block 或一句 text 说明，不要与列表明细拼在同一张 table
+补充内容（按 User request 自行推理，勿依赖固定话术匹配）：
+- Suggested rule-based blocks 已提供 table/chart 时，仍需根据用户目标补全其余 block（如 text 分析/说明、metric、alert）
+- 表格只承担明细展示；用户若还要报告、解读、建议、对比、风险等，用独立 text block（可 markdown 分节）表达，勿用 markdown pipe 表格重复明细`;
+
+const AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN = `
+Message Blocks / table guardrails (when Suggested rule-based blocks may be present):
+- If Suggested rule-based blocks already include type=table, do NOT output another type=table block
+- Never JSON.stringify the Tool result or paste raw JSON into table cells
+- table.columns must be business fields (id, title, content, …), one row per record; never use data/total columns to wrap an entire list JSON blob
+- Put total/count in a metric block or a short text sentence — not in the same table as list rows
+Follow-up blocks (infer from User request — no fixed phrase matching):
+- When Suggested rule-based blocks already include table/chart, still output additional blocks the user needs (text analysis/explanation, metric, alert, etc.)
+- Table shows row-level facts only; if the user also wants a report, interpretation, recommendations, or risks, add separate text block(s) — never duplicate the table as a markdown pipe table`;
+
 /**
  * 代码兜底：DB/Redis 查不到 active 行时使用（与 `ensureGlobalPromptTemplates` 初始写入一致）。
  * 正常运行时应优先读 DB；新环境首次启动或 `pnpm run db:seed` 会自动补齐 DB。
@@ -58,28 +79,34 @@ Strictly answer based on the provided tool result.
 Do not propose new operations or call new tools.
 Do not output raw JSON — write a concise natural-language summary for the user.
 Use field labels and enum mappings when interpreting values.
-Reply in the same language as the user request. Output final answer only.`,
+Reply in the same language as the user request. Output final answer only.
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN}`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_TOOL_FULL]: `You are a response formatter for tool results.
 The user requested FULL / detailed information.
 Strictly answer only from the provided tool result — do not invent values.
 Do not propose new operations or call new tools.
 Use Markdown sections (## headings). Include nested arrays and related entities when present in the data.
-Do not output raw JSON. Reply in the same language as the user request.`,
+Do not output raw JSON. Reply in the same language as the user request.
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN}`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_READ]: `You are summarizing a READ-ONLY tool result for the user.
+Output {"blocks":[...]} per platform.message_blocks_spec (not plain prose only).
+Infer from User request what blocks are needed beyond raw listing — e.g. text explanation, report-style analysis, metric for totals, alert for risks.
+When Suggested rule-based blocks already include table/chart, keep those for facts and add separate non-duplicative blocks for the user's remaining goals.
 Focus on: what was found, key field values, and evidence from the tool result (cite field labels when helpful).
 Do not propose new operations or call new tools.
-Do not output raw JSON — write concise natural language in the same language as the user request.
+Do not output raw JSON. Reply in the same language as the user request.
 If the tool result is empty or insufficient, state clearly what is missing and what the user can try next.
-Output final answer only.`,
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN}`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_ACTION]: `You are summarizing a WRITE / ACTION tool result for the user.
 Focus on: what was executed, whether it succeeded, impact on data, and any risks.
 If the operation changed state, mention rollback or undo options when applicable (e.g. revert, cancel, restore).
 Do not invent outcomes not present in the tool result.
 Do not output raw JSON — write concise natural language in the same language as the user request.
-Output final answer only.`,
+Output final answer only.
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN}`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK]: `This is small talk. Reply naturally and concisely in the same language as the user. Do not call tools. Do not ask for business parameters.`,
 
@@ -93,6 +120,9 @@ quote: { type, content, source?, url? }
 code: { type, language?, filename?, content }
 chart: { type, chartType: bar|line|pie, title?, xAxis:string[], series:[{name, values:number[]}] }
 table: { type, title?, columns:[{key,label,align?}], data:[Record] }
+  - columns.key 必须是列表元素上的业务字段（id、title、status…），每行一条记录
+  - 禁止用 data/total 两列把整段 Tool result 或 JSON 字符串塞进单元格
+  - 分页 total/count 不要与明细列表同表：用 metric 或 text 单独展示
 metric: { type, items:[{label,value,delta?,trend?:up|down|flat}] }
 alert: { type, severity: info|warning|error|success, title?, message }
 image: { type, url, alt?, caption?, width? }
@@ -102,6 +132,7 @@ loading: { type, id, hint? }（SSE 占位；后续 action=patch 按 replaceId �
 - 多条同构记录（≥2 行）→ 优先 table；用户要图表且能抽出数值序列 → chart
 - 少量 KPI → metric；错误/空结果/风险 → alert
 - 叙述、解释、全量详情 → text（markdown）；可与其他 block 组合（如 text + table）
+- 若上游已提供 rule-based table（Suggested rule-based blocks），勿再输出 type=table；按 User request 推断是否还需 text/metric/alert 等补充 block
 禁止编造工具结果中不存在的字段或数值；禁止输出原始 JSON 给用户。
 </message_blocks_spec>`,
 
@@ -113,8 +144,9 @@ loading: { type, id, hint? }（SSE 占位；后续 action=patch 按 replaceId �
 - 用户明确要求图表/趋势：在数据支持时用 chart
 - 写操作结果：text 说明执行情况；失败或风险用 alert
 - 闲聊：通常单个 text block，简洁中文
-- 与已有规则化 table/chart block 并存时，避免重复同一张表
-- 字段名展示用提供的字段说明，勿臆造 label`,
+- 与已有规则化 table/chart block 并存时，避免重复同一张表；根据 User request 补全其目标所需的 text/metric/alert 等 block
+- 字段名展示用提供的字段说明，勿臆造 label
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
   [PROMPT_KEYS.MEMORY_HISTORY_COMPRESSION]: `你是多轮对话历史压缩器。将较早的对话整理成简洁中文摘要，供后续轮次参考。
 保留：用户目标、已确认事实、商品/订单等实体 ID、工具调用结论、未解决问题。
 丢弃：寒暄、重复、冗长 JSON、已过时且与当前任务无关的细节。

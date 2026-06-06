@@ -62,7 +62,10 @@ export class UserAdminController {
   @Patch(':id')
   @AdminRoles(AdminRole.OPERATOR)
   @ApiParam({ name: 'id', type: Number })
-  @ApiOperation({ summary: '更新业务用户' })
+  @ApiOperation({
+    summary: '更新业务用户',
+    description: '可更新邮箱/用户名/密码；status=DISABLED 可禁用 C 端账号',
+  })
   @ApiResponse({ status: 200, description: '更新成功' })
   @ApiResponse({ status: 404, description: '用户不存在' })
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateUserDto) {

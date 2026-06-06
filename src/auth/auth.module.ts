@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { PrismaModule } from '../prisma/prisma.module';
 import { AdminPrefixJwtGuard } from './admin-prefix-jwt.guard';
 import { AdminRoleGuard } from './admin-role.guard';
 import { AppClientDsnGuard } from './app-client-dsn.guard';
@@ -10,6 +11,7 @@ import { UserJwtAuthGuard } from './user-jwt-auth.guard';
 
 @Module({
   imports: [
+    PrismaModule,
     PassportModule,
     JwtModule.register({
       secret: jwtConstants.secret,

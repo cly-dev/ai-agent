@@ -371,12 +371,16 @@ export class CategoryIntentRecallService {
     source: ToolBindRecallResult['source'],
     capped: boolean,
   ): ToolBindRecallResult {
-    const matches: ToolBindRecallMatch[] = ranked.map((item) => ({
-      id: item.tool.id,
-      name: item.tool.name,
-      score: item.score,
-      source: item.source,
-    }));
+    const matches: ToolBindRecallMatch[] = ranked.map((item) => {
+      const description = item.tool.description?.trim();
+      return {
+        id: item.tool.id,
+        name: item.tool.name,
+        ...(description ? { description } : {}),
+        score: item.score,
+        source: item.source,
+      };
+    });
     return {
       tools: ranked.map((item) => item.tool),
       matches,

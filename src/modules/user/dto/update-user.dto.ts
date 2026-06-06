@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { UserStatus } from '../../../../generated/prisma/client';
+import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class UpdateUserDto {
   @ApiPropertyOptional({
@@ -23,4 +24,13 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   username?: string;
+
+  @ApiPropertyOptional({
+    description: '账号状态：ACTIVE=启用，DISABLED=禁用',
+    enum: UserStatus,
+    example: UserStatus.DISABLED,
+  })
+  @IsOptional()
+  @IsEnum(UserStatus)
+  status?: UserStatus;
 }

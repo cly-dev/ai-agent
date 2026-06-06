@@ -22,6 +22,7 @@ import {
   AGENT_WITH_TOOLS_INCLUDE,
   type AgentToolsBindingResponse,
   type AgentToolsPageResponse,
+  type AgentClientListItem,
 } from './agent.types';
 import {
   buildAgentToolBindingsOrderBy,
@@ -126,6 +127,22 @@ export class AgentService {
     return this.prisma.agent.findMany({
       where: { appClientId },
       orderBy: { id: 'asc' },
+    });
+  }
+
+  /** C 端：当前 AppClient 下的 Agent 摘要列表。 */
+  async findClientListByAppClientId(
+    appClientId: number,
+  ): Promise<AgentClientListItem[]> {
+    await this.assertAppClientExists(appClientId);
+    return this.prisma.agent.findMany({
+      where: { appClientId },
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+      },
     });
   }
 

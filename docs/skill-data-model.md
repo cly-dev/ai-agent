@@ -31,11 +31,10 @@ Role
 - **Skill.riskLevel**、**Tool.riskLevel** 使用同一枚举 `L1 | L2 | L3`。
 - 创建/替换 SkillTool 时，若未传 `riskLevel`，按关联 Tool 的最高档自动推断。
 - 响应字段 **`requiresWriteConfirmation`**：`riskLevel` 为 L2/L3 时为 true（Skill）；Tool 另计 `isMutation` 元数据。
-- **运行时**：拟执行写操作 Tool 时暂停；SSE `action: confirmation_required` 仅含 `message`（不返回 Tool 列表），前端弹窗「确认 / 取消」即可。
-  - 确认：`POST .../messages` 且 `confirmWrite: true`（`content` 可为空）
-  - 取消：`cancelWrite: true`（清除待执行缓存，不调用 Tool；无 pending 时不推送 SSE）
-  - 过期确认：无 pending 时 SSE `error`，`code: WRITE_CONFIRMATION_EXPIRED`
-  - 用户改问其它问题（普通新消息）：服务端自动清除未确认的 pending
+- **运行时**：拟执行写操作 Tool 时暂停；Redis 存 `resumeContext`（steps、observations、scopedToolIds、`skillApplied`、`activeSkillPrompt` 等）+ 待写 `toolCalls`；SSE `confirmation_required` 仅含 `message`。
+  - 确认：`confirmWrite: true` → `resumeAfterWriteConfirm`：先执行写 Tool，再开第二轮 graph（`llm ⇄ tools ⇄ summarize`，同一 turn 下 `worker` run）。
+  - 新消息：仅 `run()`，并 `clear` 未确认 pending。
+  - 取消：`cancelWrite: true`；过期确认：`WRITE_CONFIRMATION_EXPIRED`。
 
 ## 响应展示字段
 
@@ -47,6 +46,18 @@ Role
 2. **SkillTool 配置**：`toolId` 必须已绑定到该 Agent 的 `AgentTool`，且 Tool 属于同一 `appClientId`。
 3. **`capabilityKey`**：可选，同一 Agent 内唯一；供后续 Role 按能力键授权（未接运行时）。
 4. **删除 Agent**：级联删除其下全部 Skill。
+
+## 运行时（LangGraph）
+
+```text
+preCheck → skill → llm（命中） / intent|llm（未命中）
+```
+
+- `SkillService.resolveForRun`：按 `UserApp.roleId` 可选 `RoleSkill` 白名单 → **向量 Top-1**（路由文本 `name + capabilityKey + description`）→ 失败或未配置 embedding 时 **关键词降级** → `allowed ∩ skillTools` gate。
+- 命中：写 `step.type=skill`，跳过 intent，`scopedTools` 为 gate 结果，`skill.prompt` 注入决策 prompt（`<active_skill>`）；`recallSource` 为 `vector` | `keyword`。
+- 未命中：走原 intent / bind 召回逻辑。
+- 向量阈值：默认 `max(IntentRecallConfig.vectorMinScore, 0.38)`；`SKILL_VECTOR_MIN_SCORE` 可覆盖。关键词：`SKILL_KEYWORD_MIN_SCORE`（默认 `0.35`，仅用 name/capabilityKey/description）。多候选需 Top-1 领先 ≥ `SKILL_RECALL_MIN_GAP`（默认 `0.08`）；单候选需 ≥ `SKILL_SINGLE_MIN_SCORE`（默认 `0.42`）。闲聊/过短 query 跳过 skill。召回模式与 intent 共用 `IntentRecallConfigService`。
+- 写确认续跑：Redis `resumeContext` 含 `skillApplied` / `activeSkillPrompt`，确认后第二轮 LLM 仍注入 `<active_skill>`；skill 命中时不触发「放宽工具范围」expand-once。
 
 ## 迁移
 

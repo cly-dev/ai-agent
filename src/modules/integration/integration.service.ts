@@ -269,16 +269,16 @@ export class IntegrationService {
     }
   }
 
-  private normalizeOptionalSecret(value?: string): string | null {
-    if (value === undefined) {
+  private normalizeOptionalSecret(value?: string | null): string | null {
+    if (value == null) {
       return null;
     }
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  private normalizeOptionalText(value?: string): string | null {
-    if (value === undefined) {
+  private normalizeOptionalText(value?: string | null): string | null {
+    if (value == null) {
       return null;
     }
     const trimmed = value.trim();

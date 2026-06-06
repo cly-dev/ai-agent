@@ -3,6 +3,7 @@ import { LlmModule } from '../llm/llm.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { ToolEngineModule } from '../tool-engine/tool-engine.module';
 import { CategoryIntentRecallService } from './category-intent-recall.service';
+import { IntentRecallConfigCacheStore } from './intent-recall-config-cache.store';
 import { IntentRecallConfigService } from './intent-recall-config.service';
 import { IntentScopeService } from './intent-scope.service';
 
@@ -13,6 +14,7 @@ import { IntentScopeService } from './intent-scope.service';
 @Module({
   imports: [LlmModule, PrismaModule, ToolEngineModule],
   providers: [
+    IntentRecallConfigCacheStore,
     IntentRecallConfigService,
     CategoryIntentRecallService,
     IntentScopeService,

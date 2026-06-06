@@ -1,8 +1,8 @@
-import type { ToolLevel } from '../../../generated/prisma/client';
+import type { ToolLevel } from '../../../../generated/prisma/client';
 import {
   resolveToolWriteConfirmationReason,
   toolRequiresWriteConfirmation,
-} from '../risk/risk-level.util';
+} from '../../risk/risk-level.util';
 
 export type WriteConfirmationToolCall = {
   name: string;

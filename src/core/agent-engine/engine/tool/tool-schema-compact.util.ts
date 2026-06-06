@@ -7,16 +7,18 @@ import {
   extractProvidesFromResponseProfile,
   parseAgentMetadata,
   resolveToolDecisionRole,
-} from '../../tool-engine/tool-agent-metadata.util';
+} from '../../../tool-engine/tool-agent-metadata.util';
 import {
   buildCompactToolInput,
   listRequiredParamNames,
-} from '../../tool-engine/tool-decision-input.util';
-import { parseResponseProfile } from '../../tool-engine/tool-output-projection.util';
-import type { ToolDecisionRole } from '../../tool-engine/tool-decision-role.enum';
+} from '../../../tool-engine/tool-decision-input.util';
+import { parseResponseProfile } from '../../../tool-engine/tool-output-projection.util';
+import type { ToolDecisionRole } from '../../../tool-engine/tool-decision-role.enum';
 
 export type ToolSchemaCompact = {
   name: string;
+  /** 工具说明（bind 后写入 decision <tool_schema>，供模型选型） */
+  description?: string;
   role: ToolDecisionRole;
   resource?: string;
   operation?: string;
@@ -98,9 +100,11 @@ export function summarizeToolsForLlmSchema(
     );
     const filters = meta?.isMutation ? undefined : extractFilterNames(input);
     const returns = extractReturnFields(tool.responseProfile, provides);
+    const description = tool.description?.trim();
 
     const row: ToolSchemaCompact = {
       name: tool.name,
+      ...(description ? { description } : {}),
       role,
       ...(meta?.resource ? { resource: meta.resource } : {}),
       ...(meta?.operation ? { operation: meta.operation } : {}),

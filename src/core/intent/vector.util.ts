@@ -102,7 +102,7 @@ export function keywordRecallScore(
  * - 英文/数字词按自然词切分；
  * - 中文补充双字词（如“商品详情”->“商品”“品详”“详情”），提升业务词命中概率。
  */
-function tokenizeKeywordQuery(query: string): string[] {
+export function tokenizeKeywordQuery(query: string): string[] {
   const normalized = query.toLowerCase();
   const baseTokens = normalized
     .split(/[\s,，。！？!?、；;:：()（）【】\[\]{}<>《》"'`~\-_/\\|]+/)

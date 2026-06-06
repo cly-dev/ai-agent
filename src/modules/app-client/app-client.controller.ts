@@ -54,7 +54,7 @@ export class AppClientController {
   @ApiHeader({
     name: 'x-account-token',
     description:
-      '业务系统账号 token（必填）；外部账号校验通过且用户已绑定当前 App 时返回 accessToken',
+      '业务系统账号 token（必填）；外部账号校验通过后自动建档 User，并在无 UserApp 时绑定当前 App（默认 operator 角色）',
     required: true,
   })
   @ApiResponse({
@@ -63,7 +63,7 @@ export class AppClientController {
   })
   @ApiResponse({
     status: 401,
-    description: 'token 无效、账号未激活或用户未绑定当前 App',
+    description: 'token 无效或账号未激活',
   })
   authenticate(@Req() req: Request) {
     const raw = req.headers['x-account-token'];

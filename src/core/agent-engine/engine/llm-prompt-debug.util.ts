@@ -1,10 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { LlmChatMessage } from '../llm/llm.types';
+import type { LlmChatMessage } from '../../llm/llm.types';
 import {
   estimateMessageTokens,
   estimateMessagesTokens,
-} from '../llm/message-token-budget.util';
+} from '../../llm/message-token-budget.util';
 
 export type LlmPromptDebugPhase =
   | 'decision'

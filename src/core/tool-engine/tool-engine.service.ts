@@ -117,7 +117,9 @@ export class ToolEngineService {
       tool.inputSchema,
       tool.schema,
     );
-    let input = applyToolParameterDefaults(options.parameters ?? {}, specs);
+    let input = applyToolParameterDefaults(options.parameters ?? {}, specs, {
+      agentMetadata: tool.agentMetadata,
+    });
     input = sanitizeToolInvokeInput(input, specs);
 
     const apiKey =
@@ -253,6 +255,7 @@ export class ToolEngineService {
           authMode: tool.integration.authMode,
           apiKey: tool.integration.apiKey,
         },
+        agentMetadata: tool.agentMetadata,
       },
       input,
       userId,
@@ -271,7 +274,9 @@ export class ToolEngineService {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const specs = this.loadOpenApiParameterSpecs(def.inputSchema, def.schema);
-      input = applyToolParameterDefaults(input, specs);
+      input = applyToolParameterDefaults(input, specs, {
+        agentMetadata: def.agentMetadata,
+      });
       input = sanitizeToolInvokeInput(input, specs);
 
       const userIntegration = await this.prisma.userIntegration.findUnique({

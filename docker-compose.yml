@@ -1,0 +1,72 @@
+# Local dev: PostgreSQL + Redis for agent-server
+#
+# Start:
+#   docker compose up -d
+#
+# Stop:
+#   docker compose down
+#
+# Reset data:
+#   docker compose down -v
+#
+# After first start, run migrations & seed (with .env pointing at localhost):
+#   npx prisma migrate deploy
+#   npm run db:seed
+#
+# Default credentials match .env.example:
+#   DATABASE_URL=postgresql://user:pass@localhost:5432/agent
+#   REDIS_URL=redis://localhost:6379
+#
+# Redis Commander UI: http://localhost:8081
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: agent-server-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: agent
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U user -d agent']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: agent-server-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: agent-server-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - '8081:8081'
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:

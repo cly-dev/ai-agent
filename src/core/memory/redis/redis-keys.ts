@@ -19,3 +19,13 @@ export function sessionPrepareKey(sessionId: string): string {
 export function pendingWriteConfirmationKey(sessionId: string): string {
   return `${REDIS_KEY_PREFIX}pending-write:${sessionId}`;
 }
+
+/** 当前启用的 chat LlmModelConfig（按 kind 单活跃行）。 */
+export function llmModelConfigActiveKey(kind: string): string {
+  return `${REDIS_KEY_PREFIX}config:llm:${kind}:active`;
+}
+
+/** IntentRecallConfig singletonKey=1 */
+export function intentRecallConfigKey(): string {
+  return `${REDIS_KEY_PREFIX}config:intent-recall:1`;
+}

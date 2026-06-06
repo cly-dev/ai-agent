@@ -1,8 +1,8 @@
 import {
   estimateMessagesTokens,
   estimateTextTokens,
-} from '../llm/message-token-budget.util';
-import type { LlmChatMessage } from '../llm/llm.types';
+} from '../../llm/message-token-budget.util';
+import type { LlmChatMessage } from '../../llm/llm.types';
 import type { AgentMachineCode } from './agent-run-user-messages.util';
 
 /** 单次 AgentRun / MessageTurn 执行过程的用量累加器。 */

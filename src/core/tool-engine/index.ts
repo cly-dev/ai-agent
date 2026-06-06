@@ -14,6 +14,7 @@ export {
   sanitizeToolInvokeInput,
   type OpenApiParamSpec,
 } from './tool-input-sanitize.util';
+export { applyListPaginationDefaults } from './tool-list-pagination-defaults.util';
 export {
   formatFieldLabelsForPrompt,
   parseResponseProfile,

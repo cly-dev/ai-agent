@@ -21,6 +21,7 @@ export type ToolExecutionDefinition = ToolDefinitionInput & {
   path: string;
   timeout: number | null;
   integration: ToolIntegrationDefinition;
+  agentMetadata?: unknown;
 };
 
 export type ToolBuildContext = {

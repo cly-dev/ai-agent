@@ -93,11 +93,21 @@ export class PendingWriteConfirmationStore {
       if (
         parsed.sessionId !== sessionId ||
         parsed.userId !== userId ||
-        !Array.isArray(parsed.toolCalls)
+        !Array.isArray(parsed.toolCalls) ||
+        !parsed.resumeContext ||
+        !Array.isArray(parsed.resumeContext.steps) ||
+        !Array.isArray(parsed.resumeContext.toolObservations) ||
+        !Array.isArray(parsed.resumeContext.scopedToolIds)
       ) {
         return null;
       }
-      return parsed;
+      return {
+        ...parsed,
+        resumeContext: {
+          ...parsed.resumeContext,
+          hasExpandedOnce: parsed.resumeContext.hasExpandedOnce === true,
+        },
+      };
     } catch {
       return null;
     }

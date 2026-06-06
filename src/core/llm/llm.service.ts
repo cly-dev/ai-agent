@@ -12,6 +12,7 @@ import {
 } from '../../../generated/prisma/client';
 import { readEmbeddingRuntimeParameters } from './llm-embedding-parameters.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import { LlmModelConfigCacheStore } from './llm-model-config-cache.store';
 import { normalizeToolCallArgs as normalizeToolArguments } from './tool-call-args.util';
 import {
   estimateMessagesTokens,
@@ -47,7 +48,10 @@ export class LlmService implements OnModuleInit {
       }
     | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly modelConfigCache: LlmModelConfigCacheStore,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     try {
@@ -62,8 +66,19 @@ export class LlmService implements OnModuleInit {
   }
 
   async refreshConfigCache(): Promise<void> {
-    this.cachedChatConfig = await this.loadActiveConfigFromDb(LlmModelKind.chat);
-    this.cachedEmbeddingConfig = await this.loadActiveEmbeddingConfigFromDb();
+    const chat = await this.loadActiveConfigFromDb(LlmModelKind.chat);
+    this.cachedChatConfig = chat;
+    await this.modelConfigCache.trySetActive(chat);
+
+    const embedding = await this.loadActiveEmbeddingConfigFromDb();
+    this.cachedEmbeddingConfig = embedding;
+    await this.modelConfigCache.deleteActive(
+      LlmModelKind.transformers_embedding,
+    );
+    await this.modelConfigCache.deleteActive(LlmModelKind.api_embedding);
+    if (embedding) {
+      await this.modelConfigCache.trySetActive(embedding);
+    }
     this.localEmbeddingRuntime = null;
   }
 
@@ -491,16 +506,46 @@ export class LlmService implements OnModuleInit {
     if (this.cachedChatConfig?.enabled) {
       return this.cachedChatConfig;
     }
-    this.cachedChatConfig = await this.loadActiveConfigFromDb(LlmModelKind.chat);
-    return this.cachedChatConfig;
+    const fromRedis = await this.modelConfigCache.getActive(LlmModelKind.chat);
+    if (fromRedis?.enabled) {
+      this.cachedChatConfig = fromRedis;
+      return fromRedis;
+    }
+    const fromDb = await this.loadActiveConfigFromDb(LlmModelKind.chat);
+    this.cachedChatConfig = fromDb;
+    await this.modelConfigCache.trySetActive(fromDb);
+    return fromDb;
   }
 
   private async getCachedEmbeddingConfig(): Promise<LlmModelConfig | null> {
     if (this.cachedEmbeddingConfig !== undefined) {
       return this.cachedEmbeddingConfig;
     }
-    this.cachedEmbeddingConfig = await this.loadActiveEmbeddingConfigFromDb();
-    return this.cachedEmbeddingConfig;
+    const fromRedis = await this.loadActiveEmbeddingConfigFromRedis();
+    if (fromRedis) {
+      this.cachedEmbeddingConfig = fromRedis;
+      return fromRedis;
+    }
+    const fromDb = await this.loadActiveEmbeddingConfigFromDb();
+    this.cachedEmbeddingConfig = fromDb;
+    if (fromDb) {
+      await this.modelConfigCache.trySetActive(fromDb);
+    }
+    return fromDb;
+  }
+
+  private async loadActiveEmbeddingConfigFromRedis(): Promise<LlmModelConfig | null> {
+    const transformers = await this.modelConfigCache.getActive(
+      LlmModelKind.transformers_embedding,
+    );
+    if (transformers?.enabled) {
+      return transformers;
+    }
+    const api = await this.modelConfigCache.getActive(LlmModelKind.api_embedding);
+    if (api?.enabled) {
+      return api;
+    }
+    return null;
   }
 
   /** @deprecated 使用 getCachedChatConfig */

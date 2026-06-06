@@ -6,19 +6,19 @@ import {
   extractProvidesFromResponseProfile,
   parseAgentMetadata,
   resolveToolDecisionRole,
-} from '../../tool-engine/tool-agent-metadata.util';
+} from '../../../tool-engine/tool-agent-metadata.util';
 import {
   buildCompactToolInput,
   listRequiredParamNames,
   type RequestBodyCompact,
   type ToolParamCompact,
-} from '../../tool-engine/tool-decision-input.util';
+} from '../../../tool-engine/tool-decision-input.util';
 import {
   TOOL_DECISION_ROLE_META,
   TOOL_DECISION_ROLES,
   ToolDecisionRoleEnum,
   type ToolDecisionRole,
-} from '../../tool-engine/tool-decision-role.enum';
+} from '../../../tool-engine/tool-decision-role.enum';
 
 export type { ToolDecisionRole };
 export {

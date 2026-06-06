@@ -38,15 +38,17 @@ scopedTools / scopedLangChainTools → llm 节点 bindTools
 ```mermaid
 flowchart TD
   A[用户最新消息] --> B{意图是否过短/无效?}
-  B -->|是| C[返回澄清引导，结束 run]
+  B -->|是| C[summarize 澄清引导]
   B -->|否| D[embed 用户消息]
   D --> E[类目向量 Top-K]
-  E --> F[filterToolsByIntent]
-  F --> G{工具数 > AGENT_BIND_TOOLS_MAX?}
-  G -->|否| H[全部 bind]
-  G -->|是| I[工具向量 Top-K 截断]
-  H --> J[llm 主循环]
-  I --> J
+  E --> F{matchedCategoryIds 非空?}
+  F -->|否| U[summarize 系统不支持]
+  F -->|是| G[filterToolsByIntent]
+  G --> H{过滤后工具数}
+  H -->|≤5| I[全量 bind]
+  H -->|>5| J[工具向量/keyword 压至 ≤5]
+  I --> K[llm 主循环]
+  J --> K
 ```
 
 ---
@@ -145,7 +147,9 @@ embedding 请求失败（网络、4xx/5xx、空向量）时：
 |------|------|------|
 | `AGENT_INTENT_VECTOR_TOP_K` | `10` | 类目召回数量上限 |
 | `AGENT_INTENT_VECTOR_MIN_SCORE` | `0.25` | 类目召回最低相似度（向量/关键词均适用） |
-| `AGENT_BIND_TOOLS_MAX` | `25` | 主循环 bindTools 数量上限 |
+| `AGENT_BIND_TOOLS_MAX` | `25` | bind 全局硬顶（与分档 topK 取 min） |
+| `AGENT_BIND_FULL_MAX` | `5` | 过滤后候选 ≤ 此值：全量 bind，不走向量截断 |
+| `AGENT_BIND_RECALL_MAX` | `5` | 候选 > FULL_MAX 时向量/keyword 召回上限 |
 | DB `IntentRecallConfig.recallMode` | `auto` | 召回模式（优先于环境变量）：`auto` / `vector` / `keyword` |
 | `AGENT_INTENT_RECALL_MODE` | `auto` | 环境变量降级（无 DB 行时） |
 | `AGENT_EMBEDDING_BASE_URL` | 同 chat `baseUrl` | 独立 embedding 网关（chat 不支持 `/v1/embeddings` 时必填） |
@@ -236,6 +240,40 @@ Intent step 的 `output` 字段（持久化于 `AgentRun.steps`）示例：
 ```
 
 本地排查日志：`logs/agent-engine/*-steps.txt`（需开启 `AGENT_ENGINE_DEBUG` 或非生产默认）。
+
+---
+
+## 主循环与 summarize 分流
+
+LangGraph 在 `agent-lang-graph.runner.ts` 中运行。**无论工具总数多少，均走 intent 节点**（skill 命中除外）。
+
+| 条件 | 路由 |
+|------|------|
+| `skill` 命中 | `llm`（带 skill prompt） |
+| 类目召回 `matchedCategoryIds.length > 0` | 按类目过滤 →（>5 则 bind 召回）→ `llm` → `tools` → `summarize` |
+| 类目未命中 / 过滤后无工具 / 无工具可用 / 意图不清 / 召回失败 | `intent` 设 `pendingSummaryObservation` → **`summarize`（跳过 llm）** |
+
+类目未命中时 summarize 使用 `buildUnsupportedIntentGuidance()` 引导语，向用户说明当前问题不在系统支持范围内。
+
+**规范**
+
+- 不以 smalltalk 关键词硬编码决定路由；是否进 llm 只看 **类目意图是否命中**（及 skill / 已有 tool observation）。
+- 未命中时由 summarize 节点统一生成用户可见回复（`direct_user` observation）。
+- bind 分档（`AGENT_BIND_FULL_MAX=5`）：过滤后工具数 **≤5 全量 bind**，**>5 再走工具向量召回**。
+
+---
+
+## Smalltalk 分类（配置 hints）
+
+闲聊识别用于跳过工具决策环、直达 summarize。实现见 `src/core/agent-engine/intent-kind.util.ts` 的 `detectIntentKind()`。
+
+**规范（必须遵守）**
+
+- Agent / intent / skill 的 TypeScript 代码中 **不得** 硬编码语言关键词、寒暄正则或 phrase list。
+- 短语只维护在 **`src/core/intent/smalltalk-hints.json`**，由 `loadSmallTalkHints()` 加载；需要新寒暄句时改 JSON，不改引擎代码。
+- 更复杂的意图区分应走向量召回、LLM structured output 或 DB/Prompt 配置，而非在代码里加 `includes` / 正则词表。
+
+Cursor 规则：`.cursor/rules/no-hardcoded-intent-matching.mdc`
 
 ---
 

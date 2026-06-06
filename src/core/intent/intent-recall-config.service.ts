@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import type { IntentRecallConfig } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { IntentRecallConfigCacheStore } from './intent-recall-config-cache.store';
 import type {
   IntentRecallMode,
   ResolvedIntentRecallConfig,
@@ -11,7 +12,10 @@ export class IntentRecallConfigService implements OnModuleInit {
   private readonly logger = new Logger(IntentRecallConfigService.name);
   private cached: ResolvedIntentRecallConfig | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configCache: IntentRecallConfigCacheStore,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     try {
@@ -26,18 +30,25 @@ export class IntentRecallConfigService implements OnModuleInit {
   }
 
   async get(): Promise<ResolvedIntentRecallConfig> {
-    if (!this.cached) {
-      await this.refreshCache();
+    if (this.cached) {
+      return this.cached;
     }
-    return this.cached ?? this.resolveFromEnv();
+    const fromRedis = await this.configCache.get();
+    if (fromRedis) {
+      this.cached = fromRedis;
+      return fromRedis;
+    }
+    return this.refreshCache();
   }
 
   async refreshCache(): Promise<ResolvedIntentRecallConfig> {
     const row = await this.prisma.intentRecallConfig.findFirst({
       where: { singletonKey: 1 },
     });
-    this.cached = row ? this.mapRow(row) : this.resolveFromEnv();
-    return this.cached;
+    const resolved = row ? this.mapRow(row) : this.resolveFromEnv();
+    this.cached = resolved;
+    await this.configCache.trySet(resolved);
+    return resolved;
   }
 
   async resolveRecallMode(embeddingConfigured: boolean): Promise<{
