@@ -1,7 +1,8 @@
 # Chat SSE · Message Blocks 前端对接说明
 
 > 版本：与 agent-server 当前实现同步（2026-06）  
-> 适用接口：`GET /chat/:sessionId/stream`（`text/event-stream`）
+> 适用接口：`GET /chat/:sessionId/stream`（`text/event-stream`）  
+> 写操作确认（`confirmation_required` / `confirmWrite`）：见 [write-confirmation-frontend.md](./write-confirmation-frontend.md)
 
 ---
 
@@ -107,6 +108,14 @@ es.addEventListener('error', (e) => onError(JSON.parse(e.data)));
 ```
 
 展示错误态；不应再等待同 `runId` 的 `complete`。
+
+---
+
+### 3.5 写操作确认（`confirmation_required`）
+
+写 Tool 执行前会暂停并请求用户确认。`message` 事件的 `data.action === 'confirmation_required'`，确认/取消通过 `POST /chat/:sessionId/messages` 的 `confirmWrite` / `cancelWrite` 完成。
+
+完整流程、状态机与 TypeScript 类型见 **[write-confirmation-frontend.md](./write-confirmation-frontend.md)**。
 
 ---
 

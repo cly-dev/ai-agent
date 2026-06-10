@@ -35,6 +35,7 @@ export type ToolMachineCodeCounts = {
   TOOL_AUTH_FAILED: number;
   TOOL_TIMEOUT: number;
   TOOL_EMPTY_RESULT: number;
+  TOOL_DOWNSTREAM_ERROR: number;
   LLM_TIMEOUT: number;
   LLM_RATE_LIMIT: number;
 };

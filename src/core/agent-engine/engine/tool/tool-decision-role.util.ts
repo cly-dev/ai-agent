@@ -10,6 +10,7 @@ import {
 import {
   buildCompactToolInput,
   listRequiredParamNames,
+  resolveParamFormatHints,
   type RequestBodyCompact,
   type ToolParamCompact,
 } from '../../../tool-engine/tool-decision-input.util';
@@ -19,6 +20,7 @@ import {
   ToolDecisionRoleEnum,
   type ToolDecisionRole,
 } from '../../../tool-engine/tool-decision-role.enum';
+import type { ParamFormatHint } from '../../../tool-engine/tool-agent-metadata.types';
 
 export type { ToolDecisionRole };
 export {
@@ -45,6 +47,7 @@ export type ToolDecisionCompact = {
   provides?: string[];
   isMutation?: boolean;
   priority?: number;
+  paramFormatHints?: ParamFormatHint[];
 };
 
 /** 决策 system 中追加的角色说明（随本轮 scoped 工具集动态生成）。 */
@@ -137,6 +140,11 @@ export function summarizeToolsForDecisionPrompt(
       tool.schema,
       tool.agentMetadata,
     );
+    const paramFormatHints = resolveParamFormatHints(
+      tool.inputSchema,
+      tool.schema,
+      meta?.paramFormatHints,
+    );
     return {
       name: tool.name,
       description: tool.description,
@@ -157,6 +165,9 @@ export function summarizeToolsForDecisionPrompt(
             businessFields: meta.businessFields,
             isMutation: meta.isMutation,
             priority: meta.priority,
+            ...(paramFormatHints.length > 0
+              ? { paramFormatHints }
+              : {}),
           }
         : {}),
       provides: extractProvidesFromResponseProfile(tool.responseProfile),

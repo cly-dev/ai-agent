@@ -3,11 +3,14 @@ import { ToolEngineService } from '../tool-engine/tool-engine.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AgentEngineTool } from '../agent-engine/engine/main/agent-engine.types';
 import { SkillRecallService } from './skill-recall.service';
+import type { SkillTopRecallResult } from './skill-recall.service';
 import type {
+  SkillRecallObservability,
   SkillResolveHit,
   SkillResolveInput,
   SkillResolveResult,
 } from './skill.types';
+import { toSkillRecallMatches } from './skill-recall.util';
 
 @Injectable()
 export class SkillService {
@@ -58,6 +61,7 @@ export class SkillService {
         name: true,
         description: true,
         prompt: true,
+        config: true,
         riskLevel: true,
         capabilityKey: true,
         skillTools: { select: { toolId: true } },
@@ -82,15 +86,17 @@ export class SkillService {
       })),
       input.userMessage,
     );
+    const recallObservability = this.buildRecallObservability(recall);
     const top = recall.top;
     if (!top) {
       this.logger.debug(
-        `skill recall miss agentId=${input.agentId} candidates=${candidates.length} source=${recall.source}`,
+        `skill recall miss agentId=${input.agentId} candidates=${candidates.length} source=${recall.source} stage=${recall.recallStage ?? 'none'}`,
       );
       return {
         hit: false,
         reason: 'no_relevant_match',
         candidateCount: candidates.length,
+        ...recallObservability,
       };
     }
 
@@ -100,6 +106,7 @@ export class SkillService {
         hit: false,
         reason: 'no_relevant_match',
         candidateCount: candidates.length,
+        ...recallObservability,
       };
     }
 
@@ -112,6 +119,7 @@ export class SkillService {
         hit: false,
         reason: 'empty_gate',
         candidateCount: candidates.length,
+        ...recallObservability,
       };
     }
 
@@ -126,7 +134,9 @@ export class SkillService {
       skill: {
         id: picked.id,
         name: picked.name,
+        description: picked.description,
         prompt: picked.prompt,
+        config: picked.config,
         riskLevel: picked.riskLevel,
         capabilityKey: picked.capabilityKey,
       },
@@ -137,16 +147,25 @@ export class SkillService {
       allowedToolCount: input.allowedTools.length,
       recallSource: top.source,
       recallScore: top.score,
-      recallMatches: recall.ranked.map((row) => ({
-        id: row.skill.id,
-        name: row.skill.name,
-        score: Number(row.score.toFixed(4)),
-      })),
+      recallMatches: toSkillRecallMatches(recall.ranked),
+      recallStage: recall.recallStage ?? 'router',
+      recallStageAttempts: recall.stageAttempts,
       roleSkillFiltered,
     };
     this.logger.debug(
-      `skill recall hit agentId=${input.agentId} skillId=${hit.skill.id} name=${hit.skill.name} source=${hit.recallSource} gated=${hit.gatedToolCount}/${hit.allowedToolCount} score=${hit.recallScore.toFixed(4)}`,
+      `skill recall hit agentId=${input.agentId} skillId=${hit.skill.id} name=${hit.skill.name} source=${hit.recallSource} stage=${hit.recallStage} gated=${hit.gatedToolCount}/${hit.allowedToolCount} score=${hit.recallScore.toFixed(4)}`,
     );
     return hit;
+  }
+
+  private buildRecallObservability(
+    recall: SkillTopRecallResult,
+  ): SkillRecallObservability {
+    return {
+      recallStage: recall.recallStage,
+      recallSource: recall.source,
+      recallMatches: toSkillRecallMatches(recall.ranked),
+      recallStageAttempts: recall.stageAttempts,
+    };
   }
 }

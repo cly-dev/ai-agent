@@ -3,14 +3,70 @@ import {
   isAgentToolErrorObservation,
 } from './agent-run-user-messages.util';
 import { isEmptyListToolObservation } from './tool/tool-observation.util';
+import { resolveDefaultListArrayLimit } from '../../tool-engine/tool-pagination-params.util';
+import {
+  collectNotableExamplesFromPageSummaries,
+  collectPageFindingsBrief,
+  formatMapReduceFetchStatusNote,
+} from './gather/list-map-reduce.util';
+import { MAP_REDUCE_OUTPUT_KEY } from './gather/list-map-reduce.types';
 
 export type LlmObservationPayload = {
   tool: string;
+  /** 本 turn 内已执行过该 tool_call */
+  executed: boolean;
+  /** 本次调用使用的参数（精简后），便于模型避免重复 tool_calls */
+  args?: Record<string, unknown>;
+  /** 给决策模型的复用说明 */
+  reuseNote?: string;
   success: boolean;
   summary?: Record<string, unknown>;
   records?: Record<string, unknown>[];
   error?: string;
 };
+
+const OBSERVATION_ARG_SKIP = new Set(['vo', 'X-SHOP-ID', 'page', 'size', 'sort']);
+const OBSERVATION_REUSE_NOTE_SUCCESS =
+  'This tool already succeeded with the args shown. Do not call it again with the same arguments; answer from this observation.';
+const OBSERVATION_REUSE_NOTE_ERROR =
+  'This tool already failed with the args shown. Do not repeat the same call; adjust parameters or use observations.';
+
+export function compactArgsForObservation(
+  args: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!args) {
+    return undefined;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (OBSERVATION_ARG_SKIP.has(key)) {
+      continue;
+    }
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+    if (typeof value === 'string' && value.length > 120) {
+      out[key] = `${value.slice(0, 120)}…`;
+      continue;
+    }
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function buildObservationEnvelope(input: {
+  output: unknown;
+  args?: Record<string, unknown>;
+}): Pick<LlmObservationPayload, 'executed' | 'args' | 'reuseNote'> {
+  const compactArgs = compactArgsForObservation(input.args);
+  return {
+    executed: true,
+    ...(compactArgs ? { args: compactArgs } : {}),
+    reuseNote: isAgentToolErrorObservation(input.output)
+      ? OBSERVATION_REUSE_NOTE_ERROR
+      : OBSERVATION_REUSE_NOTE_SUCCESS,
+  };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -197,20 +253,37 @@ export function formatObservationForLlm(input: {
   toolName: string;
   output: unknown;
   fieldLabels?: Record<string, string>;
+  args?: Record<string, unknown>;
 }): LlmObservationPayload {
   const fieldLabels = input.fieldLabels ?? {};
+  const envelope = buildObservationEnvelope({
+    output: input.output,
+    args: input.args,
+  });
 
   if (isAgentToolErrorObservation(input.output)) {
+    const responseSource =
+      typeof input.output.responseSource === 'string' ||
+      (input.output.responseSource != null &&
+        typeof input.output.responseSource === 'object')
+        ? input.output.responseSource
+        : undefined;
     return {
       tool: input.toolName,
+      ...envelope,
       success: false,
       error: extractToolErrorUserHint(input.output) ?? 'Tool call failed',
+      ...(input.output.httpStatus != null
+        ? { httpStatus: input.output.httpStatus }
+        : {}),
+      ...(responseSource !== undefined ? { responseSource } : {}),
     };
   }
 
   if (isEmptyListToolObservation(input.output)) {
     return {
       tool: input.toolName,
+      ...envelope,
       success: true,
       summary: { matchedCount: 0 },
       records: [],
@@ -218,6 +291,81 @@ export function formatObservationForLlm(input: {
   }
 
   const payload = normalizePayload(input.output);
+
+  if (isRecord(payload) && isRecord(payload[MAP_REDUCE_OUTPUT_KEY])) {
+    const mapReduce = payload[MAP_REDUCE_OUTPUT_KEY];
+    const fetchNote = formatMapReduceFetchStatusNote(input.output);
+    const pageSummaries = Array.isArray(mapReduce.pageSummaries)
+      ? mapReduce.pageSummaries.filter(
+          (row): row is Record<string, unknown> => isRecord(row),
+        )
+      : [];
+    const summary: Record<string, unknown> = {
+      matchedCount:
+        typeof mapReduce.fetchedCount === 'number'
+          ? mapReduce.fetchedCount
+          : 0,
+      mapReduce: true,
+      complete: mapReduce.complete === true,
+      mapComplete: mapReduce.mapComplete === true,
+      pageSummaryCount: pageSummaries.length,
+    };
+    if (typeof mapReduce.total === 'number') {
+      summary.total = mapReduce.total;
+    }
+    if (typeof mapReduce.maxRows === 'number') {
+      summary.maxRows = mapReduce.maxRows;
+    }
+    if (mapReduce.truncated === true) {
+      summary.truncated = true;
+    }
+    if (mapReduce.truncatedByMaxRows === true) {
+      summary.truncatedByMaxRows = true;
+    }
+    if (mapReduce.mapPartial === true) {
+      summary.mapPartial = true;
+    }
+    if (mapReduce.mapResumeStalled === true) {
+      summary.mapResumeStalled = true;
+    }
+    if (mapReduce.resumeStalled === true) {
+      summary.resumeStalled = true;
+    }
+    if (mapReduce.httpBudgetExhausted === true) {
+      summary.httpBudgetExhausted = true;
+    }
+    if (fetchNote) {
+      summary.fetchStatusNote = fetchNote;
+    }
+    const pageFindings = collectPageFindingsBrief(
+      pageSummaries.map((row) => ({
+        page: typeof row.page === 'number' ? row.page : 0,
+        rowCount: typeof row.rowCount === 'number' ? row.rowCount : 0,
+        summary: isRecord(row.summary) ? row.summary : undefined,
+        error: typeof row.error === 'string' ? row.error : undefined,
+      })),
+    );
+    if (pageFindings.length > 0) {
+      summary.pageFindings = pageFindings;
+    }
+    const records = collectNotableExamplesFromPageSummaries(
+      pageSummaries.map((row) => ({
+        page: typeof row.page === 'number' ? row.page : 0,
+        rowCount: typeof row.rowCount === 'number' ? row.rowCount : 0,
+        summary: isRecord(row.summary) ? row.summary : undefined,
+        error: typeof row.error === 'string' ? row.error : undefined,
+      })),
+    )
+      .map((row) => flattenRecordForLlm(row, fieldLabels))
+      .filter((row) => Object.keys(row).length > 0);
+    return {
+      tool: input.toolName,
+      ...envelope,
+      success: true,
+      summary,
+      records,
+    };
+  }
 
   const list = findListRows(payload);
   if (list) {
@@ -235,6 +383,7 @@ export function formatObservationForLlm(input: {
 
     return {
       tool: input.toolName,
+      ...envelope,
       success: true,
       summary,
       records,
@@ -246,6 +395,7 @@ export function formatObservationForLlm(input: {
     if (Object.keys(record).length > 0) {
       return {
         tool: input.toolName,
+        ...envelope,
         success: true,
         summary: { matchedCount: 1 },
         records: [record],
@@ -255,6 +405,7 @@ export function formatObservationForLlm(input: {
 
   return {
     tool: input.toolName,
+    ...envelope,
     success: true,
     summary: { matchedCount: 0 },
     records: [],
@@ -271,6 +422,7 @@ function observationPayloadSignature(payload: LlmObservationPayload): string {
   return JSON.stringify({
     tool: payload.tool,
     success: payload.success,
+    args: payload.args ?? null,
     summary: payload.summary ?? null,
     recordIds: (payload.records ?? []).map((row) => String(row.id ?? '')),
   });
@@ -300,12 +452,10 @@ export function dedupeObservationPayloads(
   return result;
 }
 
-const DEFAULT_OBSERVATION_RECORD_LIMIT = 8;
-
 /** Trim records inside observations to fit token budget. */
 export function truncateObservationPayloads(
   payloads: LlmObservationPayload[],
-  maxRecordsPerTool = DEFAULT_OBSERVATION_RECORD_LIMIT,
+  maxRecordsPerTool = resolveDefaultListArrayLimit(),
 ): LlmObservationPayload[] {
   return payloads.map((payload) => {
     if (!payload.records || payload.records.length <= maxRecordsPerTool) {

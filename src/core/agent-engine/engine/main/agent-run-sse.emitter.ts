@@ -7,13 +7,15 @@ import {
   filterLlmBlocksAvoidDuplicatingRule,
   isStructuredMessageBlock,
   looksLikeBlocksJsonOutput,
+  shouldBufferSummarizeStreamOutput,
+  mergeStreamedDeltaTextForStorage,
   mergeSummarizeBlocksForStorage,
   normalizeMessageBlocks,
   planStructuredBlockStreaming,
   sanitizeMessageBlocks,
-  stripMarkdownFenceForBlocksParse,
+  shouldBufferSummarizeLlmStream,
   textBlock,
-  tryParseStoredMessageBlocks,
+  tryParseLlmBlocksFromSummarizeOutput,
 } from '../message/message-blocks.util';
 import type { LlmChatMessage } from '../../../llm/llm.types';
 import { LlmService } from '../../../llm/llm.service';
@@ -60,15 +62,23 @@ export class AgentRunSseEmitter {
   markRunSseContentDelivered(
     runKey: string,
     blocks: MessageBlock[],
-    options: { textStreamed: boolean; structuredPatches: number },
+    options: {
+      textStreamed: boolean;
+      structuredPatches: number;
+      emittedConsolidatedFull?: boolean;
+    },
   ): void {
     const hasStructured = blocks.some(isStructuredMessageBlock);
-    const hasText = blocks.some((block) => block.type === 'text');
-    if (!hasStructured && hasText && options.textStreamed) {
+    // 纯文本 delta 已推完即可标记，不依赖落库 blocks 是否仍含 text
+    if (options.textStreamed && !hasStructured) {
       this.runSseContentDelivered.add(runKey);
       return;
     }
     if (hasStructured && options.structuredPatches > 0) {
+      this.runSseContentDelivered.add(runKey);
+      return;
+    }
+    if (options.emittedConsolidatedFull) {
       this.runSseContentDelivered.add(runKey);
     }
   }
@@ -86,10 +96,8 @@ export class AgentRunSseEmitter {
     if (this.runSseContentDelivered.has(runKey)) {
       return;
     }
-    if (
-      this.messageStreamDeltaEmitted.has(runKey) &&
-      blocks.every((block) => block.type === 'text')
-    ) {
+    // summarize 流式 delta 已交付正文，run 结束不再补 stream full
+    if (this.messageStreamDeltaEmitted.has(runKey)) {
       return;
     }
     this.emitMessageBlocks(sessionId, runId, blocks, {
@@ -135,6 +143,8 @@ export class AgentRunSseEmitter {
     const mode = options?.mode ?? 'full';
     if (key && action === 'stream' && mode === 'delta') {
       this.messageStreamDeltaEmitted.add(key);
+      // 从源头标记：一旦有 message delta，run 结束不再补 stream full
+      this.runSseContentDelivered.add(key);
     }
     const nextSeq = key ? (this.streamSeq.get(key) ?? 0) + 1 : undefined;
     if (key && nextSeq != null) {
@@ -289,9 +299,10 @@ export class AgentRunSseEmitter {
       });
     }
 
-    // 始终流式推送 summarize 正文；仅在输出转向 blocks JSON 时停止 delta
-    let streamTextDeltas = true;
+    // rule-based table/chart 已占位时缓冲正文 delta，避免把 blocks JSON 当纯文本推给前端
+    let streamTextDeltas = !shouldBufferSummarizeLlmStream(ruleBlocks);
     let streamed = '';
+    let streamedMessageText = '';
     let streamRouter = createLlmStreamRouterState();
     const result = await this.llmService.streamChat(
       {
@@ -304,19 +315,20 @@ export class AgentRunSseEmitter {
             return;
           }
           streamed += delta.contentDelta;
-          if (!streamTextDeltas) {
-            return;
-          }
-          if (looksLikeBlocksJsonOutput(streamed)) {
-            streamTextDeltas = false;
-            return;
-          }
           const routed = routeLlmStreamChunk(streamRouter, delta.contentDelta);
           streamRouter = routed.state;
           if (routed.think) {
             this.emitThink(sessionId, runId, routed.think, 'delta');
           }
+          if (!streamTextDeltas) {
+            return;
+          }
+          if (shouldBufferSummarizeStreamOutput(streamed)) {
+            streamTextDeltas = false;
+            return;
+          }
           if (routed.message) {
+            streamedMessageText += routed.message;
             this.emitMessageBlocks(
               sessionId,
               runId,
@@ -327,8 +339,9 @@ export class AgentRunSseEmitter {
         },
       },
     );
-    const normalizedResultText = sanitizeLlmFinalOutput(result.content ?? '');
-    if (!streamed.trim() && normalizedResultText) {
+    const rawStreamedText = streamed.trim();
+    const rawResultText = (result.content ?? '').trim();
+    if (!rawStreamedText && rawResultText) {
       const streamMeta = result.streamMeta;
       if (streamMeta?.fellBackToInvoke) {
         this.logger.warn(
@@ -341,50 +354,85 @@ export class AgentRunSseEmitter {
       }
     }
 
-    const rawLlmText = sanitizeLlmFinalOutput(
-      streamed.trim() || normalizedResultText || fallbackPlainText,
-    );
-    const parsedLlmBlocks = tryParseStoredMessageBlocks(
-      stripMarkdownFenceForBlocksParse(rawLlmText),
-    );
+    const rawLlmSource = rawStreamedText || rawResultText;
+    const parsedLlmBlocks = tryParseLlmBlocksFromSummarizeOutput(rawLlmSource);
     const llmBlocksFromParse = parsedLlmBlocks
       ? sanitizeMessageBlocks(
           filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, parsedLlmBlocks),
         )
       : [];
+    const proseFallbackSource =
+      llmBlocksFromParse.length > 0
+        ? ''
+        : sanitizeLlmFinalOutput(rawLlmSource || fallbackPlainText);
 
     for (const patch of patches) {
       this.emitBlockPatch(sessionId, runId, patch);
     }
 
-    const textStreamedViaDelta =
-      streamTextDeltas && streamed.trim().length > 0;
+    const textStreamedViaDelta = streamedMessageText.trim().length > 0;
     const canEmitSupplementaryTextFull = !textStreamedViaDelta;
 
-    if (llmBlocksFromParse.length > 0) {
+    let llmBlocksForStorage =
+      llmBlocksFromParse.length > 0
+        ? llmBlocksFromParse
+        : proseFallbackSource.trim() &&
+            !looksLikeBlocksJsonOutput(proseFallbackSource)
+          ? filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
+              textBlock(proseFallbackSource, 'markdown'),
+            ])
+          : [];
+    if (
+      streamedMessageText.trim() &&
+      !looksLikeBlocksJsonOutput(streamedMessageText)
+    ) {
+      llmBlocksForStorage = mergeStreamedDeltaTextForStorage(
+        ruleBlocks,
+        llmBlocksForStorage,
+        streamedMessageText,
+      );
+    }
+    const sanitizedMerged = sanitizeMessageBlocks(
+      mergeSummarizeBlocksForStorage(
+        ruleBlocks,
+        llmBlocksForStorage,
+        fallbackPlainText,
+      ),
+    );
+
+    // 已有 text delta 时不再推 consolidated full，避免「流式 + 全文」重复
+    const needsConsolidatedFullEmit =
+      sanitizedMerged.length > 0 && !textStreamedViaDelta;
+    let emittedConsolidatedFull = false;
+
+    if (needsConsolidatedFullEmit) {
+      this.emitMessageBlocks(sessionId, runId, sanitizedMerged, {
+        action: 'stream',
+        mode: 'full',
+      });
+      emittedConsolidatedFull = true;
+    } else if (llmBlocksFromParse.length > 0) {
       const structuredFromLlm = llmBlocksFromParse.filter(
         isStructuredMessageBlock,
       );
       const textFromLlm = llmBlocksFromParse.filter(
         (block) => block.type === 'text',
       );
-      // patch 已下发 rule table/chart 后，不再 full 推同类型 structured block
-      if (structuredFromLlm.length > 0 && patches.length === 0) {
+      if (structuredFromLlm.length > 0) {
         this.emitMessageBlocks(sessionId, runId, structuredFromLlm, {
           action: 'stream',
           mode: 'full',
         });
       }
-      // patch 之后仍可 full 推补充 text（分析报告等），但不重复 pipe 表格
       if (textFromLlm.length > 0 && canEmitSupplementaryTextFull) {
         this.emitMessageBlocks(sessionId, runId, textFromLlm, {
           action: 'stream',
           mode: 'full',
         });
       }
-    } else if (canEmitSupplementaryTextFull && rawLlmText.trim()) {
+    } else if (canEmitSupplementaryTextFull && proseFallbackSource.trim()) {
       const fallbackTextBlocks = filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
-        textBlock(rawLlmText, 'markdown'),
+        textBlock(proseFallbackSource, 'markdown'),
       ]);
       if (fallbackTextBlocks.length > 0) {
         this.emitMessageBlocks(sessionId, runId, fallbackTextBlocks, {
@@ -394,26 +442,14 @@ export class AgentRunSseEmitter {
       }
     }
 
-    const llmBlocksForStorage =
-      llmBlocksFromParse.length > 0
-        ? llmBlocksFromParse
-        : rawLlmText.trim() && !looksLikeBlocksJsonOutput(rawLlmText)
-          ? filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
-              textBlock(rawLlmText, 'markdown'),
-            ])
-          : [];
-    const sanitizedMerged = sanitizeMessageBlocks(
-      mergeSummarizeBlocksForStorage(
-        ruleBlocks,
-        llmBlocksForStorage,
-        fallbackPlainText,
-      ),
-    );
     this.markRunSseContentDelivered(runKey, sanitizedMerged, {
       textStreamed:
         textStreamedViaDelta ||
         llmBlocksForStorage.some((block) => block.type === 'text'),
-      structuredPatches: patches.length,
+      structuredPatches:
+        patches.length +
+        (llmBlocksFromParse.some(isStructuredMessageBlock) ? 1 : 0),
+      emittedConsolidatedFull,
     });
     return sanitizedMerged;
   }

@@ -22,11 +22,23 @@ export type ToolExecutionDefinition = ToolDefinitionInput & {
   timeout: number | null;
   integration: ToolIntegrationDefinition;
   agentMetadata?: unknown;
+  responseProfile?: unknown;
 };
 
 export type ToolBuildContext = {
   userId: number;
   allowedToolIds: number[];
+};
+
+/** 下游 HTTP 响应源数据（未经过 responseProfile 投影）。 */
+export type ToolHttpResponseSource = {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  /** 响应 body 原始文本 */
+  bodyText: string;
+  /** JSON.parse 结果；非 JSON 时为原字符串 */
+  bodyParsed: unknown;
 };
 
 export type ToolExecutionResult = {
@@ -35,6 +47,9 @@ export type ToolExecutionResult = {
   input: Record<string, unknown>;
   output: unknown;
   latency: number;
+  /** 下游 HTTP body 原文，或 invoke 阶段原始错误文本。 */
+  responseSource?: unknown;
+  httpResponse?: ToolHttpResponseSource;
 };
 
 /** 管理端调试 tool HTTP 调用的完整结果 */

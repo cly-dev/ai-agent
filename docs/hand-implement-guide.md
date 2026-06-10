@@ -145,7 +145,7 @@ POST /admin/admin-user/login
               │
               ▼
 ⑤ finalizeRunAndTurn（metrics + steps + output）
-      ├─ WorkingMemoryService.refreshFromAgentRun
+      ├─ SessionGoaService.refreshFromAgentRun
       └─ SSE: result / think
               │
               ▼
@@ -281,7 +281,7 @@ type SessionContextPayload = {
 };
 ```
 
-**详见** `src/core/memory/session-history-compression.md`（多轮历史压缩）。
+**详见** `src/core/memory/context/session-history-compression.md`（多轮历史压缩）。
 
 **手写练习**：给定 3 条历史 + workingMemory，手写 `compose()` 输出 messages 数组，数清楚几条 system、几条 user。
 
@@ -432,13 +432,13 @@ observeSession(sessionId) → Observable → Controller 转 SSE
 
 ### Phase 7 — 记忆（1 天）
 
-**WorkingMemoryService**：
+**SessionGoaService**：
 
 ```
 每轮 Agent 成功后：
-  mode=refresh → 调 LLM 归纳 { summary, facts[] }
-  失败 → merge 规则合并
-  写回 SessionContextPayload.workingMemory（Redis）
+  从 run 投影 episode / artifact / activeTask
+  写回 SessionGoaMemory（DB 权威）+ Redis goa:session:{id} 缓存
+  对话 turns 仍在 SessionContextPayload（Redis）
 ```
 
 **UserMemoryStore**：用户级长期偏好（结构类似，按 userId 存）。

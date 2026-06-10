@@ -14,7 +14,25 @@ export {
   sanitizeToolInvokeInput,
   type OpenApiParamSpec,
 } from './tool-input-sanitize.util';
+export {
+  buildToolHttpRequestLayout,
+  type ToolHttpParameterPlacement,
+  type ToolHttpRequestLayout,
+} from './tool-http-request-layout.util';
+export {
+  buildHttpResponseSource,
+  extractRawInvokeError,
+  resolveToolResponseSource,
+  ToolHttpResponseError,
+} from './tool-response-source.util';
+export type { ToolHttpResponseSource } from './tool-engine.types';
 export { applyListPaginationDefaults } from './tool-list-pagination-defaults.util';
+export {
+  resolveDefaultListArrayLimit,
+  resolveDefaultListPage,
+  resolveDefaultListSize,
+  resolveEffectiveArrayLimit,
+} from './tool-pagination-params.util';
 export {
   formatFieldLabelsForPrompt,
   parseResponseProfile,

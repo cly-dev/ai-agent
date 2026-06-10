@@ -11,14 +11,14 @@ import { AgentEngineService } from '../../core/agent-engine/engine/agent-engine.
 import { LlmService } from '../../core/llm/llm.service';
 import {
   isSessionHistoryTrimTurnsAfterCompressEnabled,
-} from '../../core/memory/memory.constants';
-import { SessionContextStore } from '../../core/memory/session-context.store';
-import { trimTurnsByCompressedWatermark } from '../../core/memory/session-context-trim.util';
+} from '../../core/memory/shared/memory.constants';
+import { SessionContextStore } from '../../core/memory/context/session-context.store';
+import { trimTurnsByCompressedWatermark } from '../../core/memory/context/session-context-trim.util';
 import {
   isSessionContextPayload,
   type SessionContextPayload,
   type SessionContextTurn,
-} from '../../core/memory/session-context.types';
+} from '../../core/memory/context/session-context.types';
 import { PromptComposerService } from '../../core/prompt/prompt-composer.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChatEventsService } from '../chat/chat-events.service';
@@ -54,12 +54,24 @@ export class MessageService {
       userId,
       appClientId,
     );
+    const confirmWrite = dto.confirmWrite === true;
+    const cancelWrite = dto.cancelWrite === true;
+    const isWriteConfirmAction =
+      dto.role === 'user' &&
+      (confirmWrite || cancelWrite) &&
+      !String(dto.content ?? '').trim();
     const message = await this.prisma.message.create({
       data: {
         sessionId: session.id,
         role: dto.role,
-        content: this.normalizeMessageContentForStorage(dto.content),
-        toolName: dto.toolName ?? null,
+        content: isWriteConfirmAction
+          ? null
+          : this.normalizeMessageContentForStorage(dto.content),
+        toolName: isWriteConfirmAction
+          ? cancelWrite
+            ? '__cancel_write__'
+            : '__confirm_write__'
+          : (dto.toolName ?? null),
         toolInput: this.toJson(dto.toolInput),
         toolOutput: this.toJson(dto.toolOutput),
       },
@@ -71,8 +83,6 @@ export class MessageService {
         dto.agentId,
         appClientId,
       );
-      const confirmWrite = dto.confirmWrite === true;
-      const cancelWrite = dto.cancelWrite === true;
       this.scheduleAgentRun(boundSession.id, () =>
         this.runAgentPipeline(
           userId,
@@ -363,26 +373,32 @@ export class MessageService {
     message: Message,
   ): Promise<void> {
     try {
-      const current = await this.sessionContextStore.get(sessionId);
-      if (!current) {
-        await this.rebuildSessionContextFromDb(sessionId);
-        return;
-      }
-      if (!isSessionContextPayload(current)) {
-        await this.rebuildSessionContextFromDb(sessionId);
-        return;
-      }
-      const next: SessionContextPayload = {
-        ...current,
+      const turn = this.toMessageTurn(message);
+      const patched = await this.sessionContextStore.tryPatchMerge(
         sessionId,
-        turns: [...current.turns, this.toMessageTurn(message)],
-        updatedAt: new Date().toISOString(),
-      };
-      const cached = await this.sessionContextStore.trySet(sessionId, next);
-      if (!cached) {
-        this.logger.debug(
-          `session context not written to Redis sessionId=${sessionId}`,
-        );
+        (current) => {
+          if (!isSessionContextPayload(current)) {
+            return current;
+          }
+          const payload = current as SessionContextPayload;
+          const last = payload.turns[payload.turns.length - 1];
+          if (last?.messageId === turn.messageId) {
+            return payload;
+          }
+          return {
+            ...payload,
+            sessionId,
+            turns: [...payload.turns, turn],
+            updatedAt: new Date().toISOString(),
+          };
+        },
+      );
+      if (patched == null) {
+        await this.rebuildSessionContextFromDb(sessionId);
+        return;
+      }
+      if (!isSessionContextPayload(patched)) {
+        await this.rebuildSessionContextFromDb(sessionId);
       }
     } catch (error) {
       this.logger.warn(
@@ -410,15 +426,19 @@ export class MessageService {
       ) {
         turns = trimTurnsByCompressedWatermark(turns, compressedUpToMessageId);
       }
-      const payload: SessionContextPayload = {
-        sessionId,
-        turns,
-        workingMemory: prevPayload?.workingMemory,
-        compressedHistorySummary: prevPayload?.compressedHistorySummary,
-        compressedUpToMessageId,
-        updatedAt: new Date().toISOString(),
-      };
-      const cached = await this.sessionContextStore.trySet(sessionId, payload);
+      const updatedAt = new Date().toISOString();
+      const cached =
+        prevPayload != null
+          ? await this.sessionContextStore.tryPatch(sessionId, {
+              turns,
+              updatedAt,
+            })
+          : await this.sessionContextStore.tryPatch(sessionId, {
+              sessionId,
+              turns,
+              compressedUpToMessageId,
+              updatedAt,
+            });
       if (!cached) {
         this.logger.debug(
           `session context rebuild skipped (Redis unavailable) sessionId=${sessionId}`,

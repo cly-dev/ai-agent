@@ -5,6 +5,7 @@ import {
   type InferFieldContext,
 } from '../../core/tool-engine/field-description.util';
 import { parseResponseProfile } from '../../core/tool-engine/tool-output-projection.util';
+import { resolveDefaultListArrayLimit } from '../../core/tool-engine/tool-pagination-params.util';
 import {
   assertValidResponseProfile,
   RESPONSE_PROFILE_LIST_PATH_CANDIDATES,
@@ -343,7 +344,8 @@ function buildFallbackResponseProfile(
     ),
     arrayLimits: listPath
       ? {
-          [listPath.split('.').filter(Boolean).pop() ?? 'data']: 5,
+          [listPath.split('.').filter(Boolean).pop() ?? 'data']:
+            resolveDefaultListArrayLimit(),
         }
       : undefined,
     listPath,

@@ -14,6 +14,7 @@ import {
   normalizeDefinitionKey,
   resolveToolDefinitionKeyForCreate,
 } from '../../common/tool/tool-definition-key.util';
+import { SessionToolPrepareCacheService } from '../../core/agent-engine/engine/main/session-tool-prepare-cache.service';
 import { ToolEngineService } from '../../core/tool-engine/tool-engine.service';
 import type { ToolDebugResult } from '../../core/tool-engine/tool-engine.types';
 import { LlmService } from '../../core/llm/llm.service';
@@ -39,7 +40,7 @@ import type {
   ToolDetailRow,
   ToolResponse,
 } from './tool.types';
-import { normalizeAgentMetadata } from '../../core/tool-engine/tool-agent-metadata.util';
+import { normalizeAgentMetadataForPersist } from '../../core/tool-engine/tool-decision-input.util';
 import { parseAndNormalizeResponseProfile } from '../../core/tool-engine/tool-response-profile.spec.util';
 import { inferToolSchemasFromSample } from './tool-schema-inference.util';
 
@@ -48,6 +49,7 @@ export class ToolService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly toolEngine: ToolEngineService,
+    private readonly sessionToolPrepareCache: SessionToolPrepareCacheService,
     private readonly llmService: LlmService,
     private readonly promptRegistry: PromptRegistryService,
   ) {}
@@ -72,7 +74,7 @@ export class ToolService {
       );
     }
     try {
-      return await importSwaggerTools(
+      const result = await importSwaggerTools(
         this.prisma,
         {
           specUrl: dto.specUrl,
@@ -94,6 +96,13 @@ export class ToolService {
         },
         'api-default-all',
       );
+      if (!result.dryRun && result.toolIds.length > 0) {
+        await this.sessionToolPrepareCache.invalidateForTools(result.toolIds);
+        if (result.agentId != null) {
+          await this.sessionToolPrepareCache.invalidateForAgent(result.agentId);
+        }
+      }
+      return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new BadRequestException(message);
@@ -140,7 +149,11 @@ export class ToolService {
         responseProfile: this.resolveResponseProfileForPersist(
           dto.responseProfile,
         ),
-        agentMetadata: this.resolveAgentMetadataForPersist(dto.agentMetadata),
+        agentMetadata: this.resolveAgentMetadataForPersist(
+          dto.agentMetadata,
+          dto.inputSchema,
+          dto.schema,
+        ),
         method: dto.method,
         path: dto.path.trim(),
         integrationId: dto.integrationId,
@@ -206,6 +219,20 @@ export class ToolService {
       definitionKey = normalizeDefinitionKey(dto.definitionKey);
       await this.assertDefinitionKeyAvailable(appClientId, definitionKey, id);
     }
+    const nextInputSchema =
+      dto.inputSchema === undefined ? existing.inputSchema : dto.inputSchema;
+    const nextSchema =
+      dto.schema === undefined ? existing.schema : dto.schema;
+    const agentMetadataForPersist = this.resolveAgentMetadataForToolPersist({
+      agentMetadataRaw: dto.agentMetadata,
+      existingAgentMetadata: existing.agentMetadata,
+      inputSchema: nextInputSchema,
+      fallbackSchema: nextSchema,
+      inputSchemaTouched: dto.inputSchema !== undefined,
+    });
+    const isActiveChanged =
+      dto.isActive !== undefined && dto.isActive !== existing.isActive;
+
     try {
       const row = await this.prisma.tool.update({
         where: { id },
@@ -230,10 +257,7 @@ export class ToolService {
           responseProfile: this.resolveResponseProfileForPersist(
             dto.responseProfile,
           ),
-          agentMetadata:
-            dto.agentMetadata === undefined
-              ? undefined
-              : this.resolveAgentMetadataForPersist(dto.agentMetadata),
+          agentMetadata: agentMetadataForPersist,
           method: dto.method,
           path: dto.path?.trim(),
           integrationId: dto.integrationId,
@@ -246,6 +270,9 @@ export class ToolService {
         },
         include: TOOL_DETAIL_INCLUDE,
       });
+      if (isActiveChanged) {
+        await this.sessionToolPrepareCache.invalidateForTools([id]);
+      }
       return toToolResponse(row);
     } catch (error) {
       if (
@@ -286,6 +313,8 @@ export class ToolService {
       include: TOOL_DETAIL_INCLUDE,
       orderBy: { id: 'asc' },
     });
+
+    await this.sessionToolPrepareCache.invalidateForTools([...existingIds]);
 
     return {
       isActive: dto.isActive,
@@ -359,6 +388,8 @@ export class ToolService {
           )!,
           agentMetadata: this.resolveAgentMetadataForPersist(
             inferred.agentMetadata,
+            tool.inputSchema,
+            tool.schema,
           )!,
         },
         include: TOOL_DETAIL_INCLUDE,
@@ -398,17 +429,64 @@ export class ToolService {
 
   private resolveAgentMetadataForPersist(
     raw: unknown,
+    inputSchema: unknown,
+    fallbackSchema?: unknown,
   ): Prisma.InputJsonValue | undefined {
     if (raw === undefined) {
       return undefined;
     }
-    const normalized = normalizeAgentMetadata(raw);
+    const normalized = normalizeAgentMetadataForPersist(
+      raw,
+      inputSchema,
+      fallbackSchema,
+    );
     if (!normalized) {
       throw new BadRequestException(
         'agentMetadata invalid: mode, resource, and operation are required',
       );
     }
     return normalized as unknown as Prisma.InputJsonValue;
+  }
+
+  /**
+   * 创建/更新时同步 paramFormatHints：仅维护 inputSchema.parameters（及 body），
+   * 忽略请求里的 paramFormatHints；仅改 inputSchema 时也会刷新已有 agentMetadata。
+   */
+  private resolveAgentMetadataForToolPersist(options: {
+    agentMetadataRaw: unknown | undefined;
+    existingAgentMetadata?: unknown;
+    inputSchema: unknown;
+    fallbackSchema?: unknown;
+    inputSchemaTouched: boolean;
+  }): Prisma.InputJsonValue | undefined {
+    const {
+      agentMetadataRaw,
+      existingAgentMetadata,
+      inputSchema,
+      fallbackSchema,
+      inputSchemaTouched,
+    } = options;
+
+    if (agentMetadataRaw !== undefined) {
+      return this.resolveAgentMetadataForPersist(
+        agentMetadataRaw,
+        inputSchema,
+        fallbackSchema,
+      );
+    }
+
+    if (inputSchemaTouched && existingAgentMetadata != null) {
+      const synced = normalizeAgentMetadataForPersist(
+        existingAgentMetadata,
+        inputSchema,
+        fallbackSchema,
+      );
+      if (synced) {
+        return synced as unknown as Prisma.InputJsonValue;
+      }
+    }
+
+    return undefined;
   }
 
   async remove(id: number): Promise<ToolResponse> {
@@ -418,6 +496,7 @@ export class ToolService {
         where: { id },
         include: TOOL_DETAIL_INCLUDE,
       });
+      await this.sessionToolPrepareCache.invalidateForTools([id]);
       return toToolResponse(row);
     } catch (error) {
       if (

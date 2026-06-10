@@ -3,10 +3,10 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { assertPositiveIntId } from './memory-id.util';
-import { getDefaultUserMemoryTtlSec } from './memory.constants';
-import { RedisConnectionService } from './redis/redis-connection.service';
-import { userMemoryKey } from './redis/redis-keys';
+import { assertPositiveIntId } from '../shared/memory-id.util';
+import { getDefaultUserMemoryTtlSec } from '../shared/memory.constants';
+import { RedisConnectionService } from '../redis/redis-connection.service';
+import { userMemoryKey } from '../redis/redis-keys';
 
 @Injectable()
 export class UserMemoryStore {

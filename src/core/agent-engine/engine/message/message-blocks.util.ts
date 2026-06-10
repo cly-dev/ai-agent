@@ -1,3 +1,9 @@
+import {
+  collectNotableExamplesFromPageSummaries,
+  mergeMapReduceObservationOutputs,
+  readMapReduceFromObservation,
+} from '../gather/list-map-reduce.util';
+import { formatResponseSourceForDisplay } from '../agent-run-user-messages.util';
 import { sanitizeTextForStorage } from '../llm-output-sanitize.util';
 import {
   messageBlockSchema,
@@ -73,6 +79,16 @@ export function looksLikeBlocksJsonOutput(text: string): boolean {
     return true;
   }
   return false;
+}
+
+/** summarize 流式输出是否应缓冲（勿按 token 推 message delta）。 */
+export function shouldBufferSummarizeStreamOutput(text: string): boolean {
+  if (looksLikeBlocksJsonOutput(text)) {
+    return true;
+  }
+  const trimmed = text.trimStart();
+  // 以 `{` 开头时多为 blocks JSON，在见到 "blocks" 前先缓冲，避免把 JSON 碎片推给前端
+  return trimmed.startsWith('{');
 }
 
 export function stripMarkdownFenceForBlocksParse(text: string): string {
@@ -242,6 +258,42 @@ export function mergeSummarizeBlocksForStorage(
   return stripRedundantSummarizeTextBlocks(ruleBlocks, merged);
 }
 
+/**
+ * 将已通过 SSE delta 推送的分析正文补入落库 blocks。
+ * 常见于：先流式输出 prose，随后 LLM 转向 blocks JSON，落库路径丢失 delta 正文。
+ */
+export function mergeStreamedDeltaTextForStorage(
+  ruleBlocks: MessageBlock[],
+  llmBlocks: MessageBlock[],
+  streamedMessageText: string,
+): MessageBlock[] {
+  const trimmed = streamedMessageText.trim();
+  if (!trimmed) {
+    return llmBlocks;
+  }
+  const normalized = normalizeSupplementaryTextContent(trimmed, ruleBlocks);
+  if (!normalized) {
+    return llmBlocks;
+  }
+  const alreadyStored = llmBlocks.some(
+    (block) =>
+      block.type === 'text' &&
+      block.content.trim().length > 0 &&
+      (block.content.includes(normalized.slice(0, 64)) ||
+        normalized.includes(block.content.trim().slice(0, 64))),
+  );
+  if (alreadyStored) {
+    return llmBlocks;
+  }
+  const deltaBlocks = filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
+    textBlock(normalized, 'markdown'),
+  ]);
+  if (deltaBlocks.length === 0) {
+    return llmBlocks;
+  }
+  return [...llmBlocks, ...deltaBlocks];
+}
+
 /** 避免 LLM 再输出与规则化结果同类型的 structured block。 */
 export function filterLlmBlocksAvoidDuplicatingRule(
   ruleBlocks: MessageBlock[],
@@ -336,6 +388,36 @@ export function tryParseStoredMessageBlocks(
   } catch {
     return null;
   }
+}
+
+/**
+ * 从 summarize LLM 原始输出解析 blocks。
+ * 须在整段 JSON 上解析后再做 block 级 sanitize，避免 think-strip 破坏 payload。
+ */
+export function tryParseLlmBlocksFromSummarizeOutput(
+  value: string,
+): MessageBlock[] | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const candidates = new Set<string>();
+  const fenced = stripMarkdownFenceForBlocksParse(trimmed);
+  candidates.add(fenced);
+  if (fenced !== trimmed) {
+    candidates.add(trimmed);
+  }
+  const embedded = trimmed.match(/\{[\s\S]*"blocks"\s*:\s*\[[\s\S]*\]\s*\}/);
+  if (embedded?.[0]) {
+    candidates.add(embedded[0]);
+  }
+  for (const candidate of candidates) {
+    const parsed = tryParseStoredMessageBlocks(candidate);
+    if (parsed?.length) {
+      return parsed;
+    }
+  }
+  return null;
 }
 
 function sanitizeMessageBlock(block: MessageBlock): MessageBlock {
@@ -546,6 +628,10 @@ export function extractListRowsFromToolOutput(
   return [];
 }
 
+function isMapReduceToolOutput(output: unknown): output is Record<string, unknown> {
+  return isRecord(output) && isRecord(output.__mapReduce);
+}
+
 /** 多工具观测合并为单一列表容器，供 summarize / 规则化 table 使用。 */
 export function mergeToolOutputsForSummary(outputs: unknown[]): unknown {
   if (outputs.length === 0) {
@@ -553,6 +639,25 @@ export function mergeToolOutputsForSummary(outputs: unknown[]): unknown {
   }
   if (outputs.length === 1) {
     return outputs[0];
+  }
+  const mapReduceOutputs = outputs.filter(isMapReduceToolOutput);
+  if (mapReduceOutputs.length > 0) {
+    const mergedMapReduce = mergeMapReduceObservationOutputs(mapReduceOutputs);
+    const nonMapReduce = outputs.filter((row) => !isMapReduceToolOutput(row));
+    if (nonMapReduce.length === 0) {
+      return mergedMapReduce ?? mapReduceOutputs[0];
+    }
+    const legacy = mergeToolOutputsForSummary(nonMapReduce);
+    if (legacy == null) {
+      return mergedMapReduce ?? mapReduceOutputs[0];
+    }
+    if (mergedMapReduce) {
+      return {
+        ...mergedMapReduce,
+        relatedOutputs: nonMapReduce,
+      };
+    }
+    return legacy;
   }
   const rows: Record<string, unknown>[] = [];
   let total: number | undefined;
@@ -616,11 +721,71 @@ function formatTableCellValue(val: unknown): string {
   return String(val);
 }
 
+function tryBuildMapReduceMetricBlock(
+  output: unknown,
+): MessageBlock | null {
+  const state = readMapReduceFromObservation(output);
+  if (!state) {
+    return null;
+  }
+  const items: Array<{ label: string; value: string }> = [
+    {
+      label: '已分析条数',
+      value: String(state.fetchedCount),
+    },
+  ];
+  if (state.total != null) {
+    items.push({ label: '全量总数', value: String(state.total) });
+  }
+  if (state.truncatedByMaxRows === true) {
+    items.push({
+      label: '分析上限',
+      value: `${state.maxRows} 条（样本分析）`,
+    });
+  }
+  items.push({
+    label: '页内摘要',
+    value: `${state.pageSummaries.filter((row) => row.summary != null).length}/${state.pageCount}`,
+  });
+  return { type: 'metric', items };
+}
+
+function tryBuildMapReduceExamplesTable(
+  output: unknown,
+): MessageBlock | null {
+  const state = readMapReduceFromObservation(output);
+  if (!state) {
+    return null;
+  }
+  const rows = collectNotableExamplesFromPageSummaries(state.pageSummaries, 12);
+  if (rows.length === 0) {
+    return null;
+  }
+  return {
+    type: 'table',
+    title: '典型样例',
+    columns: [
+      { key: 'page', label: '页码' },
+      { key: 'id', label: 'ID' },
+      { key: 'note', label: '说明' },
+    ],
+    data: rows.map((row) => ({
+      page: row.page != null ? String(row.page) : '',
+      id: row.id != null ? String(row.id) : '',
+      note: typeof row.note === 'string' ? row.note : '',
+    })),
+  };
+}
+
 export function tryBuildTableBlockFromOutput(
   output: unknown,
   fieldLabels: Record<string, string>,
   maxRows = 50,
 ): MessageBlock | null {
+  const mapReduceTable = tryBuildMapReduceExamplesTable(output);
+  if (mapReduceTable) {
+    return mapReduceTable;
+  }
   const rows = extractListRows(output);
   if (rows.length < 1) {
     return null;
@@ -714,9 +879,10 @@ export function buildRuleBasedMessageBlocks(input: {
   userMessage: string;
   fieldLabels: Record<string, string>;
   toolErrorHint?: string | null;
+  downstreamResponseSource?: unknown;
 }): MessageBlock[] {
   if (input.toolErrorHint) {
-    return [
+    const blocks: MessageBlock[] = [
       {
         type: 'alert',
         severity: 'error',
@@ -724,9 +890,26 @@ export function buildRuleBasedMessageBlocks(input: {
         message: input.toolErrorHint,
       },
     ];
+    if (input.downstreamResponseSource != null) {
+      const sourceText = formatResponseSourceForDisplay(
+        input.downstreamResponseSource,
+      );
+      if (sourceText) {
+        blocks.push({
+          type: 'text',
+          content: `下游响应源数据：\n\`\`\`json\n${sourceText}\n\`\`\``,
+          format: 'markdown',
+        });
+      }
+    }
+    return blocks;
   }
   const hint = inferRenderHint(input.userMessage);
   const blocks: MessageBlock[] = [];
+  const mapReduceMetric = tryBuildMapReduceMetricBlock(input.output);
+  if (mapReduceMetric) {
+    blocks.push(mapReduceMetric);
+  }
   if (hint === 'table' || hint === 'text') {
     const table = tryBuildTableBlockFromOutput(
       input.output,

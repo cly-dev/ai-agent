@@ -312,7 +312,9 @@ export class UserService {
     return userApp.role.roleTools
       .map((mapping) => mapping.tool)
       .filter(
-        (tool) => this.toolLevelWeight[tool.riskLevel] <= maxAllowedLevel,
+        (tool) =>
+          tool.isActive &&
+          this.toolLevelWeight[tool.riskLevel] <= maxAllowedLevel,
       );
   }
 }

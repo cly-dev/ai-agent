@@ -184,14 +184,25 @@ model Session {
   title       String?
   createdAt   DateTime @default(now())
 
-  user         User         @relation(fields: [userId], references: [id])
-  appClient    AppClient    @relation(fields: [appClientId], references: [id])
-  messages     Message[]
-  agentRuns    AgentRun[]
-  messageTurns MessageTurn[]
+  user            User             @relation(fields: [userId], references: [id])
+  appClient       AppClient        @relation(fields: [appClientId], references: [id])
+  messages        Message[]
+  agentRuns       AgentRun[]
+  messageTurns    MessageTurn[]
+  sessionGoaMemory SessionGoaMemory?
 
   @@index([userId])
   @@index([appClientId])
+}
+
+/// 会话 GOA 记忆（DB 权威源）；Redis 仅作读缓存。
+model SessionGoaMemory {
+  sessionId String   @id @db.VarChar(32)
+  payload   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model Message {
@@ -507,6 +518,8 @@ model AgentRun {
   toolsUsed        Json?
   finishReason     String?
   scopedToolCount  Int?
+  /// Run 结束时的 Plan / activeTask 快照，供 GOA 冷启动 replay 权威恢复。
+  goaSnapshot        Json?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 

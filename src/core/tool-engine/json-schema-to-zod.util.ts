@@ -49,13 +49,13 @@ function jsonSchemaPropertyToZod(schema: Record<string, unknown>): z.ZodTypeAny 
 
   switch (type) {
     case 'integer': {
-      return applyDescription(z.number().int(), schema);
+      return applyDescription(z.coerce.number().int(), schema);
     }
     case 'number': {
-      return applyDescription(z.number(), schema);
+      return applyDescription(z.coerce.number(), schema);
     }
     case 'boolean': {
-      return applyDescription(z.boolean(), schema);
+      return applyDescription(z.coerce.boolean(), schema);
     }
     case 'array': {
       const items = schema.items;

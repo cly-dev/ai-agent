@@ -8,7 +8,8 @@ import {
 import { randomBytes } from 'crypto';
 import type { Message } from '../../../generated/prisma/client';
 import type { Session } from '../../../generated/prisma/client';
-import { SessionContextStore } from '../../core/memory/session-context.store';
+import { SessionContextStore } from '../../core/memory/context/session-context.store';
+import { SessionGoaStore } from '../../core/memory/goa/session-goa.store';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MessageService } from '../message/message.service';
 import { ChatEventsService } from './chat-events.service';
@@ -26,6 +27,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly chatEvents: ChatEventsService,
     private readonly sessionContextStore: SessionContextStore,
+    private readonly sessionGoaStore: SessionGoaStore,
     private readonly sessionPrepareStore: SessionPrepareStore,
     private readonly sessionPrepareService: SessionPrepareService,
     @Inject(forwardRef(() => MessageService))
@@ -221,9 +223,12 @@ export class ChatService {
 
   private async clearSessionContext(sessionId: string): Promise<void> {
     try {
-      await this.sessionContextStore.delete(sessionId);
+      await Promise.all([
+        this.sessionContextStore.delete(sessionId),
+        this.sessionGoaStore.delete(sessionId),
+      ]);
     } catch {
-      // redis 不可用时不影响主流程
+      // redis / db 不可用时不影响主流程
     }
   }
 }

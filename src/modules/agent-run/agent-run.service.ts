@@ -31,8 +31,6 @@ export class AgentRunService {
       lowQualityObservations: number;
       intentExpandRetries: number;
       fallbackReplies: number;
-      precheckChecks: number;
-      precheckHits: number;
     };
     rates: {
       toolSuccessRate: number;
@@ -40,7 +38,6 @@ export class AgentRunService {
       intentExpandRetryRate: number;
       avgStepsPerTurn: number;
       fallbackReplyRate: number;
-      precheckHitRate: number;
     };
   }> {
     await this.assertAppClientExists(appClientId);
@@ -67,8 +64,6 @@ export class AgentRunService {
     let lowQuality = 0;
     let toolFailures = 0;
     let totalSteps = 0;
-    let precheckChecks = 0;
-    let precheckHits = 0;
     const expandRetryTurnIds = new Set<number>();
     const fallbackTurnIds = new Set<number>();
 
@@ -79,11 +74,13 @@ export class AgentRunService {
       toolFailures +=
         parsed.codes.TOOL_AUTH_FAILED +
         parsed.codes.TOOL_TIMEOUT +
-        parsed.codes.TOOL_EMPTY_RESULT;
+        parsed.codes.TOOL_EMPTY_RESULT +
+        parsed.codes.TOOL_DOWNSTREAM_ERROR;
       const hasFallback =
         parsed.codes.TOOL_AUTH_FAILED > 0 ||
         parsed.codes.TOOL_TIMEOUT > 0 ||
         parsed.codes.TOOL_EMPTY_RESULT > 0 ||
+        parsed.codes.TOOL_DOWNSTREAM_ERROR > 0 ||
         parsed.codes.LLM_TIMEOUT > 0 ||
         parsed.codes.LLM_RATE_LIMIT > 0;
       if (hasFallback && run.turnId != null) {
@@ -92,26 +89,6 @@ export class AgentRunService {
 
       const steps = this.extractSteps(run.steps);
       totalSteps += steps.length;
-      for (const step of steps) {
-        if (!step || typeof step !== 'object' || Array.isArray(step)) {
-          continue;
-        }
-        const row = step as { type?: unknown; output?: unknown };
-        if (row.type !== 'precheck') {
-          continue;
-        }
-        precheckChecks += 1;
-        const output = row.output;
-        if (!output || typeof output !== 'object' || Array.isArray(output)) {
-          continue;
-        }
-        if (
-          (output as { answerableFromObservation?: unknown })
-            .answerableFromObservation === true
-        ) {
-          precheckHits += 1;
-        }
-      }
       const expanded = steps.some((step) => {
         if (!step || typeof step !== 'object' || Array.isArray(step)) {
           return false;
@@ -133,7 +110,6 @@ export class AgentRunService {
 
     const safeTurnCount = Math.max(1, turnCount);
     const safeToolCalls = Math.max(1, totalToolCalls);
-    const safePrecheckChecks = Math.max(1, precheckChecks);
     return {
       windowDays,
       from: from.toISOString(),
@@ -145,8 +121,6 @@ export class AgentRunService {
         lowQualityObservations: lowQuality,
         intentExpandRetries: expandRetryTurnIds.size,
         fallbackReplies: fallbackTurnIds.size,
-        precheckChecks,
-        precheckHits,
       },
       rates: {
         toolSuccessRate: Number(
@@ -159,7 +133,6 @@ export class AgentRunService {
         avgStepsPerTurn: Number((totalSteps / safeTurnCount).toFixed(4),
         ),
         fallbackReplyRate: Number((fallbackTurnIds.size / safeTurnCount).toFixed(4)),
-        precheckHitRate: Number((precheckHits / safePrecheckChecks).toFixed(4)),
       },
     };
   }
@@ -396,6 +369,7 @@ export class AgentRunService {
       TOOL_AUTH_FAILED: number;
       TOOL_TIMEOUT: number;
       TOOL_EMPTY_RESULT: number;
+      TOOL_DOWNSTREAM_ERROR: number;
       LLM_TIMEOUT: number;
       LLM_RATE_LIMIT: number;
     };
@@ -410,6 +384,7 @@ export class AgentRunService {
           TOOL_AUTH_FAILED: 0,
           TOOL_TIMEOUT: 0,
           TOOL_EMPTY_RESULT: 0,
+          TOOL_DOWNSTREAM_ERROR: 0,
           LLM_TIMEOUT: 0,
           LLM_RATE_LIMIT: 0,
         },
@@ -422,6 +397,7 @@ export class AgentRunService {
         TOOL_AUTH_FAILED?: unknown;
         TOOL_TIMEOUT?: unknown;
         TOOL_EMPTY_RESULT?: unknown;
+        TOOL_DOWNSTREAM_ERROR?: unknown;
         LLM_TIMEOUT?: unknown;
         LLM_RATE_LIMIT?: unknown;
       };
@@ -439,6 +415,7 @@ export class AgentRunService {
         TOOL_AUTH_FAILED: asInt(c.TOOL_AUTH_FAILED),
         TOOL_TIMEOUT: asInt(c.TOOL_TIMEOUT),
         TOOL_EMPTY_RESULT: asInt(c.TOOL_EMPTY_RESULT),
+        TOOL_DOWNSTREAM_ERROR: asInt(c.TOOL_DOWNSTREAM_ERROR),
         LLM_TIMEOUT: asInt(c.LLM_TIMEOUT),
         LLM_RATE_LIMIT: asInt(c.LLM_RATE_LIMIT),
       },

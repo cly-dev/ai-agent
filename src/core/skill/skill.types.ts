@@ -4,6 +4,7 @@ import type {
   BuiltLangChainTools,
   ToolBuildContext,
 } from '../tool-engine/tool-engine.service';
+import type { SkillRecallStage } from './skill-recall.util';
 
 export type SkillResolveInput = {
   agentId: number;
@@ -17,7 +18,9 @@ export type SkillResolveInput = {
 export type ActiveSkillSnapshot = {
   id: number;
   name: string;
+  description: string | null;
   prompt: string;
+  config: unknown;
   riskLevel: ToolLevel;
   capabilityKey: string | null;
 };
@@ -26,6 +29,21 @@ export type SkillRecallMatch = {
   id: number;
   name: string;
   score: number;
+};
+
+export type SkillRecallStageAttempt = {
+  stage: SkillRecallStage;
+  source: 'vector' | 'keyword' | 'none';
+  minScore: number;
+  matches: SkillRecallMatch[];
+  hit: boolean;
+};
+
+export type SkillRecallObservability = {
+  recallStage?: SkillRecallStage | null;
+  recallSource?: 'vector' | 'keyword' | 'none';
+  recallMatches?: SkillRecallMatch[];
+  recallStageAttempts?: SkillRecallStageAttempt[];
 };
 
 export type SkillResolveMiss = {
@@ -37,7 +55,7 @@ export type SkillResolveMiss = {
     | 'empty_gate'
     | 'tools_disabled';
   candidateCount?: number;
-};
+} & SkillRecallObservability;
 
 export type SkillResolveHit = {
   hit: true;
@@ -50,6 +68,8 @@ export type SkillResolveHit = {
   recallSource: 'vector' | 'keyword';
   recallScore: number;
   recallMatches: SkillRecallMatch[];
+  recallStage: SkillRecallStage;
+  recallStageAttempts: SkillRecallStageAttempt[];
   roleSkillFiltered: boolean;
 };
 

@@ -11,8 +11,10 @@ import {
 import {
   buildCompactToolInput,
   listRequiredParamNames,
+  resolveParamFormatHints,
 } from '../../../tool-engine/tool-decision-input.util';
 import { parseResponseProfile } from '../../../tool-engine/tool-output-projection.util';
+import type { ParamFormatHint } from '../../../tool-engine/tool-agent-metadata.types';
 import type { ToolDecisionRole } from '../../../tool-engine/tool-decision-role.enum';
 
 export type ToolSchemaCompact = {
@@ -27,6 +29,8 @@ export type ToolSchemaCompact = {
   businessFields?: string[];
   isMutation?: boolean;
   requiredParams?: string[];
+  /** 参数格式/命名说明（param 须与 OpenAPI 参数名一致） */
+  paramHints?: ParamFormatHint[];
 };
 
 const SCHEMA_PARAM_SKIP = new Set([
@@ -101,6 +105,11 @@ export function summarizeToolsForLlmSchema(
     const filters = meta?.isMutation ? undefined : extractFilterNames(input);
     const returns = extractReturnFields(tool.responseProfile, provides);
     const description = tool.description?.trim();
+    const paramHints = resolveParamFormatHints(
+      tool.inputSchema,
+      tool.schema,
+      meta?.paramFormatHints,
+    );
 
     const row: ToolSchemaCompact = {
       name: tool.name,
@@ -115,6 +124,7 @@ export function summarizeToolsForLlmSchema(
         : {}),
       ...(meta?.isMutation != null ? { isMutation: meta.isMutation } : {}),
       ...(requiredParams.length > 0 ? { requiredParams } : {}),
+      ...(paramHints.length > 0 ? { paramHints } : {}),
     };
     return row;
   });

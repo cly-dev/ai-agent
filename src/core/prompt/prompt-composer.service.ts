@@ -1,15 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { SessionHistoryCompressionService } from '../memory/session-history-compression.service';
-import { UserMemoryStore } from '../memory/user-memory.store';
-import { WorkingMemoryService } from '../memory/working-memory.service';
+import { SessionHistoryCompressionService } from '../memory/context/session-history-compression.service';
+import { UserMemoryStore } from '../memory/user/user-memory.store';
+import { SessionGoaService } from '../memory/goa/session-goa.service';
 import {
   dbMessageRowToMessageTurn,
-} from '../memory/session-context.format';
-import { SessionContextStore } from '../memory/session-context.store';
+} from '../memory/context/session-context.format';
+import { SessionContextStore } from '../memory/context/session-context.store';
 import {
   isSessionContextPayload,
   type SessionContextPayload,
-} from '../memory/session-context.types';
+} from '../memory/context/session-context.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { LlmChatMessage } from '../llm/llm.types';
 import { PROMPT_KEYS } from './prompt-template.keys';
@@ -28,7 +28,7 @@ export class PromptComposerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly userMemoryStore: UserMemoryStore,
-    private readonly workingMemoryService: WorkingMemoryService,
+    private readonly sessionGoa: SessionGoaService,
     private readonly sessionHistoryCompression: SessionHistoryCompressionService,
     private readonly sessionContextStore: SessionContextStore,
     private readonly promptRegistry: PromptRegistryService,
@@ -43,13 +43,13 @@ export class PromptComposerService {
         : await this.loadAgentPrompt(input.sessionId);
     const [
       userMemory,
-      workingMemory,
+      sessionPayload,
       conversation,
       responseStyle,
       messageBlocksSpec,
     ] = await Promise.all([
       this.userMemoryStore.get(input.userId),
-      this.workingMemoryService.get(input.sessionId),
+      this.sessionGoa.ensurePayload(input.sessionId),
       this.loadRecentConversationMessages(input.sessionId),
       this.promptRegistry.render(PROMPT_KEYS.PLATFORM_RESPONSE_STYLE, sessionScope),
       this.promptRegistry.render(
@@ -57,6 +57,8 @@ export class PromptComposerService {
         sessionScope,
       ),
     ]);
+    const sessionMemoryMessages =
+      this.sessionGoa.buildPromptMessages(sessionPayload);
     const agentPrompt = agentPromptSource;
 
     const messages: LlmChatMessage[] = [];
@@ -85,18 +87,15 @@ export class PromptComposerService {
       });
     }
 
-    if (workingMemory) {
-      messages.push({
-        role: 'system',
-        content: `<working_memory>\n${JSON.stringify(workingMemory)}\n</working_memory>`,
-      });
+    for (const memoryMessage of sessionMemoryMessages) {
+      messages.push(memoryMessage);
     }
 
     if (conversation.length > 0) {
       messages.push({
         role: 'system',
         content:
-          '<session_history>Earlier turns may appear as session_history_summary; recent turns follow. Prefer working_memory for task state.</session_history>',
+          '<session_history>Earlier turns may appear as session_history_summary; recent turns follow. Prefer recent_episodes and active_task for goals/outcomes; use session_history for dialogue tone.</session_history>',
       });
       for (const turn of conversation) {
         messages.push(turn);
@@ -132,7 +131,7 @@ export class PromptComposerService {
     if (payload.turns.length === 0) {
       return false;
     }
-    return this.sessionContextStore.trySet(sessionId, payload);
+    return this.cacheSessionPayload(sessionId, payload);
   }
 
   private async loadRecentConversationMessages(
@@ -147,13 +146,31 @@ export class PromptComposerService {
       `session context cache miss sessionId=${sessionId}, loading from DB`,
     );
     const { messages, payload } = await this.loadFromDatabase(sessionId);
-    const warmed = await this.sessionContextStore.trySet(sessionId, payload);
+    const warmed = await this.cacheSessionPayload(sessionId, payload);
     if (!warmed) {
       this.logger.debug(
         `session context not cached (Redis unavailable) sessionId=${sessionId}`,
       );
     }
     return messages;
+  }
+
+  /**
+   * 已有 Redis 上下文时仅 patch turns，避免 trySet 覆盖并发写入的 GOA 字段。
+   */
+  private async cacheSessionPayload(
+    sessionId: string,
+    payload: SessionContextPayload,
+  ): Promise<boolean> {
+    const existing = await this.sessionContextStore.get(sessionId);
+    if (existing && isSessionContextPayload(existing)) {
+      const patched = await this.sessionContextStore.tryPatch(sessionId, {
+        turns: payload.turns,
+        updatedAt: payload.updatedAt,
+      });
+      return patched != null;
+    }
+    return this.sessionContextStore.trySet(sessionId, payload);
   }
 
   private async loadFromRedis(
@@ -197,7 +214,6 @@ export class PromptComposerService {
     };
     const cached = await this.sessionContextStore.get(sessionId);
     if (cached && isSessionContextPayload(cached)) {
-      payload.workingMemory = cached.workingMemory;
       payload.compressedHistorySummary = cached.compressedHistorySummary;
       payload.compressedUpToMessageId = cached.compressedUpToMessageId;
     }

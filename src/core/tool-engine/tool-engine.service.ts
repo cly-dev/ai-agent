@@ -20,6 +20,10 @@ import {
   type OpenApiParamSpec,
 } from './tool-input-sanitize.util';
 import {
+  buildHttpResponseSource,
+  ToolHttpResponseError,
+} from './tool-response-source.util';
+import {
   resolveToolZodSchema,
   type ToolDefinitionInput,
 } from './tool-schema.util';
@@ -119,6 +123,7 @@ export class ToolEngineService {
     );
     let input = applyToolParameterDefaults(options.parameters ?? {}, specs, {
       agentMetadata: tool.agentMetadata,
+      responseProfile: tool.responseProfile,
     });
     input = sanitizeToolInvokeInput(input, specs);
 
@@ -256,6 +261,7 @@ export class ToolEngineService {
           apiKey: tool.integration.apiKey,
         },
         agentMetadata: tool.agentMetadata,
+        responseProfile: tool.responseProfile,
       },
       input,
       userId,
@@ -276,6 +282,7 @@ export class ToolEngineService {
       const specs = this.loadOpenApiParameterSpecs(def.inputSchema, def.schema);
       input = applyToolParameterDefaults(input, specs, {
         agentMetadata: def.agentMetadata,
+        responseProfile: def.responseProfile,
       });
       input = sanitizeToolInvokeInput(input, specs);
 
@@ -336,6 +343,7 @@ export class ToolEngineService {
       });
       const bodyText = await response.text();
       const output = this.safeJsonParse(bodyText);
+      const httpResponse = buildHttpResponseSource(response, bodyText, output);
 
       this.writeToolDebugSnapshot({
         phase: 'after_fetch',
@@ -385,8 +393,9 @@ export class ToolEngineService {
               ? ` downstream returned 401: verify ${authSource} api key, or confirm the API expects Bearer (not x-api-key / Basic).`
               : ' downstream returned 401: auth key is empty — set a valid key, or configure the upstream to accept unauthenticated requests.'
             : '';
-        throw new BadRequestException(
+        throw new ToolHttpResponseError(
           `tool ${def.name} failed: ${response.status} ${response.statusText}.${authHint}`,
+          httpResponse,
         );
       }
       return {
@@ -395,6 +404,8 @@ export class ToolEngineService {
         input,
         output,
         latency: Date.now() - startedAt,
+        responseSource: bodyText,
+        httpResponse,
       };
     } finally {
       clearTimeout(timeout);
@@ -643,19 +654,35 @@ export class ToolEngineService {
     if (!this.isToolDebugFileEnabled()) {
       return;
     }
+    const toolName = String(
+      record.toolNameRequested ??
+        (record.tool as { name?: string } | undefined)?.name ??
+        'tool',
+    );
+    const phase = String(record.phase ?? 'debug');
+    const latencyMs =
+      typeof record.latencyMs === 'number' ? record.latencyMs : null;
+    const response = record.response as
+      | { status?: number; ok?: boolean }
+      | undefined;
+    const status =
+      response?.status != null
+        ? String(response.status)
+        : response?.ok === false
+          ? 'error'
+          : '-';
+    this.logger.log(
+      `tool HTTP tool=${toolName} phase=${phase} status=${status}${
+        latencyMs != null ? ` latencyMs=${latencyMs}` : ''
+      }`,
+    );
     try {
       const dir = path.join(process.cwd(), 'logs', 'tool-engine');
       fs.mkdirSync(dir, { recursive: true });
-      const nameHint = String(
-        record.toolNameRequested ??
-          (record.tool as { name?: string } | undefined)?.name ??
-          'tool',
-      ).replace(/[^a-zA-Z0-9._-]+/g, '_');
-      const file = path.join(
-        dir,
-        `${Date.now()}-${nameHint}-${record.phase ?? 'debug'}.json`,
-      );
+      const nameHint = toolName.replace(/[^a-zA-Z0-9._-]+/g, '_');
+      const file = path.join(dir, `${Date.now()}-${nameHint}-${phase}.json`);
       fs.writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, 'utf-8');
+      this.logger.log(`tool HTTP debug file tool=${toolName} path=${file}`);
     } catch (err) {
       this.logger.warn(
         `tool-engine debug file write failed: ${

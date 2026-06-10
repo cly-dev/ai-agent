@@ -13,6 +13,7 @@ import {
   ToolMode,
   type AgentMetadata,
   type OperationType as Op,
+  type ParamFormatHint,
   type ParsedUserToolIntent,
   type ResourceType as Res,
   type ToolMetadataSource,
@@ -38,6 +39,29 @@ function asStringArray(value: unknown): string[] {
   return value
     .map((item) => (typeof item === 'string' ? item.trim() : ''))
     .filter((item) => item.length > 0);
+}
+
+function parseParamFormatHints(value: unknown): ParamFormatHint[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const rows: ParamFormatHint[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const param = typeof item.param === 'string' ? item.param.trim() : '';
+    const hint = typeof item.hint === 'string' ? item.hint.trim() : '';
+    if (!param || !hint) {
+      continue;
+    }
+    const example =
+      typeof item.example === 'string' && item.example.trim().length > 0
+        ? item.example.trim()
+        : undefined;
+    rows.push(example ? { param, hint, example } : { param, hint });
+  }
+  return rows;
 }
 
 function pickEnum<T extends string>(
@@ -73,6 +97,7 @@ export function parseAgentMetadata(raw: unknown): AgentMetadata | null {
         : 100;
   const isMutation =
     typeof raw.isMutation === 'boolean' ? raw.isMutation : mode === ToolMode.WRITE;
+  const paramFormatHints = parseParamFormatHints(raw.paramFormatHints);
 
   return {
     mode,
@@ -83,6 +108,7 @@ export function parseAgentMetadata(raw: unknown): AgentMetadata | null {
     examples,
     priority,
     isMutation,
+    ...(paramFormatHints.length > 0 ? { paramFormatHints } : {}),
   };
 }
 
@@ -354,8 +380,6 @@ export function parseUserToolIntent(userMessage: string): ParsedUserToolIntent {
     intent.resource = ResourceType.PRICE;
   } else if (/\b(inventory|stock)\b/i.test(text)) {
     intent.resource = ResourceType.INVENTORY;
-  } else if (/\b(remark|note|notes)\b/i.test(text)) {
-    intent.resource = ResourceType.PRODUCT;
   }
 
   if (intent.mode === ToolMode.READ) {

@@ -8,6 +8,7 @@ import type { AgentMachineCode } from './agent-run-user-messages.util';
 /** 单次 AgentRun / MessageTurn 执行过程的用量累加器。 */
 export type RunMetricsAccumulator = {
   llmCallCount: number;
+  gatherPageSummaryCallCount: number;
   toolCallCount: number;
   promptTokens: number;
   completionTokens: number;
@@ -26,6 +27,7 @@ export type RunMetricsAccumulator = {
 
 export type RunMetricsSnapshot = {
   llmCallCount: number;
+  gatherPageSummaryCallCount: number;
   toolCallCount: number;
   promptTokens: number;
   completionTokens: number;
@@ -48,6 +50,7 @@ export type RunMetricsSnapshot = {
 export function createRunMetricsAccumulator(): RunMetricsAccumulator {
   return {
     llmCallCount: 0,
+    gatherPageSummaryCallCount: 0,
     toolCallCount: 0,
     promptTokens: 0,
     completionTokens: 0,
@@ -64,12 +67,27 @@ export function createRunMetricsAccumulator(): RunMetricsAccumulator {
       TOOL_AUTH_FAILED: 0,
       TOOL_TIMEOUT: 0,
       TOOL_EMPTY_RESULT: 0,
+      TOOL_DOWNSTREAM_ERROR: 0,
       LLM_TIMEOUT: 0,
       LLM_RATE_LIMIT: 0,
       WRITE_CONFIRMATION_REQUIRED: 0,
     },
     startedAtMs: Date.now(),
   };
+}
+
+export function recordGatherPageSummaryLlmUsage(
+  acc: RunMetricsAccumulator,
+  input: {
+    messages: LlmChatMessage[];
+    outputText: string;
+    durationMs: number;
+    model?: string;
+    responseMeta?: Record<string, unknown>;
+  },
+): void {
+  acc.gatherPageSummaryCallCount += 1;
+  recordLlmUsage(acc, input);
 }
 
 export function recordLlmUsage(
@@ -130,6 +148,7 @@ export function snapshotRunMetrics(
   const completionTokens = acc.completionTokens;
   return {
     llmCallCount: acc.llmCallCount,
+    gatherPageSummaryCallCount: acc.gatherPageSummaryCallCount,
     toolCallCount: acc.toolCallCount,
     promptTokens,
     completionTokens,
@@ -150,6 +169,7 @@ export function snapshotRunMetrics(
         TOOL_AUTH_FAILED: acc.machineCodeCounts.TOOL_AUTH_FAILED,
         TOOL_TIMEOUT: acc.machineCodeCounts.TOOL_TIMEOUT,
         TOOL_EMPTY_RESULT: acc.machineCodeCounts.TOOL_EMPTY_RESULT,
+        TOOL_DOWNSTREAM_ERROR: acc.machineCodeCounts.TOOL_DOWNSTREAM_ERROR,
         LLM_TIMEOUT: acc.machineCodeCounts.LLM_TIMEOUT,
         LLM_RATE_LIMIT: acc.machineCodeCounts.LLM_RATE_LIMIT,
         WRITE_CONFIRMATION_REQUIRED:
@@ -173,11 +193,13 @@ export function aggregateRunMetrics(
     TOOL_AUTH_FAILED: 0,
     TOOL_TIMEOUT: 0,
     TOOL_EMPTY_RESULT: 0,
+    TOOL_DOWNSTREAM_ERROR: 0,
     LLM_TIMEOUT: 0,
     LLM_RATE_LIMIT: 0,
     WRITE_CONFIRMATION_REQUIRED: 0,
   };
   let llmCallCount = 0;
+  let gatherPageSummaryCallCount = 0;
   let toolCallCount = 0;
   let promptTokens = 0;
   let completionTokens = 0;
@@ -187,6 +209,7 @@ export function aggregateRunMetrics(
   let model: string | undefined;
   for (const row of snapshots) {
     llmCallCount += row.llmCallCount;
+    gatherPageSummaryCallCount += row.gatherPageSummaryCallCount;
     toolCallCount += row.toolCallCount;
     promptTokens += row.promptTokens;
     completionTokens += row.completionTokens;
@@ -209,12 +232,15 @@ export function aggregateRunMetrics(
     machineCodeCounts.TOOL_TIMEOUT += row.toolsUsed.codeCounts?.TOOL_TIMEOUT ?? 0;
     machineCodeCounts.TOOL_EMPTY_RESULT +=
       row.toolsUsed.codeCounts?.TOOL_EMPTY_RESULT ?? 0;
+    machineCodeCounts.TOOL_DOWNSTREAM_ERROR +=
+      row.toolsUsed.codeCounts?.TOOL_DOWNSTREAM_ERROR ?? 0;
     machineCodeCounts.LLM_TIMEOUT += row.toolsUsed.codeCounts?.LLM_TIMEOUT ?? 0;
     machineCodeCounts.LLM_RATE_LIMIT +=
       row.toolsUsed.codeCounts?.LLM_RATE_LIMIT ?? 0;
   }
   return {
     llmCallCount,
+    gatherPageSummaryCallCount,
     toolCallCount,
     promptTokens,
     completionTokens,

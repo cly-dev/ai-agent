@@ -16,6 +16,7 @@ import {
   mergeDecisionRoleIntoResponseProfile,
   parseAgentMetadata,
 } from '../core/tool-engine/tool-agent-metadata.util';
+import { normalizeAgentMetadataForPersist } from '../core/tool-engine/tool-decision-input.util';
 import {
   buildSwaggerImportResponseProfile,
   parseConfiguredToolDecisionRole,
@@ -737,13 +738,16 @@ function buildToolDrafts(
       const categoryLabel = operationPrimaryTag(operation);
       const categoryDescription = tagDescriptions.get(categoryLabel) ?? null;
       const name = buildToolName(operation, method, urlPath);
-      const agentMetadata = inferAgentMetadataFromOpenApi({
+      const agentMetadataInferred = inferAgentMetadataFromOpenApi({
         method,
         path: normalizePath(urlPath),
         name,
         description: buildDescription(operation, method, urlPath),
         inputSchema,
       });
+      const agentMetadata =
+        normalizeAgentMetadataForPersist(agentMetadataInferred, inputSchema) ??
+        agentMetadataInferred;
 
       drafts.push({
         definitionKey: buildToolDefinitionKey({
@@ -946,11 +950,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function mergeAgentMetadataForSwaggerImport(
   existing: unknown,
   incoming: Prisma.InputJsonValue,
+  inputSchema: Prisma.InputJsonValue,
 ): Prisma.InputJsonValue {
-  if (!isRecord(existing) || !parseAgentMetadata(existing)) {
-    return incoming;
-  }
-  return existing as Prisma.InputJsonValue;
+  const base =
+    !isRecord(existing) || !parseAgentMetadata(existing)
+      ? incoming
+      : (existing as Prisma.InputJsonValue);
+  const synced = normalizeAgentMetadataForPersist(base, inputSchema);
+  return (synced ?? base) as Prisma.InputJsonValue;
 }
 
 function mergeResponseProfileForSwaggerImport(
@@ -1099,6 +1106,7 @@ export async function applyTools(
           agentMetadata: mergeAgentMetadataForSwaggerImport(
             existing.agentMetadata,
             draft.agentMetadata,
+            draft.inputSchema,
           ),
           responseProfile: mergeResponseProfileForSwaggerImport(
             existing.responseProfile,

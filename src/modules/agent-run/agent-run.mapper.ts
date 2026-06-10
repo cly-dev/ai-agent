@@ -59,6 +59,7 @@ function normalizeToolMachineCodeCounts(
       TOOL_AUTH_FAILED?: unknown;
       TOOL_TIMEOUT?: unknown;
       TOOL_EMPTY_RESULT?: unknown;
+      TOOL_DOWNSTREAM_ERROR?: unknown;
       LLM_TIMEOUT?: unknown;
       LLM_RATE_LIMIT?: unknown;
     };
@@ -76,6 +77,7 @@ function normalizeToolMachineCodeCounts(
     TOOL_AUTH_FAILED: asInt(counts.TOOL_AUTH_FAILED),
     TOOL_TIMEOUT: asInt(counts.TOOL_TIMEOUT),
     TOOL_EMPTY_RESULT: asInt(counts.TOOL_EMPTY_RESULT),
+    TOOL_DOWNSTREAM_ERROR: asInt(counts.TOOL_DOWNSTREAM_ERROR),
     LLM_TIMEOUT: asInt(counts.LLM_TIMEOUT),
     LLM_RATE_LIMIT: asInt(counts.LLM_RATE_LIMIT),
   };

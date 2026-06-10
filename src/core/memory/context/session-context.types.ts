@@ -1,8 +1,6 @@
-import type { Prisma } from '../../../generated/prisma/client';
+import type { Prisma } from '../../../../generated/prisma/client';
 
-
-
-/** Redis `context:session:{id}` 载荷，与 MessageService 写入结构一致。 */
+/** Redis `context:session:{id}` — 仅对话轮次与历史压缩（GOA 已迁至 DB）。 */
 export type SessionContextTurn = {
   messageId: number;
   role: string;
@@ -12,34 +10,11 @@ export type SessionContextTurn = {
   toolOutput: Prisma.JsonValue | null;
   createdAt: string;
 };
-export type WorkingMemoryFact = {
-  key: string;
-  value: string;
-};
-
-/** 会话级工作记忆（Redis SessionContextPayload.workingMemory）。 */
-export type WorkingMemoryState = {
-  goal?: string;
-  facts: WorkingMemoryFact[];
-  entities: Record<string, unknown>;
-  pendingActions?: string[];
-  lastToolSummary?: string;
-  updatedAt: string;
-};
-
-export type WorkingMemoryUpdateContext = {
-  userInput: string;
-  finalOutput: string;
-  toolObservations: Array<{ name: string; output: unknown }>;
-};
 
 export type SessionContextPayload = {
   sessionId: string;
   turns: SessionContextTurn[];
-  workingMemory?: WorkingMemoryState;
-  /** 较早轮次的 LLM 压缩摘要（对应 messageId <= compressedUpToMessageId）。 */
   compressedHistorySummary?: string;
-  /** 已纳入摘要的最后一条 messageId。 */
   compressedUpToMessageId?: number;
   updatedAt: string;
 };

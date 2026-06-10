@@ -1,3 +1,5 @@
+import { isAgentToolErrorObservation } from '../agent-run-user-messages.util';
+
 function normalizeObservationPayload(output: unknown): unknown {
   if (typeof output !== 'string') {
     return output;
@@ -33,6 +35,21 @@ export function observationsAreOnlyEmptyLists(
   return (
     observations.length > 0 &&
     observations.every((row) => isEmptyListToolObservation(row.output))
+  );
+}
+
+/** 是否存在可用于 plan 推进 / summarize 的非空、非 error tool 观测。 */
+export function hasSummarizableToolObservations(
+  observations: Array<{ output: unknown }>,
+): boolean {
+  if (observations.length === 0 || observationsAreOnlyEmptyLists(observations)) {
+    return false;
+  }
+  return observations.some(
+    (row) =>
+      row.output != null &&
+      !isAgentToolErrorObservation(row.output) &&
+      !isEmptyListToolObservation(row.output),
   );
 }
 

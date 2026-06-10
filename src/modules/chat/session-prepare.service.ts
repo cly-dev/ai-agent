@@ -8,6 +8,7 @@ import { PromptComposerService } from '../../core/prompt/prompt-composer.service
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentService } from '../agent/agent.service';
 import type { SessionPrepareResult } from './session-prepare.types';
+import { areToolIdSetsEqual } from './session-prepare.util';
 import { SessionPrepareStore } from './session-prepare.store';
 
 @Injectable()
@@ -62,17 +63,25 @@ export class SessionPrepareService {
         session.agentId,
       );
       if (cachedTools) {
-        return {
-          sessionId: session.id,
-          prepared: true,
-          agentReady: true,
-          toolsCount: cachedTools.length,
-          sessionContextWarmed: await this.promptComposer.warmSessionContext(
-            session.id,
-          ),
-          warmedAt: new Date().toISOString(),
-          fromCache: true,
-        };
+        const freshTools = await this.agentService.getAllowedTools(
+          session.agentId,
+          userId,
+          appClientId,
+        );
+        if (areToolIdSetsEqual(cachedTools, freshTools)) {
+          return {
+            sessionId: session.id,
+            prepared: true,
+            agentReady: true,
+            toolsCount: cachedTools.length,
+            sessionContextWarmed: await this.promptComposer.warmSessionContext(
+              session.id,
+            ),
+            warmedAt: new Date().toISOString(),
+            fromCache: true,
+          };
+        }
+        await this.sessionPrepareStore.delete(session.id);
       }
     }
 

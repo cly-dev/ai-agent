@@ -9,6 +9,21 @@ export function buildToolIdsFingerprint(
     .join(',');
 }
 
+export function areToolIdSetsEqual(
+  left: Array<{ id: number }>,
+  right: Array<{ id: number }>,
+): boolean {
+  return buildToolIdsFingerprint(left) === buildToolIdsFingerprint(right);
+}
+
+export function snapshotContainsAnyToolId(
+  tools: Array<{ id: number }>,
+  toolIds: Iterable<number>,
+): boolean {
+  const idSet = new Set(toolIds);
+  return tools.some((tool) => idSet.has(tool.id));
+}
+
 export function isSessionPrepareSnapshotValid(
   snapshot: {
     sessionId: string;

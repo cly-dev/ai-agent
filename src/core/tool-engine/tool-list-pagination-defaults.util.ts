@@ -1,8 +1,11 @@
 import { parseAgentMetadata } from './tool-agent-metadata.util';
 import { OperationType } from './tool-agent-metadata.types';
-
-const DEFAULT_LIST_PAGE = 1;
-const DEFAULT_LIST_SIZE = 100;
+import { parseResponseProfile } from './tool-output-projection.util';
+import {
+  classifyPaginationParam,
+  resolveDefaultListPage,
+  resolveDefaultListSize,
+} from './tool-pagination-params.util';
 
 type PaginationParamSpec = {
   name: string;
@@ -11,25 +14,8 @@ type PaginationParamSpec = {
   default?: unknown;
 };
 
-/** query 参数名 → page（不区分大小写，全名匹配）。 */
-const PAGE_PARAM_RE = /^page(?:number|num|no|index)?$/i;
-
-/** query 参数名 → page size / limit（不区分大小写，全名匹配）。 */
-const SIZE_PARAM_RE =
-  /^(?:page)?size$|^limit$|^pagesize$|^per_?page$|^page_size$|^maxresults$/i;
-
 function isMissingParamValue(value: unknown): boolean {
   return value === undefined || value === null || value === '';
-}
-
-function classifyPaginationParam(name: string): 'page' | 'size' | null {
-  if (PAGE_PARAM_RE.test(name)) {
-    return 'page';
-  }
-  if (SIZE_PARAM_RE.test(name)) {
-    return 'size';
-  }
-  return null;
 }
 
 function coercePositiveInt(value: unknown, fallback: number): number {
@@ -49,31 +35,77 @@ function resolveDefaultForPaginationRole(
   role: 'page' | 'size',
   spec: PaginationParamSpec,
 ): number {
+  const fallback = role === 'page' ? resolveDefaultListPage() : resolveDefaultListSize();
   if (spec.default !== undefined && spec.default !== null) {
-    return coercePositiveInt(
-      spec.default,
-      role === 'page' ? DEFAULT_LIST_PAGE : DEFAULT_LIST_SIZE,
-    );
+    return coercePositiveInt(spec.default, fallback);
   }
-  return role === 'page' ? DEFAULT_LIST_PAGE : DEFAULT_LIST_SIZE;
+  return fallback;
+}
+
+function specsHavePaginationParams(specs: PaginationParamSpec[]): boolean {
+  let hasPage = false;
+  let hasSize = false;
+  for (const spec of specs) {
+    if (spec.in !== 'query') {
+      continue;
+    }
+    if (spec.type !== 'integer' && spec.type !== 'number') {
+      continue;
+    }
+    const role = classifyPaginationParam(spec.name);
+    if (role === 'page') {
+      hasPage = true;
+    }
+    if (role === 'size') {
+      hasSize = true;
+    }
+  }
+  return hasPage && hasSize;
+}
+
+/** Whether to auto-fill missing page/size for this tool invocation. */
+export function shouldApplyListPaginationDefaults(input: {
+  agentMetadata: unknown;
+  responseProfile?: unknown;
+  specs: PaginationParamSpec[];
+}): boolean {
+  const meta = parseAgentMetadata(input.agentMetadata);
+  if (meta) {
+    if (
+      meta.operation === OperationType.LIST ||
+      meta.operation === OperationType.SEARCH ||
+      meta.operation === OperationType.STATS
+    ) {
+      return true;
+    }
+  }
+
+  const profile = parseResponseProfile(input.responseProfile);
+  if (profile?.decisionRole === 'read-list') {
+    return true;
+  }
+  if (profile?.listPath) {
+    return true;
+  }
+
+  return specsHavePaginationParams(input.specs);
 }
 
 /**
- * LIST / SEARCH 工具在 LLM 未传分页参数时，按 OpenAPI query 参数名补全 page / size。
+ * 列表类工具在 LLM 未传分页参数时，按 OpenAPI query 参数名补全 page / size。
  * 仅对 spec 中已声明的 query 整型参数生效，不凭空造字段。
  */
 export function applyListPaginationDefaults(
   input: Record<string, unknown>,
   specs: PaginationParamSpec[],
-  agentMetadata: unknown,
+  options?: { agentMetadata?: unknown; responseProfile?: unknown },
 ): Record<string, unknown> {
-  const meta = parseAgentMetadata(agentMetadata);
-  if (!meta) {
-    return input;
-  }
   if (
-    meta.operation !== OperationType.LIST &&
-    meta.operation !== OperationType.SEARCH
+    !shouldApplyListPaginationDefaults({
+      agentMetadata: options?.agentMetadata,
+      responseProfile: options?.responseProfile,
+      specs,
+    })
   ) {
     return input;
   }

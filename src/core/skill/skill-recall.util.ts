@@ -1,5 +1,8 @@
 import { cosineSimilarity, tokenizeKeywordQuery } from '../intent/vector.util';
 
+/** L0 路由短文本；L1 追加 prompt 摘要做二次召回。 */
+export type SkillRecallStage = 'router' | 'prompt_excerpt';
+
 /** 路由召回用短文本（不含全文 prompt，避免长文档污染向量/关键词）。 */
 export function buildSkillRouterEmbedText(skill: {
   name: string;
@@ -14,15 +17,37 @@ export function buildSkillRouterEmbedText(skill: {
     .join('\n');
 }
 
-/** @deprecated 关键词降级仍可用 prompt 摘要增强命中 */
+export function readSkillPromptExcerptChars(): number {
+  const raw = process.env.SKILL_RECALL_PROMPT_EXCERPT_CHARS?.trim();
+  const value = raw ? Number.parseInt(raw, 10) : 300;
+  return Number.isFinite(value) && value > 0 ? value : 300;
+}
+
+/** L0: 仅路由；L1: 路由 + prompt 前 N 字。 */
+export function buildSkillRecallEmbedText(
+  skill: {
+    name: string;
+    description: string | null;
+    capabilityKey?: string | null;
+    prompt: string;
+  },
+  stage: SkillRecallStage,
+): string {
+  const router = buildSkillRouterEmbedText(skill);
+  if (stage === 'router') {
+    return router;
+  }
+  const excerpt = skill.prompt.trim().slice(0, readSkillPromptExcerptChars());
+  return excerpt ? `${router}\n${excerpt}` : router;
+}
+
+/** @deprecated 使用 buildSkillRecallEmbedText(skill, 'prompt_excerpt') */
 export function buildSkillEmbedText(skill: {
   name: string;
   description: string | null;
   prompt: string;
 }): string {
-  const router = buildSkillRouterEmbedText(skill);
-  const promptExcerpt = skill.prompt.trim().slice(0, 200);
-  return promptExcerpt ? `${router}\n${promptExcerpt}` : router;
+  return buildSkillRecallEmbedText(skill, 'prompt_excerpt');
 }
 
 export type SkillRecallCandidate = {
@@ -39,12 +64,22 @@ export type SkillRankedRow = {
   source: 'vector' | 'keyword';
 };
 
-/** Skill 关键词召回（向量不可用或失败时的降级；仅用路由短文本，避免 prompt 污染）。 */
+export function isSkillProgressiveRecallEnabled(): boolean {
+  return process.env.SKILL_PROGRESSIVE_RECALL !== '0';
+}
+
+export function readSkillProgressiveRecallMaxCandidates(): number {
+  const raw = process.env.SKILL_PROGRESSIVE_RECALL_MAX_CANDIDATES?.trim();
+  const value = raw ? Number.parseInt(raw, 10) : 5;
+  return Number.isFinite(value) && value > 0 ? value : 5;
+}
+
 export function keywordSkillRecallScore(
   query: string,
   skill: SkillRecallCandidate,
+  stage: SkillRecallStage = 'router',
 ): number {
-  const hay = buildSkillRouterEmbedText(skill).toLowerCase();
+  const hay = buildSkillRecallEmbedText(skill, stage).toLowerCase();
   const tokens = tokenizeKeywordQuery(query);
   if (tokens.length === 0) {
     return 0;
@@ -61,11 +96,12 @@ export function keywordSkillRecallScore(
 export function rankSkillsByKeyword(
   query: string,
   candidates: SkillRecallCandidate[],
+  stage: SkillRecallStage = 'router',
 ): SkillRankedRow[] {
   return candidates
     .map((skill) => ({
       skill,
-      score: keywordSkillRecallScore(query, skill),
+      score: keywordSkillRecallScore(query, skill, stage),
       source: 'keyword' as const,
     }))
     .sort((a, b) => b.score - a.score);
@@ -93,7 +129,7 @@ export function readSkillKeywordMinScore(): number {
   return Number.isFinite(value) && value >= 0 ? value : 0.35;
 }
 
-/** 仅 1 个候选时需更高分，避免「唯一 skill」被低相关 query 误绑。 */
+/** 仅 1 个候选时需更高分，避免「唯一 skill」被低相关 query 误绑（L0）。 */
 export function readSkillSingleCandidateMinScore(baseMinScore: number): number {
   const raw = process.env.SKILL_SINGLE_MIN_SCORE?.trim();
   if (raw) {
@@ -141,6 +177,7 @@ export function shouldSkipSkillRecallForQuery(
 export function pickConfidentSkillTop(
   ranked: SkillRankedRow[],
   minScore: number,
+  options?: { stage?: SkillRecallStage },
 ): SkillRankedRow | null {
   if (isNoRelevantSkillMatch(ranked, minScore)) {
     return null;
@@ -150,7 +187,10 @@ export function pickConfidentSkillTop(
     return null;
   }
   if (ranked.length === 1) {
-    const singleMin = readSkillSingleCandidateMinScore(minScore);
+    const singleMin =
+      options?.stage === 'prompt_excerpt'
+        ? minScore
+        : readSkillSingleCandidateMinScore(minScore);
     return top.score >= singleMin ? top : null;
   }
   const second = ranked[1];
@@ -191,4 +231,15 @@ export function rankSkillsByVector(
       };
     })
     .sort((a, b) => b.score - a.score);
+}
+
+export function toSkillRecallMatches(
+  ranked: SkillRankedRow[],
+  limit = 5,
+): Array<{ id: number; name: string; score: number }> {
+  return ranked.slice(0, limit).map((row) => ({
+    id: row.skill.id,
+    name: row.skill.name,
+    score: Number(row.score.toFixed(4)),
+  }));
 }

@@ -15,6 +15,7 @@ import type {
   ParsedIntentPayload,
   ScopedToolsResult,
 } from './agent-engine.types';
+import { areToolIdSetsEqual } from '../../../../modules/chat/session-prepare.util';
 import {
   MAX_SESSION_TOOL_CACHE_ENTRIES,
   SESSION_TOOL_CACHE_TTL_MS,
@@ -76,30 +77,39 @@ export class AgentSessionScopeService {
     appClientId: number,
   ): Promise<Awaited<ReturnType<AgentService['getAllowedTools']>>> {
     const cacheKey = `${sessionId}:${agentId}:${userId}`;
+    const freshTools = await this.agentService.getAllowedTools(
+      agentId,
+      userId,
+      appClientId,
+    );
+
     const cached = this.sessionAllowedToolsCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
-      return cached.tools;
+      if (areToolIdSetsEqual(cached.tools, freshTools)) {
+        return cached.tools;
+      }
+      this.sessionAllowedToolsCache.delete(cacheKey);
     }
+
     const fromRedis = await this.sessionPrepareStore.get(
       sessionId,
       userId,
       appClientId,
       agentId,
     );
-    if (fromRedis) {
+    if (fromRedis && areToolIdSetsEqual(fromRedis, freshTools)) {
       this.sessionAllowedToolsCache.set(cacheKey, {
         tools: fromRedis,
         expiresAt: Date.now() + SESSION_TOOL_CACHE_TTL_MS,
       });
       return fromRedis;
     }
-    const tools = await this.agentService.getAllowedTools(
-      agentId,
-      userId,
-      appClientId,
-    );
+    if (fromRedis) {
+      await this.sessionPrepareStore.delete(sessionId);
+    }
+
     this.sessionAllowedToolsCache.set(cacheKey, {
-      tools,
+      tools: freshTools,
       expiresAt: Date.now() + SESSION_TOOL_CACHE_TTL_MS,
     });
     this.pruneTimedCacheMap(this.sessionAllowedToolsCache);
@@ -108,9 +118,37 @@ export class AgentSessionScopeService {
       userId,
       appClientId,
       agentId,
-      tools,
+      freshTools,
     );
-    return tools;
+    return freshTools;
+  }
+
+  /** Drop in-process allowed-tool caches for one agent (all sessions/users). */
+  invalidateCachesForAgent(agentId: number): void {
+    const marker = `:${agentId}:`;
+    for (const key of this.sessionAllowedToolsCache.keys()) {
+      if (key.includes(marker)) {
+        this.sessionAllowedToolsCache.delete(key);
+      }
+    }
+  }
+
+  /** Drop in-process session tool caches that still reference given tool ids. */
+  invalidateCachesReferencingToolIds(toolIds: number[]): void {
+    if (toolIds.length === 0) {
+      return;
+    }
+    const idSet = new Set(toolIds);
+    for (const [key, entry] of this.sessionAllowedToolsCache) {
+      if (entry.tools.some((tool) => idSet.has(tool.id))) {
+        this.sessionAllowedToolsCache.delete(key);
+      }
+    }
+    for (const [key, entry] of this.sessionIntentScopedToolsCache) {
+      if (entry.scopedTools.some((tool) => idSet.has(tool.id))) {
+        this.sessionIntentScopedToolsCache.delete(key);
+      }
+    }
   }
 
   buildToolIdsFingerprint(tools: AgentEngineTool[]): string {

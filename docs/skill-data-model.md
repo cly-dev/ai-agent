@@ -40,6 +40,20 @@ Role
 
 列表/详情除 `appClientId`、`agentId` 外，提供 **`appClientName`**、**`agentName`**，前端「所属项目」列请用 `appClientName`（如 `PMS`），勿直接展示 `appClientId`。完整对象见嵌套 `appClient`、`agent`。
 
+## 字段说明
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `name` | 是 | 同一 Agent 内唯一 |
+| `prompt` | 是 | 命中后注入 `<active_skill>` |
+| `description` | 否 | 召回与 Plan goal 摘要 |
+| `capabilityKey` | 否 | 同一 Agent 内唯一 |
+| `riskLevel` | 否 | `L1`/`L2`/`L3`；含写建议 `L2`+ |
+| **`config`** | **否** | **可选 JSON**（`Skill.config`）。可含 `deliverable`、`workflow.steps` 显式 Plan；**管理端未接入时可为 `null`，运行时按 gated 工具角色自动推断**（如 read-detail + write → read→write→summarize） |
+| `tools` | 否 | 创建时初始 SkillTool 绑定 |
+
+`GET/PATCH /skill/:id` 响应均含 `config`（无配置时为 `null`）。
+
 ## 校验约定
 
 1. **Tool 权限（运行时）**：`AgentTool ∩ RoleTool ∩ allowToolLevel`（不变）。
@@ -50,14 +64,26 @@ Role
 ## 运行时（LangGraph）
 
 ```text
-preCheck → skill → llm（命中） / intent|llm（未命中）
+skill ──命中──→ plan → llm ⇄ tools ⇄ resultCheck
+    └──未命中──→ intent → plan → llm ⇄ …
 ```
 
-- `SkillService.resolveForRun`：按 `UserApp.roleId` 可选 `RoleSkill` 白名单 → **向量 Top-1**（路由文本 `name + capabilityKey + description`）→ 失败或未配置 embedding 时 **关键词降级** → `allowed ∩ skillTools` gate。
-- 命中：写 `step.type=skill`，跳过 intent，`scopedTools` 为 gate 结果，`skill.prompt` 注入决策 prompt（`<active_skill>`）；`recallSource` 为 `vector` | `keyword`。
-- 未命中：走原 intent / bind 召回逻辑。
-- 向量阈值：默认 `max(IntentRecallConfig.vectorMinScore, 0.38)`；`SKILL_VECTOR_MIN_SCORE` 可覆盖。关键词：`SKILL_KEYWORD_MIN_SCORE`（默认 `0.35`，仅用 name/capabilityKey/description）。多候选需 Top-1 领先 ≥ `SKILL_RECALL_MIN_GAP`（默认 `0.08`）；单候选需 ≥ `SKILL_SINGLE_MIN_SCORE`（默认 `0.42`）。闲聊/过短 query 跳过 skill。召回模式与 intent 共用 `IntentRecallConfigService`。
-- 写确认续跑：Redis `resumeContext` 含 `skillApplied` / `activeSkillPrompt`，确认后第二轮 LLM 仍注入 `<active_skill>`；skill 命中时不触发「放宽工具范围」expand-once。
+完整 Plan 节点原理与配置见 **[plan-node.md](./plan-node.md)**。
+
+- `SkillService.resolveForRun`：按 `UserApp.roleId` 可选 `RoleSkill` 白名单 → **L0/L1 渐进召回** → `allowed ∩ skillTools` gate。
+  - **L0 (`router`)**：向量/关键词 Top-1，文本 `name + capabilityKey + description`；单候选需 ≥ `SKILL_SINGLE_MIN_SCORE`（默认 `0.42`）。
+  - **L1 (`prompt_excerpt`)**：L0 miss 且候选数 ≤ `SKILL_PROGRESSIVE_RECALL_MAX_CANDIDATES`（默认 `5`）时，在 L0 文本上追加 `prompt` 前 `SKILL_RECALL_PROMPT_EXCERPT_CHARS`（默认 `300`）字再召回；单候选仅要求 ≥ 基础 `minScore`（不再抬到 0.42）。`SKILL_PROGRESSIVE_RECALL=0` 可关闭 L1。
+- 命中：写 `step.type=skill`，跳过 intent，`scopedTools` 为 gate 结果，`skill.prompt` 注入决策 prompt（`<active_skill>`）；`recallSource` 为 `vector` | `keyword`，`recallStage` 为 `router` | `prompt_excerpt`。
+- 未命中：走原 intent / bind 召回逻辑；run step 仍含 `recallStage`、`recallMatches`、`recallStageAttempts`（L0/L1 分数可观测）。
+- 向量阈值：默认 `max(IntentRecallConfig.vectorMinScore, 0.38)`；`SKILL_VECTOR_MIN_SCORE` 可覆盖。关键词：`SKILL_KEYWORD_MIN_SCORE`（默认 `0.35`）。多候选需 Top-1 领先 ≥ `SKILL_RECALL_MIN_GAP`（默认 `0.08`）。闲聊/过短 query 跳过 skill。召回模式与 intent 共用 `IntentRecallConfigService`。
+- 写确认续跑：Redis `resumeContext` 含 `skillApplied` / `activeSkillPrompt` / `taskPlan` 等，确认后第二轮 graph 恢复 Plan 状态；skill 命中时不触发「放宽工具范围」expand-once。
+
+## 模板样例
+
+| 场景 | 文件 |
+|------|------|
+| 评论分析（列表 + content 解读） | [skill-templates/review-analyze-skill.example.md](./skill-templates/review-analyze-skill.example.md) |
+| 评论回复（与评论分析配对） | [skill-templates/review-reply-skill.example.md](./skill-templates/review-reply-skill.example.md) |
 
 ## 迁移
 

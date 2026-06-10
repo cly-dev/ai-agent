@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { estimateTextTokens } from '../llm/message-token-budget.util';
-import { LlmService } from '../llm/llm.service';
-import type { LlmChatMessage } from '../llm/llm.types';
+import { estimateTextTokens } from '../../llm/message-token-budget.util';
+import { LlmService } from '../../llm/llm.service';
+import type { LlmChatMessage } from '../../llm/llm.types';
 import {
   formatMessageTurnBody,
   messageTurnsToLlmMessages,
@@ -13,16 +13,17 @@ import {
   getSessionHistoryKeepRecentTurns,
   isSessionHistoryCompressionEnabled,
   isSessionHistoryTrimTurnsAfterCompressEnabled,
-} from './memory.constants';
+} from '../shared/memory.constants';
 import { trimTurnsByCompressedWatermark } from './session-context-trim.util';
 import {
-  formatWorkingMemoryFactsForCompression,
+  formatSessionMemoryForCompression,
   isSessionHistorySummaryAcceptable,
 } from './session-history-summary.util';
-import { PROMPT_KEYS } from '../prompt/prompt-template.keys';
-import { PromptRegistryService } from '../prompt/prompt-registry.service';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PROMPT_KEYS } from '../../prompt/prompt-template.keys';
+import { PromptRegistryService } from '../../prompt/prompt-registry.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { SessionContextStore } from './session-context.store';
+import { SessionGoaStore } from '../goa/session-goa.store';
 import {
   isSessionContextPayload,
   type SessionContextPayload,
@@ -37,6 +38,7 @@ export class SessionHistoryCompressionService {
 
   constructor(
     private readonly sessionContextStore: SessionContextStore,
+    private readonly goaStore: SessionGoaStore,
     private readonly llmService: LlmService,
     private readonly promptRegistry: PromptRegistryService,
     private readonly prisma: PrismaService,
@@ -74,11 +76,12 @@ export class SessionHistoryCompressionService {
         return;
       }
 
+      const goa = await this.goaStore.get(sessionId);
       const summary = await this.synthesizeHistorySummary(
         sessionId,
         raw.compressedHistorySummary,
         oldTurns,
-        raw.workingMemory,
+        goa,
       );
       if (!isSessionHistorySummaryAcceptable(summary)) {
         this.logger.warn(
@@ -88,18 +91,23 @@ export class SessionHistoryCompressionService {
       }
 
       const turnsBefore = raw.turns.length;
-      const trimmedTurns = isSessionHistoryTrimTurnsAfterCompressEnabled()
-        ? trimTurnsByCompressedWatermark(raw.turns, upToMessageId)
-        : raw.turns;
 
-      await this.sessionContextStore.patch(sessionId, {
-        compressedHistorySummary: summary,
-        compressedUpToMessageId: upToMessageId,
-        turns: trimmedTurns,
-        updatedAt: new Date().toISOString(),
+      await this.sessionContextStore.patchMerge(sessionId, (current) => {
+        if (!isSessionContextPayload(current)) {
+          return {};
+        }
+        const trimmedTurns = isSessionHistoryTrimTurnsAfterCompressEnabled()
+          ? trimTurnsByCompressedWatermark(current.turns, upToMessageId)
+          : current.turns;
+        return {
+          compressedHistorySummary: summary,
+          compressedUpToMessageId: upToMessageId,
+          turns: trimmedTurns,
+          updatedAt: new Date().toISOString(),
+        };
       });
       this.logger.debug(
-        `session history compressed sessionId=${sessionId} upToMessageId=${upToMessageId} oldTurns=${oldTurns.length} turnsBefore=${turnsBefore} turnsAfter=${trimmedTurns.length} trim=${isSessionHistoryTrimTurnsAfterCompressEnabled()}`,
+        `session history compressed sessionId=${sessionId} upToMessageId=${upToMessageId} oldTurns=${oldTurns.length} turnsBefore=${turnsBefore} trim=${isSessionHistoryTrimTurnsAfterCompressEnabled()}`,
       );
     } catch (error) {
       this.logger.warn(
@@ -153,7 +161,7 @@ export class SessionHistoryCompressionService {
     sessionId: string,
     previousSummary: string | undefined,
     turns: SessionContextTurn[],
-    workingMemory: SessionContextPayload['workingMemory'],
+    goa: Awaited<ReturnType<SessionGoaStore['get']>>,
   ): Promise<string> {
     const transcript = this.formatTurnsForCompression(turns);
     if (!transcript.trim()) {
@@ -166,7 +174,7 @@ export class SessionHistoryCompressionService {
       body = this.trimTranscriptToTokenBudget(body, maxInputTokens);
     }
 
-    const wmBlock = formatWorkingMemoryFactsForCompression(workingMemory);
+    const wmBlock = formatSessionMemoryForCompression(goa);
 
     const scope = await this.loadSessionPromptScope(sessionId);
     const systemPrompt = await this.promptRegistry.render(

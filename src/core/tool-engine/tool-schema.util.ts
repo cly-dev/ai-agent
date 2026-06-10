@@ -126,9 +126,78 @@ function convertOpenApiParameters(
   return result;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** 递归归一化 Swagger schema（含 array<object{…}> / 嵌套 properties）。 */
+function convertNestedJsonSchema(
+  node: Record<string, unknown>,
+): Record<string, unknown> {
+  const ref = node.$ref ?? node.originalRef;
+  if (typeof ref === 'string' && ref.trim().length > 0) {
+    return { $ref: ref.trim() };
+  }
+
+  const typeRaw = typeof node.type === 'string' ? node.type : undefined;
+  const type = typeRaw ? mapOpenApiType(typeRaw) : undefined;
+  const out: Record<string, unknown> = {};
+
+  if (typeof node.description === 'string' && node.description.trim().length > 0) {
+    out.description = node.description.trim();
+  }
+  if (Array.isArray(node.enum) && node.enum.length > 0) {
+    out.enum = node.enum;
+  }
+  if (typeof node.format === 'string' && node.format.trim().length > 0) {
+    out.format = node.format.trim();
+  }
+
+  if (type === 'array' && isRecord(node.items)) {
+    out.type = 'array';
+    out.items = convertNestedJsonSchema(node.items);
+    return out;
+  }
+
+  if (type === 'object' || isRecord(node.properties)) {
+    out.type = 'object';
+    const properties = isRecord(node.properties) ? node.properties : {};
+    const props: Record<string, unknown> = {};
+    for (const [key, raw] of Object.entries(properties)) {
+      if (isRecord(raw)) {
+        props[key] = convertNestedJsonSchema(raw);
+      }
+    }
+    out.properties = props;
+    if (Array.isArray(node.required)) {
+      out.required = node.required.filter(
+        (field): field is string => typeof field === 'string',
+      );
+    }
+    return finalizeObjectJsonSchema(out);
+  }
+
+  out.type = type ?? 'string';
+  return out;
+}
+
 function convertParameterSchema(
   param: Record<string, unknown>,
 ): Record<string, unknown> {
+  const nested = param.schema;
+  if (isRecord(nested)) {
+    const schema = convertNestedJsonSchema(nested);
+    const description = param.description;
+    if (
+      typeof description === 'string' &&
+      description.trim().length > 0 &&
+      (typeof schema.description !== 'string' || schema.description.length === 0)
+    ) {
+      schema.description = description.trim();
+    }
+    return schema;
+  }
+
   const schema: Record<string, unknown> = {};
   const type = param.type;
   if (typeof type === 'string') {
@@ -147,24 +216,17 @@ function convertParameterSchema(
   const items = param.items;
   if (
     schema.type === 'array' &&
-    items &&
-    typeof items === 'object' &&
-    !Array.isArray(items)
+    isRecord(items)
   ) {
-    schema.items = convertItemsSchema(items as Record<string, unknown>);
+    schema.items = convertNestedJsonSchema(items);
   }
-  return schema;
-}
-
-function convertItemsSchema(
-  items: Record<string, unknown>,
-): Record<string, unknown> {
-  const schema: Record<string, unknown> = {};
-  const type = items.type;
-  schema.type = typeof type === 'string' ? mapOpenApiType(type) : 'string';
-  const enumValue = items.enum;
-  if (Array.isArray(enumValue) && enumValue.length > 0) {
-    schema.enum = enumValue;
+  if (schema.type === 'object' && isRecord(param.properties)) {
+    return convertNestedJsonSchema({
+      type: 'object',
+      properties: param.properties,
+      required: param.required,
+      description: schema.description,
+    });
   }
   return schema;
 }

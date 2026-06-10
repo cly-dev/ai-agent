@@ -1,4 +1,12 @@
-export type AgentRunStepType = 'precheck' | 'intent' | 'llm' | 'tool' | 'summarize';
+export type AgentRunStepType =
+  | 'skill'
+  | 'plan'
+  | 'intent'
+  | 'llm'
+  | 'tool'
+  | 'gather'
+  | 'result_check'
+  | 'summarize';
 export type AgentRunStatus = 'running' | 'success' | 'failed';
 
 export type AgentRunStepMeta = {

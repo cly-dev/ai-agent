@@ -1,4 +1,5 @@
 import type { ToolLevel } from '../../../generated/prisma/client';
+import type { TaskPlanSnapshot } from '../../core/agent-engine/engine/main/task-plan.types';
 
 export type PendingWriteToolCall = {
   name: string;
@@ -36,6 +37,13 @@ export type PendingWriteResumeContext = {
   skillApplied?: boolean;
   activeSkillId?: number | null;
   activeSkillPrompt?: string | null;
+  activeSkillName?: string | null;
+  activeSkillDescription?: string | null;
+  activeSkillConfig?: unknown;
+  activeSkillRiskLevel?: ToolLevel | null;
+  taskPlan?: TaskPlanSnapshot | null;
+  /** 写确认挂起前本 turn 已消耗的分页 HTTP 次数。 */
+  pagedListHttpUsed?: number;
 };
 
 export type PendingWriteConfirmationSnapshot = {

@@ -26,9 +26,11 @@
     "db:seed": "ts-node prisma/seed.ts",
     "db:seed-sample-skill": "ts-node prisma/scripts/seed-sample-skill.ts",
     "db:seed-prompts": "ts-node prisma/scripts/seed-prompt-templates.ts",
+    "db:publish-prompts": "ts-node prisma/scripts/publish-prompt-templates.ts",
     "db:upsert-embedding": "ts-node prisma/scripts/upsert-transformers-embedding.ts",
     "db:migrate:user-auth-model": "ts-node prisma/scripts/migrate-user-role-to-new-model.ts",
-    "db:delete-public-buyer-tools": "ts-node prisma/scripts/delete-public-buyer-tools.ts"
+    "db:delete-public-buyer-tools": "ts-node prisma/scripts/delete-public-buyer-tools.ts",
+    "db:delete-obsolete-prompts": "ts-node prisma/scripts/delete-obsolete-prompt-templates.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.1.45",

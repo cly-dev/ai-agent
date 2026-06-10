@@ -53,3 +53,26 @@ export function collectWriteConfirmationRequired(
 export function buildWriteConfirmationUserMessage(): string {
   return '即将执行可能修改数据的操作，请确认是否继续。';
 }
+
+/** 将本轮 tool_calls 拆成可先执行的安全调用与待确认的写调用。 */
+export function partitionToolCallsByWriteConfirmation(
+  pendingToolCalls: Array<{ name: string; arguments: Record<string, unknown> }>,
+  scopedTools: ToolLikeForWriteGate[],
+  approvedWriteToolNames?: Iterable<string>,
+): {
+  safeCalls: Array<{ name: string; arguments: Record<string, unknown> }>;
+  writeCallsNeedingConfirm: WriteConfirmationToolCall[];
+} {
+  const approved = new Set(approvedWriteToolNames ?? []);
+  const writeCallsNeedingConfirm = collectWriteConfirmationRequired(
+    pendingToolCalls,
+    scopedTools,
+  ).filter((call) => !approved.has(call.name));
+  const pendingConfirmNames = new Set(
+    writeCallsNeedingConfirm.map((call) => call.name),
+  );
+  const safeCalls = pendingToolCalls.filter(
+    (call) => !pendingConfirmNames.has(call.name),
+  );
+  return { safeCalls, writeCallsNeedingConfirm };
+}

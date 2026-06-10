@@ -37,15 +37,29 @@ export function collectOpenApiParameterSpecs(schema: unknown): OpenApiParamSpec[
     if (typeof name !== 'string' || typeof inn !== 'string') {
       continue;
     }
+    const paramSchema =
+      p.schema && typeof p.schema === 'object' && !Array.isArray(p.schema)
+        ? (p.schema as Record<string, unknown>)
+        : undefined;
     const items =
       p.items && typeof p.items === 'object' && !Array.isArray(p.items)
         ? (p.items as Record<string, unknown>)
-        : undefined;
+        : paramSchema?.items &&
+            typeof paramSchema.items === 'object' &&
+            !Array.isArray(paramSchema.items)
+          ? (paramSchema.items as Record<string, unknown>)
+          : undefined;
     const itemsType = typeof items?.type === 'string' ? items.type : undefined;
+    const resolvedType =
+      typeof p.type === 'string'
+        ? p.type
+        : typeof paramSchema?.type === 'string'
+          ? paramSchema.type
+          : undefined;
     out.push({
       name,
       in: inn,
-      type: typeof p.type === 'string' ? p.type : undefined,
+      type: resolvedType,
       itemsType,
       collectionFormat:
         typeof p.collectionFormat === 'string' ? p.collectionFormat : undefined,
@@ -59,7 +73,7 @@ export function collectOpenApiParameterSpecs(schema: unknown): OpenApiParamSpec[
 export function applyToolParameterDefaults(
   input: Record<string, unknown>,
   specs: OpenApiParamSpec[],
-  options?: { agentMetadata?: unknown },
+  options?: { agentMetadata?: unknown; responseProfile?: unknown },
 ): Record<string, unknown> {
   const out = { ...input };
   for (const spec of specs) {
@@ -74,7 +88,7 @@ export function applyToolParameterDefaults(
       out[spec.name] = spec.default;
     }
   }
-  return applyListPaginationDefaults(out, specs, options?.agentMetadata);
+  return applyListPaginationDefaults(out, specs, options);
 }
 
 /** 在 resolve URL / header / body 之前调用。 */
@@ -198,6 +212,21 @@ function coerceArrayItem(
   }
   if (type === 'boolean') {
     return coerceBoolean(value);
+  }
+  if (type === 'object') {
+    if (typeof value === 'string') {
+      const trimmed = sanitizeString(value, 'default');
+      if (!trimmed.startsWith('{')) {
+        return undefined;
+      }
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        return coerceObject(parsed, false);
+      } catch {
+        return undefined;
+      }
+    }
+    return coerceObject(value, false);
   }
   return coerceString(value, 'default');
 }

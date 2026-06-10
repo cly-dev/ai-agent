@@ -20,28 +20,28 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     description: '简洁 vs 详细输出规则',
   },
   {
-    key: PROMPT_KEYS.AGENT_DECISION_LOOP,
-    category: 'agent_runtime',
-    title: '主循环决策（旧）',
-    description: '已弃用，请改用 agent.tool_decision',
-  },
-  {
     key: PROMPT_KEYS.AGENT_TOOL_DECISION,
     category: 'agent_runtime',
     title: '工具决策',
     description: '仅工具选择与参数规则，不含角色与结果生成',
   },
   {
-    key: PROMPT_KEYS.AGENT_PRECHECK_HISTORY_ANSWERABLE,
+    key: PROMPT_KEYS.AGENT_TASK_RESUME_FOLLOWUP,
     category: 'agent_runtime',
-    title: '预检查历史可答',
-    description: '判断是否可直接基于历史 observation 回答',
+    title: '任务续跑追问判定',
+    description: 'Plan 节点：判断用户是否在续接未完成 active task',
   },
   {
-    key: PROMPT_KEYS.AGENT_SUMMARIZE_TOOL_BRIEF,
+    key: PROMPT_KEYS.AGENT_PLAN,
     category: 'agent_runtime',
-    title: '工具结果摘要（简洁）',
-    description: 'summarize 节点默认模式',
+    title: '任务 Plan 拆分',
+    description: 'Plan 节点：拆 deliverable 与 steps（LLM structured output）',
+  },
+  {
+    key: PROMPT_KEYS.AGENT_GATHER_PAGE_SUMMARY,
+    category: 'agent_runtime',
+    title: 'Gather 单页 Map 摘要',
+    description: 'Plan analyze 路径：单页列表结构化摘要（无固定业务字段）',
   },
   {
     key: PROMPT_KEYS.AGENT_SUMMARIZE_TOOL_FULL,
@@ -59,7 +59,13 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     key: PROMPT_KEYS.AGENT_SUMMARIZE_ACTION,
     category: 'agent_runtime',
     title: '工具结果摘要（写操作）',
-    description: 'ACTION_SUMMARY：结果、风险与回滚建议',
+    description: 'ACTION_SUMMARY：成功/失败、操作内容与证据、风险与回滚建议',
+  },
+  {
+    key: PROMPT_KEYS.AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME,
+    category: 'agent_runtime',
+    title: '写确认续跑摘要',
+    description: '用户确认写操作后同步执行的结果汇报（成功条数/失败原因）',
   },
   {
     key: PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK,
@@ -84,12 +90,6 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     category: 'memory',
     title: '会话历史压缩',
     description: 'Redis 多轮摘要',
-  },
-  {
-    key: PROMPT_KEYS.MEMORY_WORKING_MEMORY_REFRESH,
-    category: 'memory',
-    title: '工作记忆刷新',
-    description: '每轮结束后 WM JSON',
   },
   {
     key: PROMPT_KEYS.TOOLS_SCHEMA_INFERENCE,

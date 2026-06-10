@@ -13,7 +13,7 @@ import { PendingWriteConfirmationStore } from './pending-write-confirmation.stor
 @Module({
   imports: [
     AuthModule,
-    AgentModule,
+    forwardRef(() => AgentModule),
     PromptModule,
     forwardRef(() => MessageModule),
   ],

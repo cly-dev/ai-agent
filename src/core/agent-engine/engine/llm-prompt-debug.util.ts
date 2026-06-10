@@ -9,8 +9,8 @@ import {
 export type LlmPromptDebugPhase =
   | 'decision'
   | 'summarize'
-  | 'precheck'
   | 'intent'
+  | 'gather_page_summary'
   | 'other';
 
 export type LlmPromptDebugRecord = {

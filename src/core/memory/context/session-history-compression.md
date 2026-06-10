@@ -2,7 +2,7 @@
 
 长会话若把全部 `Message` 原文塞进 LLM，会导致 token 暴涨、成本上升、且易被冗长 tool 结果干扰。本模块在 **Redis 会话上下文** 中维护「较早轮次的 LLM 摘要」，送入模型时只带 **摘要 + 最近 N 条原文**；PostgreSQL `Message` 表仍保留完整审计数据。
 
-与 **working_memory** 分工见下文；二者在每轮 Agent 成功后依次刷新。
+与 **GOA 会话记忆**（`recentEpisodes` / `activeTask` 等，DB `SessionGoaMemory`）分工见 [`docs/working-memory.md`](../../docs/working-memory.md)；二者在每轮 Agent 成功后依次刷新。
 
 调用方：
 
@@ -22,29 +22,31 @@
 
 ---
 
-## 记忆分层（与 working_memory 的关系）
+## 记忆分层（与 GOA / working_memory 的关系）
+
+完整 GOA 模型见 [`docs/working-memory.md`](../../docs/working-memory.md)。Compose 时 **session_history** 块落在 GOA 记忆块之后：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ PromptComposer 送入 LLM 的顺序                                 │
+│ PromptComposer 送入 LLM 的顺序（节选）                         │
 ├─────────────────────────────────────────────────────────────┤
-│ 1. <agent_prompt>              Agent 系统提示                  │
-│ 2. <user_memory>               用户级长期记忆（Redis，可选）    │
-│ 3. <working_memory>            当前任务状态（goal/facts/实体）   │
-│ 4. <session_history>         说明性 system 标签               │
-│ 5. <session_history_summary>   较早多轮压缩摘要（可选）         │
-│ 6. user / assistant / tool …   最近 N 条会话原文               │
-│ 7. user                        本轮用户输入（若未在历史末尾）   │
+│ 1. <agent_prompt>                                             │
+│ 2. <user_memory>                                              │
+│ 3. <recent_episodes> / <active_task> / …  （GOA，有则注入）     │
+│ 4. <session_history>           说明性 system 标签              │
+│ 5. <session_history_summary>   较早多轮压缩摘要（本模块产出）   │
+│ 6. user / assistant …          最近 N 条会话原文                │
+│ 7. user                        本轮用户输入                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 | 字段 | 存储位置 | 更新时机 | 内容侧重 |
 |------|----------|----------|----------|
-| `workingMemory` | `SessionContextPayload` | 每轮 `WorkingMemoryService.refreshFromAgentRun` | 未完成任务、facts、实体 ID、最后一次工具结论 |
+| GOA（`SessionGoaMemory`） | PostgreSQL + Redis 缓存 | `SessionGoaService.refreshFromAgentRun` | episodes / artifacts / activeTask / entities |
 | `compressedHistorySummary` | 同上 | 轮次超阈值时 `maybeCompressAfterTurn` | 时间线式对话摘要：用户意图演变、已确认结论 |
 | `turns[]` | 同上（与 Message 同步） | `MessageService` 写入消息时追加 | 完整轮次；**压缩不删 turns**，仅影响 compose 时取哪些进 prompt |
 
-**原则**：模型优先看 `working_memory` 做决策；需要回忆「之前聊过什么」时参考 `session_history_summary` + 最近原文。
+**原则**：模型优先看 GOA（`recent_episodes` / `active_task`）做任务决策；需要回忆「之前聊过什么」时参考 `session_history_summary` + 最近原文。
 
 ---
 
@@ -58,7 +60,7 @@ Redis 键：`agent:context:session:{sessionId}`（见 `redis-keys.ts`）。
 type SessionContextPayload = {
   sessionId: string;
   turns: SessionContextTurn[];
-  workingMemory?: WorkingMemoryState;
+  // GOA 已迁至 SessionGoaMemory；context 仅保留 turns + 压缩字段
   /** 较早轮次的 LLM 压缩摘要 */
   compressedHistorySummary?: string;
   /** 已纳入摘要的最后一条 Message.id */
@@ -79,7 +81,7 @@ type SessionContextPayload = {
 ```
 Agent run 成功结束
    │
-   ├─► WorkingMemoryService.refreshFromAgentRun
+   ├─► SessionGoaService.refreshFromAgentRun
    │
    └─► SessionHistoryCompressionService.maybeCompressAfterTurn
            │
@@ -117,14 +119,15 @@ flowchart TD
 
 ```
 src/core/memory/
-├── session-history-compression.service.ts  # 压缩与 buildPromptHistory
-├── session-history-compression.md          # 本文档
-├── working-memory.service.ts               # 任务态工作记忆
-├── session-context.store.ts                # Redis 读写
-├── session-context.types.ts                # Payload 类型
-├── session-context.format.ts               # turn → LlmChatMessage
-├── memory.constants.ts                     # 环境变量与默认值
-└── memory.module.ts                        # 注册导出
+├── memory.module.ts
+├── context/
+│   ├── session-history-compression.service.ts  # 压缩与 buildPromptHistory
+│   ├── session-history-compression.md          # 本文档
+│   ├── session-context.store.ts                # Redis 读写
+│   ├── session-context.types.ts                # Payload 类型
+│   └── session-context.format.ts               # turn → LlmChatMessage
+├── goa/                                        # GOA 会话记忆（见 docs/working-memory.md）
+└── shared/memory.constants.ts                  # 环境变量与默认值
 ```
 
 ### 依赖
@@ -189,7 +192,6 @@ src/core/memory/
 | 变量 | 说明 |
 |------|------|
 | `MEMORY_SESSION_TTL_SECONDS` | 会话上下文 Redis TTL，默认 7 天 |
-| `AGENT_WORKING_MEMORY_MODE` | `refresh`（LLM）或 `merge`（规则），见 working memory |
 
 ---
 
@@ -225,7 +227,7 @@ src/core/memory/
 |------|------|
 | `session-history-compression.service.ts` | 压缩与 prompt 历史组装 |
 | `session-context-trim.util.ts` | `trimTurnsByCompressedWatermark` 纯函数 |
-| `working-memory.service.ts` | 任务态工作记忆 |
+| `session-episode-memory.service.ts` | GOA 会话记忆 |
 | `prompt-composer.service.ts` | 多源 memory 合并为 messages |
 | `agent-engine.service.ts` | run 结束后的刷新调用链 |
 | `message.service.ts` | Message 写入与 Redis turns 同步 |

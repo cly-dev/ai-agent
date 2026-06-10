@@ -69,6 +69,13 @@ export interface AgentMetadata {
 
   /** 是否会改系统状态；落库时服务端按 mode === 'WRITE' 规范化 */
   isMutation: boolean;
+
+  /** 参数格式说明：OpenAPI 参数名 + LLM 可读格式约束（可选） */
+  paramFormatHints?: Array<{
+    param: string;
+    hint: string;
+    example?: string;
+  }>;
 }
 ```
 
@@ -116,6 +123,7 @@ export const OPERATION_TYPE_OPTIONS = [
 | `examples` | 示例用户话术，便于运营配置与后续扩展 |
 | `priority` | 结构化过滤后、向量 Top-K 前的排序依据 |
 | `isMutation` | 与 `mode === 'WRITE'` 一致；决策 prompt 用于区分「必须 tool_calls」 |
+| `paramFormatHints` | OpenAPI **真实参数名** + 值格式说明；注入 `<tool_schema>` 与决策 compact 参数描述 |
 
 ### 2.4 服务端校验
 
@@ -125,6 +133,63 @@ export const OPERATION_TYPE_OPTIONS = [
 - 失败响应：`400 Bad Request`  
   `agentMetadata invalid: mode, resource, and operation are required`
 - `businessFields` / `aliases` / `examples` 应为字符串数组（可为 `[]`）。
+- `paramFormatHints` 可选；每项须含非空 `param`、`hint`，`example` 可选；最多 24 条；非法项丢弃。
+
+### 2.5 `paramFormatHints` — 参数格式/命名说明
+
+部分接口参数在 OpenAPI 里只有 `string` 类型，**真实格式**（日期 pattern、Unix 时间戳、header 名等）需要在后台额外声明，LLM 才能生成正确的 `tool_calls` 参数。
+
+| 字段 | 说明 |
+|------|------|
+| `param` | **必须与 `inputSchema.parameters` / requestBody 字段名完全一致**（OpenAPI 原始名） |
+| `hint` | 给 LLM 的格式说明 |
+| `example` | 可选示例值 |
+
+**与 `businessFields` 的区别：**
+
+| | `businessFields` | `paramFormatHints` |
+|---|---|---|
+| 含义 | 业务语义（用户要提供什么） | API 真实参数名 + 值格式 |
+| 名称 | 业务名（如 `productId`） | OpenAPI 名（如 `startTime`、`dateFrom`） |
+| 用途 | 缺参追问、意图过滤 | 生成 tool_call 参数值 |
+
+**示例（Unix 毫秒时间范围）：**
+
+```json
+{
+  "paramFormatHints": [
+    {
+      "param": "startTime",
+      "hint": "Unix 毫秒；「近7天」= 当前时间减 7 天的 00:00:00",
+      "example": "1717344000000"
+    },
+    {
+      "param": "endTime",
+      "hint": "Unix 毫秒；通常为当前时刻",
+      "example": "1717948800000"
+    }
+  ]
+}
+```
+
+**示例（日期字符串）：**
+
+```json
+{
+  "paramFormatHints": [
+    { "param": "dateFrom", "hint": "yyyy-MM-dd，含当天", "example": "2026-05-29" },
+    { "param": "dateTo", "hint": "yyyy-MM-dd，含当天", "example": "2026-06-05" }
+  ]
+}
+```
+
+**运行时注入：**
+
+1. `<tool_schema>` slim 卡片增加 `paramHints`
+2. compact `inputSchema.parameters[].description` 追加 `[format] …`（仅 **显式** `paramFormatHints`）
+3. 未配置 `paramFormatHints` 时，`paramHints` 从 `inputSchema` 的 `description` / `format` / `enum` 自动推导
+4. 同一 param 同时存在时：**显式声明优先**，OpenAPI 作未覆盖项的备选
+5. `tool_decision` 规则：有 `paramHints` 时以声明为准
 
 ---
 

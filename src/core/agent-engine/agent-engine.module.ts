@@ -11,6 +11,7 @@ import { AgentLangGraphRunner } from './engine/main/agent-lang-graph.runner';
 import { AgentRunLifecycleService } from './engine/main/agent-run-lifecycle.service';
 import { AgentRunSseEmitter } from './engine/main/agent-run-sse.emitter';
 import { AgentSessionScopeService } from './engine/main/agent-session-scope.service';
+import { SessionToolPrepareCacheService } from './engine/main/session-tool-prepare-cache.service';
 
 @Module({
   imports: [
@@ -19,16 +20,21 @@ import { AgentSessionScopeService } from './engine/main/agent-session-scope.serv
     SkillModule,
     PromptModule,
     ToolEngineModule,
-    AgentModule,
+    forwardRef(() => AgentModule),
     forwardRef(() => ChatModule),
   ],
   providers: [
     AgentRunSseEmitter,
     AgentSessionScopeService,
+    SessionToolPrepareCacheService,
     AgentRunLifecycleService,
     AgentLangGraphRunner,
     AgentEngineService,
   ],
-  exports: [AgentEngineService],
+  exports: [
+    AgentEngineService,
+    AgentSessionScopeService,
+    SessionToolPrepareCacheService,
+  ],
 })
 export class AgentEngineModule {}

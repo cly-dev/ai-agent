@@ -32,6 +32,7 @@ import type { QueryAgentToolsDto } from './dto/query-agent-tools.dto';
 import { BindAgentToolsDto } from './dto/bind-agent-tools.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
+import { SessionPrepareStore } from '../chat/session-prepare.store';
 import { AgentCacheStore } from './agent-cache.store';
 import type { AgentRuntimeSnapshot } from './agent-runtime.types';
 
@@ -41,6 +42,7 @@ export class AgentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agentCacheStore: AgentCacheStore,
+    private readonly sessionPrepareStore: SessionPrepareStore,
   ) {}
 
   /**
@@ -252,6 +254,7 @@ export class AgentService {
       })),
       skipDuplicates: true,
     });
+    await this.sessionPrepareStore.invalidateSnapshotsForAgent(agentId);
     const bindings = await this.findAgentToolBindings(agentId, appClientId);
     return toAgentToolsBindingResponse(agentId, appClientId, bindings);
   }
@@ -279,6 +282,7 @@ export class AgentService {
         },
       }),
     ]);
+    await this.sessionPrepareStore.invalidateSnapshotsForAgent(agentId);
     const bindings = await this.findAgentToolBindings(agentId, appClientId);
     return toAgentToolsBindingResponse(agentId, appClientId, bindings);
   }
@@ -353,6 +357,7 @@ export class AgentService {
       where: {
         id: { in: effectiveToolIds },
         appClientId,
+        isActive: true,
         riskLevel: { in: this.allowedLevels(maxLevel) },
       },
       include: {

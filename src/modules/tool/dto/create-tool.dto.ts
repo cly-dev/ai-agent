@@ -75,7 +75,7 @@ export class CreateToolDto {
           keywords: ['seo', '搜索', '关键词'],
         },
       ],
-      arrayLimits: { list: 5 },
+      arrayLimits: { list: 100 },
     },
   })
   @IsOptional()
@@ -84,7 +84,7 @@ export class CreateToolDto {
 
   @ApiPropertyOptional({
     description:
-      'Agent 选工具元数据：mode / resource / operation / businessFields / aliases / examples / priority',
+      'Agent 选工具元数据：mode / resource / operation / businessFields / aliases / examples / priority。paramFormatHints 无需填写，保存时从 inputSchema.parameters（及 requestBody）的 description/format/enum 自动推导。',
     example: {
       mode: 'READ',
       resource: 'PRODUCT',

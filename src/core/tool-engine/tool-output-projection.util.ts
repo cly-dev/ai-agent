@@ -4,8 +4,7 @@ import type {
   ToolResponseProfile,
 } from './tool-response-profile.types';
 import { parseConfiguredToolDecisionRole } from './tool-decision-role.enum';
-
-const DEFAULT_ARRAY_LIMIT = 5;
+import { resolveEffectiveArrayLimit } from './tool-pagination-params.util';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -106,14 +105,14 @@ function limitArray(value: unknown, limit: number): unknown {
 function resolveArrayLimit(
   path: string,
   arrayLimits: Record<string, number>,
-): number | undefined {
+): number {
   const segments = path.split('.').filter(Boolean);
   const lastSegment = segments[segments.length - 1] ?? path;
-  return (
+  const explicit =
     arrayLimits[path] ??
     arrayLimits[lastSegment] ??
-    (segments.length > 1 ? arrayLimits[segments[0]!] : undefined)
-  );
+    (segments.length > 1 ? arrayLimits[segments[0]!] : undefined);
+  return resolveEffectiveArrayLimit(explicit);
 }
 
 function applyFieldValue(
@@ -123,7 +122,7 @@ function applyFieldValue(
 ): unknown {
   const limit = resolveArrayLimit(field.path, arrayLimits);
   let value = rawValue;
-  if (limit != null && Array.isArray(value)) {
+  if (Array.isArray(value)) {
     value = limitArray(value, limit);
   }
   return applyEnumLabel(value, field.enumLabels);
@@ -182,11 +181,9 @@ function pickFieldsOnObject(
       continue;
     }
 
-    const limit =
-      arrayLimits[arrayKey] ??
-      arrayLimits.list ??
-      arrayLimits.data ??
-      DEFAULT_ARRAY_LIMIT;
+    const limit = resolveEffectiveArrayLimit(
+      arrayLimits[arrayKey] ?? arrayLimits.list ?? arrayLimits.data,
+    );
     const sliced = rows.slice(0, Math.max(1, limit));
     const prefix = `${arrayKey}.`;
     result[arrayKey] = sliced.map((row) => {
@@ -338,13 +335,22 @@ export function projectToolOutput(
   userQuestion: string,
   profile: ToolResponseProfile | null,
 ): ProjectedToolOutput {
+  const passthrough: ProjectedToolOutput = {
+    data: raw,
+    fieldLabels: {},
+    fieldDescriptions: {},
+    enumLabelsByPath: {},
+  };
+  if (
+    isRecord(raw) &&
+    typeof raw.code === 'string' &&
+    typeof raw.userHint === 'string'
+  ) {
+    return passthrough;
+  }
+
   if (!profile) {
-    return {
-      data: raw,
-      fieldLabels: {},
-      fieldDescriptions: {},
-      enumLabelsByPath: {},
-    };
+    return passthrough;
   }
 
   const arrayLimits = profile.arrayLimits ?? {};
@@ -354,10 +360,11 @@ export function projectToolOutput(
 
   if (profile.listPath) {
     const listValue = getByPath(raw, profile.listPath);
-    const listLimit =
+    const listLimit = resolveEffectiveArrayLimit(
       arrayLimits[profile.listPath.split('.').pop() ?? profile.listPath] ??
-      arrayLimits.list ??
-      DEFAULT_ARRAY_LIMIT;
+        arrayLimits.list ??
+        arrayLimits.data,
+    );
     const sourceRows = Array.isArray(listValue) ? listValue : [];
     const rows = sourceRows.slice(0, Math.max(1, listLimit));
 

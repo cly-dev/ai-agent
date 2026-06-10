@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   AgentRunRole,
   AgentRunStatus,
@@ -28,6 +28,8 @@ import type {
 } from './main/agent-engine.types';
 import { AgentLangGraphRunner } from './main/agent-lang-graph.runner';
 import { AgentRunLifecycleService } from './main/agent-run-lifecycle.service';
+import { SessionGoaService } from '../../memory/goa/session-goa.service';
+import type { SessionMemoryUpdateContext } from '../../memory/goa/session-goa.types';
 import { AgentRunSseEmitter } from './main/agent-run-sse.emitter';
 import { AgentSessionScopeService } from './main/agent-session-scope.service';
 import {
@@ -36,6 +38,9 @@ import {
   maxStepFromSteps,
 } from './main/agent-tool-runtime.util';
 import { deserializePendingObservations } from './agent-write-confirmation.util';
+import { resolveTaskPlanAdvance } from './main/task-plan.util';
+import { buildWriteConfirmResumeSummaryObservation } from './write-confirm-resume-summary.util';
+import type { ToolObservation } from './main/agent-engine.types';
 
 /**
  * Agent 运行编排：新消息走 run()，写确认续跑走 resumeAfterWriteConfirm()。
@@ -43,6 +48,8 @@ import { deserializePendingObservations } from './agent-write-confirmation.util'
  */
 @Injectable()
 export class AgentEngineService {
+  private readonly logger = new Logger(AgentEngineService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly llmService: LlmService,
@@ -55,6 +62,7 @@ export class AgentEngineService {
     private readonly lifecycle: AgentRunLifecycleService,
     private readonly langGraphRunner: AgentLangGraphRunner,
     private readonly sessionScope: AgentSessionScopeService,
+    private readonly goaService: SessionGoaService,
   ) {}
 
   async cancelPendingWriteConfirmation(
@@ -199,23 +207,18 @@ export class AgentEngineService {
     const approvedWriteToolNames = consumed.toolCalls.map((call) => call.name);
     const contextSteps = consumed.resumeContext.steps as AgentRunStep[];
     const contextMaxStep = maxStepFromSteps(contextSteps);
-    const { observations: writeObservations, steps: writeSteps } =
-      await executePendingWriteToolCalls({
-        latestUserMessage: consumed.latestUserMessage,
-        toolCalls: consumed.toolCalls,
-        tools,
-        langChainBundle: scopedToolBundle,
-        afterStep: contextMaxStep,
-        toolEngine: this.toolEngine,
-        assessObservationQuality: (output) =>
-          this.langGraphRunner.assessObservationQualityForResume(output),
-      });
-
-    if (writeObservations.length === 0) {
-      this.emitWriteConfirmationExpired(input.sessionId);
-      return null;
+    let priorObservations = deserializePendingObservations(
+      consumed.resumeContext.toolObservations,
+    );
+    if (priorObservations.length === 0) {
+      const goa = await this.goaService.ensurePayload(input.sessionId);
+      priorObservations = this.goaService
+        .buildPriorToolObservationsForGraph(goa)
+        .map((row) => ({
+          name: row.name,
+          output: row.output,
+        }));
     }
-
     const startedAt = new Date();
     const resumeRun = await this.prisma.agentRun.create({
       data: {
@@ -235,20 +238,87 @@ export class AgentEngineService {
       },
     });
 
+    const {
+      observations: writeObservations,
+      steps: writeSteps,
+      lastToolRoundMeta: writeRoundMeta,
+    } = await executePendingWriteToolCalls({
+      latestUserMessage: consumed.latestUserMessage,
+      toolCalls: consumed.toolCalls,
+      tools: resolvedScopedTools,
+      langChainBundle: scopedToolBundle,
+      afterStep: contextMaxStep,
+      priorObservations,
+      toolEngine: this.toolEngine,
+      assessObservationQuality: (output, agentMetadata) =>
+        this.langGraphRunner.assessObservationQualityForResume(
+          output,
+          agentMetadata,
+        ),
+      runId: resumeRun.id,
+      sessionId: input.sessionId,
+      onToolDebugLog: (message) => this.logger.log(message),
+    });
+
+    if (writeObservations.length === 0) {
+      await this.lifecycle.updateRun(resumeRun.id, [], 0, AgentRunStatus.failed);
+      this.emitWriteConfirmationExpired(input.sessionId);
+      return null;
+    }
+
+    await this.lifecycle.updateRun(
+      resumeRun.id,
+      writeSteps,
+      maxStepFromSteps(writeSteps),
+      AgentRunStatus.running,
+    );
+
     const runMetrics = createRunMetricsAccumulator();
     this.sse.resetThinkBuffer(input.sessionId, resumeRun.id);
 
-    const priorObservations = deserializePendingObservations(
-      consumed.resumeContext.toolObservations,
+    const iterationAfterWrites = maxStepFromSteps(
+      writeSteps.length > 0 ? writeSteps : contextSteps,
     );
-    const mergedSteps = [...contextSteps, ...writeSteps];
-    const iterationAfterWrites = maxStepFromSteps(mergedSteps);
+    const allObservations: ToolObservation[] = [
+      ...priorObservations,
+      ...writeObservations,
+    ];
+    let taskPlan = consumed.resumeContext.taskPlan ?? null;
+    let pendingSummaryObservation: ToolObservation | null = null;
+
+    if (writeRoundMeta.toolCalls.length > 0) {
+      if (taskPlan) {
+        const planAdvance = resolveTaskPlanAdvance({
+          phase: 'post_tools',
+          plan: taskPlan,
+          observations: allObservations,
+          executionStatuses: writeRoundMeta.executionStatuses,
+          roundObservationIndices: writeRoundMeta.roundObservationIndices,
+          scopedTools: resolvedScopedTools,
+          toolCalls: writeRoundMeta.toolCalls,
+        });
+        if (planAdvance) {
+          taskPlan = planAdvance.updatedPlan;
+        }
+      }
+
+      pendingSummaryObservation = buildWriteConfirmResumeSummaryObservation({
+        userMessage: consumed.latestUserMessage,
+        writeRoundMeta,
+        observations: allObservations,
+        scopedTools: resolvedScopedTools,
+      });
+    }
+
     const graphInitialState: Partial<AgentGraphState> = {
       iteration: iterationAfterWrites,
-      steps: mergedSteps,
-      toolObservations: [...priorObservations, ...writeObservations],
+      // worker run 只记录续跑新增步骤（写工具 + summarize），避免重复展示 primary 的 skill/plan/llm
+      steps: writeSteps,
+      preloadedToolObservations: priorObservations,
+      toolObservations: writeObservations,
       pendingToolCalls: [],
-      pendingSummaryObservation: null,
+      pendingSummaryObservation,
+      lastToolRoundMeta: writeRoundMeta,
       intentKind: consumed.resumeContext.intentKind,
       scopedTools: resolvedScopedTools,
       scopedLangChainTools: scopedToolBundle.tools,
@@ -259,6 +329,12 @@ export class AgentEngineService {
       skillApplied: consumed.resumeContext.skillApplied === true,
       activeSkillId: consumed.resumeContext.activeSkillId ?? null,
       activeSkillPrompt: consumed.resumeContext.activeSkillPrompt ?? null,
+      activeSkillName: consumed.resumeContext.activeSkillName ?? null,
+      activeSkillDescription: consumed.resumeContext.activeSkillDescription ?? null,
+      activeSkillConfig: consumed.resumeContext.activeSkillConfig ?? null,
+      activeSkillRiskLevel: consumed.resumeContext.activeSkillRiskLevel ?? null,
+      taskPlan,
+      pagedListHttpUsed: consumed.resumeContext.pagedListHttpUsed ?? 0,
     };
 
     try {
@@ -280,7 +356,7 @@ export class AgentEngineService {
         runMetrics,
         toolProfilesByName,
         turnId: primaryRun.turnId,
-        resumeFromLlm: true,
+        resumeFromWriteConfirm: true,
         graphInitialState,
         approvedWriteToolNames,
       });
@@ -296,6 +372,11 @@ export class AgentEngineService {
         runMetrics,
       });
     } catch (error) {
+      const partial = await this.prisma.agentRun.findUnique({
+        where: { id: resumeRun.id },
+        select: { steps: true },
+      });
+      const partialSteps = this.lifecycle.parseStepsFromRun(partial?.steps);
       return this.handleRunFailure({
         error,
         sessionId: input.sessionId,
@@ -303,6 +384,13 @@ export class AgentEngineService {
         runId: resumeRun.id,
         runMetrics,
         scopedToolCount: tools.length,
+        scheduleMemory: this.lifecycle.buildFailureMemoryContext({
+          turnId: primaryRun.turnId,
+          runId: resumeRun.id,
+          userInput: consumed.latestUserMessage,
+          finalOutput: '',
+          steps: partialSteps,
+        }),
       });
     } finally {
       this.sse.clearThinkBuffer(input.sessionId, resumeRun.id);
@@ -430,6 +518,11 @@ export class AgentEngineService {
         runMetrics,
       });
     } catch (error) {
+      const partial = await this.prisma.agentRun.findUnique({
+        where: { id: run.id },
+        select: { steps: true },
+      });
+      const partialSteps = this.lifecycle.parseStepsFromRun(partial?.steps);
       return this.handleRunFailure({
         error,
         sessionId: input.sessionId,
@@ -437,11 +530,13 @@ export class AgentEngineService {
         runId: run.id,
         runMetrics,
         scopedToolCount: tools.length,
-        scheduleMemory: {
+        scheduleMemory: this.lifecycle.buildFailureMemoryContext({
+          turnId: turn.id,
+          runId: run.id,
           userInput: input.input,
           finalOutput: '',
-          toolObservations: [],
-        },
+          steps: partialSteps,
+        }),
       });
     } finally {
       this.sse.clearThinkBuffer(input.sessionId, run.id);
@@ -455,11 +550,7 @@ export class AgentEngineService {
     runId: number;
     runMetrics: ReturnType<typeof createRunMetricsAccumulator>;
     scopedToolCount: number;
-    scheduleMemory?: {
-      userInput: string;
-      finalOutput: string;
-      toolObservations: AgentGraphState['toolObservations'];
-    };
+    scheduleMemory?: SessionMemoryUpdateContext;
   }): Promise<AgentRunResult> {
     const errorText = input.error instanceof Error ? input.error.message : String(input.error);
     const userFacing = resolveAgentRunFailureUserMessage(input.error);
@@ -512,10 +603,12 @@ export class AgentEngineService {
       currentStep: 0,
     });
     if (input.scheduleMemory) {
-      this.lifecycle.schedulePostRunMemoryTasks(input.sessionId, {
-        userInput: input.scheduleMemory.userInput,
+      await this.lifecycle.awaitPostRunMemoryTasks(input.sessionId, {
+        ...input.scheduleMemory,
+        turnId: input.turnId,
+        runId: input.runId,
         finalOutput: input.scheduleMemory.finalOutput || finalOutput,
-        toolObservations: input.scheduleMemory.toolObservations,
+        runStatus: 'failed',
       });
     }
     return {

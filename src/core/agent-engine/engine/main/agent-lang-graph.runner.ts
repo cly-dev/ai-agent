@@ -2,20 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AIMessage } from '@langchain/core/messages';
 import type { DynamicStructuredTool } from '@langchain/core/tools';
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
-import { AgentRunStatus } from '../../../../../generated/prisma/client';
+import { AgentRunStatus, type ToolLevel } from '../../../../../generated/prisma/client';
 import type { Prisma } from '../../../../../generated/prisma/client';
 import { normalizeToolCallArgs } from '../../../llm/tool-call-args.util';
 import { LlmService } from '../../../llm/llm.service';
 import type { LlmChatMessage } from '../../../llm/llm.types';
 import {
   extractAgentPromptMessages,
-  extractWorkingMemoryMessages,
+  extractSessionHistoryForDecision,
+  extractSessionMemoryForDecision,
   joinAgentPromptText,
 } from '../prompt-message.util';
 import {
   dedupeObservationPayloads,
   formatObservationForLlm,
-  isSameObservationPayload,
   serializeObservationsBlock,
 } from '../observation-format.util';
 import { estimateMessagesTokens } from '../../../llm/message-token-budget.util';
@@ -26,24 +26,19 @@ import {
 import type {
   BuiltLangChainTools,
 } from '../../../tool-engine/tool-engine.service';
-import type { ToolExecutionResult } from '../../../tool-engine/tool-engine.types';
 import {
   classifySummarizeScenario,
   isUserRequestingFullDetail,
 } from '../user-response-style.util';
 import { PROMPT_KEYS } from '../../../prompt/prompt-template.keys';
 import { PromptRegistryService } from '../../../prompt/prompt-registry.service';
-import {
-  formatFieldLabelsForPrompt,
-  projectToolOutput,
-} from '../../../tool-engine/tool-output-projection.util';
-import type { ProjectedToolOutput } from '../../../tool-engine/tool-response-profile.types';
+import { formatFieldLabelsForPrompt } from '../../../tool-engine/tool-output-projection.util';
 import type { ToolResponseProfile } from '../../../tool-engine/tool-response-profile.types';
 import {
-  buildToolErrorObservation,
   buildLlmFailureUserMessage,
   extractToolErrorCode,
   extractToolErrorUserHint,
+  formatResponseSourceForDisplay,
   isAgentToolErrorObservation,
   resolveLlmFailureCode,
 } from '../agent-run-user-messages.util';
@@ -54,10 +49,11 @@ import { PendingWriteConfirmationStore } from '../../../../modules/chat/pending-
 import type { PendingWriteResumeContext } from '../../../../modules/chat/pending-write-confirmation.types';
 import {
   buildWriteConfirmationUserMessage,
-  collectWriteConfirmationRequired,
+  partitionToolCallsByWriteConfirmation,
 } from '../write-confirmation-gate.util';
-import type { WorkingMemoryState } from '../../../memory/session-context.types';
-import { WorkingMemoryService } from '../../../memory/working-memory.service';
+import { SessionGoaService } from '../../../memory/goa/session-goa.service';
+import { SessionResumeGateService } from '../../../memory/resume/session-resume-gate.service';
+import type { SessionGoaPayload } from '../../../memory/goa/session-goa.types';
 import { CategoryIntentRecallService } from '../../../intent/category-intent-recall.service';
 import {
   recordLlmUsage,
@@ -78,12 +74,44 @@ import {
 } from '../message/message-blocks.util';
 import { isEmptyListToolObservation } from '../tool/tool-observation.util';
 import {
+  allToolObservations,
+  mergeRunRoundObservations,
+} from '../graph-tool-observations.util';
+import type {
+  ToolErrorDisposition,
+  ToolExecutionStatus,
+} from '../tool/tool-execution-status.util';
+import {
+  isMutationTool,
+  resolveToolStepMachineCode,
+} from '../tool/tool-execution-status.util';
+import {
+  formatWriteConfirmResumeSummarizeUserMessage,
+  isWriteConfirmResumeSummaryObservation,
+  type WriteConfirmResumeSummaryPayload,
+} from '../write-confirm-resume-summary.util';
+import { executeToolCallsRound } from './agent-tool-runtime.util';
+import { formatMapReduceFetchStatusNote } from '../gather/list-map-reduce.util';
+import { resolvePagedGatherAnalyzeObjective } from '../gather/plan-paged-gather.util';
+import {
+  expandPagedListGather,
+  resumeIncompletePagedGather,
+  shouldResumePagedGather,
+  shouldRouteGraphToTools,
+  type PagedGatherHttpBudget,
+  type PagedGatherLlmContext,
+} from '../gather/paged-list-gather.util';
+import { resolveMaxListHttpPerTurn } from '../../../mcp-utils/pagination';
+import {
+  buildDuplicateSkipToolSteps,
+  inferResultCheckPhase,
+  resolvePostToolsResultCheck,
+  resolvePreToolsResultCheck,
+  resolveSummaryObservationForCheck,
+} from '../tool/tool-result-check.util';
+import {
   extractLlmUserFacingText,
 } from '../llm-output-sanitize.util';
-import {
-  areToolCallRoundsIdentical,
-  getLastToolRoundFromSteps,
-} from '../tool/tool-call-dedupe.util';
 import { detectIntentKind as classifyIntentKind } from '../../intent-kind.util';
 import { loadSmallTalkHints } from '../../../intent/smalltalk-hints.util';
 import {
@@ -99,6 +127,26 @@ import {
 import { AgentRunSseEmitter } from './agent-run-sse.emitter';
 import { AgentSessionScopeService } from './agent-session-scope.service';
 import { SkillService } from '../../../skill/skill.service';
+import {
+  buildDecisionUserFrame,
+  buildPlanSummarizeObservation,
+  filterScopedToolsForPlanStep,
+  formatPlanContextForSummarize,
+  getPendingPlanToolStep,
+  isPendingPlanAnswerStep,
+  resolveSummarizeUserMessageForPlan,
+  finalizePlanAfterSummarize,
+  isPlanToolStepSatisfiedByObservations,
+  reprioritizePlanForPendingWriteStep,
+  shouldDeferSummarizeForPendingWritePlan,
+  resolveTaskPlanAdvance,
+  resolveTaskPlanInitialAdvance,
+  shouldContinuePlanAfterSummarize,
+  summarizeScopedToolsForPlan,
+} from './task-plan.util';
+import { resolveTaskPlan } from './task-plan-llm.util';
+import type { TaskPlanSnapshot } from './task-plan.types';
+import { fromStoredTaskPlan } from './session-graph-resume.util';
 import { serializeObservationsForPending } from '../agent-write-confirmation.util';
 import type {
   AgentEngineTool,
@@ -107,12 +155,7 @@ import type {
   AgentRunStep,
   GraphToolCall,
   ParsedIntentPayload,
-  PrecheckReasonCode,
-  ScopedToolsResult,
   ToolObservation,
-} from './agent-engine.types';
-import {
-  precheckDecisionSchema,
 } from './agent-engine.types';
 
 @Injectable()
@@ -125,8 +168,8 @@ export class AgentLangGraphRunner {
     private readonly promptRegistry: PromptRegistryService,
     private readonly toolEngine: ToolEngineService,
     private readonly sse: AgentRunSseEmitter,
-    private readonly workingMemoryService: WorkingMemoryService,
-    private readonly intentScopeService: IntentScopeService,
+    private readonly goaService: SessionGoaService,
+    private readonly resumeGate: SessionResumeGateService,
     private readonly categoryIntentRecall: CategoryIntentRecallService,
     private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
     private readonly chatEvents: ChatEventsService,
@@ -181,58 +224,6 @@ export class AgentLangGraphRunner {
     }
   }
 
-  private buildWorkingMemoryHintForPrecheck(
-    workingMemory: WorkingMemoryState | null,
-  ): string {
-    if (!workingMemory) {
-      return '';
-    }
-    const parts: string[] = [];
-    if (workingMemory.lastToolSummary?.trim()) {
-      parts.push(`lastToolSummary=${workingMemory.lastToolSummary.trim()}`);
-    }
-    const facts = Array.isArray(workingMemory.facts)
-      ? workingMemory.facts
-          .filter((item) => item && item.key && item.value)
-          .slice(-6)
-          .map((item) => `${item.key}: ${item.value}`)
-      : [];
-    if (facts.length > 0) {
-      parts.push(`facts=${facts.join(' | ')}`);
-    }
-    return parts.join('; ');
-  }
-
-  private buildWorkingMemoryObservationForSummary(
-    workingMemory: WorkingMemoryState | null,
-  ): ToolObservation | null {
-    if (!workingMemory) {
-      return null;
-    }
-    const facts = Array.isArray(workingMemory.facts)
-      ? workingMemory.facts.slice(-10)
-      : [];
-    const entities =
-      workingMemory.entities &&
-      typeof workingMemory.entities === 'object' &&
-      !Array.isArray(workingMemory.entities)
-        ? workingMemory.entities
-        : {};
-    if (!workingMemory.lastToolSummary?.trim() && facts.length === 0) {
-      return null;
-    }
-    return {
-      name: 'working_memory',
-      output: {
-        summary: workingMemory.lastToolSummary ?? '',
-        facts,
-        entities,
-        updatedAt: workingMemory.updatedAt,
-      },
-      quality: 'medium',
-    };
-  }
-
   /** 主推理调用：Agent → Memory → Observations → Tool schema → User。 */
   private buildLlmInvokeMessages(
     promptMessages: LlmChatMessage[],
@@ -241,6 +232,7 @@ export class AgentLangGraphRunner {
     toolSchemaJson: string,
     toolDecisionPrompt: string,
     messageTokenBudget: number,
+    taskPlan?: TaskPlanSnapshot | null,
   ): {
     messages: Array<{ role: string; content: string; toolCallId?: string }>;
     trimMeta: {
@@ -259,7 +251,14 @@ export class AgentLangGraphRunner {
       messages.push({ role: item.role, content: item.content });
     }
 
-    for (const item of extractWorkingMemoryMessages(promptMessages)) {
+    for (const item of extractSessionMemoryForDecision(promptMessages)) {
+      messages.push({ role: item.role, content: item.content });
+    }
+
+    for (const item of extractSessionHistoryForDecision(
+      promptMessages,
+      latestUserMessage,
+    )) {
       messages.push({ role: item.role, content: item.content });
     }
 
@@ -277,7 +276,7 @@ export class AgentLangGraphRunner {
     if (observationPayloads.length > 0) {
       messages.push({
         role: 'assistant',
-        content: `<observations>\n${serializeObservationsBlock(observationPayloads)}\n</observations>`,
+        content: `<observations>\nEach entry has executed=true and reuseNote — already run in this turn; do not repeat the same tool+args.\n${serializeObservationsBlock(observationPayloads)}\n</observations>`,
       });
     }
 
@@ -291,7 +290,11 @@ export class AgentLangGraphRunner {
       content: `<tool_decision>\n${toolDecisionPrompt}\n</tool_decision>`,
     });
 
-    const pinnedUser = this.buildPinnedUserRequestMessage(latestUserMessage);
+    const pinnedUser = buildDecisionUserFrame({
+      taskPlan,
+      observationCount: observations.length,
+      latestUserMessage,
+    });
     if (pinnedUser) {
       messages.push(pinnedUser);
     }
@@ -313,19 +316,6 @@ export class AgentLangGraphRunner {
         droppedMessageIndexes: [],
         truncatedMessageIndexes: [],
       },
-    };
-  }
-
-  private buildPinnedUserRequestMessage(
-    latestUserMessage: string,
-  ): LlmChatMessage | null {
-    const trimmed = latestUserMessage.trim();
-    if (!trimmed) {
-      return null;
-    }
-    return {
-      role: 'user',
-      content: `<current_user_request>\n${trimmed}\n</current_user_request>`,
     };
   }
 
@@ -414,16 +404,8 @@ export class AgentLangGraphRunner {
     toolCallInstruction: string,
   ): Promise<string> {
     const variables = { toolCallInstruction };
-    const toolDecision = await this.promptRegistry.render(
-      PROMPT_KEYS.AGENT_TOOL_DECISION,
-      scope,
-      variables,
-    );
-    if (toolDecision.trim().length > 0) {
-      return toolDecision;
-    }
     return this.promptRegistry.render(
-      PROMPT_KEYS.AGENT_DECISION_LOOP,
+      PROMPT_KEYS.AGENT_TOOL_DECISION,
       scope,
       variables,
     );
@@ -484,6 +466,33 @@ export class AgentLangGraphRunner {
     return fallback.trim().length > 0 ? fallback.trim() : null;
   }
 
+  /** LLM step 记录用：序列化当前 taskPlan 快照，便于排查拆步是否合理。 */
+  private buildTaskPlanTraceForLlmStep(
+    taskPlan: TaskPlanSnapshot | null | undefined,
+  ): Record<string, unknown> | null {
+    if (!taskPlan) {
+      return null;
+    }
+    return {
+      source: taskPlan.source,
+      deliverable: taskPlan.deliverable,
+      goal: taskPlan.goal,
+      currentStepId: taskPlan.currentStepId,
+      currentObjective: taskPlan.currentObjective,
+      taskPhase: taskPlan.taskPhase,
+      pendingStepIds: taskPlan.pendingStepIds,
+      completedStepIds: taskPlan.completedStepIds,
+      steps: taskPlan.steps.map((step) => ({
+        id: step.id,
+        phase: step.phase,
+        kind: step.kind,
+        toolRole: step.toolRole ?? null,
+        objective: step.objective,
+        stopWhen: step.stopWhen ?? 'observation_non_empty',
+      })),
+    };
+  }
+
   private sanitizeFinalOutput(value: string): string {
     return sanitizeStoredFinalOutput(value);
   }
@@ -492,7 +501,12 @@ export class AgentLangGraphRunner {
       appClientId: input.appClientId,
       agentId: input.agentId,
     };
-
+    let sessionGoa: SessionGoaPayload | null = input.resumeFromWriteConfirm
+      ? null
+      : await this.goaService.ensurePayload(input.sessionId);
+    const sessionPriorObservations = input.resumeFromWriteConfirm
+      ? []
+      : this.goaService.buildPriorToolObservationsForGraph(sessionGoa);
     const buildDirectUserObservation = (
       userMessage: string,
       guidanceHint?: string,
@@ -525,7 +539,7 @@ export class AgentLangGraphRunner {
       if (state.skillApplied) {
         return true;
       }
-      if (state.toolObservations.length > 0) {
+      if (allToolObservations(state).length > 0) {
         return true;
       }
       for (let i = state.steps.length - 1; i >= 0; i -= 1) {
@@ -560,6 +574,12 @@ export class AgentLangGraphRunner {
         reducer: (_state, update) => update,
       }),
       toolObservations: Annotation<Array<{ name: string; output: unknown }>>({
+        default: () => [],
+        reducer: (_state, update) => update,
+      }),
+      preloadedToolObservations: Annotation<
+        Array<{ name: string; output: unknown }> | undefined
+      >({
         default: () => [],
         reducer: (_state, update) => update,
       }),
@@ -630,130 +650,40 @@ export class AgentLangGraphRunner {
         default: () => null,
         reducer: (_state, update) => update,
       }),
+      activeSkillName: Annotation<string | null | undefined>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      activeSkillDescription: Annotation<string | null | undefined>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      activeSkillConfig: Annotation<unknown>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      activeSkillRiskLevel: Annotation<ToolLevel | null | undefined>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      taskPlan: Annotation<TaskPlanSnapshot | null | undefined>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      lastToolRoundMeta: Annotation<{
+        toolCalls: GraphToolCall[];
+        executionStatuses: ToolExecutionStatus[];
+        errorDispositions: ToolErrorDisposition[];
+        roundObservationIndices: number[];
+      } | null>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      pagedListHttpUsed: Annotation<number | undefined>({
+        default: () => undefined,
+        reducer: (_state, update) => update,
+      }),
     });
-    // 节点0：前置短路检查。仅在已有 observation 时，借助 LLM 判断是否可直接进入 summarize。
-    const preCheck = async (state: AgentGraphState): Promise<AgentGraphState> => {
-      const step = state.steps.length + 1;
-      const workingMemory = await this.workingMemoryService.get(input.sessionId);
-      const workingMemoryHint = this.buildWorkingMemoryHintForPrecheck(workingMemory);
-      // 仅按 working memory 决定是否触发 precheck。
-      if (!workingMemoryHint) {
-        return state;
-      }
-
-      try {
-        const startedAt = Date.now();
-        const precheckPrompt = await this.promptRegistry.render(
-          PROMPT_KEYS.AGENT_PRECHECK_HISTORY_ANSWERABLE,
-          promptScope,
-        );
-        const precheckMessages: LlmChatMessage[] = [
-          {
-            role: 'system',
-            content: precheckPrompt,
-          },
-          {
-            role: 'user',
-            content: [
-              `Latest user message: ${input.latestUserMessage}`,
-              `Working memory hints: ${workingMemoryHint || 'none'}`,
-            ].join('\n'),
-          },
-        ];
-        let modelName: string | undefined;
-        let parsedAnswerable: boolean | undefined;
-        let reason: string | null = null;
-        try {
-          const { model } = await this.llmService.createLangChainChatModelForMessages(
-            precheckMessages,
-          );
-          const structuredModel = model.withStructuredOutput(precheckDecisionSchema);
-          const structured = await structuredModel.invoke(precheckMessages);
-          parsedAnswerable = structured.answerableFromObservation;
-          reason =
-            typeof structured.reason === 'string' ? structured.reason : null;
-        } catch {
-          const precheckResult = await this.llmService.chat({
-            messages: precheckMessages,
-            tools: [],
-          });
-          modelName = precheckResult.model;
-          const parsed = this.tryParseJsonObject(precheckResult.content);
-          if (typeof parsed?.['answerableFromObservation'] === 'boolean') {
-            parsedAnswerable = parsed['answerableFromObservation'];
-          }
-          reason = typeof parsed?.['reason'] === 'string' ? parsed['reason'] : null;
-        }
-        const latency = Date.now() - startedAt;
-        const answerableFromObservation =
-          typeof parsedAnswerable === 'boolean'
-            ? parsedAnswerable
-            : false;
-        const reasonCode: PrecheckReasonCode =
-          typeof parsedAnswerable !== 'boolean'
-            ? 'PRECHECK_PARSE_FAILED'
-            : answerableFromObservation
-              ? 'HISTORY_SUFFICIENT'
-              : 'HISTORY_INSUFFICIENT';
-        const chosenObservation = answerableFromObservation
-          ? this.pickObservationForFinalSummary(state.toolObservations) ??
-            this.buildWorkingMemoryObservationForSummary(workingMemory)
-          : null;
-        const precheckStep: AgentRunStep = {
-          step,
-          type: 'precheck',
-          output: this.normalizeJsonLike({
-            precheck: true,
-            answerableFromObservation,
-            reasonCode,
-            reason,
-            observationCount: state.toolObservations.length,
-            selectedObservationName: chosenObservation?.name ?? null,
-          }),
-          meta: {
-            model: modelName,
-            latency,
-            code: reasonCode,
-          },
-        };
-        const steps = [...state.steps, precheckStep];
-        await this.updateRun(input.runId, steps, state.iteration, AgentRunStatus.running);
-        return {
-          ...state,
-          steps,
-          pendingSummaryObservation: chosenObservation,
-        };
-      } catch (error) {
-        const precheckStep: AgentRunStep = {
-          step,
-          type: 'precheck',
-          output: this.normalizeJsonLike({
-            precheck: true,
-            answerableFromObservation: false,
-            reasonCode: 'PRECHECK_LLM_FAILED',
-            reason:
-              error instanceof Error ? error.message : 'precheck llm call failed',
-            observationCount: state.toolObservations.length,
-            selectedObservationName: null,
-          }),
-          meta: {
-            code: 'PRECHECK_LLM_FAILED',
-          },
-        };
-        const steps = [...state.steps, precheckStep];
-        await this.updateRun(input.runId, steps, state.iteration, AgentRunStatus.running);
-        this.logger.warn(
-          `precheck failed runId=${input.runId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        // 失败时兜底走原流程（intent），不阻断主链路。
-        return {
-          ...state,
-          steps,
-        };
-      }
-    };
 
     // 节点：Skill 召回 + gate（命中则跳过 intent，直连 llm）。
     const skill = async (state: AgentGraphState): Promise<AgentGraphState> => {
@@ -779,6 +709,9 @@ export class AgentLangGraphRunner {
           skillApplied: false,
           activeSkillId: null,
           activeSkillPrompt: null,
+          activeSkillName: null,
+          activeSkillDescription: null,
+          activeSkillConfig: null,
         };
       }
 
@@ -806,6 +739,10 @@ export class AgentLangGraphRunner {
             hit: false,
             reason: resolved.reason,
             candidateCount: resolved.candidateCount ?? null,
+            recallStage: resolved.recallStage ?? null,
+            recallSource: resolved.recallSource ?? null,
+            recallMatches: resolved.recallMatches ?? null,
+            recallStageAttempts: resolved.recallStageAttempts ?? null,
           }),
         };
         await this.updateRun(
@@ -820,6 +757,9 @@ export class AgentLangGraphRunner {
           skillApplied: false,
           activeSkillId: null,
           activeSkillPrompt: null,
+          activeSkillName: null,
+          activeSkillDescription: null,
+          activeSkillConfig: null,
         };
       }
 
@@ -831,8 +771,10 @@ export class AgentLangGraphRunner {
           skillId: resolved.skill.id,
           skillName: resolved.skill.name,
           recallSource: resolved.recallSource,
+          recallStage: resolved.recallStage,
           recallScore: resolved.recallScore,
           recallMatches: resolved.recallMatches,
+          recallStageAttempts: resolved.recallStageAttempts,
           roleSkillFiltered: resolved.roleSkillFiltered,
           allowedToolCount: resolved.allowedToolCount,
           gatedToolCount: resolved.gatedToolCount,
@@ -856,11 +798,189 @@ export class AgentLangGraphRunner {
         skillApplied: true,
         activeSkillId: resolved.skill.id,
         activeSkillPrompt: resolved.skill.prompt,
+        activeSkillName: resolved.skill.name,
+        activeSkillDescription: resolved.skill.description,
+        activeSkillConfig: resolved.skill.config,
+        activeSkillRiskLevel: resolved.skill.riskLevel,
         intentKind: 'task',
         scopedTools: resolved.scopedTools,
         scopedLangChainTools: resolved.scopedToolBundle.tools,
         scopedToolBundle: resolved.scopedToolBundle,
         scopedAllowedToolIds: resolved.scopedAllowedToolIds,
+      };
+    };
+
+    // 节点：Plan — 拆 deliverable + steps，写入 currentObjective（每 turn 一次）。
+    const plan = async (state: AgentGraphState): Promise<AgentGraphState> => {
+      const idx = state.steps.length + 1;
+      if (state.taskPlan) {
+        return state;
+      }
+      if (sessionGoa) {
+        const resumeDecision = await this.resumeGate.evaluate({
+          sessionId: input.sessionId,
+          appClientId: input.appClientId,
+          agentId: input.agentId,
+          latestUserMessage: input.latestUserMessage,
+          goa: sessionGoa,
+        });
+        if (resumeDecision.action === 'abandon_and_fresh') {
+          sessionGoa = await this.goaService.getPayload(input.sessionId);
+        }
+        if (resumeDecision.action === 'resume') {
+          const taskPlan = fromStoredTaskPlan(resumeDecision.plan);
+          const planStep: AgentRunStep = {
+            step: idx,
+            type: 'plan',
+            output: this.normalizeJsonLike({
+              method: 'session_resume',
+              source: taskPlan.source,
+              deliverable: taskPlan.deliverable,
+              goal: taskPlan.goal,
+              stepIds: taskPlan.steps.map((step) => step.id),
+              pendingStepIds: taskPlan.pendingStepIds,
+              currentStepId: taskPlan.currentStepId,
+              currentObjective: taskPlan.currentObjective,
+              taskPhase: taskPlan.taskPhase,
+              resumedFromRunId: resumeDecision.resumedFromRunId,
+              followUpReason: resumeDecision.followUpReason,
+            }),
+          };
+        const initialAdvance = resolveTaskPlanInitialAdvance({
+          plan: taskPlan,
+          observations: allToolObservations(state),
+          userMessage: input.latestUserMessage,
+          buildMergedObservation: (observations) =>
+            this.mergeObservationsForSummary(observations),
+        });
+        const stepsWithPlan = [...state.steps, planStep];
+        await this.updateRun(
+          input.runId,
+          stepsWithPlan,
+          state.iteration,
+          AgentRunStatus.running,
+        );
+        this.sse.emitThink(
+          input.sessionId,
+          input.runId,
+          '续接上次未完成任务步骤…\n',
+          'replace',
+        );
+        if (initialAdvance) {
+          return {
+            ...state,
+            steps: stepsWithPlan,
+            taskPlan: initialAdvance.updatedPlan,
+            pendingSummaryObservation:
+              initialAdvance.summaryObservation as ToolObservation,
+          };
+        }
+        return {
+          ...state,
+          steps: stepsWithPlan,
+          taskPlan,
+        };
+        }
+      }
+      if (!input.enableToolCall || state.scopedTools.length === 0) {
+        const step: AgentRunStep = {
+          step: idx,
+          type: 'plan',
+          output: this.normalizeJsonLike({
+            skipped: true,
+            reason: 'tools_disabled',
+          }),
+        };
+        await this.updateRun(
+          input.runId,
+          [...state.steps, step],
+          state.iteration,
+          AgentRunStatus.running,
+        );
+        return { ...state, steps: [...state.steps, step] };
+      }
+
+      const goaForAbandon =
+        sessionGoa ?? (await this.goaService.getPayload(input.sessionId));
+      if (
+        goaForAbandon.activeTask?.status === 'in_progress' ||
+        goaForAbandon.activeTask?.status === 'awaiting_confirmation'
+      ) {
+        await this.goaService.abandonActiveTask(input.sessionId);
+        sessionGoa = await this.goaService.getPayload(input.sessionId);
+      }
+
+      this.sse.emitThink(
+        input.sessionId,
+        input.runId,
+        '正在规划任务步骤…\n',
+        'replace',
+      );
+
+      const planInput = {
+        userMessage: input.latestUserMessage,
+        scopedToolSummaries: summarizeScopedToolsForPlan(state.scopedTools),
+        skillApplied: state.skillApplied === true,
+        skillName: state.activeSkillName,
+        skillDescription: state.activeSkillDescription,
+        skillConfig: state.activeSkillConfig,
+        skillRiskLevel: state.activeSkillRiskLevel ?? null,
+        skillPrompt: state.activeSkillPrompt,
+      };
+
+      const resolvedPlan = await resolveTaskPlan({
+        llmService: this.llmService,
+        promptRegistry: this.promptRegistry,
+        scope: promptScope,
+        planInput,
+      });
+
+      const taskPlan = resolvedPlan.plan;
+
+      const planStep: AgentRunStep = {
+        step: idx,
+        type: 'plan',
+        output: this.normalizeJsonLike({
+          method: resolvedPlan.method,
+          llmFallbackReason: resolvedPlan.llmFallbackReason ?? null,
+          source: taskPlan.source,
+          deliverable: taskPlan.deliverable,
+          goal: taskPlan.goal,
+          stepIds: taskPlan.steps.map((step) => step.id),
+          pendingStepIds: taskPlan.pendingStepIds,
+          currentStepId: taskPlan.currentStepId,
+          currentObjective: taskPlan.currentObjective,
+          taskPhase: taskPlan.taskPhase,
+        }),
+      };
+
+      const initialAdvance = resolveTaskPlanInitialAdvance({
+        plan: taskPlan,
+        observations: allToolObservations(state),
+        userMessage: input.latestUserMessage,
+        buildMergedObservation: (observations) =>
+          this.mergeObservationsForSummary(observations),
+      });
+      const stepsWithPlan = [...state.steps, planStep];
+      await this.updateRun(
+        input.runId,
+        stepsWithPlan,
+        state.iteration,
+        AgentRunStatus.running,
+      );
+      if (initialAdvance) {
+        return {
+          ...state,
+          steps: stepsWithPlan,
+          taskPlan: initialAdvance.updatedPlan,
+          pendingSummaryObservation:
+            initialAdvance.summaryObservation as ToolObservation,
+        };
+      }
+      return {
+        ...state,
+        steps: stepsWithPlan,
+        taskPlan,
       };
     };
 
@@ -873,6 +993,37 @@ export class AgentLangGraphRunner {
         input.latestUserMessage,
         loadSmallTalkHints(),
       );
+
+      if (intentKind === 'smalltalk') {
+        this.sse.emitThink(
+          input.sessionId,
+          input.runId,
+          '正在回复…\n',
+          'replace',
+        );
+        const intentStep: AgentRunStep = {
+          step: idx,
+          type: 'intent',
+          output: this.normalizeJsonLike({
+            intentClear: true,
+            intentKind: 'smalltalk',
+            matchedCategoryIds: [],
+            intentMatched: false,
+            smalltalk: true,
+            skipped: skipRecognition || undefined,
+          }),
+        };
+        await this.updateRun(
+          input.runId,
+          [...state.steps, intentStep],
+          0,
+          AgentRunStatus.running,
+        );
+        return {
+          ...buildNoIntentSummarizeState(state, [...state.steps, intentStep]),
+          intentKind: 'smalltalk',
+        };
+      }
 
       if (skipRecognition) {
         this.sse.emitThink(
@@ -896,7 +1047,10 @@ export class AgentLangGraphRunner {
           0,
           AgentRunStatus.running,
         );
-        return buildNoIntentSummarizeState(state, [...state.steps, intentStep]);
+        return {
+          ...buildNoIntentSummarizeState(state, [...state.steps, intentStep]),
+          intentKind,
+        };
       }
 
       this.sse.emitThink(
@@ -1100,7 +1254,7 @@ export class AgentLangGraphRunner {
       return {
         ...state,
         steps: [...state.steps, intentStep],
-        intentKind: 'task',
+        intentKind,
         scopedTools: scoped.scopedTools,
         scopedLangChainTools: scoped.scopedLangChainTools,
         scopedToolBundle: scoped.scopedToolBundle,
@@ -1122,24 +1276,74 @@ export class AgentLangGraphRunner {
       ) {
         return buildNoIntentSummarizeState(graphState, graphState.steps);
       }
-      const step = graphState.iteration + 1;
+      const graphStateForLlm = graphState;
+      const observationsForLlm = allToolObservations(graphStateForLlm);
+      const writeStepReprioritized = reprioritizePlanForPendingWriteStep(
+        graphStateForLlm.taskPlan,
+      );
+      if (writeStepReprioritized) {
+        this.sse.emitThink(
+          input.sessionId,
+          input.runId,
+          '任务计划尚有写操作步骤，继续执行…\n',
+          'delta',
+        );
+        return {
+          ...graphStateForLlm,
+          taskPlan: writeStepReprioritized,
+        };
+      }
+      if (isPendingPlanAnswerStep(graphStateForLlm.taskPlan)) {
+        this.sse.emitThink(
+          input.sessionId,
+          input.runId,
+          '正在按任务计划生成结果…\n',
+          'delta',
+        );
+        return {
+          ...graphStateForLlm,
+          pendingSummaryObservation: buildPlanSummarizeObservation({
+            userMessage: input.latestUserMessage,
+            merged: this.mergeObservationsForSummary(observationsForLlm),
+          }),
+        };
+      }
+      const step = graphStateForLlm.iteration + 1;
       try {
-        const toolsForPrompt = graphState.scopedTools;
+        const planAnswerStep = isPendingPlanAnswerStep(graphStateForLlm.taskPlan);
+        const decisionEnableToolCall =
+          input.enableToolCall && !planAnswerStep;
+        const toolsForPrompt = filterScopedToolsForPlanStep(
+          graphStateForLlm.scopedTools,
+          graphStateForLlm.taskPlan,
+        );
+        const allowedDecisionToolNames = new Set(
+          toolsForPrompt.map((tool) => tool.name),
+        );
+        let langChainToolsForDecision = planAnswerStep
+          ? []
+          : graphStateForLlm.scopedLangChainTools.filter((tool) =>
+              allowedDecisionToolNames.has(tool.name),
+            );
+        if (!planAnswerStep && langChainToolsForDecision.length === 0) {
+          langChainToolsForDecision = graphStateForLlm.scopedLangChainTools;
+        }
         const decision = await this.buildDecisionPrompt(
           input.promptMessages,
           toolsForPrompt,
-          graphState.toolObservations,
-          input.enableToolCall,
+          observationsForLlm,
+          decisionEnableToolCall,
           promptScope,
-          graphState.activeSkillPrompt,
+          graphStateForLlm.activeSkillPrompt,
         );
         const { messages: invokeMessages, trimMeta } = this.buildLlmInvokeMessages(
           input.promptMessages,
-          graphState.toolObservations,
+          observationsForLlm,
           input.latestUserMessage,
           decision.toolSchemaJson,
           decision.toolDecisionPrompt,
           input.messageTokenBudget,
+          graphStateForLlm.taskPlan,
         );
         const promptDebugFile = emitLlmPromptDebug(
           (message) => this.logger.log(message),
@@ -1148,13 +1352,22 @@ export class AgentLangGraphRunner {
             sessionId: input.sessionId,
             phase: 'decision',
             step,
-            iteration: graphState.iteration,
+            iteration: graphStateForLlm.iteration,
             messageTokenBudget: input.messageTokenBudget,
             meta: {
-              enableToolCall: input.enableToolCall,
-              scopedToolCount: graphState.scopedTools.length,
-              observationCount: graphState.toolObservations.length,
+              enableToolCall: decisionEnableToolCall,
+              scopedToolCount: graphStateForLlm.scopedTools.length,
+              decisionToolCount: toolsForPrompt.length,
+              planAnswerStep: planAnswerStep,
+              planToolRoleFilter:
+                getPendingPlanToolStep(graphStateForLlm.taskPlan)?.toolRole ??
+                null,
+              observationCount: observationsForLlm.length,
               estimatedTokens: trimMeta.estimatedTokensAfter,
+              taskPlanStep: graphStateForLlm.taskPlan?.currentStepId ?? null,
+              taskPlanPhase: graphStateForLlm.taskPlan?.taskPhase ?? null,
+              currentObjective:
+                graphStateForLlm.taskPlan?.currentObjective ?? null,
             },
             messages: invokeMessages,
           },
@@ -1180,8 +1393,8 @@ export class AgentLangGraphRunner {
               toolCallId: message.toolCallId,
             })),
           );
-        const runnable = input.enableToolCall
-          ? model.bindTools(graphState.scopedLangChainTools as unknown[])
+        const runnable = decisionEnableToolCall
+          ? model.bindTools(langChainToolsForDecision as unknown[])
           : model.bindTools([]);
         const aiMessage = await this.sse.streamRunnableMessages(
           runnable as {
@@ -1195,7 +1408,7 @@ export class AgentLangGraphRunner {
         const responseMeta = aiMessage.response_metadata as
           | Record<string, unknown>
           | undefined;
-        const toolCalls = input.enableToolCall
+        const toolCalls = decisionEnableToolCall
           ? this.extractToolCalls(aiMessage)
           : [];
         const llmText = extractLlmUserFacingText(
@@ -1215,13 +1428,16 @@ export class AgentLangGraphRunner {
           responseMeta,
         });
         const steps = [
-          ...graphState.steps,
+          ...graphStateForLlm.steps,
           {
             step,
             type: 'llm' as const,
             output: this.normalizeJsonLike({
               content: llmText,
               toolCalls,
+              taskPlanTrace: this.buildTaskPlanTraceForLlmStep(
+                graphStateForLlm.taskPlan,
+              ),
             }),
             meta: {
               model:
@@ -1232,52 +1448,58 @@ export class AgentLangGraphRunner {
               toolSchema: decision.toolSchemaJson,
               observations: decision.observationsJson,
               agentPrompt: decision.agentPrompt ?? undefined,
-              userRequest: input.latestUserMessage,
+              userRequest: graphStateForLlm.taskPlan?.currentObjective
+                ?? input.latestUserMessage,
             },
           },
         ];
         await this.updateRun(input.runId, steps, step, AgentRunStatus.running);
-        if (toolCalls.length > 0) {
-          const lastToolRound = getLastToolRoundFromSteps(graphState.steps);
-          if (areToolCallRoundsIdentical(toolCalls, lastToolRound)) {
-            const observation = this.mergeObservationsForSummary(
-              graphState.toolObservations,
-            );
-            if (observation) {
-              const dedupeSteps = [
-                ...steps.slice(0, -1),
-                {
-                  ...steps[steps.length - 1],
-                  output: this.normalizeJsonLike({
-                    content: llmText,
-                    toolCalls,
-                    duplicateToolCallsSkipped: true,
-                  }),
-                },
-              ];
-              await this.updateRun(
-                input.runId,
-                dedupeSteps,
-                step,
-                AgentRunStatus.running,
-              );
-              this.sse.emitThink(
-                input.sessionId,
-                input.runId,
-                '检测到与上一轮完全相同的工具调用，强制汇总已有结果…\n',
-                'delta',
-              );
-              return {
-                ...graphState,
-                iteration: step,
-                steps: dedupeSteps,
-                pendingToolCalls: [],
-                pendingSummaryObservation: observation,
-              };
-            }
-          }
-        }
         if (toolCalls.length === 0) {
+          const pendingToolStep = getPendingPlanToolStep(
+            graphStateForLlm.taskPlan,
+          );
+          const planRequiresToolCall =
+            pendingToolStep?.kind === 'tool' &&
+            !isPlanToolStepSatisfiedByObservations({
+              step: pendingToolStep,
+              observations: observationsForLlm,
+              scopedTools: graphStateForLlm.scopedTools,
+              taskPlan: graphStateForLlm.taskPlan,
+              skillConfig: graphStateForLlm.activeSkillConfig,
+            });
+          if (planRequiresToolCall) {
+            if (!llmText) {
+              this.logger.warn(
+                `llm plan tool step skipped without toolCalls runId=${input.runId} step=${step} planStep=${pendingToolStep.id}`,
+              );
+            }
+            return {
+              ...graphStateForLlm,
+              iteration: step,
+              steps,
+              pendingToolCalls: [],
+              pendingSummaryObservation: null,
+            };
+          }
+          if (
+            graphStateForLlm.taskPlan &&
+            pendingToolStep?.kind === 'tool' &&
+            isPlanToolStepSatisfiedByObservations({
+              step: pendingToolStep,
+              observations: observationsForLlm,
+              scopedTools: graphStateForLlm.scopedTools,
+              taskPlan: graphStateForLlm.taskPlan,
+              skillConfig: graphStateForLlm.activeSkillConfig,
+            })
+          ) {
+            return {
+              ...graphStateForLlm,
+              iteration: step,
+              steps,
+              pendingToolCalls: [],
+              pendingSummaryObservation: null,
+            };
+          }
           const emptyReply =
             '我这次没有拿到有效结果，请你换个问法，或补充更具体的条件后我再试一次。';
           if (!llmText) {
@@ -1289,13 +1511,24 @@ export class AgentLangGraphRunner {
               }`,
             );
           }
+          if (
+            shouldDeferSummarizeForPendingWritePlan(graphStateForLlm.taskPlan)
+          ) {
+            return {
+              ...graphStateForLlm,
+              iteration: step,
+              steps,
+              pendingToolCalls: [],
+              pendingSummaryObservation: null,
+            };
+          }
           const completion = this.resolveLlmCompletionAfterTools(
             input.latestUserMessage,
             llmText || emptyReply,
-            graphState.toolObservations,
+            observationsForLlm,
           );
           return {
-            ...graphState,
+            ...graphStateForLlm,
             iteration: step,
             steps,
             pendingToolCalls: [],
@@ -1308,7 +1541,7 @@ export class AgentLangGraphRunner {
           };
         }
         return {
-          ...graphState,
+          ...graphStateForLlm,
           iteration: step,
           steps,
           // 交给 tools 节点执行（本轮可能包含多个调用）。
@@ -1353,215 +1586,298 @@ export class AgentLangGraphRunner {
         };
       }
     };
-    // 节点3：工具执行节点。并行执行同轮 tool_calls，统一汇总后回到 llm。
+    // 节点3：工具执行。仅负责 HTTP 调用与 observation 写入；路由由 resultCheck 统一处理。
     const tools = async (state: AgentGraphState): Promise<AgentGraphState> => {
-      const nextSteps = [...state.steps];
-      const observations = [...state.toolObservations];
-      if (state.pendingToolCalls.length > 0) {
-        const lastToolRound = getLastToolRoundFromSteps(state.steps);
-        if (areToolCallRoundsIdentical(state.pendingToolCalls, lastToolRound)) {
-          const observation = this.mergeObservationsForSummary(observations);
-          this.sse.emitThink(
-            input.sessionId,
-            input.runId,
-            '检测到与上一轮完全相同的工具调用，强制汇总已有结果…\n',
-            'delta',
-          );
-          const skipSteps: AgentRunStep[] = state.pendingToolCalls.map(
-            (toolCall) => ({
-              step: state.iteration,
-              type: 'tool',
-              name: toolCall.name,
-              input: toolCall.arguments,
-              output: this.normalizeJsonLike({
-                skipped: true,
-                reason: 'duplicate_tool_call_round',
-              }),
-            }),
-          );
-          const mergedSteps = [...nextSteps, ...skipSteps];
+      const pagedGatherHttpBudget: PagedGatherHttpBudget = {
+        used: state.pagedListHttpUsed ?? 0,
+        max: resolveMaxListHttpPerTurn(),
+      };
+      const gatherLlm: PagedGatherLlmContext = {
+        llmService: this.llmService,
+        promptRegistry: this.promptRegistry,
+        scope: {
+          appClientId: input.appClientId,
+          agentId: input.agentId,
+        },
+        currentObjective:
+          resolvePagedGatherAnalyzeObjective(state.taskPlan) ??
+          state.taskPlan?.currentObjective ??
+          undefined,
+        runMetrics: input.runMetrics,
+        runId: input.runId,
+        sessionId: input.sessionId,
+        iteration: state.iteration,
+        onDebugLog: (message) => this.logger.warn(message),
+      };
+      const langChainBundleForResume =
+        state.scopedToolBundle ??
+        this.toolEngine.buildLangChainTools(state.scopedTools, {
+          userId: input.userId,
+          allowedToolIds: state.scopedAllowedToolIds,
+        });
+      const runRoundForGather = async (
+        toolCalls: GraphToolCall[],
+        observations: ToolObservation[],
+        steps: AgentRunStep[],
+      ) =>
+        executeToolCallsRound({
+          latestUserMessage: input.latestUserMessage,
+          toolCalls,
+          scopedTools: state.scopedTools,
+          toolProfilesByName: state.toolProfilesByName,
+          langChainBundle: langChainBundleForResume,
+          toolEngine: this.toolEngine,
+          observations,
+          steps,
+          iteration: state.iteration,
+          assessObservationQuality: (output, agentMetadata) =>
+            this.assessObservationQuality(output, agentMetadata),
+          resolveToolStepCode: (quality, output, agentMetadata) =>
+            this.resolveToolStepCode(quality, output, agentMetadata),
+          runMetrics: input.runMetrics,
+          runId: input.runId,
+          sessionId: input.sessionId,
+          onThink: (message) =>
+            this.sse.emitThink(
+              input.sessionId,
+              input.runId,
+              message,
+              'delta',
+            ),
+          onToolDebugLog: (message) => this.logger.log(message),
+        });
+
+      if (
+        state.pendingToolCalls.length === 0 &&
+        shouldResumePagedGather({
+          taskPlan: state.taskPlan,
+          scopedTools: state.scopedTools,
+          observations: allToolObservations(state),
+        })
+      ) {
+        const resumed = await resumeIncompletePagedGather({
+          taskPlan: state.taskPlan,
+          scopedTools: state.scopedTools,
+          observations: allToolObservations(state),
+          steps: state.steps,
+          runRound: runRoundForGather,
+          gatherLlm,
+          httpBudget: pagedGatherHttpBudget,
+          onProgress: (message) =>
+            this.sse.emitThink(input.sessionId, input.runId, message, 'delta'),
+        });
+        if (resumed) {
+          const nextSteps = resumed.steps.map((row) => ({
+            ...row,
+            output: this.normalizeJsonLike(row.output),
+          }));
           await this.updateRun(
             input.runId,
-            mergedSteps,
+            nextSteps,
             state.iteration,
             AgentRunStatus.running,
           );
-          if (observation) {
-            return {
-              ...state,
-              steps: mergedSteps,
-              toolObservations: observations,
-              pendingToolCalls: [],
-              pendingSummaryObservation: observation,
-            };
-          }
-          return {
-            ...state,
-            steps: mergedSteps,
-            toolObservations: observations,
-            pendingToolCalls: [],
-            pendingSummaryObservation: null,
-          };
-        }
-      }
-      const writeCalls = collectWriteConfirmationRequired(
-        state.pendingToolCalls,
-        state.scopedTools,
-      );
-      const approvedNames = new Set(input.approvedWriteToolNames ?? []);
-      const writeCallsNeedingConfirm = writeCalls.filter(
-        (call) => !approvedNames.has(call.name),
-      );
-      if (writeCallsNeedingConfirm.length > 0) {
-          const message = buildWriteConfirmationUserMessage();
-          await this.pendingWriteConfirmationStore.set({
-            runId: input.runId,
-            turnId: input.turnId,
-            sessionId: input.sessionId,
-            userId: input.userId,
-            appClientId: input.appClientId,
-            agentId: input.agentId,
-            latestUserMessage: input.latestUserMessage,
-            toolCalls: writeCallsNeedingConfirm,
-            resumeContext: {
-              steps: nextSteps as PendingWriteResumeContext['steps'],
-              iteration: state.iteration,
-              toolObservations: serializeObservationsForPending(observations),
-              scopedToolIds: state.scopedTools.map((tool) => tool.id),
-              intentKind: state.intentKind,
-              hasExpandedOnce: state.hasExpandedOnce,
-              skillApplied: state.skillApplied === true,
-              activeSkillId: state.activeSkillId ?? null,
-              activeSkillPrompt: state.activeSkillPrompt ?? null,
-            },
-            createdAt: new Date().toISOString(),
-          });
-          this.chatEvents.emit(input.sessionId, {
-            event: 'message',
-            payload: {
-              source: 'agent-run',
-              action: 'confirmation_required',
-              runId: input.runId,
-              turnId: input.turnId,
-              message,
-            },
-          });
-          this.sse.emitLlmReply(input.sessionId, input.runId, message, {
-            code: 'WRITE_CONFIRMATION_REQUIRED',
-            mode: 'full',
-          });
-          if (input.runId != null) {
-            this.sse.runSseContentDelivered.add(
-              this.sse.thinkBufferKey(input.sessionId, input.runId),
-            );
-          }
           return {
             ...state,
             steps: nextSteps,
+            toolObservations: mergeRunRoundObservations(
+              state,
+              resumed.toolObservations,
+            ),
             pendingToolCalls: [],
-            awaitingWriteConfirmation: true,
-            finalOutput: message,
-            status: AgentRunStatus.success,
-            finished: true,
+            pagedListHttpUsed: pagedGatherHttpBudget.used,
+            lastToolRoundMeta: resumed.lastToolRoundMeta,
           };
+        }
       }
 
-      for (const toolCall of state.pendingToolCalls) {
-        this.sse.emitThink(
-          input.sessionId,
-          input.runId,
-          `\n正在调用工具：${toolCall.name}\n`,
-          'delta',
-        );
+      if (state.pendingToolCalls.length === 0) {
+        return {
+          ...state,
+          lastToolRoundMeta: null,
+          pagedListHttpUsed: pagedGatherHttpBudget.used,
+        };
       }
+
+      const { safeCalls, writeCallsNeedingConfirm } =
+        partitionToolCallsByWriteConfirmation(
+          state.pendingToolCalls,
+          state.scopedTools,
+          input.approvedWriteToolNames,
+        );
+
       const langChainBundle =
         state.scopedToolBundle ??
         this.toolEngine.buildLangChainTools(state.scopedTools, {
           userId: input.userId,
           allowedToolIds: state.scopedAllowedToolIds,
         });
-      const toolResults = await Promise.all(
-        state.pendingToolCalls.map((toolCall) =>
-          this.invokeToolSafely(
-            langChainBundle,
-            state.scopedTools,
-            toolCall,
-          ),
-        ),
-      );
-      const projectedToolResults: Array<{
-        name: string;
-        input: Record<string, unknown>;
-        latency: number;
-        projected: ProjectedToolOutput;
-      }> = [];
 
-      for (let idx = 0; idx < toolResults.length; idx += 1) {
-        const toolResult = toolResults[idx];
-        const toolCall = state.pendingToolCalls[idx];
-        const profile = state.toolProfilesByName[toolResult.name] ?? null;
+      const runRound = async (
+        toolCalls: GraphToolCall[],
+        observations: ToolObservation[],
+        steps: AgentRunStep[],
+      ) =>
+        executeToolCallsRound({
+          latestUserMessage: input.latestUserMessage,
+          toolCalls,
+          scopedTools: state.scopedTools,
+          toolProfilesByName: state.toolProfilesByName,
+          langChainBundle,
+          toolEngine: this.toolEngine,
+          observations,
+          steps,
+          iteration: state.iteration,
+          assessObservationQuality: (output, agentMetadata) =>
+            this.assessObservationQuality(output, agentMetadata),
+          resolveToolStepCode: (quality, output, agentMetadata) =>
+            this.resolveToolStepCode(quality, output, agentMetadata),
+          runMetrics: input.runMetrics,
+          runId: input.runId,
+          sessionId: input.sessionId,
+          onThink: (message) =>
+            this.sse.emitThink(
+              input.sessionId,
+              input.runId,
+              message,
+              'delta',
+            ),
+          onToolDebugLog: (message) => this.logger.log(message),
+        });
 
-        const projected = projectToolOutput(
-          toolResult.output,
-          input.latestUserMessage,
-          profile,
-        );
-        projectedToolResults.push({
-          name: toolResult.name,
-          input: toolCall.arguments,
-          latency: toolResult.latency,
-          projected,
-        });
-        const llmPayload = formatObservationForLlm({
-          toolName: toolResult.name,
-          output: projected.data,
-          fieldLabels: projected.fieldLabels,
-        });
-        const nextObservation: ToolObservation = {
-          name: toolResult.name,
-          output: projected.data,
-          llmPayload,
-          quality: this.assessObservationQuality(projected.data),
-          fieldLabels: projected.fieldLabels,
-          fieldDescriptions: projected.fieldDescriptions,
-          enumLabelsByPath: projected.enumLabelsByPath,
-        };
-        const duplicateObservationIndex = observations.findIndex(
-          (row) =>
-            row.llmPayload != null &&
-            isSameObservationPayload(row.llmPayload, llmPayload),
-        );
-        if (duplicateObservationIndex >= 0) {
-          observations[duplicateObservationIndex] = nextObservation;
-        } else {
-          observations.push(nextObservation);
+      if (writeCallsNeedingConfirm.length > 0) {
+        let nextSteps = [...state.steps];
+        let observations = [...allToolObservations(state)];
+        let taskPlan = state.taskPlan ?? null;
+
+        if (safeCalls.length > 0) {
+          const safeRound = await expandPagedListGather({
+            round: await runRound(safeCalls, observations, nextSteps),
+            taskPlan: state.taskPlan,
+            scopedTools: state.scopedTools,
+            runRound,
+            gatherLlm,
+            httpBudget: pagedGatherHttpBudget,
+            onProgress: (message) =>
+              this.sse.emitThink(
+                input.sessionId,
+                input.runId,
+                message,
+                'delta',
+              ),
+          });
+          nextSteps = safeRound.steps.map((row) => ({
+            ...row,
+            output: this.normalizeJsonLike(row.output),
+          }));
+          observations = safeRound.toolObservations;
+
+          if (taskPlan && safeRound.lastToolRoundMeta.toolCalls.length > 0) {
+            const advance = resolveTaskPlanAdvance({
+              phase: 'post_tools',
+              plan: taskPlan,
+              observations,
+              executionStatuses:
+                safeRound.lastToolRoundMeta.executionStatuses,
+              roundObservationIndices:
+                safeRound.lastToolRoundMeta.roundObservationIndices,
+              scopedTools: state.scopedTools,
+              toolCalls: safeCalls,
+              skillConfig: state.activeSkillConfig,
+            });
+            if (advance) {
+              taskPlan = advance.updatedPlan;
+            }
+          }
+
+          await this.updateRun(
+            input.runId,
+            nextSteps,
+            state.iteration,
+            AgentRunStatus.running,
+          );
         }
-        const quality = this.assessObservationQuality(projected.data);
-        const toolCode = this.resolveToolStepCode(quality, projected.data);
-        nextSteps.push({
-          step: state.iteration,
-          type: 'tool',
-          name: toolResult.name,
-          input: toolCall.arguments,
-          output: this.normalizeJsonLike(projected.data),
-          meta: { latency: toolResult.latency, quality, code: toolCode ?? undefined },
+
+        const message = buildWriteConfirmationUserMessage();
+        await this.pendingWriteConfirmationStore.set({
+          runId: input.runId,
+          turnId: input.turnId,
+          sessionId: input.sessionId,
+          userId: input.userId,
+          appClientId: input.appClientId,
+          agentId: input.agentId,
+          latestUserMessage: input.latestUserMessage,
+          toolCalls: writeCallsNeedingConfirm,
+          resumeContext: {
+            steps: nextSteps as PendingWriteResumeContext['steps'],
+            iteration: state.iteration,
+            toolObservations: serializeObservationsForPending(observations),
+            scopedToolIds: state.scopedTools.map((tool) => tool.id),
+            intentKind: state.intentKind,
+            hasExpandedOnce: state.hasExpandedOnce,
+            skillApplied: state.skillApplied === true,
+            activeSkillId: state.activeSkillId ?? null,
+            activeSkillPrompt: state.activeSkillPrompt ?? null,
+            activeSkillName: state.activeSkillName ?? null,
+            activeSkillDescription: state.activeSkillDescription ?? null,
+            activeSkillConfig: state.activeSkillConfig ?? null,
+            activeSkillRiskLevel: state.activeSkillRiskLevel ?? null,
+            taskPlan,
+            pagedListHttpUsed: pagedGatherHttpBudget.used,
+          },
+          createdAt: new Date().toISOString(),
         });
-        recordMachineCodeUsage(input.runMetrics, toolCode);
-        recordToolUsage(input.runMetrics, {
-          name: toolResult.name,
-          latencyMs: toolResult.latency,
-          quality,
+        this.chatEvents.emit(input.sessionId, {
+          event: 'message',
+          payload: {
+            source: 'agent-run',
+            action: 'confirmation_required',
+            runId: input.runId,
+            turnId: input.turnId,
+            message,
+          },
         });
-        const toolFailed = isAgentToolErrorObservation(toolResult.output);
-        this.sse.emitThink(
-          input.sessionId,
-          input.runId,
-          toolFailed
-            ? `工具 ${toolCall.name} 未能返回可用数据\n`
-            : `工具 ${toolCall.name} 调用完成\n`,
-          'delta',
-        );
+        this.sse.emitLlmReply(input.sessionId, input.runId, message, {
+          code: 'WRITE_CONFIRMATION_REQUIRED',
+          mode: 'full',
+        });
+        if (input.runId != null) {
+          this.sse.runSseContentDelivered.add(
+            this.sse.thinkBufferKey(input.sessionId, input.runId),
+          );
+        }
+        return {
+          ...state,
+          steps: nextSteps,
+          toolObservations: mergeRunRoundObservations(state, observations),
+          taskPlan,
+          pendingToolCalls: [],
+          awaitingWriteConfirmation: true,
+          finalOutput: message,
+          status: AgentRunStatus.success,
+          finished: true,
+          pagedListHttpUsed: pagedGatherHttpBudget.used,
+        };
       }
+
+      const round = await expandPagedListGather({
+        round: await runRound(
+          state.pendingToolCalls,
+          [...allToolObservations(state)],
+          [...state.steps],
+        ),
+        taskPlan: state.taskPlan,
+        scopedTools: state.scopedTools,
+        runRound,
+        gatherLlm,
+        httpBudget: pagedGatherHttpBudget,
+        onProgress: (message) =>
+          this.sse.emitThink(input.sessionId, input.runId, message, 'delta'),
+      });
+      const nextSteps = round.steps.map((row) => ({
+        ...row,
+        output: this.normalizeJsonLike(row.output),
+      }));
 
       await this.updateRun(
         input.runId,
@@ -1570,17 +1886,276 @@ export class AgentLangGraphRunner {
         AgentRunStatus.running,
       );
 
-      const failedObservation = observations.find((row) =>
-        isAgentToolErrorObservation(row.output),
-      );
-      const shouldExpandOnce =
-        !state.skillApplied &&
-        !state.hasExpandedOnce &&
-        state.iteration <= 1 &&
-        state.scopedTools.length < input.tools.length &&
-        state.pendingToolCalls.length === 1 &&
-        this.isLowQualityToolObservation(observations[observations.length - 1]);
-      if (shouldExpandOnce) {
+      return {
+        ...state,
+        steps: nextSteps,
+        toolObservations: mergeRunRoundObservations(
+          state,
+          round.toolObservations,
+        ),
+        pendingToolCalls: [],
+        pendingSummaryObservation: null,
+        pagedListHttpUsed: pagedGatherHttpBudget.used,
+        lastToolRoundMeta: round.lastToolRoundMeta,
+      };
+    };
+
+    // 节点4：结果检查。纯规则收拢 dedupe / EMPTY / ERROR / expand，不调 LLM。
+    const resultCheck = async (
+      state: AgentGraphState,
+    ): Promise<AgentGraphState> => {
+      const phase = inferResultCheckPhase(state);
+      const savedRoundMeta = state.lastToolRoundMeta;
+      if (phase === 'post_tools' && !savedRoundMeta) {
+        const fallbackStep: AgentRunStep = {
+          step: state.iteration,
+          type: 'result_check',
+          output: this.normalizeJsonLike({
+            phase: 'post_tools',
+            route: 'llm',
+            reason: 'missing_tool_round_meta',
+          }),
+        };
+        const steps = [...state.steps, fallbackStep];
+        await this.updateRun(
+          input.runId,
+          steps,
+          state.iteration,
+          AgentRunStatus.running,
+        );
+        return {
+          ...state,
+          steps,
+          pendingToolCalls: [],
+          pendingSummaryObservation: null,
+          lastToolRoundMeta: null,
+        };
+      }
+      const outcome =
+        phase === 'pre_tools'
+          ? resolvePreToolsResultCheck({
+              pendingToolCalls: state.pendingToolCalls,
+              steps: state.steps,
+              taskPlan: state.taskPlan,
+              scopedTools: state.scopedTools,
+              observations: allToolObservations(state),
+              skillConfig: state.activeSkillConfig,
+            })
+          : resolvePostToolsResultCheck({
+              userMessage: input.latestUserMessage,
+              observations: allToolObservations(state),
+              lastToolRoundMeta: savedRoundMeta!,
+              scopedTools: state.scopedTools,
+              taskPlan: state.taskPlan,
+              skillConfig: state.activeSkillConfig,
+              skillApplied: state.skillApplied,
+              hasExpandedOnce: state.hasExpandedOnce,
+              iteration: state.iteration,
+              totalAllowedToolCount: input.tools.length,
+              writeConfirmResume: input.resumeFromWriteConfirm === true,
+              isLowQualityLastObservation: this.isLowQualityToolObservation(
+                (() => {
+                  const roundIndices = savedRoundMeta!.roundObservationIndices;
+                  if (roundIndices.length === 0) {
+                    return undefined;
+                  }
+                  return allToolObservations(state)[
+                    roundIndices[roundIndices.length - 1]!
+                  ];
+                })(),
+              ),
+            });
+
+      const planAdvance =
+        state.taskPlan && (phase === 'pre_tools' || savedRoundMeta)
+          ? resolveTaskPlanAdvance(
+              phase === 'post_tools' && savedRoundMeta
+                ? {
+                    phase: 'post_tools',
+                    plan: state.taskPlan,
+                    observations: allToolObservations(state),
+                    executionStatuses: savedRoundMeta.executionStatuses,
+                    roundObservationIndices:
+                      savedRoundMeta.roundObservationIndices,
+                    scopedTools: state.scopedTools,
+                    toolCalls: savedRoundMeta.toolCalls,
+                    skillConfig: state.activeSkillConfig,
+                  }
+                : {
+                    phase: 'pre_tools',
+                    plan: state.taskPlan,
+                    observations: allToolObservations(state),
+                    scopedTools: state.scopedTools,
+                    skillConfig: state.activeSkillConfig,
+                  },
+            )
+          : null;
+      const taskPlanNext = planAdvance?.updatedPlan ?? state.taskPlan ?? null;
+      const abortPlanOnEmptyResults =
+        outcome.reason === 'empty_tool_results' && state.taskPlan != null;
+      const abortPlanOnDuplicateSummarize =
+        state.taskPlan != null &&
+        planAdvance == null &&
+        (outcome.reason === 'duplicate_tool_call_round' ||
+          outcome.reason === 'all_tool_calls_duplicate');
+      const abortPlanOnToolStepExhausted =
+        outcome.reason === 'plan_tool_step_exhausted' && state.taskPlan != null;
+      const abortPlanOnWriteStepExhausted =
+        outcome.reason === 'plan_write_step_exhausted' && state.taskPlan != null;
+      const taskPlanAfterCheck =
+        abortPlanOnEmptyResults ||
+        abortPlanOnDuplicateSummarize ||
+        abortPlanOnToolStepExhausted ||
+        abortPlanOnWriteStepExhausted
+          ? null
+          : taskPlanNext;
+
+      const skipSteps =
+        outcome.duplicateSkipCalls.length > 0
+          ? buildDuplicateSkipToolSteps(
+              outcome.duplicateSkipCalls,
+              state.iteration,
+              outcome.reason,
+            )
+          : [];
+      const resultCheckStep: AgentRunStep = {
+        step: state.iteration,
+        type: 'result_check',
+        output: this.normalizeJsonLike({
+          phase: outcome.phase,
+          route: outcome.route,
+          reason: outcome.reason,
+          duplicateSkipCount: outcome.duplicateSkipCalls.length,
+          pendingToolCallCount: outcome.pendingToolCalls.length,
+          supersededPendingToolCallCount:
+            outcome.supersededPendingToolCallCount ?? 0,
+          planAdvanceRoute: planAdvance?.route ?? null,
+          planAdvanceReason: planAdvance?.reason ?? null,
+          planAbortedEmpty: abortPlanOnEmptyResults,
+          planAbortedDuplicate: abortPlanOnDuplicateSummarize,
+          planAbortedToolStepExhausted: abortPlanOnToolStepExhausted,
+          planAbortedWriteStepExhausted: abortPlanOnWriteStepExhausted,
+          taskPlanStep: taskPlanAfterCheck?.currentStepId ?? null,
+        }),
+      };
+      let steps = [...state.steps, ...skipSteps, resultCheckStep];
+
+      const emitRouteThink = (message: string): void => {
+        this.sse.emitThink(input.sessionId, input.runId, message, 'delta');
+      };
+
+      const mustRunToolsBeforeSummarize =
+        outcome.route === 'tools' && outcome.pendingToolCalls.length > 0;
+
+      const effectivePlanAdvance = planAdvance;
+      const effectiveTaskPlanNext = taskPlanNext;
+
+      if (
+        effectivePlanAdvance?.route === 'summarize' &&
+        !mustRunToolsBeforeSummarize &&
+        shouldDeferSummarizeForPendingWritePlan(effectiveTaskPlanNext)
+      ) {
+        const deferredWrite =
+          reprioritizePlanForPendingWriteStep(effectiveTaskPlanNext) ??
+          effectiveTaskPlanNext;
+        emitRouteThink('任务计划尚有写操作步骤，继续执行…\n');
+        await this.updateRun(
+          input.runId,
+          steps,
+          state.iteration,
+          AgentRunStatus.running,
+        );
+        return {
+          ...state,
+          steps,
+          taskPlan: deferredWrite,
+          pendingToolCalls: outcome.pendingToolCalls,
+          pendingSummaryObservation: null,
+          lastToolRoundMeta: null,
+        };
+      }
+
+      if (
+        effectivePlanAdvance?.route === 'summarize' &&
+        !mustRunToolsBeforeSummarize
+      ) {
+        const mergedObservation = this.mergeObservationsForSummary(
+          allToolObservations(state),
+        );
+        const summaryObservation =
+          resolveSummaryObservationForCheck({
+            reason: effectivePlanAdvance.reason,
+            observations: allToolObservations(state),
+            savedRoundMeta,
+            mergedObservation,
+          }) ??
+          buildPlanSummarizeObservation({
+            userMessage: input.latestUserMessage,
+            merged: mergedObservation,
+          });
+        if (effectivePlanAdvance.reason === 'plan_advance_summarize') {
+          emitRouteThink('数据已就绪，正在按任务计划生成结果…\n');
+        } else if (effectivePlanAdvance.reason === 'plan_complete') {
+          emitRouteThink('任务计划已完成，正在生成最终结果…\n');
+        }
+        await this.updateRun(
+          input.runId,
+          steps,
+          state.iteration,
+          AgentRunStatus.running,
+        );
+        return {
+          ...state,
+          steps,
+          taskPlan: effectiveTaskPlanNext,
+          pendingToolCalls: [],
+          pendingSummaryObservation: summaryObservation,
+          lastToolRoundMeta: null,
+        };
+      }
+
+      if (
+        effectivePlanAdvance?.route === 'llm' &&
+        effectivePlanAdvance.reason === 'plan_defer_summarize_pending_write'
+      ) {
+        emitRouteThink('任务计划尚有写操作步骤，继续执行…\n');
+        await this.updateRun(
+          input.runId,
+          steps,
+          state.iteration,
+          AgentRunStatus.running,
+        );
+        return {
+          ...state,
+          steps,
+          taskPlan: effectiveTaskPlanNext,
+          pendingToolCalls: outcome.pendingToolCalls,
+          pendingSummaryObservation: null,
+          lastToolRoundMeta: null,
+        };
+      }
+
+      if (effectivePlanAdvance?.route === 'llm' && outcome.route === 'summarize') {
+        if (effectivePlanAdvance.reason === 'plan_advance_tool_step') {
+          emitRouteThink('进入下一任务步骤…\n');
+        }
+        await this.updateRun(
+          input.runId,
+          steps,
+          state.iteration,
+          AgentRunStatus.running,
+        );
+        return {
+          ...state,
+          steps,
+          taskPlan: effectiveTaskPlanNext,
+          pendingToolCalls: [],
+          pendingSummaryObservation: null,
+          lastToolRoundMeta: null,
+        };
+      }
+
+      if (outcome.route === 'expand_tools') {
         const allToolIds = input.tools.map((tool) => tool.id);
         const expandedBundle = this.toolEngine.buildLangChainTools(input.tools, {
           userId: input.userId,
@@ -1591,82 +2166,285 @@ export class AgentLangGraphRunner {
           type: 'intent',
           output: this.normalizeJsonLike({
             fallback: true,
-            fallbackReason: 'low_quality_first_result_expand_once',
+            fallbackReason: outcome.reason,
             toolsBeforeExpand: state.scopedTools.length,
             toolsAfterExpand: input.tools.length,
           }),
         };
-        const expandedSteps = [...nextSteps, expandedStep];
+        steps = [...steps, expandedStep];
         await this.updateRun(
           input.runId,
-          expandedSteps,
+          steps,
           state.iteration,
           AgentRunStatus.running,
         );
-        this.sse.emitThink(
-          input.sessionId,
-          input.runId,
-          '首轮结果信息不足，正在放宽工具范围再尝试一次…\n',
-          'delta',
-        );
+        emitRouteThink('首轮结果信息不足，正在放宽工具范围再尝试一次…\n');
+        const expandedPlanInput = {
+          userMessage: input.latestUserMessage,
+          scopedToolSummaries: summarizeScopedToolsForPlan(input.tools),
+          skillApplied: state.skillApplied === true,
+          skillName: state.activeSkillName,
+          skillDescription: state.activeSkillDescription,
+          skillConfig: state.activeSkillConfig,
+          skillRiskLevel: state.activeSkillRiskLevel ?? null,
+          skillPrompt: state.activeSkillPrompt,
+        };
+        const expandedResolvedPlan = await resolveTaskPlan({
+          llmService: this.llmService,
+          promptRegistry: this.promptRegistry,
+          scope: promptScope,
+          planInput: expandedPlanInput,
+        });
         return {
           ...state,
-          steps: expandedSteps,
-          toolObservations: observations,
+          steps,
           pendingToolCalls: [],
           pendingSummaryObservation: null,
+          lastToolRoundMeta: null,
           scopedTools: input.tools,
           scopedLangChainTools: expandedBundle.tools,
           scopedToolBundle: expandedBundle,
           scopedAllowedToolIds: allToolIds,
           hasExpandedOnce: true,
-        };
-      }
-      if (
-        failedObservation &&
-        state.pendingToolCalls.length === 1 &&
-        projectedToolResults.length === 1
-      ) {
-        return {
-          ...state,
-          steps: nextSteps,
-          toolObservations: observations,
-          pendingToolCalls: [],
-          pendingSummaryObservation: failedObservation,
+          taskPlan: expandedResolvedPlan.plan,
         };
       }
 
+      if (outcome.route === 'summarize') {
+        if (
+          shouldDeferSummarizeForPendingWritePlan(
+            taskPlanAfterCheck,
+            outcome.reason,
+          )
+        ) {
+          const deferredWrite =
+            reprioritizePlanForPendingWriteStep(taskPlanAfterCheck) ??
+            taskPlanAfterCheck;
+          emitRouteThink('任务计划尚有写操作步骤，继续执行…\n');
+          await this.updateRun(
+            input.runId,
+            steps,
+            state.iteration,
+            AgentRunStatus.running,
+          );
+          return {
+            ...state,
+            steps,
+            taskPlan: deferredWrite,
+            pendingToolCalls: [],
+            pendingSummaryObservation: null,
+            lastToolRoundMeta: null,
+          };
+        }
+        const planStepExhausted =
+          outcome.reason === 'plan_tool_step_exhausted' ||
+          outcome.reason === 'plan_write_step_exhausted';
+        const summaryObservation = planStepExhausted
+          ? null
+          : resolveSummaryObservationForCheck({
+              reason: outcome.reason,
+              observations: allToolObservations(state),
+              savedRoundMeta,
+              mergedObservation:
+                outcome.reason === 'tool_error_summarize'
+                  ? null
+                  : this.mergeObservationsForSummary(allToolObservations(state)),
+            });
+        if (summaryObservation) {
+          if (
+            outcome.reason === 'duplicate_tool_call_round' ||
+            outcome.reason === 'all_tool_calls_duplicate'
+          ) {
+            emitRouteThink(
+              '检测到与上一轮完全相同的工具调用，强制汇总已有结果…\n',
+            );
+          } else if (outcome.reason === 'empty_tool_results') {
+            emitRouteThink(
+              '查询成功，但未找到符合条件的数据，正在生成说明…\n',
+            );
+          }
+          await this.updateRun(
+            input.runId,
+            steps,
+            state.iteration,
+            AgentRunStatus.running,
+          );
+          return {
+            ...state,
+            steps,
+            taskPlan: taskPlanAfterCheck,
+            pendingToolCalls: [],
+            pendingSummaryObservation: summaryObservation,
+            lastToolRoundMeta: null,
+          };
+        }
+        const exhaustedFallback =
+          outcome.reason === 'plan_write_step_exhausted'
+            ? '未能按任务计划发起写操作（未生成有效的工具调用）。请确认需要提交回复或修改数据后，我再试一次。'
+            : outcome.reason === 'plan_tool_step_exhausted'
+              ? '我未能按任务计划调用所需工具获取数据，请补充更具体的查询条件后我再试一次。'
+              : '我暂时无法根据已有工具结果给出汇总，请补充更具体的条件后我再试一次。';
+        emitRouteThink(
+          outcome.reason === 'plan_write_step_exhausted'
+            ? '未能完成写操作步骤，正在生成说明…\n'
+            : '无法从已有工具结果生成汇总，正在生成说明…\n',
+        );
+        await this.updateRun(
+          input.runId,
+          steps,
+          state.iteration,
+          AgentRunStatus.running,
+        );
+        return {
+          ...state,
+          steps,
+          taskPlan: taskPlanAfterCheck,
+          pendingToolCalls: [],
+          pendingSummaryObservation: this.buildDirectReplyObservation(
+            input.latestUserMessage,
+            exhaustedFallback,
+          ),
+          lastToolRoundMeta: null,
+        };
+      }
+
+      if (
+        outcome.route === 'tools' &&
+        outcome.reason === 'paged_gather_resume'
+      ) {
+        emitRouteThink(
+          outcome.pagedGatherResumeKind === 'map_summary'
+            ? '页内摘要未完成，正在重试（复用已拉取数据）…\n'
+            : '分页数据未拉取完整，正在继续拉取…\n',
+        );
+        await this.updateRun(
+          input.runId,
+          steps,
+          state.iteration,
+          AgentRunStatus.running,
+        );
+        return {
+          ...state,
+          steps,
+          taskPlan: taskPlanAfterCheck,
+          pendingToolCalls: [],
+          pendingSummaryObservation: null,
+          lastToolRoundMeta: null,
+        };
+      }
+
+      if (outcome.reason === 'duplicate_off_plan_step') {
+        emitRouteThink('当前任务步骤需要其他工具，正在重新决策…\n');
+      }
+      if (outcome.reason === 'plan_tool_step_required') {
+        emitRouteThink('当前任务步骤需要先调用工具，正在重新决策…\n');
+      }
+      if (outcome.reason === 'plan_write_step_required') {
+        emitRouteThink('当前任务步骤需要执行写操作，正在重新决策…\n');
+      }
+      if (outcome.reason === 'plan_write_step_exhausted') {
+        emitRouteThink('多次未能发起写操作，正在生成说明…\n');
+      }
+      if (outcome.reason === 'plan_tool_step_exhausted') {
+        emitRouteThink(
+          '多次未能按任务计划调用工具，正在根据已有信息生成说明…\n',
+        );
+      }
+
+      await this.updateRun(
+        input.runId,
+        steps,
+        state.iteration,
+        AgentRunStatus.running,
+      );
+
       return {
         ...state,
-        steps: nextSteps,
-        // 一律回 llm：是否再调 tool、何时 summarize 由决策环 + resolveLlmCompletionAfterTools 决定。
-        toolObservations: observations,
-        pendingToolCalls: [],
+        steps,
+        taskPlan: taskPlanAfterCheck,
+        pendingToolCalls: outcome.pendingToolCalls,
         pendingSummaryObservation: null,
+        lastToolRoundMeta: null,
       };
     };
-     // 节点4：汇总节点。将本轮工具执行结果汇总为最终答案。
+
+     // 节点5：汇总节点。将本轮工具执行结果汇总为最终答案。
     const summarize = async (
       state: AgentGraphState,
     ): Promise<AgentGraphState> => {
-      if (!state.pendingSummaryObservation) {
+      const pendingObservation = state.pendingSummaryObservation;
+      if (!pendingObservation) {
         return state;
       }
-      const toolErrorHint = extractToolErrorUserHint(
-        state.pendingSummaryObservation.output,
+      if (isWriteConfirmResumeSummaryObservation(pendingObservation)) {
+        const payload = pendingObservation.output as WriteConfirmResumeSummaryPayload;
+        const mergedObservation = this.mergeObservationsForSummary(
+          allToolObservations(state),
+        );
+        const summarized = await this.summarizeWriteConfirmResume(
+          payload,
+          mergedObservation?.output,
+          input.promptMessages,
+          input.sessionId,
+          input.runId,
+          promptScope,
+          state.taskPlan,
+        );
+        const storedSummarized = this.sanitizeFinalOutput(summarized);
+        const storedBlocks = tryParseStoredMessageBlocks(storedSummarized);
+        const stepPlain =
+          storedBlocks && storedBlocks.length > 0
+            ? messageBlocksToPlainText(storedBlocks)
+            : storedSummarized;
+        const summaryStep: AgentRunStep = {
+          step: state.iteration + 1,
+          type: 'summarize',
+          name: 'write_confirm_resume',
+          output: stepPlain,
+        };
+        const nextSteps = [...state.steps, summaryStep];
+        const taskPlanAfterSummarize = finalizePlanAfterSummarize(state.taskPlan);
+        await this.updateRun(
+          input.runId,
+          nextSteps,
+          state.iteration,
+          AgentRunStatus.success,
+        );
+        return {
+          ...state,
+          steps: nextSteps,
+          pendingSummaryObservation: null,
+          taskPlan: taskPlanAfterSummarize,
+          finalOutput: storedSummarized,
+          status: AgentRunStatus.success,
+          finished: true,
+        };
+      }
+      const toolDef = state.scopedTools.find(
+        (tool) => tool.name === pendingObservation.name,
       );
-      if (toolErrorHint) {
+      const toolErrorObs = isAgentToolErrorObservation(pendingObservation.output)
+        ? pendingObservation.output
+        : null;
+      const shouldSummarizeToolErrorWithLlm =
+        toolErrorObs != null &&
+        (toolErrorObs.responseSource != null ||
+          isMutationTool(toolDef?.agentMetadata) ||
+          state.taskPlan?.taskPhase === 'mutate');
+      const toolErrorHint = extractToolErrorUserHint(pendingObservation.output);
+      if (toolErrorHint && !shouldSummarizeToolErrorWithLlm) {
         const errorBlocks = buildRuleBasedMessageBlocks({
-          output: state.pendingSummaryObservation.output,
+          output: pendingObservation.output,
           userMessage: input.latestUserMessage,
           fieldLabels: {},
           toolErrorHint,
+          downstreamResponseSource: toolErrorObs?.responseSource,
         });
         const stored = serializeMessageBlocksForStorage(errorBlocks);
         const summaryStep: AgentRunStep = {
           step: state.iteration + 1,
           type: 'summarize',
-          name: state.pendingSummaryObservation.name,
+          name: pendingObservation.name,
           output: toolErrorHint,
         };
         const nextSteps = [...state.steps, summaryStep];
@@ -1680,58 +2458,84 @@ export class AgentLangGraphRunner {
           ...state,
           steps: nextSteps,
           pendingSummaryObservation: null,
+          taskPlan: finalizePlanAfterSummarize(state.taskPlan),
           finalOutput: stored,
           status: AgentRunStatus.success,
           finished: true,
         };
       }
-      const toolDef = state.scopedTools.find(
-        (tool) => tool.name === state.pendingSummaryObservation?.name,
+      const planSummarizeUserMessage = resolveSummarizeUserMessageForPlan(
+        input.latestUserMessage,
+        state.taskPlan,
       );
+      const mergedPlanObservation = isPendingPlanAnswerStep(state.taskPlan)
+        ? this.mergeObservationsForSummary(allToolObservations(state))
+        : null;
       const summarized =
-        state.pendingSummaryObservation.name === 'direct_user' ||
-        state.pendingSummaryObservation.name === 'smalltalk'
-          ? await this.summarizeDirectUserMessage(
-              input.latestUserMessage,
-              state.pendingSummaryObservation.output,
-              input.promptMessages,
-              input.sessionId,
-              input.runId,
-              promptScope,
-            )
-          : state.pendingSummaryObservation.name === 'direct_reply'
+        pendingObservation.name === 'direct_user' ||
+        pendingObservation.name === 'smalltalk'
+          ? mergedPlanObservation
+            ? await this.summarizeToolOutputForUser(
+                mergedPlanObservation.name,
+                state.scopedTools.find(
+                  (tool) => tool.name === mergedPlanObservation.name,
+                )?.description,
+                planSummarizeUserMessage,
+                mergedPlanObservation.output,
+                mergedPlanObservation.fieldLabels ?? {},
+                mergedPlanObservation.fieldDescriptions ?? {},
+                mergedPlanObservation.enumLabelsByPath ?? {},
+                input.promptMessages,
+                input.sessionId,
+                input.runId,
+                promptScope,
+                state.taskPlan,
+              )
+            : await this.summarizeDirectUserMessage(
+                planSummarizeUserMessage,
+                pendingObservation.output,
+                input.promptMessages,
+                input.sessionId,
+                input.runId,
+                promptScope,
+                state.taskPlan,
+              )
+          : pendingObservation.name === 'direct_reply'
             ? await this.summarizeDirectLlmReply(
                 input.latestUserMessage,
-                state.pendingSummaryObservation.output,
+                pendingObservation.output,
                 input.promptMessages,
                 input.sessionId,
                 input.runId,
                 promptScope,
               )
             : await this.summarizeToolOutputForUser(
-              state.pendingSummaryObservation.name,
+              pendingObservation.name,
               toolDef?.description,
-              input.latestUserMessage,
-              state.pendingSummaryObservation.output,
-              state.pendingSummaryObservation.fieldLabels ?? {},
-              state.pendingSummaryObservation.fieldDescriptions ?? {},
-              state.pendingSummaryObservation.enumLabelsByPath ?? {},
+              planSummarizeUserMessage,
+              pendingObservation.output,
+              pendingObservation.fieldLabels ?? {},
+              pendingObservation.fieldDescriptions ?? {},
+              pendingObservation.enumLabelsByPath ?? {},
               input.promptMessages,
               input.sessionId,
               input.runId,
               promptScope,
+              state.taskPlan,
+              toolDef?.agentMetadata,
+              pendingObservation.llmPayload?.args,
             );
       if (!summarized || summarized.trim().length === 0) {
         const fallback = messageBlocksToPlainText(
           ensureAtLeastOneTextBlock([], '抱歉，我暂时无法整理出有效回复。'),
         );
         this.logger.warn(
-          `summarize returned empty runId=${input.runId} observation=${state.pendingSummaryObservation.name}`,
+          `summarize returned empty runId=${input.runId} observation=${pendingObservation.name}`,
         );
         const summaryStep: AgentRunStep = {
           step: state.iteration + 1,
           type: 'summarize',
-          name: state.pendingSummaryObservation.name,
+          name: pendingObservation.name,
           output: fallback,
         };
         const nextSteps = [...state.steps, summaryStep];
@@ -1752,6 +2556,7 @@ export class AgentLangGraphRunner {
           ...state,
           steps: nextSteps,
           pendingSummaryObservation: null,
+          taskPlan: finalizePlanAfterSummarize(state.taskPlan),
           finalOutput: stored,
           status: AgentRunStatus.success,
           finished: true,
@@ -1766,44 +2571,61 @@ export class AgentLangGraphRunner {
       const summaryStep: AgentRunStep = {
         step: state.iteration + 1,
         type: 'summarize',
-        name: state.pendingSummaryObservation.name,
+        name: this.resolveSummarizeStepName(
+          state.taskPlan,
+          pendingObservation.name,
+        ),
         output: stepPlain,
       };
       const nextSteps = [...state.steps, summaryStep];
+      const taskPlanAfterSummarize = finalizePlanAfterSummarize(state.taskPlan);
+      const continuePlan = shouldContinuePlanAfterSummarize(taskPlanAfterSummarize);
+      if (continuePlan) {
+        this.sse.emitThink(
+          input.sessionId,
+          input.runId,
+          '中间结果已生成，继续执行后续任务步骤…\n',
+          'delta',
+        );
+      }
       await this.updateRun(
         input.runId,
         nextSteps,
         state.iteration,
-        AgentRunStatus.running,
+        continuePlan ? AgentRunStatus.running : AgentRunStatus.success,
       );
       return {
         ...state,
         steps: nextSteps,
         pendingSummaryObservation: null,
-        finalOutput: storedSummarized,
-        status: AgentRunStatus.success,
-        finished: true,
+        taskPlan: taskPlanAfterSummarize,
+        finalOutput: continuePlan ? state.finalOutput : storedSummarized,
+        status: continuePlan ? AgentRunStatus.running : AgentRunStatus.success,
+        finished: !continuePlan,
       };
     };
     // 图路由：
-    // START -> preCheck -> skill -> intent -> (类目命中 ? llm : summarize) -> tools ...
-    // intent：类目 Top-K → 按类目过滤 →（过滤后 >5 则工具 bind 召回，否则全量 bind）→ llm
-    // 类目未命中：summarize（系统不支持），跳过 LLM。
-    // skill 命中：跳过 intent，直连 llm。
+    // START -> skill -> plan -> llm（命中）
+    // START -> skill -> intent -> plan -> llm（未命中）
+    // llm -> resultCheck -> tools | summarize | llm
+    // tools -> resultCheck -> llm | summarize | expand->llm
     const graph = new StateGraph(State)
       .addNode('intent', intent)
+      .addNode('plan', plan)
       .addNode('llm', llm)
       .addNode('tools', tools)
+      .addNode('resultCheck', resultCheck)
       .addNode('summarize', summarize)
-      .addNode('preCheck', preCheck)
       .addNode('skill', skill)
-      .addEdge(START, input.resumeFromLlm ? 'llm' : 'preCheck')
-      .addConditionalEdges('preCheck', (s: AgentGraphState) => {
-        if (s.finished) {
-          return END;
+      .addConditionalEdges(START, (s: AgentGraphState) => {
+        if (input.resumeFromWriteConfirm) {
+          if (s.pendingSummaryObservation) {
+            return 'summarize';
+          }
+          return 'resultCheck';
         }
-        if (s.pendingSummaryObservation) {
-          return 'summarize';
+        if (input.resumeFromLlm) {
+          return 'llm';
         }
         return 'skill';
       })
@@ -1815,11 +2637,20 @@ export class AgentLangGraphRunner {
           return 'summarize';
         }
         if (s.skillApplied) {
-          return 'llm';
+          return 'plan';
         }
         return 'intent';
       })
       .addConditionalEdges('intent', (s: AgentGraphState) => {
+        if (s.finished) {
+          return END;
+        }
+        if (s.pendingSummaryObservation) {
+          return 'summarize';
+        }
+        return 'plan';
+      })
+      .addConditionalEdges('plan', (s: AgentGraphState) => {
         if (s.finished) {
           return END;
         }
@@ -1835,14 +2666,30 @@ export class AgentLangGraphRunner {
         if (state.pendingSummaryObservation) {
           return 'summarize';
         }
-        return 'tools';
+        return 'resultCheck';
       })
       .addConditionalEdges('tools', (state: AgentGraphState) => {
         if (state.finished) {
           return END;
         }
+        return 'resultCheck';
+      })
+      .addConditionalEdges('resultCheck', (state: AgentGraphState) => {
+        if (state.finished) {
+          return END;
+        }
         if (state.pendingSummaryObservation) {
           return 'summarize';
+        }
+        if (
+          shouldRouteGraphToTools({
+            pendingToolCalls: state.pendingToolCalls,
+            taskPlan: state.taskPlan,
+            scopedTools: state.scopedTools,
+            observations: allToolObservations(state),
+          })
+        ) {
+          return 'tools';
         }
         if (state.iteration >= input.maxSteps) {
           return END;
@@ -1850,7 +2697,7 @@ export class AgentLangGraphRunner {
         return 'llm';
       })
       .addConditionalEdges('summarize', (state: AgentGraphState) => {
-        if (state.finished) {
+        if (state.finished || input.resumeFromWriteConfirm) {
           return END;
         }
         return 'llm';
@@ -1875,10 +2722,29 @@ export class AgentLangGraphRunner {
       skillApplied: false,
       activeSkillId: null,
       activeSkillPrompt: null,
+      activeSkillName: null,
+      activeSkillDescription: null,
+      activeSkillConfig: null,
+      activeSkillRiskLevel: null,
+      taskPlan: null,
+      lastToolRoundMeta: null,
+      pagedListHttpUsed: 0,
+      preloadedToolObservations: [],
     };
-    const initial = input.graphInitialState
-      ? { ...defaultInitial, ...input.graphInitialState }
-      : defaultInitial;
+    const graphOverride = input.graphInitialState ?? {};
+    const priorObservations: ToolObservation[] = sessionPriorObservations.map(
+      (row) => ({
+        name: row.name,
+        output: row.output,
+      }),
+    );
+    const initial = {
+      ...defaultInitial,
+      ...graphOverride,
+      preloadedToolObservations:
+        graphOverride.preloadedToolObservations ?? priorObservations,
+      toolObservations: graphOverride.toolObservations ?? [],
+    };
     return app.invoke(initial);
   }
 
@@ -1923,13 +2789,143 @@ export class AgentLangGraphRunner {
   /** 工具 observation 质量评估：用于运行统计和后续回退策略。 */
   assessObservationQualityForResume(
     output: unknown,
+    agentMetadata?: unknown,
   ): 'high' | 'medium' | 'low' {
-    return this.assessObservationQuality(output);
+    return this.assessObservationQuality(output, agentMetadata);
   }
 
-  private assessObservationQuality(output: unknown): 'high' | 'medium' | 'low' {
+  buildPendingPlanSummaryObservation(
+    userMessage: string,
+    observations: ToolObservation[],
+  ): ToolObservation {
+    return buildPlanSummarizeObservation({
+      userMessage,
+      merged: this.mergeObservationsForSummary(observations),
+    });
+  }
+
+  private buildWriteConfirmResumeFallbackPlainText(
+    payload: WriteConfirmResumeSummaryPayload,
+  ): string {
+    if (payload.outcome === 'failed') {
+      const firstError = payload.operations.find((row) => row.errorHint)?.errorHint;
+      if (firstError) {
+        return firstError;
+      }
+      return `Write operation failed (${payload.failureCount}/${payload.totalCount}).`;
+    }
+    if (payload.totalCount <= 1) {
+      return 'Write operation completed successfully.';
+    }
+    return `${payload.successCount} write operation(s) completed successfully.`;
+  }
+
+  private buildWriteConfirmResumeFallbackBlocks(
+    payload: WriteConfirmResumeSummaryPayload,
+  ): MessageBlock[] {
+    const metrics =
+      payload.totalCount > 0
+        ? [
+            {
+              type: 'metric' as const,
+              items: [
+                { label: 'Confirmed writes', value: String(payload.totalCount) },
+                { label: 'Succeeded', value: String(payload.successCount) },
+                { label: 'Failed', value: String(payload.failureCount) },
+              ],
+            },
+          ]
+        : [];
+    if (payload.outcome === 'failed') {
+      const firstError = payload.operations.find((row) => row.errorHint)?.errorHint;
+      return [
+        {
+          type: 'alert',
+          severity: 'error',
+          title: 'Write operation failed',
+          message:
+            firstError ??
+            `${payload.failureCount} of ${payload.totalCount} confirmed write operation(s) failed.`,
+        },
+        ...metrics,
+      ];
+    }
+    return [
+      textBlock(this.buildWriteConfirmResumeFallbackPlainText(payload)),
+      ...metrics,
+    ];
+  }
+
+  private async summarizeWriteConfirmResume(
+    payload: WriteConfirmResumeSummaryPayload,
+    mergedToolOutput: unknown,
+    promptMessages: LlmChatMessage[],
+    sessionId: string,
+    runId: number,
+    scope: { appClientId: number; agentId: number },
+    taskPlan?: TaskPlanSnapshot | null,
+  ): Promise<string> {
+    const agentPrompts = promptMessages.filter(
+      (message) =>
+        message.role === 'system' && message.content.includes('<agent_prompt>'),
+    );
+    const toolResultsJson =
+      mergedToolOutput != null ? this.stringifyForPrompt(mergedToolOutput) : undefined;
+    const fallbackPlain = this.buildWriteConfirmResumeFallbackPlainText(payload);
+    const fallbackBlocks = this.buildWriteConfirmResumeFallbackBlocks(payload);
+    const summarizeMessages: LlmChatMessage[] = [
+      ...agentPrompts,
+      {
+        role: 'system',
+        content: await this.promptRegistry.render(
+          PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC,
+          scope,
+        ),
+      },
+      {
+        role: 'system',
+        content: await this.promptRegistry.render(
+          PROMPT_KEYS.AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME,
+          scope,
+        ),
+      },
+      {
+        role: 'user',
+        content: formatWriteConfirmResumeSummarizeUserMessage({
+          payload,
+          taskPlan,
+          toolResultsJson,
+        }),
+      },
+    ];
+    try {
+      const blocks = await this.sse.streamSummarizeMessageBlocks(
+        summarizeMessages,
+        sessionId,
+        runId,
+        fallbackBlocks,
+        fallbackPlain,
+      );
+      return serializeMessageBlocksForStorage(blocks);
+    } catch (error) {
+      this.logger.warn(
+        `write confirm resume summarize fallback: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return serializeMessageBlocksForStorage(fallbackBlocks);
+    }
+  }
+
+  private assessObservationQuality(
+    output: unknown,
+    agentMetadata?: unknown,
+  ): 'high' | 'medium' | 'low' {
     if (isAgentToolErrorObservation(output)) {
       return 'low';
+    }
+    if (isMutationTool(agentMetadata)) {
+      return 'medium';
     }
     if (output == null) {
       return 'low';
@@ -2023,17 +3019,9 @@ export class AgentLangGraphRunner {
   private resolveToolStepCode(
     quality: 'high' | 'medium' | 'low',
     output: unknown,
+    agentMetadata?: unknown,
   ): AgentMachineCode | null {
-    if (isAgentToolErrorObservation(output)) {
-      return extractToolErrorCode(output);
-    }
-    if (isEmptyListToolObservation(output)) {
-      return null;
-    }
-    if (quality === 'low') {
-      return 'TOOL_EMPTY_RESULT';
-    }
-    return null;
+    return resolveToolStepMachineCode({ quality, output, agentMetadata });
   }
 
   private extractAiMessageText(message: AIMessage): string {
@@ -2112,12 +3100,6 @@ export class AgentLangGraphRunner {
       },
       quality: 'medium',
     };
-  }
-
-  private pickObservationForFinalSummary(
-    observations: ToolObservation[],
-  ): ToolObservation | null {
-    return this.mergeObservationsForSummary(observations);
   }
 
   private extractDirectReplyDraft(output: unknown): string {
@@ -2205,33 +3187,51 @@ export class AgentLangGraphRunner {
     sessionId: string,
     runId: number,
     scope: { appClientId: number; agentId: number },
+    taskPlan?: TaskPlanSnapshot | null,
   ): Promise<string> {
     const guidanceHint = this.extractDirectUserGuidanceHint(output);
+    const planContext = formatPlanContextForSummarize(taskPlan);
+    const planAnswerStep = isPendingPlanAnswerStep(taskPlan);
     const fallback = guidanceHint || 'Hello! How can I help you?';
     const agentPrompts = promptMessages.filter(
       (message) =>
         message.role === 'system' && message.content.includes('<agent_prompt>'),
     );
-    const summarizeMessages: LlmChatMessage[] = [
-      ...agentPrompts,
-      {
+    const summarizeMessages: LlmChatMessage[] = [...agentPrompts];
+    if (planAnswerStep) {
+      summarizeMessages.push({
         role: 'system',
         content: await this.promptRegistry.render(
-          guidanceHint
-            ? PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS
-            : PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK,
+          PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC,
           scope,
         ),
-      },
-      {
+      });
+    }
+    summarizeMessages.push({
+      role: 'system',
+      content: await this.promptRegistry.render(
+        planAnswerStep || guidanceHint
+          ? PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS
+          : PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK,
+        scope,
+      ),
+    });
+    summarizeMessages.push({
         role: 'user',
-        content: guidanceHint
-          ? [`User request: ${userMessage}`, `Guidance: ${guidanceHint}`].join(
-              '\n',
-            )
-          : userMessage,
-      },
-    ];
+        content: planAnswerStep
+          ? [
+              `User request: ${userMessage}`,
+              planContext ? `<plan_context>\n${planContext}\n</plan_context>` : null,
+              guidanceHint ? `Guidance: ${guidanceHint}` : null,
+            ]
+              .filter((line): line is string => line != null && line.length > 0)
+              .join('\n')
+          : guidanceHint
+            ? [`User request: ${userMessage}`, `Guidance: ${guidanceHint}`].join(
+                '\n',
+              )
+            : userMessage,
+    });
     try {
       const blocks = await this.sse.streamSummarizeMessageBlocks(
         summarizeMessages,
@@ -2256,6 +3256,34 @@ export class AgentLangGraphRunner {
     }
   }
 
+  private resolveSummarizeStepName(
+    taskPlan: TaskPlanSnapshot | null | undefined,
+    observationName: string,
+  ): string {
+    const stepId = taskPlan?.currentStepId?.trim();
+    if (stepId) {
+      return `plan:${stepId}`;
+    }
+    return observationName;
+  }
+
+  private resolveSummarizePromptKey(input: {
+    taskPlan: TaskPlanSnapshot | null | undefined;
+    fullDetail: boolean;
+    summarizeScenario: ReturnType<typeof classifySummarizeScenario>;
+  }): (typeof PROMPT_KEYS)[keyof typeof PROMPT_KEYS] {
+    if (isPendingPlanAnswerStep(input.taskPlan)) {
+      return PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS;
+    }
+    if (input.fullDetail) {
+      return PROMPT_KEYS.AGENT_SUMMARIZE_TOOL_FULL;
+    }
+    if (input.summarizeScenario === 'action') {
+      return PROMPT_KEYS.AGENT_SUMMARIZE_ACTION;
+    }
+    return PROMPT_KEYS.AGENT_SUMMARIZE_READ;
+  }
+
   private async summarizeToolOutputForUser(
     toolName: string,
     toolDescription: string | undefined,
@@ -2268,9 +3296,18 @@ export class AgentLangGraphRunner {
     sessionId: string,
     runId: number,
     scope: { appClientId: number; agentId: number },
+    taskPlan?: TaskPlanSnapshot | null,
+    agentMetadata?: unknown,
+    executedArgs?: Record<string, unknown>,
   ): Promise<string> {
     const fullDetail = isUserRequestingFullDetail(userMessage);
-    const summarizeScenario = classifySummarizeScenario(userMessage);
+    const toolErrorObs = isAgentToolErrorObservation(output) ? output : null;
+    const summarizeScenario =
+      isMutationTool(agentMetadata) ||
+      classifySummarizeScenario(userMessage) === 'action'
+        ? ('action' as const)
+        : ('read' as const);
+    const planContext = formatPlanContextForSummarize(taskPlan);
 
     const serialized = this.stringifyForPrompt(output);
     const fieldLabelText = formatFieldLabelsForPrompt(
@@ -2287,35 +3324,63 @@ export class AgentLangGraphRunner {
       userMessage,
       fieldLabels,
     });
-    const summarizeMessages: LlmChatMessage[] = [
-      ...agentPrompts,
-      {
+    const planAnswerStep = isPendingPlanAnswerStep(taskPlan);
+    const summarizeMessages: LlmChatMessage[] = [...agentPrompts];
+    if (planAnswerStep || summarizeScenario === 'action') {
+      summarizeMessages.push({
         role: 'system',
         content: await this.promptRegistry.render(
-          fullDetail
-            ? PROMPT_KEYS.AGENT_SUMMARIZE_TOOL_FULL
-            : summarizeScenario === 'action'
-              ? PROMPT_KEYS.AGENT_SUMMARIZE_ACTION
-              : PROMPT_KEYS.AGENT_SUMMARIZE_READ,
+          PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC,
           scope,
         ),
-      },
-      {
-        role: 'user',
-        content: [
-          `User request: ${userMessage}`,
-          `Tool: ${toolName}`,
-          toolDescription ? `Tool description: ${toolDescription}` : null,
-          fieldLabelText ? `Field labels:\n${fieldLabelText}` : null,
-          ruleBlocks.length > 0
-            ? `Suggested rule-based blocks (avoid duplicating the same table): ${JSON.stringify(ruleBlocks)}`
-            : null,
-          `Tool result: ${serialized}`,
-        ]
-          .filter((line): line is string => line != null && line.length > 0)
-          .join('\n'),
-      },
-    ];
+      });
+    }
+    summarizeMessages.push({
+      role: 'system',
+      content: await this.promptRegistry.render(
+        this.resolveSummarizePromptKey({
+          taskPlan,
+          fullDetail,
+          summarizeScenario,
+        }),
+        scope,
+      ),
+    });
+    const downstreamSourceText =
+      toolErrorObs?.responseSource != null
+        ? formatResponseSourceForDisplay(toolErrorObs.responseSource)
+        : '';
+    const mapReduceFetchNote = formatMapReduceFetchStatusNote(output);
+    summarizeMessages.push({
+      role: 'user',
+      content: [
+        `User request: ${userMessage}`,
+        planContext ? `<plan_context>\n${planContext}\n</plan_context>` : null,
+        mapReduceFetchNote ? `Fetch status: ${mapReduceFetchNote}` : null,
+        `Tool: ${toolName}`,
+        toolDescription ? `Tool description: ${toolDescription}` : null,
+        executedArgs && Object.keys(executedArgs).length > 0
+          ? `Executed arguments: ${JSON.stringify(executedArgs)}`
+          : null,
+        fieldLabelText ? `Field labels:\n${fieldLabelText}` : null,
+        ruleBlocks.length > 0
+          ? `Suggested rule-based blocks (avoid duplicating the same table): ${JSON.stringify(ruleBlocks)}`
+          : null,
+        toolErrorObs
+          ? `Tool error summary: ${toolErrorObs.userHint}${
+              toolErrorObs.httpStatus != null
+                ? ` (HTTP ${toolErrorObs.httpStatus})`
+                : ''
+            }`
+          : null,
+        downstreamSourceText
+          ? `Downstream response (source data — base your answer on this, include key fields in the user message):\n${downstreamSourceText}`
+          : null,
+        `Tool result: ${serialized}`,
+      ]
+        .filter((line): line is string => line != null && line.length > 0)
+        .join('\n'),
+    });
     const fallbackPlainText = this.buildSummarizeFallbackPlainText(
       toolName,
       output,
@@ -2365,35 +3430,6 @@ export class AgentLangGraphRunner {
     }
     const serialized = this.stringifyForPrompt(output);
     return `[${toolName}]\n${serialized}`;
-  }
-
-  private async invokeToolSafely(
-    bundle: BuiltLangChainTools,
-    scopedTools: AgentEngineTool[],
-    toolCall: GraphToolCall,
-  ): Promise<ToolExecutionResult> {
-    const startedAt = Date.now();
-    try {
-      return await this.toolEngine.invokeLangChainTool(
-        bundle,
-        toolCall.name,
-        toolCall.arguments,
-      );
-    } catch (error) {
-      const def = scopedTools.find((tool) => tool.name === toolCall.name);
-      this.logger.warn(
-        `tool invoke failed name=${toolCall.name}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return {
-        toolId: def?.id ?? 0,
-        name: toolCall.name,
-        input: toolCall.arguments,
-        output: buildToolErrorObservation(error),
-        latency: Date.now() - startedAt,
-      };
-    }
   }
 
   private extractToolCalls(message: AIMessage): GraphToolCall[] {

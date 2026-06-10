@@ -1,4 +1,4 @@
-import { REDIS_KEY_PREFIX } from '../../memory/memory.constants';
+import { REDIS_KEY_PREFIX } from '../../memory/shared/memory.constants';
 
 /** 某 scope 下当前生效的提示词（与 DB isActive 行一一对应） */
 export function promptTemplateActiveKey(

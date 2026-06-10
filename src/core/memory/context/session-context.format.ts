@@ -1,5 +1,9 @@
-import type { Prisma } from '../../../generated/prisma/client';
-import type { LlmChatMessage, LlmRole } from '../llm/llm.types';
+import type { Prisma } from '../../../../generated/prisma/client';
+import {
+  messageBlocksToPlainText,
+  tryParseStoredMessageBlocks,
+} from '../../agent-engine/engine/message/message-blocks.util';
+import type { LlmChatMessage, LlmRole } from '../../llm/llm.types';
 import type { SessionContextTurn } from './session-context.types';
 
 const ALLOWED_ROLES: ReadonlySet<LlmRole> = new Set([
@@ -32,7 +36,17 @@ export function formatMessageTurnBody(turn: SessionContextTurn): string {
     ].filter((p): p is string => p != null && p.length > 0);
     return parts.join('\n');
   }
-  return turn.content?.trim() ?? '';
+  const raw = turn.content?.trim() ?? '';
+  if (turn.role === 'assistant' && raw.startsWith('{')) {
+    const blocks = tryParseStoredMessageBlocks(raw);
+    if (blocks?.length) {
+      const plain = messageBlocksToPlainText(blocks).trim();
+      if (plain.length > 0) {
+        return plain;
+      }
+    }
+  }
+  return raw;
 }
 
 export function messageTurnsToLlmMessages(

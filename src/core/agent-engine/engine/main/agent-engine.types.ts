@@ -1,5 +1,4 @@
 import type { DynamicStructuredTool } from '@langchain/core/tools';
-import { z } from 'zod';
 import type { AgentRunStatus, ToolLevel } from '../../../../../generated/prisma/client';
 import type { ToolExecutionDefinition } from '../../../tool-engine/tool-engine.service';
 import type { BuiltLangChainTools } from '../../../tool-engine/tool-engine.service';
@@ -9,6 +8,9 @@ import type { AgentMachineCode } from '../agent-run-user-messages.util';
 import type { ToolResponseProfile } from '../../../tool-engine/tool-response-profile.types';
 import type { RunMetricsAccumulator } from '../run-metrics.util';
 import type { ToolBuildContext } from '../../../tool-engine/tool-engine.service';
+import type { ToolErrorDisposition, ToolExecutionStatus } from '../tool/tool-execution-status.util';
+import type { TaskPlanSnapshot } from './task-plan.types';
+import type { ToolHttpRequestLayout } from '../../../tool-engine/tool-http-request-layout.util';
 
 export type AgentRunInput = {
   userId: number;
@@ -24,23 +26,14 @@ export type ResumeAfterWriteConfirmInput = {
 };
 
 export type AgentRunStepType =
-  | 'precheck'
   | 'skill'
+  | 'plan'
   | 'intent'
   | 'llm'
   | 'tool'
+  | 'gather'
+  | 'result_check'
   | 'summarize';
-
-export type PrecheckReasonCode =
-  | 'HISTORY_SUFFICIENT'
-  | 'HISTORY_INSUFFICIENT'
-  | 'PRECHECK_PARSE_FAILED'
-  | 'PRECHECK_LLM_FAILED';
-
-export const precheckDecisionSchema = z.object({
-  answerableFromObservation: z.boolean(),
-  reason: z.string().optional().nullable(),
-});
 
 export type AgentRunStep = {
   step: number;
@@ -55,7 +48,17 @@ export type AgentRunStep = {
     model?: string;
     latency?: number;
     quality?: 'high' | 'medium' | 'low';
-    code?: AgentMachineCode | PrecheckReasonCode;
+    code?: AgentMachineCode;
+    executionStatus?: 'SUCCESS' | 'EMPTY' | 'ERROR';
+    attempt?: number;
+    errorDisposition?: 'retry' | 'llm' | 'summarize';
+    /** LLM 原始 tool_call arguments（normalize 后、HTTP 执行前）。 */
+    llmArguments?: Record<string, unknown>;
+    /** 经 responseProfile 投影后供 LLM 消费的观测结果。 */
+    observationOutput?: Record<string, unknown> | string;
+    /** HTTP 请求路径与各 `in` 参数分布（header / path / query / body）。 */
+    httpRequest?: ToolHttpRequestLayout;
+    responseSource?: unknown;
   };
 };
 
@@ -116,7 +119,10 @@ export type ToolObservation = {
 export type AgentGraphState = {
   iteration: number;
   steps: AgentRunStep[];
+  /** 本 run 新增的工具观测（不含 GOA / 写确认预载）。 */
   toolObservations: ToolObservation[];
+  /** 图启动时从 GOA 或写确认上下文注入的历史观测。 */
+  preloadedToolObservations?: ToolObservation[];
   pendingToolCalls: GraphToolCall[];
   pendingSummaryObservation: ToolObservation | null;
   intentKind: 'task' | 'smalltalk' | 'unclear';
@@ -134,6 +140,21 @@ export type AgentGraphState = {
   skillApplied?: boolean;
   activeSkillId?: number | null;
   activeSkillPrompt?: string | null;
+  activeSkillName?: string | null;
+  activeSkillDescription?: string | null;
+  activeSkillConfig?: unknown;
+  activeSkillRiskLevel?: ToolLevel | null;
+  /** Plan 节点产出；ReAct 循环按 currentObjective 推进。 */
+  taskPlan?: TaskPlanSnapshot | null;
+  /** tools 节点执行后供 resultCheck 消费，post_tools 判定后清空。 */
+  lastToolRoundMeta?: {
+    toolCalls: GraphToolCall[];
+    executionStatuses: ToolExecutionStatus[];
+    errorDispositions: ToolErrorDisposition[];
+    roundObservationIndices: number[];
+  } | null;
+  /** 本 turn 引擎驱动分页 HTTP 累计次数（expand/resume loop）。 */
+  pagedListHttpUsed?: number;
 };
 
 export type AgentLangGraphRunInput = {
@@ -155,6 +176,8 @@ export type AgentLangGraphRunInput = {
   toolProfilesByName: Record<string, ToolResponseProfile | null>;
   turnId: number;
   resumeFromLlm?: boolean;
+  /** 写确认续跑：跳过 skill/plan/llm，从 resultCheck 或 summarize 接续 Plan */
+  resumeFromWriteConfirm?: boolean;
   graphInitialState?: Partial<AgentGraphState>;
   approvedWriteToolNames?: string[];
 };

@@ -1,4 +1,12 @@
-export type AgentRunStepType = 'precheck' | 'intent' | 'llm' | 'tool' | 'summarize';
+export type AgentRunStepType =
+  | 'skill'
+  | 'plan'
+  | 'intent'
+  | 'llm'
+  | 'tool'
+  | 'gather'
+  | 'result_check'
+  | 'summarize';
 export type AgentRunStatus = 'running' | 'success' | 'failed';
 export type AgentRunRole = 'primary' | 'router' | 'worker' | 'reviewer';
 
@@ -12,6 +20,8 @@ export type AgentRunStepMeta = {
   agentPrompt?: string;
   userRequest?: string;
   duplicateToolCallsSkipped?: boolean;
+  llmArguments?: Record<string, unknown>;
+  observationOutput?: Record<string, unknown> | string;
 };
 
 export type AgentRunStep = {

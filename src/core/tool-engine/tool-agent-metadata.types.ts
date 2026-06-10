@@ -44,6 +44,16 @@ export const TOOL_MODES = Object.values(ToolMode);
 export const RESOURCE_TYPES = Object.values(ResourceType);
 export const OPERATION_TYPES = Object.values(OperationType);
 
+/** 参数格式说明：OpenAPI 无法表达的命名/格式约束，供决策环生成 tool_call 参数。 */
+export type ParamFormatHint = {
+  /** inputSchema 中的 OpenAPI 参数名（query/header/body 字段名，须与后台 schema 一致） */
+  param: string;
+  /** 传给 LLM 的格式说明，如 yyyy-MM-dd、Unix 毫秒、逗号分隔 ID 列表 */
+  hint: string;
+  /** 可选示例值 */
+  example?: string;
+};
+
 /** 落库 JSON 形态（Tool.agentMetadata）。 */
 export type AgentMetadata = {
   mode: ToolMode;
@@ -55,6 +65,8 @@ export type AgentMetadata = {
   examples: string[];
   priority: number;
   isMutation: boolean;
+  /** 参数格式/命名约束；param 必须为 OpenAPI 真实参数名 */
+  paramFormatHints?: ParamFormatHint[];
 };
 
 export type ParsedUserToolIntent = {
