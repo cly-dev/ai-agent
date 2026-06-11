@@ -23,7 +23,7 @@ src/core/memory/
 
 | 层 | 存储 | 内容 |
 |----|------|------|
-| **GOA 记忆** | PostgreSQL `SessionGoaMemory` + Redis `goa:session:{id}` 读缓存 | episodes、artifacts、activeTask、entities |
+| **GOA 记忆** | PostgreSQL `SessionGoaMemory` + Redis `goa:session:{id}` 读缓存 | episodes、artifacts、sessionObservationLedger、activeTask、entities |
 | **对话上下文** | Redis `context:session:{id}` | `turns[]`、历史压缩字段 |
 | **审计** | `Message` / `AgentRun` | 完整对话与 run 步骤 |
 
@@ -33,10 +33,11 @@ src/core/memory/
 
 ```text
 SessionGoaPayload
-├── recentEpisodes[]     # 回合叙事 Goal-Outcome
-├── sessionArtifacts[]   # 工具/gather 摘要
-├── activeTask           # 活跃任务（见下）
-└── entities             # 会话实体（如 xShopId）
+├── recentEpisodes[]           # 回合叙事 Goal-Outcome
+├── sessionArtifacts[]         # 工具/gather 摘要（prompt）
+├── sessionObservationLedger[] # 跨 turn 完整 tool output（引擎预载）
+├── activeTask                 # 活跃任务（见下）
+└── entities                   # 会话实体（如 xShopId）
 ```
 
 ### ActiveTask（替代 taskState + resumeTaskPlan + observationSnapshots）
@@ -55,7 +56,8 @@ type ActiveTask = {
 
 - **写确认暂停**：`status = awaiting_confirmation`，`phase = task_only` 只更新 activeTask，不写 episode
 - **记忆写入**：`newToolObservations` 仅含本 run 新增 obs（不含图预载）
-- **续跑预载**：`flattenObservationLog(activeTask.observationLog)`
+- **会话 ledger**：每 run 结束 append 到 `sessionObservationLedger`（按 tool+args 去重，任务 completed 后仍保留）
+- **图预载**：`mergePriorToolObservationsFromGoa` = ledger + 可续跑 `activeTask.observationLog`
 
 ---
 
@@ -85,19 +87,30 @@ Plan 节点只消费 gate 决策，不再内嵌 Redis 写入。
 
 ## 4. Prompt 注入
 
-Compose 顺序（GOA 块）：
+Compose 顺序（GOA 块，与 Plan `sessionWorkingMemory` 同源、全量无 prompt 层抽样）：
 
 ```text
-<recent_episodes>
-<artifact_summaries>
-<active_task>          # 原 task_state
-<session_entities>     # 来自 entities，非 workingMemory
+<session_goa_coverage>   # full_session_goa + SESSION_MEMORY_MAX_* 上限说明
+<recent_episodes>        # 全部 stored episodes
+<artifact_summaries>     # 全部 stored artifacts
+<observation_inventory>  # ledger + 可续跑 observationLog 合并
+<active_task>
+<session_entities>
 ```
+
+实现：`buildFullSessionGoaPromptMessages()`（PromptComposer）与 `buildPlanSessionWorkingMemory()`（Plan JSON）共用 `session-goa-full-projection.util.ts`。
 
 Graph 内观测分两层（不进 compose prompt）：
 
-- `preloadedToolObservations`：GOA `observationLog` 或写确认续跑上下文
-- `toolObservations`：本 run 新增；记忆写入时作为 `newToolObservations`
+- `preloadedToolObservations`：GOA `sessionObservationLedger` + 可续跑 `activeTask.observationLog`，或写确认续跑上下文
+- `toolObservations`：本 run 新增；记忆写入时作为 `newToolObservations` 并 append 进 ledger
+
+Plan 节点（fresh 路径，非 session resume）：
+
+- `buildPlanSessionWorkingMemory()` 注入 **完整 GOA 快照**（与 Decision PromptComposer 一致，`coverage: full_session_goa`）
+- 条数上限与 `SESSION_MEMORY_MAX_*` 一致，无 prompt 层二次截断
+- Plan 额外含 `satisfiedToolRoles`（需 scopedTools + preloadedObs）
+- 执行层仍用 preloadedObs + resultCheck 硬跳步
 
 ---
 
@@ -138,6 +151,8 @@ Graph 内观测分两层（不进 compose prompt）：
 | `session-goa-legacy-cleanup.util.ts` | 迁移后剥离 Redis 旧 GOA 字段 |
 | `session-goa.service.ts` | 写入、prompt 组装、abandon |
 | `session-goa-projection.util.ts` | 从 AgentRun 投影 episode/artifact/task（artifact↔stepId 绑定） |
+| `session-goa-full-projection.util.ts` | 完整 GOA prompt 投影（Decision + Plan 共用） |
+| `session-goa-ledger.util.ts` | 会话 observation ledger 写入 / 去重 / 图预载合并 |
 | `graph-tool-observations.util.ts` | preloaded / run-owned 观测合并 |
 | `session-resume-gate.service.ts` | 续跑门控 |
 | `session-context.types.ts` | 仅 turns + 压缩（Redis） |
@@ -151,6 +166,7 @@ Graph 内观测分两层（不进 compose prompt）：
 |------|------|------|
 | `SESSION_MEMORY_MAX_EPISODES` | 8 | 回合叙事条数 |
 | `SESSION_MEMORY_MAX_ARTIFACTS` | 12 | 工件条数 |
+| `SESSION_MEMORY_MAX_OBSERVATION_LEDGER` | 200 | 会话 observation 账本条数 |
 | `MEMORY_SESSION_TTL_SECONDS` | 604800 | Redis TTL |
 
 ---

@@ -81,14 +81,194 @@ export function looksLikeBlocksJsonOutput(text: string): boolean {
   return false;
 }
 
+/** prose 后拼接的 blocks JSON 收尾（模型先流 Markdown 再补 JSON 包装）。 */
+const SUMMARIZE_BLOCKS_JSON_TAIL_PATTERNS: RegExp[] = [
+  /",\s*\n\s*"(?:format|type)"\s*:/,
+  /",\s*"(?:format|type)"\s*:/,
+  /\n\s*\}\s*\n\s*\]\s*\}\s*$/,
+  /\n\s*\]\s*\}\s*$/,
+];
+
+/** 返回 message 正文中 blocks JSON 尾巴起始下标；-1 表示无。 */
+export function findSummarizeBlocksJsonTailStart(text: string): number {
+  for (const pattern of SUMMARIZE_BLOCKS_JSON_TAIL_PATTERNS) {
+    const match = pattern.exec(text);
+    if (match?.index != null) {
+      return match.index;
+    }
+  }
+  const blocksMatch = /\{\s*["']blocks["']\s*:/.exec(text);
+  if (blocksMatch?.index != null && blocksMatch.index > 0) {
+    return blocksMatch.index;
+  }
+  return -1;
+}
+
+/** 去掉已流式正文末尾误拼上的 blocks JSON 尾巴。 */
+export function stripBlocksJsonTailFromStreamedProse(text: string): string {
+  const idx = findSummarizeBlocksJsonTailStart(text);
+  if (idx >= 0) {
+    return text.slice(0, idx).trimEnd();
+  }
+  return text
+    .replace(/",\s*"(?:format|type)"[\s\S]*$/i, '')
+    .trimEnd();
+}
+
+/** message 通道累积文本是否将进入 / 已是 blocks JSON（勿推 delta）。 */
+export function isLikelySummarizeBlocksJsonStart(text: string): boolean {
+  const trimmed = text.trimStart();
+  if (!trimmed) {
+    return false;
+  }
+  if (
+    trimmed.startsWith('```') ||
+    trimmed.startsWith('[') ||
+    trimmed.startsWith('{')
+  ) {
+    return true;
+  }
+  return /["']blocks["']\s*:/.test(trimmed);
+}
+
+/** 正文中内联出现的 blocks JSON 起始位置（prose 后拼接 JSON 等）。 */
+export function findInlineSummarizeBlocksJsonStart(
+  messageText: string,
+  emittedProseLength: number,
+): number {
+  const tailStart = findSummarizeBlocksJsonTailStart(messageText);
+  if (tailStart >= 0) {
+    return tailStart;
+  }
+  const rest = messageText.slice(emittedProseLength);
+  const inline = rest.search(/\{\s*["']?(?:blocks|type|content)["']?\s*:/);
+  if (inline >= 0) {
+    return emittedProseLength + inline;
+  }
+  const loneBrace = /\{\s*$/.exec(messageText);
+  if (
+    loneBrace?.index != null &&
+    loneBrace.index >= emittedProseLength
+  ) {
+    return loneBrace.index;
+  }
+  return -1;
+}
+
+export type SummarizeMessageStreamMode = 'detect' | 'prose' | 'buffer';
+
+export type SummarizeMessageStreamState = {
+  mode: SummarizeMessageStreamMode;
+  /** think 路由后的 message 通道全文 */
+  messageText: string;
+  /** 已通过 SSE delta 推送的正文长度 */
+  emittedProseLength: number;
+};
+
+export function createSummarizeMessageStreamState(): SummarizeMessageStreamState {
+  return { mode: 'detect', messageText: '', emittedProseLength: 0 };
+}
+
+/**
+ * summarize message 流式状态机（仅消费 route 后的 message 文本，不含 think / 原始流）。
+ *
+ * - detect：见到首个非空白前不推送；若以 {/[ /``` 或 blocks 开头 → buffer
+ * - prose：安全正文走 delta；见 JSON 尾巴或内联 blocks → buffer
+ * - buffer：不再推 delta，结束后由 full blocks 兜底
+ */
+export function processSummarizeMessageStreamChunk(
+  state: SummarizeMessageStreamState,
+  chunk: string,
+): { state: SummarizeMessageStreamState; delta: string } {
+  if (!chunk || state.mode === 'buffer') {
+    return { state: { ...state, mode: 'buffer' }, delta: '' };
+  }
+
+  const messageText = state.messageText + chunk;
+
+  if (state.mode === 'detect') {
+    const meaningful = messageText.trimStart();
+    if (!meaningful) {
+      return { state: { ...state, messageText }, delta: '' };
+    }
+    if (isLikelySummarizeBlocksJsonStart(meaningful)) {
+      return {
+        state: {
+          mode: 'buffer',
+          messageText,
+          emittedProseLength: state.emittedProseLength,
+        },
+        delta: '',
+      };
+    }
+    return emitSummarizeProseDelta({
+      mode: 'prose',
+      messageText,
+      emittedProseLength: state.emittedProseLength,
+    });
+  }
+
+  return emitSummarizeProseDelta({ ...state, messageText });
+}
+
+function emitSummarizeProseDelta(
+  state: SummarizeMessageStreamState,
+): { state: SummarizeMessageStreamState; delta: string } {
+  const { messageText, emittedProseLength } = state;
+
+  if (isLikelySummarizeBlocksJsonStart(messageText)) {
+    return { state: { ...state, mode: 'buffer' }, delta: '' };
+  }
+
+  const inlineJsonStart = findInlineSummarizeBlocksJsonStart(
+    messageText,
+    emittedProseLength,
+  );
+  const tailInSuffix = findSummarizeBlocksJsonTailStart(
+    messageText.slice(emittedProseLength),
+  );
+  const cutAt =
+    inlineJsonStart >= 0
+      ? inlineJsonStart
+      : tailInSuffix >= 0
+        ? emittedProseLength + tailInSuffix
+        : -1;
+
+  if (cutAt >= 0) {
+    const delta = messageText.slice(emittedProseLength, cutAt);
+    return {
+      state: {
+        mode: 'buffer',
+        messageText,
+        emittedProseLength: emittedProseLength + delta.length,
+      },
+      delta,
+    };
+  }
+
+  const delta = messageText.slice(emittedProseLength);
+  return {
+    state: {
+      mode: 'prose',
+      messageText,
+      emittedProseLength: messageText.length,
+    },
+    delta,
+  };
+}
+
 /** summarize 流式输出是否应缓冲（勿按 token 推 message delta）。 */
 export function shouldBufferSummarizeStreamOutput(text: string): boolean {
   if (looksLikeBlocksJsonOutput(text)) {
     return true;
   }
-  const trimmed = text.trimStart();
-  // 以 `{` 开头时多为 blocks JSON，在见到 "blocks" 前先缓冲，避免把 JSON 碎片推给前端
-  return trimmed.startsWith('{');
+  if (isLikelySummarizeBlocksJsonStart(text)) {
+    return true;
+  }
+  if (findSummarizeBlocksJsonTailStart(text) >= 0) {
+    return true;
+  }
+  return false;
 }
 
 export function stripMarkdownFenceForBlocksParse(text: string): string {
@@ -267,7 +447,7 @@ export function mergeStreamedDeltaTextForStorage(
   llmBlocks: MessageBlock[],
   streamedMessageText: string,
 ): MessageBlock[] {
-  const trimmed = streamedMessageText.trim();
+  const trimmed = stripBlocksJsonTailFromStreamedProse(streamedMessageText).trim();
   if (!trimmed) {
     return llmBlocks;
   }
@@ -609,6 +789,22 @@ function normalizeListRowObjects(items: unknown[]): Record<string, unknown>[] {
   return merged;
 }
 
+/** 单条 detail 输出（无列表容器）提取为一行；仅看结构，不依赖业务字段名。 */
+export function extractDetailRecordFromToolOutput(
+  output: unknown,
+): Record<string, unknown>[] {
+  if (!isRecord(output) || looksLikeListContainer(output)) {
+    return [];
+  }
+  if (isMapReduceToolOutput(output)) {
+    return [];
+  }
+  if (Object.keys(output).length === 0) {
+    return [];
+  }
+  return [output];
+}
+
 /** 从工具输出（含分页容器或多段合并结果）提取表格行。 */
 export function extractListRowsFromToolOutput(
   output: unknown,
@@ -662,7 +858,12 @@ export function mergeToolOutputsForSummary(outputs: unknown[]): unknown {
   const rows: Record<string, unknown>[] = [];
   let total: number | undefined;
   for (const output of outputs) {
-    rows.push(...extractListRowsFromToolOutput(output));
+    const listRows = extractListRowsFromToolOutput(output);
+    if (listRows.length > 0) {
+      rows.push(...listRows);
+    } else {
+      rows.push(...extractDetailRecordFromToolOutput(output));
+    }
     if (isRecord(output) && typeof output.total === 'number') {
       total = Math.max(total ?? 0, output.total);
     }

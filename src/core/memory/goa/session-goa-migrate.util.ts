@@ -1,3 +1,4 @@
+import { appendSessionObservationLedger } from './session-goa-ledger.util';
 import {
   createEmptySessionGoaPayload,
   type ActiveTask,
@@ -140,11 +141,18 @@ export function migrateLegacyContextToGoa(
   legacy: LegacySessionContextPayload,
 ): SessionGoaPayload {
   const base = createEmptySessionGoaPayload(sessionId);
+  const activeTask = migrateActiveTask(legacy);
+  const legacyLedger = migrateObservationLog(legacy.observationSnapshots);
+  const activeLedger = activeTask?.observationLog ?? [];
   return {
     ...base,
     recentEpisodes: migrateEpisodes(legacy.recentEpisodes),
     sessionArtifacts: migrateArtifacts(legacy.sessionArtifacts),
-    activeTask: migrateActiveTask(legacy),
+    sessionObservationLedger: appendSessionObservationLedger(
+      legacyLedger,
+      activeLedger,
+    ),
+    activeTask,
     entities: { ...(legacy.workingMemory?.entities ?? {}) },
     updatedAt: legacy.updatedAt ?? new Date().toISOString(),
   };

@@ -1,3 +1,4 @@
+import { compactArgsForObservation } from '../../agent-engine/engine/observation-format.util';
 import { resolveXShopIdFromUserMessage } from '../../../common/integration-site.util';
 import {
   ARTIFACT_SUMMARY_MAX_CHARS,
@@ -398,6 +399,9 @@ export function buildObservationEntriesFromContext(
     name: row.name,
     output: row.output,
     createdAt: now,
+    ...(compactArgsForObservation(row.args)
+      ? { args: compactArgsForObservation(row.args) }
+      : {}),
   }));
 }
 
@@ -435,6 +439,9 @@ export function resolvePersistedActiveTask(input: {
   built: ActiveTask | null;
   ctx: SessionMemoryUpdateContext;
 }): ActiveTask | null {
+  if (input.ctx.abandonActiveTask) {
+    return null;
+  }
   if (input.built) {
     return input.built;
   }
@@ -531,7 +538,9 @@ export function collectArtifactRefsForPrompt(input: {
   maxEpisodes?: number;
 }): string[] {
   const refs = new Set<string>();
-  const episodeSlice = input.episodes.slice(-(input.maxEpisodes ?? 2));
+  const episodeSlice = input.maxEpisodes
+    ? input.episodes.slice(-input.maxEpisodes)
+    : input.episodes;
   for (const episode of episodeSlice) {
     for (const ref of episode.artifactRefs) {
       refs.add(ref);
@@ -551,95 +560,17 @@ export function flattenObservationLog(
   return log.map((row) => ({ name: row.name, output: row.output }));
 }
 
-export function formatRecentEpisodesForPrompt(episodes: TurnEpisode[]): string | null {
-  if (episodes.length === 0) {
-    return null;
-  }
-  const lines = episodes.slice(-5).map((episode) => {
-    const tools =
-      episode.toolsUsed.length > 0 ? `tools=${episode.toolsUsed.join(',')}` : 'tools=none';
-    const metrics =
-      episode.metrics && Object.keys(episode.metrics).length > 0
-        ? ` metrics=${Object.entries(episode.metrics)
-            .map(([k, v]) => `${k}=${v}`)
-            .join(',')}`
-        : '';
-    const refs =
-      episode.artifactRefs.length > 0
-        ? ` refs=${episode.artifactRefs.join(',')}`
-        : '';
-    return `- [t${episode.turnId}] status=${episode.status} goal: ${episode.goal} | outcome: ${episode.outcome} | ${tools}${metrics}${refs}`;
-  });
-  return `<recent_episodes>\n${lines.join('\n')}\n</recent_episodes>`;
-}
-
-export function formatArtifactsForPrompt(
-  artifacts: SessionArtifact[],
-  episodeRefs: string[],
-): string | null {
-  if (episodeRefs.length === 0) {
-    return null;
-  }
-  const refSet = new Set(episodeRefs);
-  const rows = artifacts.filter((artifact) => refSet.has(artifact.id));
-  if (rows.length === 0) {
-    return null;
-  }
-  const lines = rows.map((artifact) => {
-    const meta =
-      artifact.meta && Object.keys(artifact.meta).length > 0
-        ? ` ${Object.entries(artifact.meta)
-            .map(([k, v]) => `${k}=${v}`)
-            .join(',')}`
-        : '';
-    return `- ${artifact.id} (${artifact.kind}${artifact.toolName ? `:${artifact.toolName}` : ''}): ${artifact.summary}${meta}`;
-  });
-  return `<artifact_summaries>\n${lines.join('\n')}\n</artifact_summaries>`;
-}
-
-export function formatActiveTaskForPrompt(
-  activeTask: ActiveTask | null | undefined,
-): string | null {
-  if (!activeTask) {
-    return null;
-  }
-  if (
-    activeTask.status === 'completed' ||
-    activeTask.status === 'failed' ||
-    activeTask.status === 'abandoned'
-  ) {
-    return null;
-  }
-  const stepLines = activeTask.stepProgress.map((step) => {
-    const summary = step.summary ? ` — ${step.summary}` : '';
-    return `  - [${step.status}] ${step.stepId} (${step.phase}/${step.kind})${summary}`;
-  });
-  return [
-    '<active_task>',
-    `goal: ${activeTask.plan.goal}`,
-    `deliverable: ${activeTask.plan.deliverable}`,
-    `status: ${activeTask.status}`,
-    'steps:',
-    ...stepLines,
-    '</active_task>',
-  ].join('\n');
-}
-
-export function formatEntitiesForPrompt(
-  entities: Record<string, unknown> | undefined,
-): string | null {
-  if (!entities) {
-    return null;
-  }
-  const entries = Object.entries(entities)
-    .filter(([, value]) => value != null && String(value).trim().length > 0)
-    .slice(0, 12)
-    .map(([key, value]) => `${key}=${String(value)}`);
-  if (entries.length === 0) {
-    return null;
-  }
-  return `<session_entities>\n${entries.join('\n')}\n</session_entities>`;
-}
+export {
+  buildFullSessionGoaPromptMessages,
+  buildSessionGoaStorageLimits,
+  formatActiveTaskForPrompt,
+  formatArtifactsForPrompt,
+  formatEntitiesForPrompt,
+  formatObservationInventoryForPrompt,
+  formatRecentEpisodesForPrompt,
+  formatSessionGoaCoverageForPrompt,
+  mergeSessionObservationEntries,
+} from './session-goa-full-projection.util';
 
 export function formatGoaContextHint(
   episodes: TurnEpisode[],

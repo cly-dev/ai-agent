@@ -604,6 +604,81 @@ function observationsSatisfyPlanToolStepStopWhen(
   return hasSummarizableToolObservations(observations);
 }
 
+function isObservationRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function extractListRecordsFromObservationOutput(output: unknown): Record<string, unknown>[] {
+  if (Array.isArray(output)) {
+    return output.filter(isObservationRecord);
+  }
+  if (!isObservationRecord(output)) {
+    return [];
+  }
+  const data = output.data;
+  if (Array.isArray(data)) {
+    return data.filter(isObservationRecord);
+  }
+  return [output];
+}
+
+function recordHasUsableDetailContent(record: Record<string, unknown>): boolean {
+  for (const key of ['content', 'body', 'text', 'comment', 'description']) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** read-detail 步：若 ledger/预载的 read-list 已含目标 id 且正文非空，则不必再调 detail。 */
+function readDetailSatisfiedByListObservations(input: {
+  step: TaskPlanStep;
+  observations: ToolObservation[];
+  scopedTools?: PlanScopedTool[];
+  taskPlan?: TaskPlanSnapshot | null;
+}): boolean {
+  if (input.step.toolRole !== 'read-detail') {
+    return false;
+  }
+  const hintText = [
+    input.taskPlan?.originalUserRequest,
+    input.taskPlan?.goal,
+  ]
+    .filter((row): row is string => typeof row === 'string' && row.trim().length > 0)
+    .join(' ');
+  if (!hintText.trim()) {
+    return false;
+  }
+  const listToolNames = matchingToolNamesForPlanStep(
+    { ...input.step, toolRole: 'read-list' },
+    input.scopedTools,
+  );
+  if (!listToolNames) {
+    return false;
+  }
+  for (const observation of input.observations) {
+    if (!listToolNames.has(observation.name)) {
+      continue;
+    }
+    for (const record of extractListRecordsFromObservationOutput(observation.output)) {
+      const id = record.id ?? record.reviewId;
+      if (id == null) {
+        continue;
+      }
+      const idStr = String(id).trim();
+      if (idStr.length === 0 || !hintText.includes(idStr)) {
+        continue;
+      }
+      if (recordHasUsableDetailContent(record)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * pre_tools：当前 plan tool 步是否已被 observations 满足。
  * 必须有 toolRole；EMPTY 列表不算满足；与 post_tools 语义对齐。
@@ -619,10 +694,15 @@ export function isPlanToolStepSatisfiedByObservations(input: {
     return false;
   }
   const relevant = observationsForPlanToolStep(input);
-  return observationsSatisfyPlanToolStepStopWhen(input.step, relevant, {
-    taskPlan: input.taskPlan,
-    skillConfig: input.skillConfig,
-  });
+  if (
+    observationsSatisfyPlanToolStepStopWhen(input.step, relevant, {
+      taskPlan: input.taskPlan,
+      skillConfig: input.skillConfig,
+    })
+  ) {
+    return true;
+  }
+  return readDetailSatisfiedByListObservations(input);
 }
 
 /** 连续多少次 decision LLM 未产出 tool_calls（用于 plan tool 步脱困）。 */
@@ -1217,13 +1297,138 @@ export function llmPlanMissingRequiredWriteStep(
   );
 }
 
-/** Plan summarize 步使用的 observation：优先合并 tool 结果，否则 direct_user。 */
+function observationArgsFingerprint(observation: ToolObservation): string {
+  const args = observation.llmPayload?.args;
+  if (!args || typeof args !== 'object') {
+    return '';
+  }
+  try {
+    return JSON.stringify(args);
+  } catch {
+    return '';
+  }
+}
+
+/** 已完成 gather 步（不在 pending 中的 tool 步）。 */
+function completedGatherToolStepsForPlan(
+  plan: TaskPlanSnapshot,
+): TaskPlanStep[] {
+  const pending = new Set(plan.pendingStepIds);
+  let steps = plan.steps.filter(
+    (step) => step.kind === 'tool' && step.toolRole && !pending.has(step.id),
+  );
+  if (plan.deliverable === 'detail') {
+    const detailSteps = steps.filter((step) => step.toolRole === 'read-detail');
+    if (detailSteps.length > 0) {
+      steps = detailSteps;
+    }
+  } else if (plan.deliverable === 'list' || plan.deliverable === 'analysis') {
+    const listSteps = steps.filter((step) => step.toolRole === 'read-list');
+    if (listSteps.length > 0) {
+      steps = listSteps;
+    }
+  } else if (plan.deliverable === 'mutation') {
+    const writeSteps = steps.filter((step) => isPlanWriteToolRole(step.toolRole));
+    if (writeSteps.length > 0) {
+      steps = writeSteps;
+    }
+  }
+  return steps;
+}
+
+export type ObservationsForPlanSummarizeResult = {
+  observations: ToolObservation[];
+  filterMiss: boolean;
+};
+
+/**
+ * Plan summarize/reason 步：只保留本轮 plan 已完成 gather 步对应的观测。
+ * `strict: true` 时过滤失败返回空数组并标记 filterMiss（供 reflect_memory 使用）。
+ */
+export function filterObservationsForPlanSummarize(input: {
+  plan: TaskPlanSnapshot;
+  observations: ToolObservation[];
+  scopedTools?: PlanScopedTool[];
+  strict?: boolean;
+}): ObservationsForPlanSummarizeResult {
+  const strict = input.strict === true;
+  const gatherSteps = completedGatherToolStepsForPlan(input.plan);
+  if (gatherSteps.length === 0) {
+    return { observations: input.observations, filterMiss: false };
+  }
+  const allowedToolNames = new Set<string>();
+  for (const step of gatherSteps) {
+    const names = matchingToolNamesForPlanStep(step, input.scopedTools);
+    if (names) {
+      for (const name of names) {
+        allowedToolNames.add(name);
+      }
+    }
+  }
+  if (allowedToolNames.size === 0) {
+    return {
+      observations: strict ? [] : input.observations,
+      filterMiss: strict && input.observations.length > 0,
+    };
+  }
+  const filtered = input.observations.filter((row) =>
+    allowedToolNames.has(row.name),
+  );
+  if (filtered.length === 0) {
+    return {
+      observations: strict ? [] : input.observations,
+      filterMiss: strict && input.observations.length > 0,
+    };
+  }
+  const deduped = new Map<string, ToolObservation>();
+  for (const row of filtered) {
+    const key = `${row.name}:${observationArgsFingerprint(row)}`;
+    deduped.set(key, row);
+  }
+  return { observations: [...deduped.values()], filterMiss: false };
+}
+
+/**
+ * Plan summarize/reason 步：只保留本轮 plan 已完成 gather 步对应的观测，
+ * 避免 GOA 预载的无关历史列表污染 detail 汇总。
+ */
+export function observationsForPlanSummarize(input: {
+  plan: TaskPlanSnapshot;
+  observations: ToolObservation[];
+  scopedTools?: PlanScopedTool[];
+}): ToolObservation[] {
+  return filterObservationsForPlanSummarize({
+    ...input,
+    strict: false,
+  }).observations;
+}
+
+/** 观测是否满足 plan 任一已完成 gather 步的 stopWhen。 */
+export function completedGatherStepsSatisfiedInObservations(input: {
+  plan: TaskPlanSnapshot;
+  observations: ToolObservation[];
+  scopedTools?: PlanScopedTool[];
+}): boolean {
+  const gatherSteps = completedGatherToolStepsForPlan(input.plan);
+  return gatherSteps.some((step) =>
+    isPlanToolStepSatisfiedByObservations({
+      step,
+      observations: input.observations,
+      scopedTools: input.scopedTools,
+      taskPlan: input.plan,
+    }),
+  );
+}
+
+/** Plan summarize 步使用的 observation：分块或单条 tool 结果，否则 direct_user。 */
 export function buildPlanSummarizeObservation(input: {
   userMessage: string;
-  merged: ToolObservation | null;
+  summarizeObservation?: ToolObservation | null;
+  merged?: ToolObservation | null;
 }): ToolObservation {
+  const resolved = input.summarizeObservation ?? input.merged;
   return (
-    input.merged ?? {
+    resolved ?? {
       name: 'direct_user',
       output: { userMessage: input.userMessage.trim() },
     }

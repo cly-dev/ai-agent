@@ -70,12 +70,14 @@ skill ──命中──→ plan → llm ⇄ tools ⇄ resultCheck
 
 完整 Plan 节点原理与配置见 **[plan-node.md](./plan-node.md)**。
 
-- `SkillService.resolveForRun`：按 `UserApp.roleId` 可选 `RoleSkill` 白名单 → **L0/L1 渐进召回** → `allowed ∩ skillTools` gate。
+- `SkillService.resolveForRun`：按 `UserApp.roleId` 可选 `RoleSkill` 白名单 → **两阶段召回（默认 `two_stage`）** → `allowed ∩ skillTools` gate。详见 **[skill-recall-two-stage.md](./skill-recall-two-stage.md)**。
+  - **Stage A (`solo`)**：query 仅本轮 `userMessage`；走 **L0/L1 渐进召回**。
+  - **Stage B (`contextual`)**：solo miss 且满足 gate（短句、有上轮 episode、同话题、lift 够）时，query 拼最近 1 轮 `episode.goal` + 可选 `deliverable`，再跑 L0/L1。
   - **L0 (`router`)**：向量/关键词 Top-1，文本 `name + capabilityKey + description`；单候选需 ≥ `SKILL_SINGLE_MIN_SCORE`（默认 `0.42`）。
-  - **L1 (`prompt_excerpt`)**：L0 miss 且候选数 ≤ `SKILL_PROGRESSIVE_RECALL_MAX_CANDIDATES`（默认 `5`）时，在 L0 文本上追加 `prompt` 前 `SKILL_RECALL_PROMPT_EXCERPT_CHARS`（默认 `300`）字再召回；单候选仅要求 ≥ 基础 `minScore`（不再抬到 0.42）。`SKILL_PROGRESSIVE_RECALL=0` 可关闭 L1。
-- 命中：写 `step.type=skill`，跳过 intent，`scopedTools` 为 gate 结果，`skill.prompt` 注入决策 prompt（`<active_skill>`）；`recallSource` 为 `vector` | `keyword`，`recallStage` 为 `router` | `prompt_excerpt`。
-- 未命中：走原 intent / bind 召回逻辑；run step 仍含 `recallStage`、`recallMatches`、`recallStageAttempts`（L0/L1 分数可观测）。
-- 向量阈值：默认 `max(IntentRecallConfig.vectorMinScore, 0.38)`；`SKILL_VECTOR_MIN_SCORE` 可覆盖。关键词：`SKILL_KEYWORD_MIN_SCORE`（默认 `0.35`）。多候选需 Top-1 领先 ≥ `SKILL_RECALL_MIN_GAP`（默认 `0.08`）。闲聊/过短 query 跳过 skill。召回模式与 intent 共用 `IntentRecallConfigService`。
+  - **L1 (`prompt_excerpt`)**：L0 miss 且候选数 ≤ `SKILL_PROGRESSIVE_RECALL_MAX_CANDIDATES`（默认 `5`）时，在 L0 文本上追加 `prompt` 前 `SKILL_RECALL_PROMPT_EXCERPT_CHARS`（默认 `300`）字再召回。`SKILL_PROGRESSIVE_RECALL=0` 可关闭 L1。
+- 命中：写 `step.type=skill`，跳过 intent；`recallPhase` 为 `solo` | `contextual`；含 `soloTopScore`、`contextLift`、`contextGateReason` 等可观测字段。
+- 未命中：走原 intent / bind 召回逻辑。
+- 向量阈值：默认 `max(IntentRecallConfig.vectorMinScore, 0.38)`；`SKILL_VECTOR_MIN_SCORE` 可覆盖。标题加分 `SKILL_VECTOR_NAME_BOOST` 仅作用于本轮短句。多候选需 Top-1 领先 ≥ `SKILL_RECALL_MIN_GAP`（默认 `0.08`）。
 - 写确认续跑：Redis `resumeContext` 含 `skillApplied` / `activeSkillPrompt` / `taskPlan` 等，确认后第二轮 graph 恢复 Plan 状态；skill 命中时不触发「放宽工具范围」expand-once。
 
 ## 模板样例

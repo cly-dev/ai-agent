@@ -26,6 +26,11 @@ import {
   type ToolCallLike,
 } from './tool-call-dedupe.util';
 import {
+  buildSameArgsRepeatUserHint,
+  findLastRecoverableToolErrorObservation,
+  pendingCallsRepeatRecoverableToolError,
+} from './tool-plan-error.util';
+import {
   findLastErrorObservation,
   pickSummarizeErrorObservation,
   shouldReturnToLlmAfterToolErrors,
@@ -200,6 +205,19 @@ export function resolvePreToolsResultCheck(input: {
         }) ?? undefined,
     };
   }
+  const sameArgsRepeat = pendingCallsRepeatRecoverableToolError({
+    pendingToolCalls: input.pendingToolCalls,
+    observations: input.observations ?? [],
+  });
+  if (sameArgsRepeat.repeat && input.taskPlan) {
+    return {
+      ...base,
+      route: 'summarize',
+      reason: 'tool_error_same_args_repeat',
+      pendingToolCalls: [],
+    };
+  }
+
   if (input.pendingToolCalls.length === 0) {
     const planOutcome = resolvePlanToolStepPreToolsOutcome({
       steps: input.steps,
@@ -414,6 +432,20 @@ export function resolveSummaryObservationForCheck(input: {
 }): ToolObservation | null {
   const roundIndices = input.savedRoundMeta?.roundObservationIndices;
   const roundDispositions = input.savedRoundMeta?.errorDispositions;
+
+  if (input.reason === 'tool_error_same_args_repeat') {
+    const failed = findLastRecoverableToolErrorObservation(input.observations);
+    if (!failed) {
+      return null;
+    }
+    return {
+      name: failed.name,
+      output: {
+        ...failed.output,
+        userHint: buildSameArgsRepeatUserHint(failed.output),
+      },
+    };
+  }
 
   if (input.reason === 'tool_error_summarize' && input.savedRoundMeta) {
     const errorObservation = pickSummarizeErrorObservation(

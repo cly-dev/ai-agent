@@ -11,6 +11,7 @@ import type {
   SkillResolveResult,
 } from './skill.types';
 import { toSkillRecallMatches } from './skill-recall.util';
+import { truncateSkillRecallQueryForLog } from './skill-recall-session.util';
 
 @Injectable()
 export class SkillService {
@@ -85,6 +86,7 @@ export class SkillService {
         prompt: skill.prompt,
       })),
       input.userMessage,
+      input.sessionContext,
     );
     const recallObservability = this.buildRecallObservability(recall);
     const top = recall.top;
@@ -151,9 +153,16 @@ export class SkillService {
       recallStage: recall.recallStage ?? 'router',
       recallStageAttempts: recall.stageAttempts,
       roleSkillFiltered,
+      recallQuery: truncateSkillRecallQueryForLog(recall.recallQuery),
+      sessionContextUsed: recall.sessionContextUsed,
+      recallPhase: recall.recallPhase,
+      soloTopScore: recall.soloTopScore,
+      contextualTopScore: recall.contextualTopScore,
+      contextLift: recall.contextLift,
+      contextGateReason: recall.contextGateReason,
     };
     this.logger.debug(
-      `skill recall hit agentId=${input.agentId} skillId=${hit.skill.id} name=${hit.skill.name} source=${hit.recallSource} stage=${hit.recallStage} gated=${hit.gatedToolCount}/${hit.allowedToolCount} score=${hit.recallScore.toFixed(4)}`,
+      `skill recall hit agentId=${input.agentId} skillId=${hit.skill.id} name=${hit.skill.name} phase=${hit.recallPhase} source=${hit.recallSource} stage=${hit.recallStage} gated=${hit.gatedToolCount}/${hit.allowedToolCount} score=${hit.recallScore.toFixed(4)} lift=${hit.contextLift?.toFixed(4) ?? 'n/a'}`,
     );
     return hit;
   }
@@ -166,6 +175,13 @@ export class SkillService {
       recallSource: recall.source,
       recallMatches: toSkillRecallMatches(recall.ranked),
       recallStageAttempts: recall.stageAttempts,
+      recallQuery: truncateSkillRecallQueryForLog(recall.recallQuery),
+      sessionContextUsed: recall.sessionContextUsed,
+      recallPhase: recall.recallPhase,
+      soloTopScore: recall.soloTopScore,
+      contextualTopScore: recall.contextualTopScore,
+      contextLift: recall.contextLift,
+      contextGateReason: recall.contextGateReason,
     };
   }
 }

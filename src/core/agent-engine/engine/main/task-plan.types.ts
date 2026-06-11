@@ -91,6 +91,74 @@ export type ResolveTaskPlanResult = {
   llmFallbackReason?: string;
 };
 
+export type PlanSessionEpisodeSummary = {
+  turnId: number;
+  runId: number;
+  goal: string;
+  outcome: string;
+  status: string;
+  toolsUsed: string[];
+  artifactRefs: string[];
+  metrics?: Record<string, string | number>;
+  createdAt: string;
+};
+
+export type PlanSessionArtifactSummary = {
+  id: string;
+  turnId: number;
+  kind: string;
+  toolName?: string;
+  stepId?: string;
+  summary: string;
+  meta?: Record<string, string | number>;
+  createdAt: string;
+};
+
+export type PlanSessionObservationInventoryItem = {
+  tool: string;
+  runId: number;
+  toolRole?: string;
+  argsSummary: string;
+  turnId: number;
+  createdAt: string;
+  rowCount?: number;
+};
+
+export type PlanSessionActiveTaskSummary = {
+  status: string;
+  goal: string;
+  deliverable: string;
+  originalUserRequest: string;
+  pendingStepIds: string[];
+  completedStepIds: string[];
+  currentStepId: string | null;
+  stepProgress: Array<{
+    stepId: string;
+    phase: string;
+    kind: string;
+    status: string;
+    summary?: string;
+    artifactRef?: string;
+  }>;
+};
+
+/** Plan LLM user payload：会话 GOA 完整快照（与 SESSION_MEMORY_MAX_* 存储上限一致）。 */
+export type PlanSessionWorkingMemory = {
+  coverage: 'full_session_goa';
+  storageLimits: {
+    maxEpisodes: number;
+    maxArtifacts: number;
+    maxObservationLedgerEntries: number;
+  };
+  episodes: PlanSessionEpisodeSummary[];
+  artifacts: PlanSessionArtifactSummary[];
+  observationInventory: PlanSessionObservationInventoryItem[];
+  satisfiedToolRoles: string[];
+  entities?: Record<string, string>;
+  activeTask?: PlanSessionActiveTaskSummary;
+};
+
 export type ResolveTaskPlanInput = BuildTaskPlanInput & {
   skillPrompt?: string | null;
+  sessionWorkingMemory?: PlanSessionWorkingMemory | null;
 };

@@ -71,8 +71,10 @@ function isSessionMemoryBlockMessage(message: LlmChatMessage): boolean {
   }
   const content = message.content;
   return (
+    content.includes('<session_goa_coverage>') ||
     content.includes('<recent_episodes>') ||
     content.includes('<artifact_summaries>') ||
+    content.includes('<observation_inventory>') ||
     content.includes('<active_task>') ||
     content.includes('<session_entities>')
   );

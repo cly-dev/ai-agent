@@ -1,20 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { LlmChatMessage } from '../../llm/llm.types';
 import {
+  appendSessionObservationLedger,
+  buildObservationLedgerEntriesFromContext,
+  mergePriorToolObservationsFromGoa,
+} from './session-goa-ledger.util';
+import {
   appendArtifactsFifo,
   appendEpisodeFifo,
   buildActiveTaskFromAgentRun,
   buildArtifactsFromAgentRun,
   buildTurnEpisodeFromAgentRun,
-  collectArtifactRefsForPrompt,
-  flattenObservationLog,
-  formatActiveTaskForPrompt,
-  formatArtifactsForPrompt,
-  formatEntitiesForPrompt,
-  formatRecentEpisodesForPrompt,
   mergeSessionEntities,
   resolvePersistedActiveTask,
 } from './session-goa-projection.util';
+import { buildFullSessionGoaPromptMessages } from './session-goa-full-projection.util';
 import { SessionGoaStore } from './session-goa.store';
 import {
   isActiveTaskResumable,
@@ -101,12 +101,22 @@ export class SessionGoaService {
       base.sessionArtifacts,
       artifacts,
     );
+    const ledgerIncoming = buildObservationLedgerEntriesFromContext({
+      turnId: ctx.turnId,
+      runId: ctx.runId,
+      newToolObservations: ctx.newToolObservations,
+    });
+    const sessionObservationLedger = appendSessionObservationLedger(
+      base.sessionObservationLedger ?? [],
+      ledgerIncoming,
+    );
 
     if (ctx.phase === 'task_only') {
       return {
         payload: {
           ...base,
           sessionArtifacts,
+          sessionObservationLedger,
           activeTask,
           entities,
         },
@@ -121,6 +131,7 @@ export class SessionGoaService {
         ...base,
         recentEpisodes,
         sessionArtifacts,
+        sessionObservationLedger,
         activeTask,
         entities,
       },
@@ -129,31 +140,7 @@ export class SessionGoaService {
   }
 
   buildPromptMessages(payload: SessionGoaPayload): LlmChatMessage[] {
-    const messages: LlmChatMessage[] = [];
-    const episodesText = formatRecentEpisodesForPrompt(payload.recentEpisodes);
-    if (episodesText) {
-      messages.push({ role: 'system', content: episodesText });
-    }
-    const artifactRefs = collectArtifactRefsForPrompt({
-      episodes: payload.recentEpisodes,
-      activeTask: payload.activeTask,
-    });
-    const artifactsText = formatArtifactsForPrompt(
-      payload.sessionArtifacts,
-      artifactRefs,
-    );
-    if (artifactsText) {
-      messages.push({ role: 'system', content: artifactsText });
-    }
-    const taskText = formatActiveTaskForPrompt(payload.activeTask);
-    if (taskText) {
-      messages.push({ role: 'system', content: taskText });
-    }
-    const entitiesText = formatEntitiesForPrompt(payload.entities);
-    if (entitiesText) {
-      messages.push({ role: 'system', content: entitiesText });
-    }
-    return messages;
+    return buildFullSessionGoaPromptMessages(payload);
   }
 
   async buildPromptMessagesForSession(sessionId: string): Promise<LlmChatMessage[]> {
@@ -177,16 +164,7 @@ export class SessionGoaService {
   buildPriorToolObservationsForGraph(
     payload: SessionGoaPayload | null,
   ): Array<{ name: string; output: unknown }> {
-    if (!payload?.activeTask) {
-      return [];
-    }
-    if (
-      payload.activeTask.status !== 'in_progress' &&
-      payload.activeTask.status !== 'awaiting_confirmation'
-    ) {
-      return [];
-    }
-    return flattenObservationLog(payload.activeTask.observationLog);
+    return mergePriorToolObservationsFromGoa(payload);
   }
 
   async abandonActiveTask(sessionId: string): Promise<void> {

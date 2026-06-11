@@ -14,9 +14,13 @@ import {
   joinAgentPromptText,
 } from '../prompt-message.util';
 import {
-  dedupeObservationPayloads,
-  formatObservationForLlm,
-  serializeObservationsBlock,
+  formatSplitObservationsPromptBlock,
+  formatSplitToolObservationsForSummarize,
+  isSplitToolObservationsOutput,
+  resolvePrimaryObservationForSummarize,
+  SPLIT_TOOL_OBSERVATIONS_NAME,
+  type SplitToolObservationsOutput,
+  toolObservationsToPayloads,
 } from '../observation-format.util';
 import { estimateMessagesTokens } from '../../../llm/message-token-budget.util';
 import { summarizeToolsForLlmSchema } from '../tool/tool-schema-compact.util';
@@ -65,7 +69,6 @@ import {
   buildRuleBasedMessageBlocks,
   ensureAtLeastOneTextBlock,
   mergeSummarizeBlocksForStorage,
-  mergeToolOutputsForSummary,
   messageBlocksToPlainText,
   sanitizeStoredFinalOutput,
   serializeMessageBlocksForStorage,
@@ -76,6 +79,7 @@ import { isEmptyListToolObservation } from '../tool/tool-observation.util';
 import {
   allToolObservations,
   mergeRunRoundObservations,
+  splitToolObservationsFromState,
 } from '../graph-tool-observations.util';
 import type {
   ToolErrorDisposition,
@@ -110,6 +114,11 @@ import {
   resolveSummaryObservationForCheck,
 } from '../tool/tool-result-check.util';
 import {
+  isTerminalPlanToolError,
+  shouldAbortPlanOnRecoverableSameArgs,
+  shouldAbortPlanOnTerminalToolError,
+} from '../tool/tool-plan-error.util';
+import {
   extractLlmUserFacingText,
 } from '../llm-output-sanitize.util';
 import { detectIntentKind as classifyIntentKind } from '../../intent-kind.util';
@@ -127,6 +136,7 @@ import {
 import { AgentRunSseEmitter } from './agent-run-sse.emitter';
 import { AgentSessionScopeService } from './agent-session-scope.service';
 import { SkillService } from '../../../skill/skill.service';
+import { buildSkillRecallSessionContextFromGoa } from '../../../skill/skill-recall-session.util';
 import {
   buildDecisionUserFrame,
   buildPlanSummarizeObservation,
@@ -145,6 +155,11 @@ import {
   summarizeScopedToolsForPlan,
 } from './task-plan.util';
 import { resolveTaskPlan } from './task-plan-llm.util';
+import { buildPlanSessionWorkingMemory } from './session-goa-plan-projection.util';
+import {
+  applySummarizeMemoryScope,
+  resolveSummarizeMemoryScope,
+} from './summarize-memory-scope.util';
 import type { TaskPlanSnapshot } from './task-plan.types';
 import { fromStoredTaskPlan } from './session-graph-resume.util';
 import { serializeObservationsForPending } from '../agent-write-confirmation.util';
@@ -227,7 +242,7 @@ export class AgentLangGraphRunner {
   /** 主推理调用：Agent → Memory → Observations → Tool schema → User。 */
   private buildLlmInvokeMessages(
     promptMessages: LlmChatMessage[],
-    observations: ToolObservation[],
+    observationSplit: SplitToolObservationsOutput,
     latestUserMessage: string,
     toolSchemaJson: string,
     toolDecisionPrompt: string,
@@ -262,21 +277,23 @@ export class AgentLangGraphRunner {
       messages.push({ role: item.role, content: item.content });
     }
 
-    const observationPayloads = dedupeObservationPayloads(
-      observations.map(
-        (observation) =>
-          observation.llmPayload ??
-          formatObservationForLlm({
-            toolName: observation.name,
-            output: observation.output,
-            fieldLabels: observation.fieldLabels,
-          }),
+    const observationBlock = formatSplitObservationsPromptBlock({
+      workingMemory: toolObservationsToPayloads(
+        observationSplit.workingMemory,
+        'session',
       ),
-    );
-    if (observationPayloads.length > 0) {
+      currentRun: toolObservationsToPayloads(
+        observationSplit.currentRun,
+        'current_run',
+      ),
+    });
+    if (
+      observationSplit.workingMemory.length > 0 ||
+      observationSplit.currentRun.length > 0
+    ) {
       messages.push({
         role: 'assistant',
-        content: `<observations>\nEach entry has executed=true and reuseNote — already run in this turn; do not repeat the same tool+args.\n${serializeObservationsBlock(observationPayloads)}\n</observations>`,
+        content: observationBlock,
       });
     }
 
@@ -292,7 +309,9 @@ export class AgentLangGraphRunner {
 
     const pinnedUser = buildDecisionUserFrame({
       taskPlan,
-      observationCount: observations.length,
+      observationCount:
+        observationSplit.workingMemory.length +
+        observationSplit.currentRun.length,
       latestUserMessage,
     });
     if (pinnedUser) {
@@ -350,7 +369,7 @@ export class AgentLangGraphRunner {
       agentMetadata: unknown;
       method: string;
     }>,
-    observations: ToolObservation[],
+    observationSplit: SplitToolObservationsOutput,
     enableToolCall: boolean,
     scope: { appClientId: number; agentId: number },
     activeSkillPrompt?: string | null,
@@ -383,18 +402,19 @@ export class AgentLangGraphRunner {
     if (skillPrompt) {
       toolDecisionPrompt = `<active_skill>\n${skillPrompt}\n</active_skill>\n\n${toolDecisionPrompt}`;
     }
-    const observationPayloads = observations.map((observation) =>
-      observation.llmPayload ??
-      formatObservationForLlm({
-        toolName: observation.name,
-        output: observation.output,
-        fieldLabels: observation.fieldLabels,
-      }),
-    );
     return {
       toolDecisionPrompt,
       toolSchemaJson: JSON.stringify(toolSchema),
-      observationsJson: serializeObservationsBlock(observationPayloads),
+      observationsJson: formatSplitObservationsPromptBlock({
+        workingMemory: toolObservationsToPayloads(
+          observationSplit.workingMemory,
+          'session',
+        ),
+        currentRun: toolObservationsToPayloads(
+          observationSplit.currentRun,
+          'current_run',
+        ),
+      }),
       agentPrompt,
     };
   }
@@ -683,6 +703,10 @@ export class AgentLangGraphRunner {
         default: () => undefined,
         reducer: (_state, update) => update,
       }),
+      planAborted: Annotation<boolean | undefined>({
+        default: () => undefined,
+        reducer: (_state, update) => update,
+      }),
     });
 
     // 节点：Skill 召回 + gate（命中则跳过 intent，直连 llm）。
@@ -727,6 +751,7 @@ export class AgentLangGraphRunner {
         userId: input.userId,
         appClientId: input.appClientId,
         userMessage: input.latestUserMessage,
+        sessionContext: buildSkillRecallSessionContextFromGoa(sessionGoa),
         allowedTools: input.tools,
         toolBuildCtx: input.toolBuildCtx,
       });
@@ -743,6 +768,13 @@ export class AgentLangGraphRunner {
             recallSource: resolved.recallSource ?? null,
             recallMatches: resolved.recallMatches ?? null,
             recallStageAttempts: resolved.recallStageAttempts ?? null,
+            recallQuery: resolved.recallQuery ?? null,
+            sessionContextUsed: resolved.sessionContextUsed ?? false,
+            recallPhase: resolved.recallPhase ?? null,
+            soloTopScore: resolved.soloTopScore ?? null,
+            contextualTopScore: resolved.contextualTopScore ?? null,
+            contextLift: resolved.contextLift ?? null,
+            contextGateReason: resolved.contextGateReason ?? null,
           }),
         };
         await this.updateRun(
@@ -778,6 +810,13 @@ export class AgentLangGraphRunner {
           roleSkillFiltered: resolved.roleSkillFiltered,
           allowedToolCount: resolved.allowedToolCount,
           gatedToolCount: resolved.gatedToolCount,
+          recallQuery: resolved.recallQuery ?? null,
+          sessionContextUsed: resolved.sessionContextUsed ?? false,
+          recallPhase: resolved.recallPhase ?? null,
+          soloTopScore: resolved.soloTopScore ?? null,
+          contextualTopScore: resolved.contextualTopScore ?? null,
+          contextLift: resolved.contextLift ?? null,
+          contextGateReason: resolved.contextGateReason ?? null,
         }),
       };
       await this.updateRun(
@@ -850,8 +889,11 @@ export class AgentLangGraphRunner {
           plan: taskPlan,
           observations: allToolObservations(state),
           userMessage: input.latestUserMessage,
-          buildMergedObservation: (observations) =>
-            this.mergeObservationsForSummary(observations),
+          buildMergedObservation: () =>
+            this.buildSummarizeObservationFromState(state, {
+              taskPlan,
+              scopedTools: state.scopedTools,
+            }),
         });
         const stepsWithPlan = [...state.steps, planStep];
         await this.updateRun(
@@ -900,11 +942,18 @@ export class AgentLangGraphRunner {
         return { ...state, steps: [...state.steps, step] };
       }
 
-      const goaForAbandon =
+      const goaForPlan =
         sessionGoa ?? (await this.goaService.getPayload(input.sessionId));
+
+      const sessionWorkingMemory = buildPlanSessionWorkingMemory({
+        goa: goaForPlan,
+        scopedTools: state.scopedTools,
+        preloadedObservations: allToolObservations(state),
+      });
+
       if (
-        goaForAbandon.activeTask?.status === 'in_progress' ||
-        goaForAbandon.activeTask?.status === 'awaiting_confirmation'
+        goaForPlan.activeTask?.status === 'in_progress' ||
+        goaForPlan.activeTask?.status === 'awaiting_confirmation'
       ) {
         await this.goaService.abandonActiveTask(input.sessionId);
         sessionGoa = await this.goaService.getPayload(input.sessionId);
@@ -926,6 +975,7 @@ export class AgentLangGraphRunner {
         skillConfig: state.activeSkillConfig,
         skillRiskLevel: state.activeSkillRiskLevel ?? null,
         skillPrompt: state.activeSkillPrompt,
+        sessionWorkingMemory,
       };
 
       const resolvedPlan = await resolveTaskPlan({
@@ -951,6 +1001,7 @@ export class AgentLangGraphRunner {
           currentStepId: taskPlan.currentStepId,
           currentObjective: taskPlan.currentObjective,
           taskPhase: taskPlan.taskPhase,
+          sessionWorkingMemoryIncluded: sessionWorkingMemory != null,
         }),
       };
 
@@ -958,8 +1009,11 @@ export class AgentLangGraphRunner {
         plan: taskPlan,
         observations: allToolObservations(state),
         userMessage: input.latestUserMessage,
-        buildMergedObservation: (observations) =>
-          this.mergeObservationsForSummary(observations),
+        buildMergedObservation: () =>
+          this.buildSummarizeObservationFromState(state, {
+            taskPlan,
+            scopedTools: state.scopedTools,
+          }),
       });
       const stepsWithPlan = [...state.steps, planStep];
       await this.updateRun(
@@ -1262,7 +1316,7 @@ export class AgentLangGraphRunner {
       };
     };
 
-    // 节点2：主推理节点。基于当前 observation 决定“直接回答”或“发起 tool_calls”。
+    // 节点2：主推理节点。基于当前的plan，选择工具-或者对结果进行观察。
     const llm = async (state: AgentGraphState): Promise<AgentGraphState> => {
       const graphState = state;
       if (graphState.pendingSummaryObservation) {
@@ -1277,6 +1331,7 @@ export class AgentLangGraphRunner {
         return buildNoIntentSummarizeState(graphState, graphState.steps);
       }
       const graphStateForLlm = graphState;
+      const observationSplit = splitToolObservationsFromState(graphStateForLlm);
       const observationsForLlm = allToolObservations(graphStateForLlm);
       const writeStepReprioritized = reprioritizePlanForPendingWriteStep(
         graphStateForLlm.taskPlan,
@@ -1304,7 +1359,13 @@ export class AgentLangGraphRunner {
           ...graphStateForLlm,
           pendingSummaryObservation: buildPlanSummarizeObservation({
             userMessage: input.latestUserMessage,
-            merged: this.mergeObservationsForSummary(observationsForLlm),
+            summarizeObservation: this.buildSummarizeObservationFromState(
+              graphStateForLlm,
+              {
+                taskPlan: graphStateForLlm.taskPlan,
+                scopedTools: graphStateForLlm.scopedTools,
+              },
+            ),
           }),
         };
       }
@@ -1331,14 +1392,14 @@ export class AgentLangGraphRunner {
         const decision = await this.buildDecisionPrompt(
           input.promptMessages,
           toolsForPrompt,
-          observationsForLlm,
+          observationSplit,
           decisionEnableToolCall,
           promptScope,
           graphStateForLlm.activeSkillPrompt,
         );
         const { messages: invokeMessages, trimMeta } = this.buildLlmInvokeMessages(
           input.promptMessages,
-          observationsForLlm,
+          observationSplit,
           input.latestUserMessage,
           decision.toolSchemaJson,
           decision.toolDecisionPrompt,
@@ -1525,7 +1586,11 @@ export class AgentLangGraphRunner {
           const completion = this.resolveLlmCompletionAfterTools(
             input.latestUserMessage,
             llmText || emptyReply,
-            observationsForLlm,
+            graphStateForLlm,
+            {
+              taskPlan: graphStateForLlm.taskPlan,
+              scopedTools: graphStateForLlm.scopedTools,
+            },
           );
           return {
             ...graphStateForLlm,
@@ -1991,6 +2056,23 @@ export class AgentLangGraphRunner {
             )
           : null;
       const taskPlanNext = planAdvance?.updatedPlan ?? state.taskPlan ?? null;
+      const observationsForCheck = allToolObservations(state);
+      const summaryObservationForAbort =
+        outcome.route === 'summarize'
+          ? resolveSummaryObservationForCheck({
+              reason: outcome.reason,
+              observations: observationsForCheck,
+              savedRoundMeta,
+              mergedObservation:
+                outcome.reason === 'tool_error_summarize' ||
+                outcome.reason === 'tool_error_same_args_repeat'
+                  ? null
+                  : this.buildSummarizeObservationFromState(state, {
+                      taskPlan: taskPlanNext,
+                      scopedTools: state.scopedTools,
+                    }),
+            })
+          : null;
       const abortPlanOnEmptyResults =
         outcome.reason === 'empty_tool_results' && state.taskPlan != null;
       const abortPlanOnDuplicateSummarize =
@@ -2002,11 +2084,32 @@ export class AgentLangGraphRunner {
         outcome.reason === 'plan_tool_step_exhausted' && state.taskPlan != null;
       const abortPlanOnWriteStepExhausted =
         outcome.reason === 'plan_write_step_exhausted' && state.taskPlan != null;
+      const abortPlanOnTerminalToolError = shouldAbortPlanOnTerminalToolError({
+        reason: outcome.reason,
+        errorOutput: summaryObservationForAbort?.output,
+        taskPlan: state.taskPlan,
+      });
+      const abortPlanOnRecoverableSameArgs = shouldAbortPlanOnRecoverableSameArgs(
+        {
+          reason: outcome.reason,
+          taskPlan: state.taskPlan,
+        },
+      );
+      const planAbortedOnToolError =
+        abortPlanOnTerminalToolError || abortPlanOnRecoverableSameArgs;
+      const planAbortedAfterCheck =
+        state.planAborted === true ||
+        abortPlanOnEmptyResults ||
+        abortPlanOnDuplicateSummarize ||
+        abortPlanOnToolStepExhausted ||
+        abortPlanOnWriteStepExhausted ||
+        planAbortedOnToolError;
       const taskPlanAfterCheck =
         abortPlanOnEmptyResults ||
         abortPlanOnDuplicateSummarize ||
         abortPlanOnToolStepExhausted ||
-        abortPlanOnWriteStepExhausted
+        abortPlanOnWriteStepExhausted ||
+        planAbortedOnToolError
           ? null
           : taskPlanNext;
 
@@ -2035,6 +2138,8 @@ export class AgentLangGraphRunner {
           planAbortedDuplicate: abortPlanOnDuplicateSummarize,
           planAbortedToolStepExhausted: abortPlanOnToolStepExhausted,
           planAbortedWriteStepExhausted: abortPlanOnWriteStepExhausted,
+          planAbortedTerminalToolError: abortPlanOnTerminalToolError,
+          planAbortedSameArgsRepeat: abortPlanOnRecoverableSameArgs,
           taskPlanStep: taskPlanAfterCheck?.currentStepId ?? null,
         }),
       };
@@ -2079,19 +2184,23 @@ export class AgentLangGraphRunner {
         effectivePlanAdvance?.route === 'summarize' &&
         !mustRunToolsBeforeSummarize
       ) {
-        const mergedObservation = this.mergeObservationsForSummary(
-          allToolObservations(state),
+        const summarizeObservation = this.buildSummarizeObservationFromState(
+          state,
+          {
+            taskPlan: effectiveTaskPlanNext,
+            scopedTools: state.scopedTools,
+          },
         );
         const summaryObservation =
           resolveSummaryObservationForCheck({
             reason: effectivePlanAdvance.reason,
             observations: allToolObservations(state),
             savedRoundMeta,
-            mergedObservation,
+            mergedObservation: summarizeObservation,
           }) ??
           buildPlanSummarizeObservation({
             userMessage: input.latestUserMessage,
-            merged: mergedObservation,
+            summarizeObservation,
           });
         if (effectivePlanAdvance.reason === 'plan_advance_summarize') {
           emitRouteThink('数据已就绪，正在按任务计划生成结果…\n');
@@ -2188,6 +2297,11 @@ export class AgentLangGraphRunner {
           skillConfig: state.activeSkillConfig,
           skillRiskLevel: state.activeSkillRiskLevel ?? null,
           skillPrompt: state.activeSkillPrompt,
+          sessionWorkingMemory: buildPlanSessionWorkingMemory({
+            goa: sessionGoa,
+            scopedTools: input.tools,
+            preloadedObservations: allToolObservations(state),
+          }),
         };
         const expandedResolvedPlan = await resolveTaskPlan({
           llmService: this.llmService,
@@ -2241,15 +2355,7 @@ export class AgentLangGraphRunner {
           outcome.reason === 'plan_write_step_exhausted';
         const summaryObservation = planStepExhausted
           ? null
-          : resolveSummaryObservationForCheck({
-              reason: outcome.reason,
-              observations: allToolObservations(state),
-              savedRoundMeta,
-              mergedObservation:
-                outcome.reason === 'tool_error_summarize'
-                  ? null
-                  : this.mergeObservationsForSummary(allToolObservations(state)),
-            });
+          : summaryObservationForAbort;
         if (summaryObservation) {
           if (
             outcome.reason === 'duplicate_tool_call_round' ||
@@ -2262,6 +2368,15 @@ export class AgentLangGraphRunner {
             emitRouteThink(
               '查询成功，但未找到符合条件的数据，正在生成说明…\n',
             );
+          } else if (outcome.reason === 'tool_error_same_args_repeat') {
+            emitRouteThink(
+              '参数未调整且与上次失败调用相同，正在生成说明…\n',
+            );
+          } else if (
+            outcome.reason === 'tool_error_summarize' &&
+            planAbortedOnToolError
+          ) {
+            emitRouteThink('工具调用失败，正在生成说明…\n');
           }
           await this.updateRun(
             input.runId,
@@ -2276,6 +2391,7 @@ export class AgentLangGraphRunner {
             pendingToolCalls: [],
             pendingSummaryObservation: summaryObservation,
             lastToolRoundMeta: null,
+            planAborted: planAbortedAfterCheck || undefined,
           };
         }
         const exhaustedFallback =
@@ -2378,12 +2494,23 @@ export class AgentLangGraphRunner {
       }
       if (isWriteConfirmResumeSummaryObservation(pendingObservation)) {
         const payload = pendingObservation.output as WriteConfirmResumeSummaryPayload;
-        const mergedObservation = this.mergeObservationsForSummary(
-          allToolObservations(state),
+        const summarizeObservation = this.buildSummarizeObservationFromState(
+          state,
+          {
+            taskPlan: state.taskPlan,
+            scopedTools: state.scopedTools,
+          },
         );
+        const toolResultsText =
+          summarizeObservation != null &&
+          isSplitToolObservationsOutput(summarizeObservation.output)
+            ? formatSplitToolObservationsForSummarize(summarizeObservation.output)
+            : summarizeObservation != null
+              ? this.stringifyForPrompt(summarizeObservation.output)
+              : undefined;
         const summarized = await this.summarizeWriteConfirmResume(
           payload,
-          mergedObservation?.output,
+          toolResultsText,
           input.promptMessages,
           input.sessionId,
           input.runId,
@@ -2420,16 +2547,23 @@ export class AgentLangGraphRunner {
           finished: true,
         };
       }
+      const primaryObservation = resolvePrimaryObservationForSummarize(
+        pendingObservation.output,
+      );
+      const effectiveToolName =
+        pendingObservation.name === SPLIT_TOOL_OBSERVATIONS_NAME &&
+        primaryObservation
+          ? primaryObservation.name
+          : pendingObservation.name;
       const toolDef = state.scopedTools.find(
-        (tool) => tool.name === pendingObservation.name,
+        (tool) => tool.name === effectiveToolName,
       );
       const toolErrorObs = isAgentToolErrorObservation(pendingObservation.output)
         ? pendingObservation.output
         : null;
       const shouldSummarizeToolErrorWithLlm =
         toolErrorObs != null &&
-        (toolErrorObs.responseSource != null ||
-          isMutationTool(toolDef?.agentMetadata) ||
+        (isMutationTool(toolDef?.agentMetadata) ||
           state.taskPlan?.taskPhase === 'mutate');
       const toolErrorHint = extractToolErrorUserHint(pendingObservation.output);
       if (toolErrorHint && !shouldSummarizeToolErrorWithLlm) {
@@ -2458,10 +2592,13 @@ export class AgentLangGraphRunner {
           ...state,
           steps: nextSteps,
           pendingSummaryObservation: null,
-          taskPlan: finalizePlanAfterSummarize(state.taskPlan),
+          taskPlan: state.planAborted
+            ? null
+            : finalizePlanAfterSummarize(state.taskPlan),
           finalOutput: stored,
           status: AgentRunStatus.success,
           finished: true,
+          planAborted: state.planAborted,
         };
       }
       const planSummarizeUserMessage = resolveSummarizeUserMessageForPlan(
@@ -2469,7 +2606,10 @@ export class AgentLangGraphRunner {
         state.taskPlan,
       );
       const mergedPlanObservation = isPendingPlanAnswerStep(state.taskPlan)
-        ? this.mergeObservationsForSummary(allToolObservations(state))
+        ? this.buildSummarizeObservationFromState(state, {
+            taskPlan: state.taskPlan,
+            scopedTools: state.scopedTools,
+          })
         : null;
       const summarized =
         pendingObservation.name === 'direct_user' ||
@@ -2510,7 +2650,7 @@ export class AgentLangGraphRunner {
                 promptScope,
               )
             : await this.summarizeToolOutputForUser(
-              pendingObservation.name,
+              effectiveToolName,
               toolDef?.description,
               planSummarizeUserMessage,
               pendingObservation.output,
@@ -2576,10 +2716,16 @@ export class AgentLangGraphRunner {
           pendingObservation.name,
         ),
         output: stepPlain,
+        meta: this.resolveSummarizeStepMeta(pendingObservation),
       };
       const nextSteps = [...state.steps, summaryStep];
-      const taskPlanAfterSummarize = finalizePlanAfterSummarize(state.taskPlan);
-      const continuePlan = shouldContinuePlanAfterSummarize(taskPlanAfterSummarize);
+      const taskPlanAfterSummarize = state.planAborted
+        ? null
+        : finalizePlanAfterSummarize(state.taskPlan);
+      const continuePlan =
+        !state.planAborted &&
+        !(toolErrorObs != null && isTerminalPlanToolError(toolErrorObs)) &&
+        shouldContinuePlanAfterSummarize(taskPlanAfterSummarize);
       if (continuePlan) {
         this.sse.emitThink(
           input.sessionId,
@@ -2602,6 +2748,7 @@ export class AgentLangGraphRunner {
         finalOutput: continuePlan ? state.finalOutput : storedSummarized,
         status: continuePlan ? AgentRunStatus.running : AgentRunStatus.success,
         finished: !continuePlan,
+        planAborted: state.planAborted,
       };
     };
     // 图路由：
@@ -2796,11 +2943,21 @@ export class AgentLangGraphRunner {
 
   buildPendingPlanSummaryObservation(
     userMessage: string,
-    observations: ToolObservation[],
+    state: Pick<
+      AgentGraphState,
+      'preloadedToolObservations' | 'toolObservations'
+    >,
+    planContext?: {
+      taskPlan?: TaskPlanSnapshot | null;
+      scopedTools?: AgentGraphState['scopedTools'];
+    },
   ): ToolObservation {
     return buildPlanSummarizeObservation({
       userMessage,
-      merged: this.mergeObservationsForSummary(observations),
+      summarizeObservation: this.buildSummarizeObservationFromState(
+        state,
+        planContext,
+      ),
     });
   }
 
@@ -3040,28 +3197,52 @@ export class AgentLangGraphRunner {
     return '';
   }
 
-  /** 多笔 tool 观测合并为一条，供 summarize / 规则化 table 使用。 */
-  private mergeObservationsForSummary(
+  private filterUsableToolObservations(
     observations: ToolObservation[],
-  ): ToolObservation | null {
-    const usable = observations.filter(
+  ): ToolObservation[] {
+    return observations.filter(
       (row) =>
         row.output != null && !isAgentToolErrorObservation(row.output),
     );
-    if (usable.length === 0) {
+  }
+
+  /** working memory + current run 分块，供 summarize 使用（不再扁平 merge 列表）。 */
+  private buildSummarizeObservationFromState(
+    state: Pick<
+      AgentGraphState,
+      'preloadedToolObservations' | 'toolObservations'
+    >,
+    planContext?: {
+      taskPlan?: TaskPlanSnapshot | null;
+      scopedTools?: AgentGraphState['scopedTools'];
+    },
+  ): ToolObservation | null {
+    const rawSplit = splitToolObservationsFromState(state);
+    const usableSplit: SplitToolObservationsOutput = {
+      workingMemory: this.filterUsableToolObservations(rawSplit.workingMemory),
+      currentRun: this.filterUsableToolObservations(rawSplit.currentRun),
+    };
+    const memoryScope = resolveSummarizeMemoryScope({
+      split: usableSplit,
+      plan: planContext?.taskPlan,
+      scopedTools: planContext?.scopedTools,
+    });
+    const split = applySummarizeMemoryScope(usableSplit, memoryScope);
+    if (split.workingMemory.length === 0 && split.currentRun.length === 0) {
       return null;
     }
-    if (usable.length === 1) {
-      return usable[0];
-    }
-    const tail = usable[usable.length - 1];
+    const primary =
+      resolvePrimaryObservationForSummarize(split) ??
+      split.currentRun[split.currentRun.length - 1] ??
+      split.workingMemory[split.workingMemory.length - 1];
     return {
-      name: 'merged_tool_results',
-      output: mergeToolOutputsForSummary(usable.map((row) => row.output)),
-      quality: 'high',
-      fieldLabels: tail.fieldLabels,
-      fieldDescriptions: tail.fieldDescriptions,
-      enumLabelsByPath: tail.enumLabelsByPath,
+      name: SPLIT_TOOL_OBSERVATIONS_NAME,
+      output: split,
+      quality: primary?.quality ?? 'high',
+      fieldLabels: primary?.fieldLabels,
+      fieldDescriptions: primary?.fieldDescriptions,
+      enumLabelsByPath: primary?.enumLabelsByPath,
+      llmPayload: primary?.llmPayload,
     };
   }
 
@@ -3069,11 +3250,21 @@ export class AgentLangGraphRunner {
   private resolveLlmCompletionAfterTools(
     userMessage: string,
     llmText: string,
-    observations: ToolObservation[],
+    state: Pick<
+      AgentGraphState,
+      'preloadedToolObservations' | 'toolObservations'
+    >,
+    planContext?: {
+      taskPlan?: TaskPlanSnapshot | null;
+      scopedTools?: AgentGraphState['scopedTools'];
+    },
   ): { observation: ToolObservation } | null {
-    const merged = this.mergeObservationsForSummary(observations);
-    if (merged) {
-      return { observation: merged };
+    const summarizeObservation = this.buildSummarizeObservationFromState(
+      state,
+      planContext,
+    );
+    if (summarizeObservation) {
+      return { observation: summarizeObservation };
     }
     const draft = llmText.trim();
     if (!draft) {
@@ -3267,6 +3458,19 @@ export class AgentLangGraphRunner {
     return observationName;
   }
 
+  private resolveSummarizeStepMeta(
+    observation: ToolObservation,
+  ): AgentRunStep['meta'] | undefined {
+    if (!isSplitToolObservationsOutput(observation.output)) {
+      return undefined;
+    }
+    const memoryScope = observation.output.memoryScope;
+    if (!memoryScope) {
+      return undefined;
+    }
+    return { memoryScope };
+  }
+
   private resolveSummarizePromptKey(input: {
     taskPlan: TaskPlanSnapshot | null | undefined;
     fullDetail: boolean;
@@ -3300,8 +3504,15 @@ export class AgentLangGraphRunner {
     agentMetadata?: unknown,
     executedArgs?: Record<string, unknown>,
   ): Promise<string> {
+    const splitOutput = isSplitToolObservationsOutput(output) ? output : null;
+    const primaryObservation = splitOutput
+      ? resolvePrimaryObservationForSummarize(splitOutput)
+      : null;
+    const primaryOutput = primaryObservation?.output ?? output;
     const fullDetail = isUserRequestingFullDetail(userMessage);
-    const toolErrorObs = isAgentToolErrorObservation(output) ? output : null;
+    const toolErrorObs = isAgentToolErrorObservation(primaryOutput)
+      ? primaryOutput
+      : null;
     const summarizeScenario =
       isMutationTool(agentMetadata) ||
       classifySummarizeScenario(userMessage) === 'action'
@@ -3309,7 +3520,10 @@ export class AgentLangGraphRunner {
         : ('read' as const);
     const planContext = formatPlanContextForSummarize(taskPlan);
 
-    const serialized = this.stringifyForPrompt(output);
+    const serialized = this.stringifyForPrompt(primaryOutput);
+    const splitObservationsText = splitOutput
+      ? formatSplitToolObservationsForSummarize(splitOutput)
+      : null;
     const fieldLabelText = formatFieldLabelsForPrompt(
       fieldLabels,
       enumLabelsByPath,
@@ -3320,7 +3534,7 @@ export class AgentLangGraphRunner {
         message.role === 'system' && message.content.includes('<agent_prompt>'),
     );
     const ruleBlocks = buildRuleBasedMessageBlocks({
-      output,
+      output: primaryOutput,
       userMessage,
       fieldLabels,
     });
@@ -3350,7 +3564,7 @@ export class AgentLangGraphRunner {
       toolErrorObs?.responseSource != null
         ? formatResponseSourceForDisplay(toolErrorObs.responseSource)
         : '';
-    const mapReduceFetchNote = formatMapReduceFetchStatusNote(output);
+    const mapReduceFetchNote = formatMapReduceFetchStatusNote(primaryOutput);
     summarizeMessages.push({
       role: 'user',
       content: [
@@ -3376,14 +3590,16 @@ export class AgentLangGraphRunner {
         downstreamSourceText
           ? `Downstream response (source data — base your answer on this, include key fields in the user message):\n${downstreamSourceText}`
           : null,
-        `Tool result: ${serialized}`,
+        splitObservationsText
+          ? `Tool observations (prefer current_run_observations for the latest request):\n${splitObservationsText}`
+          : `Tool result: ${serialized}`,
       ]
         .filter((line): line is string => line != null && line.length > 0)
         .join('\n'),
     });
     const fallbackPlainText = this.buildSummarizeFallbackPlainText(
       toolName,
-      output,
+      primaryOutput,
       ruleBlocks,
     );
 

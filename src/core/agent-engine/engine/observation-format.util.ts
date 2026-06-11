@@ -2,6 +2,7 @@ import {
   extractToolErrorUserHint,
   isAgentToolErrorObservation,
 } from './agent-run-user-messages.util';
+import type { ToolObservation } from './main/agent-engine.types';
 import { isEmptyListToolObservation } from './tool/tool-observation.util';
 import { resolveDefaultListArrayLimit } from '../../tool-engine/tool-pagination-params.util';
 import {
@@ -11,10 +12,14 @@ import {
 } from './gather/list-map-reduce.util';
 import { MAP_REDUCE_OUTPUT_KEY } from './gather/list-map-reduce.types';
 
+export type ObservationPromptSource = 'session' | 'current_run';
+
 export type LlmObservationPayload = {
   tool: string;
   /** 本 turn 内已执行过该 tool_call */
   executed: boolean;
+  /** session = GOA 预载；current_run = 本 run 新增 */
+  source?: ObservationPromptSource;
   /** 本次调用使用的参数（精简后），便于模型避免重复 tool_calls */
   args?: Record<string, unknown>;
   /** 给决策模型的复用说明 */
@@ -25,11 +30,29 @@ export type LlmObservationPayload = {
   error?: string;
 };
 
+export type SummarizeMemoryScopeMeta = {
+  primarySource: 'current_run' | 'working_memory' | 'both' | 'none';
+  reason: string;
+  filterMiss?: boolean;
+  workingMemoryCount: number;
+  currentRunCount: number;
+};
+
+export type SplitToolObservationsOutput = {
+  workingMemory: ToolObservation[];
+  currentRun: ToolObservation[];
+  memoryScope?: SummarizeMemoryScopeMeta;
+};
+
+export const SPLIT_TOOL_OBSERVATIONS_NAME = 'split_tool_observations';
+
 const OBSERVATION_ARG_SKIP = new Set(['vo', 'X-SHOP-ID', 'page', 'size', 'sort']);
 const OBSERVATION_REUSE_NOTE_SUCCESS =
   'This tool already succeeded with the args shown. Do not call it again with the same arguments; answer from this observation.';
 const OBSERVATION_REUSE_NOTE_ERROR =
   'This tool already failed with the args shown. Do not repeat the same call; adjust parameters or use observations.';
+const OBSERVATION_REUSE_NOTE_SESSION =
+  'Preloaded from session working memory. Prefer current_run_observations for the same tool+args when answering the latest request.';
 
 export function compactArgsForObservation(
   args: Record<string, unknown> | undefined,
@@ -57,14 +80,23 @@ export function compactArgsForObservation(
 function buildObservationEnvelope(input: {
   output: unknown;
   args?: Record<string, unknown>;
-}): Pick<LlmObservationPayload, 'executed' | 'args' | 'reuseNote'> {
+  source?: ObservationPromptSource;
+}): Pick<LlmObservationPayload, 'executed' | 'args' | 'reuseNote' | 'source'> {
   const compactArgs = compactArgsForObservation(input.args);
+  const isError = isAgentToolErrorObservation(input.output);
+  const reuseNote =
+    input.source === 'session'
+      ? isError
+        ? OBSERVATION_REUSE_NOTE_ERROR
+        : OBSERVATION_REUSE_NOTE_SESSION
+      : isError
+        ? OBSERVATION_REUSE_NOTE_ERROR
+        : OBSERVATION_REUSE_NOTE_SUCCESS;
   return {
     executed: true,
+    ...(input.source ? { source: input.source } : {}),
     ...(compactArgs ? { args: compactArgs } : {}),
-    reuseNote: isAgentToolErrorObservation(input.output)
-      ? OBSERVATION_REUSE_NOTE_ERROR
-      : OBSERVATION_REUSE_NOTE_SUCCESS,
+    reuseNote,
   };
 }
 
@@ -254,11 +286,13 @@ export function formatObservationForLlm(input: {
   output: unknown;
   fieldLabels?: Record<string, string>;
   args?: Record<string, unknown>;
+  source?: ObservationPromptSource;
 }): LlmObservationPayload {
   const fieldLabels = input.fieldLabels ?? {};
   const envelope = buildObservationEnvelope({
     output: input.output,
     args: input.args,
+    source: input.source,
   });
 
   if (isAgentToolErrorObservation(input.output)) {
@@ -418,6 +452,15 @@ export function serializeObservationsBlock(
   return JSON.stringify(dedupeObservationPayloads(payloads), null, 0);
 }
 
+export function observationCallSignature(
+  payload: Pick<LlmObservationPayload, 'tool' | 'args'>,
+): string {
+  return JSON.stringify({
+    tool: payload.tool,
+    args: payload.args ?? null,
+  });
+}
+
 function observationPayloadSignature(payload: LlmObservationPayload): string {
   return JSON.stringify({
     tool: payload.tool,
@@ -426,6 +469,135 @@ function observationPayloadSignature(payload: LlmObservationPayload): string {
     summary: payload.summary ?? null,
     recordIds: (payload.records ?? []).map((row) => String(row.id ?? '')),
   });
+}
+
+export function toolObservationsToPayloads(
+  observations: ToolObservation[],
+  source?: ObservationPromptSource,
+): LlmObservationPayload[] {
+  return observations.map((observation) => {
+    const existing = observation.llmPayload;
+    const payload =
+      existing ??
+      formatObservationForLlm({
+        toolName: observation.name,
+        output: observation.output,
+        fieldLabels: observation.fieldLabels,
+        source,
+      });
+    if (!source || payload.source === source) {
+      return payload;
+    }
+    const reuseNote =
+      source === 'session'
+        ? payload.success === false
+          ? OBSERVATION_REUSE_NOTE_ERROR
+          : OBSERVATION_REUSE_NOTE_SESSION
+        : payload.reuseNote;
+    return { ...payload, source, reuseNote };
+  });
+}
+
+/** current_run 与 working memory 同工具同参时，去掉 session 侧冗余项。 */
+export function filterWorkingMemorySupersededByCurrentRun(
+  workingMemory: LlmObservationPayload[],
+  currentRun: LlmObservationPayload[],
+): LlmObservationPayload[] {
+  const currentSignatures = new Set(
+    currentRun.map((row) => observationCallSignature(row)),
+  );
+  return workingMemory.filter(
+    (row) => !currentSignatures.has(observationCallSignature(row)),
+  );
+}
+
+export function formatSplitObservationsPromptBlock(input: {
+  workingMemory: LlmObservationPayload[];
+  currentRun: LlmObservationPayload[];
+}): string {
+  const working = dedupeObservationPayloads(
+    filterWorkingMemorySupersededByCurrentRun(
+      input.workingMemory,
+      input.currentRun,
+    ),
+  );
+  const current = dedupeObservationPayloads(input.currentRun);
+  const parts: string[] = [
+    'Answer the latest request from current_run_observations first; working_memory_observations is session context only.',
+  ];
+  parts.push(
+    `<working_memory_observations>\n${working.length > 0 ? serializeObservationsBlock(working) : '[]'}\n</working_memory_observations>`,
+  );
+  parts.push(
+    `<current_run_observations>\n${current.length > 0 ? serializeObservationsBlock(current) : '[]'}\n</current_run_observations>`,
+  );
+  return parts.join('\n');
+}
+
+export function isSplitToolObservationsOutput(
+  output: unknown,
+): output is SplitToolObservationsOutput {
+  if (output == null || typeof output !== 'object' || Array.isArray(output)) {
+    return false;
+  }
+  const row = output as Record<string, unknown>;
+  return Array.isArray(row.workingMemory) && Array.isArray(row.currentRun);
+}
+
+function readScopedObservations(
+  output: SplitToolObservationsOutput,
+  source: 'current_run' | 'working_memory',
+): ToolObservation[] {
+  const scoped =
+    output.memoryScope?.primarySource === 'current_run'
+      ? output.currentRun
+      : output.memoryScope?.primarySource === 'working_memory'
+        ? output.workingMemory
+        : null;
+  if (scoped != null) {
+    return scoped;
+  }
+  return source === 'current_run' ? output.currentRun : output.workingMemory;
+}
+
+export function formatSplitToolObservationsForSummarize(
+  output: SplitToolObservationsOutput,
+): string {
+  return formatSplitObservationsPromptBlock({
+    workingMemory: toolObservationsToPayloads(
+      output.workingMemory,
+      'session',
+    ),
+    currentRun: toolObservationsToPayloads(output.currentRun, 'current_run'),
+  });
+}
+
+/** summarize 规则化 table：尊重 memoryScope，否则 current_run 优先。 */
+export function resolvePrimaryObservationForSummarize(
+  output: unknown,
+): ToolObservation | null {
+  if (!isSplitToolObservationsOutput(output)) {
+    return null;
+  }
+  const primarySource = output.memoryScope?.primarySource;
+  if (primarySource === 'none') {
+    return null;
+  }
+  if (primarySource === 'working_memory') {
+    const scoped = readScopedObservations(output, 'working_memory');
+    return scoped[scoped.length - 1] ?? null;
+  }
+  if (primarySource === 'current_run') {
+    const scoped = readScopedObservations(output, 'current_run');
+    return scoped[scoped.length - 1] ?? null;
+  }
+  if (output.currentRun.length > 0) {
+    return output.currentRun[output.currentRun.length - 1] ?? null;
+  }
+  if (output.workingMemory.length > 0) {
+    return output.workingMemory[output.workingMemory.length - 1] ?? null;
+  }
+  return null;
 }
 
 export function isSameObservationPayload(

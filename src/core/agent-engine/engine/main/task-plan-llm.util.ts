@@ -114,26 +114,26 @@ function buildPlanLlmUserPayload(input: ResolveTaskPlanInput): string {
   const excerpt = skillPrompt
     ? skillPrompt.slice(0, readPlanSkillPromptExcerptChars())
     : null;
-  return JSON.stringify(
-    {
-      userMessage: input.userMessage.trim(),
-      skill: input.skillApplied
-        ? {
-            name: input.skillName ?? null,
-            description: input.skillDescription ?? null,
-            promptExcerpt: excerpt,
-          }
-        : null,
-      scopedTools: input.scopedToolSummaries.map((tool) => ({
-        name: tool.name,
-        role: tool.role,
-      })),
-      configuredDeliverable:
-        parseSkillPlanConfig(input.skillConfig).deliverable ?? null,
-    },
-    null,
-    2,
-  );
+  const payload: Record<string, unknown> = {
+    userMessage: input.userMessage.trim(),
+    skill: input.skillApplied
+      ? {
+          name: input.skillName ?? null,
+          description: input.skillDescription ?? null,
+          promptExcerpt: excerpt,
+        }
+      : null,
+    scopedTools: input.scopedToolSummaries.map((tool) => ({
+      name: tool.name,
+      role: tool.role,
+    })),
+    configuredDeliverable:
+      parseSkillPlanConfig(input.skillConfig).deliverable ?? null,
+  };
+  if (input.sessionWorkingMemory) {
+    payload.sessionWorkingMemory = input.sessionWorkingMemory;
+  }
+  return JSON.stringify(payload, null, 2);
 }
 
 function tryParseJsonObject(value: string): Record<string, unknown> | null {

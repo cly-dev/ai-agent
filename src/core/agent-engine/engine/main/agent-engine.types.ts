@@ -59,6 +59,14 @@ export type AgentRunStep = {
     /** HTTP 请求路径与各 `in` 参数分布（header / path / query / body）。 */
     httpRequest?: ToolHttpRequestLayout;
     responseSource?: unknown;
+    /** 规则版 reflect_memory：summarize 采用的 obs 范围。 */
+    memoryScope?: {
+      primarySource: string;
+      reason: string;
+      filterMiss?: boolean;
+      workingMemoryCount?: number;
+      currentRunCount?: number;
+    };
   };
 };
 
@@ -155,6 +163,8 @@ export type AgentGraphState = {
   } | null;
   /** 本 turn 引擎驱动分页 HTTP 累计次数（expand/resume loop）。 */
   pagedListHttpUsed?: number;
+  /** Plan 因工具终态失败或 400 同参重试耗尽而中止；写入 GOA 时清除 activeTask。 */
+  planAborted?: boolean;
 };
 
 export type AgentLangGraphRunInput = {

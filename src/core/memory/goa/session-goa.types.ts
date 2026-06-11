@@ -51,6 +51,8 @@ export type ObservationEntry = {
   name: string;
   output: unknown;
   createdAt: string;
+  /** tool call 参数快照，用于会话 ledger 去重。 */
+  args?: Record<string, unknown>;
 };
 
 /** 可 JSON 序列化的 Plan（与 TaskPlanSnapshot 互转，唯一持久化形态）。 */
@@ -109,6 +111,8 @@ export type SessionGoaPayload = {
   sessionId: string;
   recentEpisodes: TurnEpisode[];
   sessionArtifacts: SessionArtifact[];
+  /** 跨 turn 工具观测账本（任务结束后仍保留，供 preloadedToolObservations）。 */
+  sessionObservationLedger: ObservationEntry[];
   activeTask: ActiveTask | null;
   /** 会话级实体（如 xShopId），非冗余 working memory。 */
   entities: Record<string, unknown>;
@@ -138,7 +142,11 @@ export type SessionMemoryUpdateContext = {
   userInput: string;
   finalOutput: string;
   /** 本 run 新增的工具观测（不含图预载）。 */
-  newToolObservations: Array<{ name: string; output: unknown }>;
+  newToolObservations: Array<{
+    name: string;
+    output: unknown;
+    args?: Record<string, unknown>;
+  }>;
   runSteps?: SessionMemoryRunStep[];
   storedTaskPlan?: StoredTaskPlan | null;
   runStatus?: 'success' | 'failed';
@@ -146,6 +154,8 @@ export type SessionMemoryUpdateContext = {
   /** 写确认暂停：只更新 activeTask，不写 episode。 */
   phase?: SessionMemoryUpdatePhase;
   awaitingWriteConfirmation?: boolean;
+  /** 工具终态失败 / 同参重试耗尽：清除会话内未完成 activeTask。 */
+  abandonActiveTask?: boolean;
 };
 
 export function createEmptySessionGoaPayload(sessionId: string): SessionGoaPayload {
@@ -153,9 +163,22 @@ export function createEmptySessionGoaPayload(sessionId: string): SessionGoaPaylo
     sessionId,
     recentEpisodes: [],
     sessionArtifacts: [],
+    sessionObservationLedger: [],
     activeTask: null,
     entities: {},
     updatedAt: new Date().toISOString(),
+  };
+}
+
+/** 读 DB / 缓存后补齐新字段，兼容旧 payload。 */
+export function normalizeSessionGoaPayload(
+  payload: SessionGoaPayload,
+): SessionGoaPayload {
+  return {
+    ...payload,
+    sessionObservationLedger: Array.isArray(payload.sessionObservationLedger)
+      ? payload.sessionObservationLedger
+      : [],
   };
 }
 
@@ -168,6 +191,8 @@ export function isSessionGoaPayload(value: unknown): value is SessionGoaPayload 
     typeof row.sessionId === 'string' &&
     Array.isArray(row.recentEpisodes) &&
     Array.isArray(row.sessionArtifacts) &&
+    (row.sessionObservationLedger === undefined ||
+      Array.isArray(row.sessionObservationLedger)) &&
     (row.activeTask === null ||
       (typeof row.activeTask === 'object' && row.activeTask !== null)) &&
     typeof row.entities === 'object' &&

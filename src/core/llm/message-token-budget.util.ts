@@ -60,7 +60,11 @@ function isToolResultMessage(message: LlmChatMessage): boolean {
 }
 
 function isObservationsBlockMessage(message: LlmChatMessage): boolean {
-  return message.content.includes('<observations>');
+  return (
+    message.content.includes('<working_memory_observations>') ||
+    message.content.includes('<current_run_observations>') ||
+    message.content.includes('<observations>')
+  );
 }
 
 function isToolSchemaBlockMessage(message: LlmChatMessage): boolean {

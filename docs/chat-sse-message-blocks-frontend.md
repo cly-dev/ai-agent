@@ -167,7 +167,7 @@ es.addEventListener('error', (e) => onError(JSON.parse(e.data)));
 }
 ```
 
-**一次性文本**：若本轮 **没有** 收到过 `delta`，可将该 `text` 设为正文；若已有 `delta` 拼接结果，**忽略** 或与 delta 结果一致时跳过，避免重复。
+**一次性文本**：若本轮 **没有** 收到过 `delta`，将该 `text` 设为正文。若已有 `delta`，**以本条 `full` 的 blocks 为准覆盖**本轮槽位（与落库 `content` 一致），不要继续追加 delta。
 
 ---
 

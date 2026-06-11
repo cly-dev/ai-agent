@@ -51,16 +51,17 @@ Output (native tool_calls):
 - No tool needed → brief message content + empty tool_calls.
 - Never emit NO_TOOL_REQUIRED / SELECT_TOOL / MISSING_FIELDS as plain text.
 
-Observations (<observations>):
-- Each item: executed=true, args, reuseNote — completed in this turn or preloaded from session.
-- Reuse observations first; do not repeat the same tool with the same args.
-- READ: if required fields are already in observations → empty tool_calls.
+Observations (split blocks):
+- <working_memory_observations>: session GOA ledger — prior turns; background only.
+- <current_run_observations>: tools executed in THIS run; primary source for the current step.
+- Prefer current_run_observations when both blocks have the same tool+args; do not repeat successful current_run calls.
+- READ: if required fields are already in current_run_observations → empty tool_calls; else check working_memory only when current_run is empty.
 - summary.total alone is not a reason to re-fetch — check whether records already satisfy the filter.
 
 Parameter sources (in priority order):
 1. User frame: <current_objective> / <current_user_request> / <user_intent>
-2. <observations> tool outputs
-3. Session GOA blocks when present: <session_entities>, <active_task>, <artifact_summaries>, <recent_episodes>
+2. <current_run_observations>, then <working_memory_observations>
+3. Session GOA blocks when present (full session snapshot, coverage=full_session_goa): <session_goa_coverage>, <recent_episodes>, <artifact_summaries>, <observation_inventory>, <active_task>, <session_entities>
 - Never fabricate IDs, shop headers, or filters.
 - Map conditions via <tool_schema> paramHints / inputSchema; missing required fields → ask concisely.
 
@@ -131,6 +132,18 @@ detail: gather read-detail (read-list first only if id unknown) → answer summa
 mutation: required reads → write tool → summarize; never skip write when write role exists and user_intent requires submission.
 answer: summarize only, or gather + summarize when a read tool is required.
 
+## Session working memory (when sessionWorkingMemory is present)
+
+sessionWorkingMemory.coverage is full_session_goa: all episodes, artifacts, and observation ledger entries currently stored for this session (caps in storageLimits match SESSION_MEMORY_MAX_* env). This is NOT a random sample — use it as the authoritative session context.
+
+- Read episodes + artifacts + observationInventory + activeTask together to understand prior goals, outcomes, and fetched data.
+- Use satisfiedToolRoles as deterministic hints: roles listed are already satisfied by preloaded observations for the current scoped tools.
+- If satisfiedToolRoles includes a role and userMessage does not require new filters or a different dataset, do NOT plan another gather/tool step for that role — plan analyze/summarize or answer only.
+- If a recent episode outcome indicates failure or empty results, plan adjusted gather or clarify — do not assume prior data is usable.
+- Never invent IDs, shop headers, or filters from memory; missing required params still need gather or user clarification.
+- When userMessage clearly requests fresh data with new filters, you MAY plan gather again even if satisfiedToolRoles lists the role.
+- Prefer reusing session data to avoid redundant tool steps the runtime would skip anyway.
+
 ## General rules
 - kind=tool: toolRole must match a role in scopedTools (never invent tools).
 - objective: short English for the ReAct module — what to do and what NOT to repeat.
@@ -158,6 +171,7 @@ ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN}`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_READ]: `You are summarizing a READ-ONLY tool result for the user.
 Output {"blocks":[...]} per platform.message_blocks_spec (not plain prose only).
+When Tool observations include <current_run_observations> and <working_memory_observations>, answer from current_run first; working_memory is session context only.
 When <plan_context> is present, treat its current step objective as the primary instruction.
 Infer from User request what blocks are needed — text explanation, table for rows, metric for totals, alert for risks.
 When Suggested rule-based blocks already include table/chart, keep those for facts and add non-duplicative blocks for remaining goals.
@@ -212,6 +226,7 @@ loading: { type, id, hint? }（SSE 占位；后续 action=patch 按 replaceId �
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS]: `你是助手回复的 Message Blocks 编排器。
 根据用户问题与工具结果（或闲聊语境），输出 {"blocks":[...]}，严格遵循 platform.message_blocks_spec。
+当 user 消息含 <current_run_observations> 与 <working_memory_observations> 时，以 current_run 为作答依据，working_memory 仅作会话背景。
 当 user 消息含 <plan_context> 时，以其中 Current step objective 为主指令；summarize 步只交付本步结果，不替代 write 步。
 规则：
 - 只输出合法 blocks（由结构化接口承载，勿输出 Markdown 代码围栏或解释）
@@ -226,7 +241,7 @@ ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
   [PROMPT_KEYS.MEMORY_HISTORY_COMPRESSION]: `你是多轮对话历史压缩器。将较早的对话整理成简洁中文摘要，供后续轮次参考（注入 <session_history_summary>）。
 保留：用户目标、已确认事实、商品/订单等实体 ID、工具调用结论、未解决问题。
 丢弃：寒暄、重复、冗长 JSON、已过时且与当前任务无关的细节。
-若提供 GOA 上下文（<recent_episodes> / <active_task> / artifact 摘要），其为权威任务结论：历史摘要不得否定、推翻或与其中矛盾。
+若提供 GOA 上下文（<session_goa_coverage> / <recent_episodes> / <active_task> / <artifact_summaries> / <observation_inventory>），其为权威任务结论：历史摘要不得否定、推翻或与其中矛盾。
 只输出摘要正文，不要 Markdown 标题，不要 JSON，不要输出思考过程。
 若提供「已有摘要」，在其基础上合并更新，不要重复堆砌。`,
 

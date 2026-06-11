@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AgentRunRole, AgentRunStatus } from '../../../../generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { appendSessionObservationLedger } from './session-goa-ledger.util';
 import { appendEpisodeFifo } from './session-goa-projection.util';
 import {
+  extractObservationLogFromRunSteps,
   replayActiveTaskFromRuns,
   type ReplayRunRow,
 } from './session-goa-replay.util';
@@ -177,9 +179,22 @@ export class SessionGoaReplayService {
       return null;
     }
 
+    let sessionObservationLedger = payload.sessionObservationLedger ?? [];
+    for (const run of runs) {
+      sessionObservationLedger = appendSessionObservationLedger(
+        sessionObservationLedger,
+        extractObservationLogFromRunSteps({
+          turnId: run.turnId,
+          runId: run.id,
+          steps: run.steps,
+        }),
+      );
+    }
+
     payload = {
       ...payload,
       activeTask,
+      sessionObservationLedger,
     };
     this.logger.log(
       `replayed GOA from agent runs sessionId=${sessionId} episodes=${payload.recentEpisodes.length} activeTask=${activeTask != null}`,

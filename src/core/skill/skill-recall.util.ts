@@ -74,23 +74,105 @@ export function readSkillProgressiveRecallMaxCandidates(): number {
   return Number.isFinite(value) && value > 0 ? value : 5;
 }
 
+export function readSkillNameKeywordWeight(): number {
+  const raw = process.env.SKILL_NAME_KEYWORD_WEIGHT?.trim();
+  const value = raw ? Number.parseFloat(raw) : 3;
+  return Number.isFinite(value) && value > 0 ? value : 3;
+}
+
+export function readSkillDescKeywordWeight(): number {
+  const raw = process.env.SKILL_DESC_KEYWORD_WEIGHT?.trim();
+  const value = raw ? Number.parseFloat(raw) : 1;
+  return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+/** 向量分上对 skill 标题（name/capabilityKey）关键词命中的最大加成（0~1 封顶前）。 */
+export function readSkillVectorNameBoostMax(): number {
+  const raw = process.env.SKILL_VECTOR_NAME_BOOST?.trim();
+  const value = raw ? Number.parseFloat(raw) : 0.15;
+  return Number.isFinite(value) && value >= 0 ? value : 0.15;
+}
+
+export function buildSkillTitleHay(skill: {
+  name: string;
+  capabilityKey?: string | null;
+}): string {
+  return [skill.name.trim(), skill.capabilityKey?.trim() ?? '']
+    .filter((part) => part.length > 0)
+    .join(' ')
+    .toLowerCase();
+}
+
+/** 用户 query 分词在 skill 标题字段中的加权命中率 [0,1]。 */
+export function computeSkillTitleTokenHitRate(
+  query: string,
+  skill: { name: string; capabilityKey?: string | null },
+): number {
+  const tokens = tokenizeKeywordQuery(query);
+  if (tokens.length === 0) {
+    return 0;
+  }
+  const titleHay = buildSkillTitleHay(skill);
+  let hits = 0;
+  for (const token of tokens) {
+    if (titleHay.includes(token)) {
+      hits += 1;
+    }
+  }
+  return hits / tokens.length;
+}
+
 export function keywordSkillRecallScore(
   query: string,
   skill: SkillRecallCandidate,
   stage: SkillRecallStage = 'router',
 ): number {
-  const hay = buildSkillRecallEmbedText(skill, stage).toLowerCase();
   const tokens = tokenizeKeywordQuery(query);
   if (tokens.length === 0) {
     return 0;
   }
-  let hits = 0;
+  const nameWeight = readSkillNameKeywordWeight();
+  const descWeight = readSkillDescKeywordWeight();
+  const titleHay = buildSkillTitleHay(skill);
+  const descHay = (skill.description?.trim() ?? '').toLowerCase();
+  const bodyHay =
+    stage === 'prompt_excerpt'
+      ? buildSkillRecallEmbedText(skill, stage).toLowerCase()
+      : '';
+
+  let weightedHits = 0;
+  let maxPossible = 0;
   for (const token of tokens) {
-    if (hay.includes(token)) {
-      hits += 1;
+    maxPossible += nameWeight;
+    if (titleHay.includes(token)) {
+      weightedHits += nameWeight;
+    } else if (descHay.includes(token)) {
+      weightedHits += descWeight;
+    } else if (bodyHay.includes(token)) {
+      weightedHits += descWeight * 0.5;
     }
   }
-  return hits / tokens.length;
+  return maxPossible > 0 ? weightedHits / maxPossible : 0;
+}
+
+/** 向量召回后对标题关键词命中施加加分，再重新排序。 */
+export function applySkillTitleBoostToRanked(
+  ranked: SkillRankedRow[],
+  titleQuery: string,
+): SkillRankedRow[] {
+  const boostMax = readSkillVectorNameBoostMax();
+  if (boostMax <= 0 || !titleQuery.trim()) {
+    return ranked;
+  }
+  return ranked
+    .map((row) => {
+      const hitRate = computeSkillTitleTokenHitRate(titleQuery, row.skill);
+      return {
+        ...row,
+        score: Math.min(1, row.score + boostMax * hitRate),
+      };
+    })
+    .sort((a, b) => b.score - a.score);
 }
 
 export function rankSkillsByKeyword(

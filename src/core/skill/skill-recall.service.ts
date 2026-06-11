@@ -3,8 +3,10 @@ import { LlmService } from '../llm/llm.service';
 import { IntentRecallConfigService } from '../intent/intent-recall-config.service';
 import { detectIntentKind } from '../agent-engine/intent-kind.util';
 import { loadSmallTalkHints } from '../intent/smalltalk-hints.util';
+import { cosineSimilarity } from '../intent/vector.util';
 import type { SkillRecallStageAttempt } from './skill.types';
 import {
+  applySkillTitleBoostToRanked,
   buildSkillRecallEmbedText,
   isSkillProgressiveRecallEnabled,
   pickConfidentSkillTop,
@@ -21,6 +23,16 @@ import type {
   SkillRecallCandidate,
   SkillRecallStage,
 } from './skill-recall.util';
+import type { SkillRecallSessionContext } from './skill.types';
+import {
+  buildSkillRecallQuery,
+  contextualRecallLiftSufficient,
+  lastEpisodeGoal,
+  readSkillRecallContextMode,
+  readSkillRecallContextTopicMinSim,
+  shouldAttemptContextualSkillRecall,
+  type SkillRecallContextGateReason,
+} from './skill-recall-session.util';
 
 type CachedSkillVector = {
   fingerprint: string;
@@ -35,12 +47,27 @@ type StageRecallResult = {
   minScore: number;
 };
 
+type ProgressiveRecallResult = {
+  top: SkillRankedRow | null;
+  ranked: SkillRankedRow[];
+  source: 'vector' | 'keyword' | 'none';
+  recallStage: SkillRecallStage | null;
+  stageAttempts: SkillRecallStageAttempt[];
+};
+
 export type SkillTopRecallResult = {
   top: SkillRankedRow | null;
   ranked: SkillRankedRow[];
   source: 'vector' | 'keyword' | 'none';
   recallStage: SkillRecallStage | null;
   stageAttempts: SkillRecallStageAttempt[];
+  recallQuery: string;
+  sessionContextUsed: boolean;
+  recallPhase: 'solo' | 'contextual';
+  soloTopScore: number | null;
+  contextualTopScore: number | null;
+  contextLift: number | null;
+  contextGateReason: SkillRecallContextGateReason | null;
 };
 
 @Injectable()
@@ -53,28 +80,47 @@ export class SkillRecallService {
     private readonly intentRecallConfig: IntentRecallConfigService,
   ) {}
 
-  /** L0 路由召回；L0 miss 且候选不多时 L1 prompt 摘要二次召回。 */
+  /**
+   * 两阶段召回（默认）：
+   * Stage A solo（仅本轮）→ 命中即返回；
+   * Stage B contextual（短句 + 有上轮 episode + 同话题 + lift 够）→ 再召回。
+   */
   async recallTopSkill(
     candidates: SkillRecallCandidate[],
     userMessage: string,
+    sessionContext?: SkillRecallSessionContext | null,
   ): Promise<SkillTopRecallResult> {
-    const query = userMessage.trim();
-    const empty: SkillTopRecallResult = {
+    const latest = userMessage.trim();
+    const contextMode = readSkillRecallContextMode();
+
+    const empty = (
+      overrides: Partial<SkillTopRecallResult> = {},
+    ): SkillTopRecallResult => ({
       top: null,
       ranked: [],
       source: 'none',
       recallStage: null,
       stageAttempts: [],
-    };
-    if (candidates.length === 0 || !query) {
-      return empty;
+      recallQuery: latest,
+      sessionContextUsed: false,
+      recallPhase: 'solo',
+      soloTopScore: null,
+      contextualTopScore: null,
+      contextLift: null,
+      contextGateReason: null,
+      ...overrides,
+    });
+
+    if (candidates.length === 0 || !latest) {
+      return empty();
     }
-    const intentKind = detectIntentKind(query, loadSmallTalkHints());
-    if (shouldSkipSkillRecallForQuery(query, intentKind)) {
+
+    const intentKind = detectIntentKind(latest, loadSmallTalkHints());
+    if (shouldSkipSkillRecallForQuery(latest, intentKind)) {
       this.logger.debug(
-        `skill recall skipped query="${query}" intentKind=${intentKind}`,
+        `skill recall skipped query="${latest}" intentKind=${intentKind}`,
       );
-      return empty;
+      return empty();
     }
 
     const recallSettings = await this.intentRecallConfig.get();
@@ -86,15 +132,212 @@ export class SkillRecallService {
       await this.llmService.isEmbeddingConfigured(),
     );
 
+    if (contextMode === 'always') {
+      const legacy = buildSkillRecallQuery({
+        userMessage: latest,
+        session: sessionContext,
+        mode: 'contextual',
+      });
+      const legacyResult = await this.runProgressiveRecall(
+        candidates,
+        legacy.query,
+        latest,
+        vectorMinScore,
+        keywordMinScore,
+        recallMode.useVector,
+      );
+      return {
+        ...legacyResult,
+        recallQuery: legacy.query,
+        sessionContextUsed: legacy.sessionContextUsed,
+        recallPhase: 'contextual',
+        soloTopScore: null,
+        contextualTopScore: legacyResult.top?.score ?? legacyResult.ranked[0]?.score ?? null,
+        contextLift: null,
+        contextGateReason: legacyResult.top ? 'contextual_hit' : 'contextual_miss',
+      };
+    }
+
+    const soloBuilt = buildSkillRecallQuery({
+      userMessage: latest,
+      mode: 'solo',
+    });
+    const soloResult = await this.runProgressiveRecall(
+      candidates,
+      soloBuilt.query,
+      latest,
+      vectorMinScore,
+      keywordMinScore,
+      recallMode.useVector,
+    );
+    const soloTopScore = soloResult.ranked[0]?.score ?? 0;
+
+    if (soloResult.top) {
+      return {
+        ...soloResult,
+        recallQuery: soloBuilt.query,
+        sessionContextUsed: false,
+        recallPhase: 'solo',
+        soloTopScore,
+        contextualTopScore: null,
+        contextLift: null,
+        contextGateReason: 'solo_hit',
+      };
+    }
+
+    const gate = shouldAttemptContextualSkillRecall({
+      userMessage: latest,
+      session: sessionContext,
+      soloHit: false,
+    });
+    if (!gate.attempt) {
+      return {
+        ...soloResult,
+        recallQuery: soloBuilt.query,
+        sessionContextUsed: false,
+        recallPhase: 'solo',
+        soloTopScore,
+        contextualTopScore: null,
+        contextLift: null,
+        contextGateReason: gate.reason,
+      };
+    }
+
+    const priorGoal = lastEpisodeGoal(sessionContext);
+    if (priorGoal && recallMode.useVector) {
+      const onSameTopic = await this.isSameTopicAsPriorTurn(latest, priorGoal);
+      if (!onSameTopic) {
+        this.logger.debug(
+          `skill contextual recall skipped new_topic query="${latest}" priorGoal="${priorGoal}"`,
+        );
+        return {
+          ...soloResult,
+          recallQuery: soloBuilt.query,
+          sessionContextUsed: false,
+          recallPhase: 'solo',
+          soloTopScore,
+          contextualTopScore: null,
+          contextLift: null,
+          contextGateReason: 'new_topic',
+        };
+      }
+    }
+
+    const contextualBuilt = buildSkillRecallQuery({
+      userMessage: latest,
+      session: sessionContext,
+      mode: 'contextual',
+    });
+    const contextualResult = await this.runProgressiveRecall(
+      candidates,
+      contextualBuilt.query,
+      latest,
+      vectorMinScore,
+      keywordMinScore,
+      recallMode.useVector,
+    );
+    const contextualTop = contextualResult.top;
+    const contextualTopScore = contextualTop?.score ?? 0;
+    const soloScoreForContextualPick =
+      contextualTop == null
+        ? soloTopScore
+        : (soloResult.ranked.find(
+            (row) => row.skill.id === contextualTop.skill.id,
+          )?.score ?? 0);
+    const contextLift = contextualTopScore - soloScoreForContextualPick;
+
+    if (
+      !contextualTop ||
+      !contextualRecallLiftSufficient({
+        soloTopScore: soloScoreForContextualPick,
+        contextualTopScore,
+      })
+    ) {
+      const reason: SkillRecallContextGateReason = contextualTop
+        ? 'lift_insufficient'
+        : 'contextual_miss';
+      this.logger.debug(
+        `skill contextual recall ${reason} soloSameSkill=${soloScoreForContextualPick.toFixed(4)} contextualTop=${contextualTopScore.toFixed(4)} lift=${contextLift.toFixed(4)}`,
+      );
+      return {
+        top: null,
+        ranked: contextualResult.ranked,
+        source: contextualResult.source,
+        recallStage: contextualResult.recallStage,
+        stageAttempts: [
+          ...soloResult.stageAttempts,
+          ...contextualResult.stageAttempts,
+        ],
+        recallQuery: contextualBuilt.query,
+        sessionContextUsed: true,
+        recallPhase: 'contextual',
+        soloTopScore,
+        contextualTopScore,
+        contextLift,
+        contextGateReason: reason,
+      };
+    }
+
+    return {
+      ...contextualResult,
+      stageAttempts: [
+        ...soloResult.stageAttempts,
+        ...contextualResult.stageAttempts,
+      ],
+      recallQuery: contextualBuilt.query,
+      sessionContextUsed: true,
+      recallPhase: 'contextual',
+      soloTopScore,
+      contextualTopScore,
+      contextLift,
+      contextGateReason: 'contextual_hit',
+    };
+  }
+
+  private async isSameTopicAsPriorTurn(
+    userMessage: string,
+    priorGoal: string,
+  ): Promise<boolean> {
+    try {
+      const vectors = await this.llmService.embedTexts([
+        userMessage,
+        priorGoal,
+      ]);
+      const current = vectors[0];
+      const prior = vectors[1];
+      if (!current?.length || !prior?.length) {
+        return true;
+      }
+      const sim = cosineSimilarity(current, prior);
+      return sim >= readSkillRecallContextTopicMinSim();
+    } catch (error) {
+      this.logger.warn(
+        `skill topic similarity check failed, allow contextual: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return true;
+    }
+  }
+
+  private async runProgressiveRecall(
+    candidates: SkillRecallCandidate[],
+    query: string,
+    titleQuery: string,
+    vectorMinScore: number,
+    keywordMinScore: number,
+    useVector: boolean,
+  ): Promise<ProgressiveRecallResult> {
     const stageAttempts: SkillRecallStageAttempt[] = [];
 
     const stage0 = await this.recallAtStage(
       candidates,
       query,
+      titleQuery,
       'router',
       vectorMinScore,
       keywordMinScore,
-      recallMode.useVector,
+      useVector,
     );
     stageAttempts.push(this.toStageAttempt(stage0));
     if (stage0.top) {
@@ -114,10 +357,11 @@ export class SkillRecallService {
       const stage1 = await this.recallAtStage(
         candidates,
         query,
+        titleQuery,
         'prompt_excerpt',
         vectorMinScore,
         keywordMinScore,
-        recallMode.useVector,
+        useVector,
       );
       stageAttempts.push(this.toStageAttempt(stage1));
       return {
@@ -151,6 +395,7 @@ export class SkillRecallService {
   private async recallAtStage(
     candidates: SkillRecallCandidate[],
     query: string,
+    titleQuery: string,
     stage: SkillRecallStage,
     vectorMinScore: number,
     keywordMinScore: number,
@@ -171,7 +416,10 @@ export class SkillRecallService {
         throw new Error('empty query embedding');
       }
       const vectorsById = await this.ensureSkillVectors(candidates, stage);
-      const ranked = rankSkillsByVector(queryVector, candidates, vectorsById);
+      const ranked = applySkillTitleBoostToRanked(
+        rankSkillsByVector(queryVector, candidates, vectorsById),
+        titleQuery,
+      );
       const top = pickConfidentSkillTop(ranked, vectorMinScore, { stage });
       this.logRecallDecision(
         query,

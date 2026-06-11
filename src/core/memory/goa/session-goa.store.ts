@@ -15,6 +15,7 @@ import {
 import {
   createEmptySessionGoaPayload,
   isSessionGoaPayload,
+  normalizeSessionGoaPayload,
   type SessionGoaPayload,
 } from './session-goa.types';
 
@@ -131,7 +132,7 @@ export class SessionGoaStore {
       );
       return null;
     }
-    return row.payload;
+    return normalizeSessionGoaPayload(row.payload);
   }
 
   private async syncCacheFromDb(
@@ -183,7 +184,7 @@ export class SessionGoaStore {
     try {
       const parsed: unknown = JSON.parse(raw);
       if (isSessionGoaPayload(parsed) && parsed.sessionId === sessionId) {
-        return parsed;
+        return normalizeSessionGoaPayload(parsed);
       }
     } catch {
       return null;

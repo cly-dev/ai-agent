@@ -25,3 +25,8 @@ export const ARTIFACT_SUMMARY_MAX_CHARS = 480;
 export function getSessionMemoryMaxObservationSnapshots(): number {
   return readPositiveInt('SESSION_MEMORY_MAX_OBSERVATION_SNAPSHOTS', 4);
 }
+
+/** 会话级 observation ledger 条数上限（跨 turn 只读复用）。 */
+export function getSessionMemoryMaxObservationLedgerEntries(): number {
+  return readPositiveInt('SESSION_MEMORY_MAX_OBSERVATION_LEDGER', 200);
+}

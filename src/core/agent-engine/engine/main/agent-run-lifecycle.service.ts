@@ -32,10 +32,11 @@ import { toStoredTaskPlan } from './session-graph-resume.util';
 
 function newToolObservationsFromGraph(
   graphState: Pick<AgentGraphState, 'toolObservations'>,
-): Array<{ name: string; output: unknown }> {
+): Array<{ name: string; output: unknown; args?: Record<string, unknown> }> {
   return graphState.toolObservations.map((row) => ({
     name: row.name,
     output: row.output,
+    ...(row.llmPayload?.args ? { args: row.llmPayload.args } : {}),
   }));
 }
 
@@ -52,6 +53,7 @@ function buildMemoryUpdateContext(input: {
     | 'status'
     | 'intentKind'
     | 'awaitingWriteConfirmation'
+    | 'planAborted'
   >;
 }): SessionMemoryUpdateContext {
   return {
@@ -73,6 +75,7 @@ function buildMemoryUpdateContext(input: {
     intentKind: input.graphState.intentKind,
     phase: input.graphState.awaitingWriteConfirmation ? 'task_only' : 'full',
     awaitingWriteConfirmation: input.graphState.awaitingWriteConfirmation,
+    abandonActiveTask: input.graphState.planAborted === true,
   };
 }
 

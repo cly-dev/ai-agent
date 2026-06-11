@@ -7,7 +7,9 @@ import {
   filterLlmBlocksAvoidDuplicatingRule,
   isStructuredMessageBlock,
   looksLikeBlocksJsonOutput,
-  shouldBufferSummarizeStreamOutput,
+  createSummarizeMessageStreamState,
+  processSummarizeMessageStreamChunk,
+  stripBlocksJsonTailFromStreamedProse,
   mergeStreamedDeltaTextForStorage,
   mergeSummarizeBlocksForStorage,
   normalizeMessageBlocks,
@@ -16,6 +18,7 @@ import {
   shouldBufferSummarizeLlmStream,
   textBlock,
   tryParseLlmBlocksFromSummarizeOutput,
+  type SummarizeMessageStreamState,
 } from '../message/message-blocks.util';
 import type { LlmChatMessage } from '../../../llm/llm.types';
 import { LlmService } from '../../../llm/llm.service';
@@ -69,16 +72,11 @@ export class AgentRunSseEmitter {
     },
   ): void {
     const hasStructured = blocks.some(isStructuredMessageBlock);
-    // 纯文本 delta 已推完即可标记，不依赖落库 blocks 是否仍含 text
-    if (options.textStreamed && !hasStructured) {
+    if (options.emittedConsolidatedFull) {
       this.runSseContentDelivered.add(runKey);
       return;
     }
     if (hasStructured && options.structuredPatches > 0) {
-      this.runSseContentDelivered.add(runKey);
-      return;
-    }
-    if (options.emittedConsolidatedFull) {
       this.runSseContentDelivered.add(runKey);
     }
   }
@@ -94,10 +92,6 @@ export class AgentRunSseEmitter {
       return;
     }
     if (this.runSseContentDelivered.has(runKey)) {
-      return;
-    }
-    // summarize 流式 delta 已交付正文，run 结束不再补 stream full
-    if (this.messageStreamDeltaEmitted.has(runKey)) {
       return;
     }
     this.emitMessageBlocks(sessionId, runId, blocks, {
@@ -143,8 +137,6 @@ export class AgentRunSseEmitter {
     const mode = options?.mode ?? 'full';
     if (key && action === 'stream' && mode === 'delta') {
       this.messageStreamDeltaEmitted.add(key);
-      // 从源头标记：一旦有 message delta，run 结束不再补 stream full
-      this.runSseContentDelivered.add(key);
     }
     const nextSeq = key ? (this.streamSeq.get(key) ?? 0) + 1 : undefined;
     if (key && nextSeq != null) {
@@ -299,10 +291,11 @@ export class AgentRunSseEmitter {
       });
     }
 
-    // rule-based table/chart 已占位时缓冲正文 delta，避免把 blocks JSON 当纯文本推给前端
-    let streamTextDeltas = !shouldBufferSummarizeLlmStream(ruleBlocks);
+    // 有 table/chart 占位时全程不推正文 delta；否则由 message 状态机判定 prose / buffer
+    const structuredRuleBlocks = shouldBufferSummarizeLlmStream(ruleBlocks);
+    let summarizeStreamState: SummarizeMessageStreamState =
+      createSummarizeMessageStreamState();
     let streamed = '';
-    let streamedMessageText = '';
     let streamRouter = createLlmStreamRouterState();
     const result = await this.llmService.streamChat(
       {
@@ -320,19 +313,19 @@ export class AgentRunSseEmitter {
           if (routed.think) {
             this.emitThink(sessionId, runId, routed.think, 'delta');
           }
-          if (!streamTextDeltas) {
+          if (structuredRuleBlocks || !routed.message) {
             return;
           }
-          if (shouldBufferSummarizeStreamOutput(streamed)) {
-            streamTextDeltas = false;
-            return;
-          }
-          if (routed.message) {
-            streamedMessageText += routed.message;
+          const processed = processSummarizeMessageStreamChunk(
+            summarizeStreamState,
+            routed.message,
+          );
+          summarizeStreamState = processed.state;
+          if (processed.delta) {
             this.emitMessageBlocks(
               sessionId,
               runId,
-              [textBlock(routed.message)],
+              [textBlock(processed.delta)],
               { mode: 'delta', action: 'stream' },
             );
           }
@@ -370,6 +363,12 @@ export class AgentRunSseEmitter {
       this.emitBlockPatch(sessionId, runId, patch);
     }
 
+    const streamedMessageText = stripBlocksJsonTailFromStreamedProse(
+      summarizeStreamState.messageText.slice(
+        0,
+        summarizeStreamState.emittedProseLength,
+      ),
+    );
     const textStreamedViaDelta = streamedMessageText.trim().length > 0;
     const canEmitSupplementaryTextFull = !textStreamedViaDelta;
 
@@ -400,12 +399,20 @@ export class AgentRunSseEmitter {
       ),
     );
 
-    // 已有 text delta 时不再推 consolidated full，避免「流式 + 全文」重复
+    // 未走 prose delta：一次性 full；走过 delta：仍推 authoritative full 与落库 blocks 对齐
     const needsConsolidatedFullEmit =
       sanitizedMerged.length > 0 && !textStreamedViaDelta;
+    const needsReconcileAfterDelta =
+      sanitizedMerged.length > 0 && textStreamedViaDelta;
     let emittedConsolidatedFull = false;
 
-    if (needsConsolidatedFullEmit) {
+    if (needsReconcileAfterDelta) {
+      this.emitMessageBlocks(sessionId, runId, sanitizedMerged, {
+        action: 'stream',
+        mode: 'full',
+      });
+      emittedConsolidatedFull = true;
+    } else if (needsConsolidatedFullEmit) {
       this.emitMessageBlocks(sessionId, runId, sanitizedMerged, {
         action: 'stream',
         mode: 'full',
