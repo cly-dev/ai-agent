@@ -1,5 +1,6 @@
 import type { ToolLevel } from '../../../../../generated/prisma/client';
 import type { ToolDecisionRole } from '../../../tool-engine/tool-decision-role.enum';
+import type { PlanFrame } from './plan-stack.types';
 
 export type TaskPlanSummaryObservation = {
   name: string;
@@ -22,8 +23,8 @@ export type TaskDeliverable =
   | 'mutation'
   | 'answer';
 
-/** 步骤执行方式：`tool` 走 ReAct 选工具；`summarize` 由 resultCheck 短路汇总；`reason` 预留纯文本推理。 */
-export type TaskStepKind = 'tool' | 'summarize' | 'reason';
+/** 步骤执行方式：`skill` 进入 skill 帧；`tool` 走 ReAct；`summarize` / `reason` 见各节点。 */
+export type TaskStepKind = 'skill' | 'tool' | 'summarize' | 'reason';
 
 /** 任务阶段：`gather` 拉数、`analyze` 分析、`answer` 作答、`mutate` 写操作。 */
 export type TaskStepPhase = 'gather' | 'analyze' | 'answer' | 'mutate';
@@ -38,24 +39,29 @@ export type TaskPlanStep = {
   id: string;
   phase: TaskStepPhase;
   kind: TaskStepKind;
+  /** kind=skill 时必填：进入该 skill 并展开内层 steps。 */
+  skillId?: number;
   toolRole?: ToolDecisionRole;
   objective: string;
   stopWhen?: TaskStepStopWhen;
 };
 
-/** Run 内可 JSON 序列化的 Plan 快照（Plan 节点写入，ReAct / resultCheck 推进）。 */
+/** Run 内可 JSON 序列化的 Plan 快照（Plan 栈 + 当前活跃帧投影）。 */
 export type TaskPlanSnapshot = {
   source: TaskPlanSource;
   originalUserRequest: string;
   goal: string;
   deliverable: TaskDeliverable;
   constraints: string[];
+  /** 当前活跃帧投影（与 frames[activeFrameIndex] 同步）。 */
   steps: TaskPlanStep[];
   pendingStepIds: string[];
   completedStepIds: string[];
   taskPhase: TaskStepPhase;
   currentObjective: string;
   currentStepId: string | null;
+  frames: PlanFrame[];
+  activeFrameIndex: number;
 };
 
 export type BuildTaskPlanInput = {
@@ -160,5 +166,21 @@ export type PlanSessionWorkingMemory = {
 
 export type ResolveTaskPlanInput = BuildTaskPlanInput & {
   skillPrompt?: string | null;
+  sessionWorkingMemory?: PlanSessionWorkingMemory | null;
+};
+
+export type OuterPlanSkillSummary = {
+  id: number;
+  name: string;
+  description: string | null;
+  capabilityKey: string | null;
+  riskLevel: ToolLevel;
+  toolRoles: ToolDecisionRole[];
+};
+
+export type ResolveOuterPlanInput = {
+  userMessage: string;
+  scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'];
+  availableSkills: OuterPlanSkillSummary[];
   sessionWorkingMemory?: PlanSessionWorkingMemory | null;
 };

@@ -4,12 +4,14 @@ import { sessionPrepareKey } from '../../core/memory/redis/redis-keys';
 import { RedisConnectionService } from '../../core/memory/redis/redis-connection.service';
 import { getSessionPrepareCacheTtlSec } from './session-prepare.constants';
 import {
+  buildSkillIdsFingerprint,
   buildToolIdsFingerprint,
   isSessionPrepareSnapshotValid,
   snapshotContainsAnyToolId,
 } from './session-prepare.util';
 import type {
   SessionAllowedToolsRow,
+  SessionPrepareSkillRow,
   SessionPrepareSnapshot,
 } from './session-prepare.types';
 
@@ -26,7 +28,10 @@ export class SessionPrepareStore {
     userId: number,
     appClientId: number,
     agentId: number,
-  ): Promise<SessionAllowedToolsRow[] | null> {
+  ): Promise<{
+    tools: SessionAllowedToolsRow[];
+    skills: SessionPrepareSkillRow[];
+  } | null> {
     const snapshot = await this.getSnapshot(sessionId);
     if (!snapshot) {
       return null;
@@ -41,11 +46,19 @@ export class SessionPrepareStore {
     ) {
       return null;
     }
-    const fingerprint = buildToolIdsFingerprint(snapshot.tools);
-    if (fingerprint !== snapshot.toolIdsFingerprint) {
+    const toolFingerprint = buildToolIdsFingerprint(snapshot.tools);
+    if (toolFingerprint !== snapshot.toolIdsFingerprint) {
       return null;
     }
-    return snapshot.tools;
+    const skills = Array.isArray(snapshot.skills) ? snapshot.skills : [];
+    const skillFingerprint = buildSkillIdsFingerprint(skills);
+    if (skillFingerprint !== (snapshot.skillIdsFingerprint ?? '')) {
+      return null;
+    }
+    return {
+      tools: snapshot.tools,
+      skills,
+    };
   }
 
   async trySet(
@@ -54,6 +67,7 @@ export class SessionPrepareStore {
     appClientId: number,
     agentId: number,
     tools: SessionAllowedToolsRow[],
+    skills: SessionPrepareSkillRow[],
   ): Promise<boolean> {
     const client = this.redis.getClient();
     if (!client) {
@@ -66,7 +80,9 @@ export class SessionPrepareStore {
       appClientId,
       agentId,
       toolIdsFingerprint: buildToolIdsFingerprint(tools),
+      skillIdsFingerprint: buildSkillIdsFingerprint(skills),
       tools,
+      skills,
       warmedAt,
     };
     await client.set(

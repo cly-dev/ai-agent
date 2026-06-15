@@ -6,6 +6,7 @@ import { RedisConnectionService } from './redis/redis-connection.service';
 import { SessionContextStore } from './context/session-context.store';
 import { UserMemoryStore } from './user/user-memory.store';
 import { SessionHistoryCompressionService } from './context/session-history-compression.service';
+import { SessionMessageContextSyncService } from './context/session-message-context-sync.service';
 import { SessionGoaStore } from './goa/session-goa.store';
 import { SessionGoaReplayService } from './goa/session-goa-replay.service';
 import { SessionGoaService } from './goa/session-goa.service';
@@ -33,6 +34,7 @@ import { SessionTaskResumeFollowUpService } from './resume/session-task-resume-f
     SessionResumeGateService,
     SessionTaskResumeFollowUpService,
     SessionHistoryCompressionService,
+    SessionMessageContextSyncService,
   ],
   exports: [
     RedisConnectionService,
@@ -44,6 +46,7 @@ import { SessionTaskResumeFollowUpService } from './resume/session-task-resume-f
     SessionResumeGateService,
     SessionTaskResumeFollowUpService,
     SessionHistoryCompressionService,
+    SessionMessageContextSyncService,
   ],
 })
 export class MemoryModule {}

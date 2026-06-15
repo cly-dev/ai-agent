@@ -60,9 +60,28 @@ export type StoredTaskPlanStep = {
   id: string;
   phase: string;
   kind: string;
+  skillId?: number;
   toolRole?: string;
   objective: string;
   stopWhen?: string;
+};
+
+export type StoredPlanFrame = {
+  frameId: string;
+  skillId: number | null;
+  skillName?: string | null;
+  source: string;
+  steps: StoredTaskPlanStep[];
+  pendingStepIds: string[];
+  completedStepIds: string[];
+  taskPhase: string;
+  currentObjective: string;
+  currentStepId: string | null;
+  parentSkillStepId?: string | null;
+  skillPrompt?: string | null;
+  skillDescription?: string | null;
+  skillConfig?: unknown;
+  skillRiskLevel?: string | null;
 };
 
 export type StoredTaskPlan = {
@@ -77,12 +96,14 @@ export type StoredTaskPlan = {
   taskPhase: string;
   currentObjective: string;
   currentStepId: string | null;
+  frames?: StoredPlanFrame[];
+  activeFrameIndex?: number;
 };
 
 /**
  * 活跃任务生命周期：
- * `in_progress` 执行中（可续跑）；
- * `awaiting_confirmation` 写确认暂停（可续跑）；
+ * `in_progress` 执行中（新 userMessage 可经 session resume 评估续跑）；
+ * `awaiting_confirmation` 写确认暂停（**仅**写确认 API → worker run 续跑；新 chat message 须 abandon）；
  * `completed` 步骤全部完成；
  * `failed` run 失败；
  * `abandoned` 用户切换意图后废弃（终态，不注入 prompt）。
@@ -201,11 +222,17 @@ export function isSessionGoaPayload(value: unknown): value is SessionGoaPayload 
   );
 }
 
-export function isActiveTaskResumable(task: ActiveTask | null | undefined): boolean {
-  if (!task) {
-    return false;
-  }
-  if (task.status !== 'in_progress' && task.status !== 'awaiting_confirmation') {
+export function isActiveTaskAwaitingWriteConfirmation(
+  task: ActiveTask | null | undefined,
+): boolean {
+  return task?.status === 'awaiting_confirmation';
+}
+
+/** 新 userMessage 是否可走 session resume（不含写确认暂停）。 */
+export function isActiveTaskChatResumable(
+  task: ActiveTask | null | undefined,
+): boolean {
+  if (!task || task.status !== 'in_progress') {
     return false;
   }
   return task.stepProgress.some(

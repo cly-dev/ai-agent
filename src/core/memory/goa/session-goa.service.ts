@@ -17,7 +17,7 @@ import {
 import { buildFullSessionGoaPromptMessages } from './session-goa-full-projection.util';
 import { SessionGoaStore } from './session-goa.store';
 import {
-  isActiveTaskResumable,
+  isActiveTaskChatResumable,
   type SessionGoaPayload,
   type SessionMemoryUpdateContext,
   type StoredTaskPlan,
@@ -155,7 +155,7 @@ export class SessionGoaService {
     if (intentKind !== 'task') {
       return false;
     }
-    if (!isActiveTaskResumable(payload.activeTask)) {
+    if (!isActiveTaskChatResumable(payload.activeTask)) {
       return false;
     }
     return payload.activeTask != null;

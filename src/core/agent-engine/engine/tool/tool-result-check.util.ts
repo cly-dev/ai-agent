@@ -3,6 +3,7 @@ import type {
   GraphToolCall,
   ToolObservation,
 } from '../main/agent-engine.types';
+import { nextRunStepNumber } from '../main/agent-run-steps.util';
 import type { TaskPlanSnapshot } from '../main/task-plan.types';
 import {
   countConsecutiveLlmRoundsWithoutToolCalls,
@@ -19,6 +20,11 @@ import {
   resolvePagedGatherResumeRoute,
   type PagedGatherResumeKind,
 } from '../gather/paged-list-gather.util';
+import {
+  selectObservationsForPagedGatherResume,
+  selectObservationsForPlanToolSatisfaction,
+  type PlanObservationBuckets,
+} from '../main/plan-observation-scope.util';
 import {
   areToolCallRoundsIdentical,
   getLastToolRoundFromSteps,
@@ -137,6 +143,7 @@ function resolvePlanToolStepPreToolsOutcome(input: {
       scopedTools: input.scopedTools,
       taskPlan: input.taskPlan,
       skillConfig: input.skillConfig,
+      purpose: 'pre_tools_advance',
     })
   ) {
     return null;
@@ -177,18 +184,24 @@ export function resolvePreToolsResultCheck(input: {
   steps: AgentRunStep[];
   taskPlan?: TaskPlanSnapshot | null;
   scopedTools?: PlanScopedTool[];
-  observations?: ToolObservation[];
+  observationBuckets: PlanObservationBuckets;
   skillConfig?: unknown;
 }): ResultCheckOutcome {
   const base: Pick<ResultCheckOutcome, 'phase' | 'duplicateSkipCalls'> = {
     phase: 'pre_tools',
     duplicateSkipCalls: [],
   };
+  const pagedObservations = selectObservationsForPagedGatherResume(
+    input.observationBuckets,
+  );
+  const satisfactionObservations = selectObservationsForPlanToolSatisfaction(
+    input.observationBuckets,
+  );
   const pagedResumeRoute = resolvePagedGatherResumeRoute({
     pendingToolCalls: input.pendingToolCalls,
     taskPlan: input.taskPlan,
     scopedTools: input.scopedTools ?? [],
-    observations: input.observations ?? [],
+    observations: pagedObservations,
   });
   if (pagedResumeRoute) {
     return {
@@ -201,13 +214,13 @@ export function resolvePreToolsResultCheck(input: {
         resolvePagedGatherResumeKind({
           taskPlan: input.taskPlan,
           scopedTools: input.scopedTools ?? [],
-          observations: input.observations ?? [],
+          observations: pagedObservations,
         }) ?? undefined,
     };
   }
   const sameArgsRepeat = pendingCallsRepeatRecoverableToolError({
     pendingToolCalls: input.pendingToolCalls,
-    observations: input.observations ?? [],
+    observations: pagedObservations,
   });
   if (sameArgsRepeat.repeat && input.taskPlan) {
     return {
@@ -222,7 +235,7 @@ export function resolvePreToolsResultCheck(input: {
     const planOutcome = resolvePlanToolStepPreToolsOutcome({
       steps: input.steps,
       taskPlan: input.taskPlan,
-      observations: input.observations ?? [],
+      observations: satisfactionObservations,
       scopedTools: input.scopedTools,
       skillConfig: input.skillConfig,
     });
@@ -478,17 +491,25 @@ export function resolveSummaryObservationForCheck(input: {
 
 export function buildDuplicateSkipToolSteps(
   calls: ToolCallLike[],
-  stepIndex: number,
+  existingSteps: AgentRunStep[],
   reason: string,
 ): AgentRunStep[] {
-  return calls.map((call) => ({
-    step: stepIndex,
-    type: 'tool' as const,
-    name: call.name,
-    input: call.arguments,
-    output: {
-      skipped: true,
-      reason,
-    },
-  }));
+  const steps = [...existingSteps];
+  const result: AgentRunStep[] = [];
+  for (const call of calls) {
+    const stepNum = nextRunStepNumber(steps);
+    const row: AgentRunStep = {
+      step: stepNum,
+      type: 'tool',
+      name: call.name,
+      input: call.arguments,
+      output: {
+        skipped: true,
+        reason,
+      },
+    };
+    steps.push(row);
+    result.push(row);
+  }
+  return result;
 }

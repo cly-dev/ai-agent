@@ -1,8 +1,8 @@
 # 写操作确认 · 前端对接说明
 
 > 版本：与 agent-server 当前实现同步（2026-06）  
-> 相关接口：`POST /chat/:sessionId/messages`、`GET /chat/:sessionId/stream`  
-> 另见：[Chat SSE · Message Blocks](./chat-sse-message-blocks-frontend.md)
+> 相关接口：`POST /chat/:sessionId/messages`、`GET /chat/:sessionId/stream`、`GET /agent-run/:id`  
+> 另见：[Chat SSE · Message Blocks](./chat-sse-message-blocks-frontend.md)、[Run 步骤与 Turn 时间线](./agent-run-steps.md)
 
 ---
 
@@ -25,6 +25,8 @@ Agent 决策 → 拟执行写 Tool
     ▼
 暂停 tools 节点 ──► Redis 缓存 pending（TTL 30min）
     │
+    ├── 读 Tool（若有）已执行并写入 steps / observations
+    ├── run step: write_confirmation_gate（status=awaiting_user）
     ├── SSE message: confirmation_required
     ├── SSE message: stream (code=WRITE_CONFIRMATION_REQUIRED，展示文案)
     └── SSE complete（primary run 结束，status=success）
@@ -39,30 +41,36 @@ Agent 决策 → 拟执行写 Tool
 
 ### 1.1 与 Task Plan 的配合
 
-当本轮任务带有 **Plan**（`plan → tool → summarize` 等步骤）时，写确认插在 **tools 节点** 与 **resultCheck / summarize** 之间，而不是绕过 Plan。
+当本轮任务带有 **Plan** 时，写确认插在 **tools 节点**（写 HTTP 执行前），而不是绕过 Plan。
 
-典型 Plan：`write(tool) → summarize`
+**mutation 类（推荐路径）**：`read → compose_write → present → write → confirm`
 
 ```text
-plan 节点产出步骤
+plan 节点（method=template 或 mutation_template_forced）
     │
     ▼
+tools: read_detail
+    ▼
+llm: compose_write → plan_compose_write（无 HTTP）
+    ▼
+summarize: present → 用户层 Markdown + plan_draft_reply + pendingToolCalls
+    ▼
+tools → write_confirmation_gate（primary run 结束）
+    ▼
+用户 confirmWrite → worker 同步写 HTTP → confirm summarize
+```
+
+**无 Plan / 非 mutation 快路径**：`llm → tool_calls → tools → gate`
+
+```text
 llm（当前步 objective = 写操作）→ 产出 tool_calls
-    │
     ▼
 tools 节点
-    ├── 若同轮含读 + 写：先执行读 Tool，写入 observations / steps
-    ├── 写 Tool 进入 pending（Redis），primary run 结束
-    └── resumeContext 携带 taskPlan（含已推进的读步）
-    │
+    ├── 若同轮含读 + 写：先执行读 Tool
+    ├── 写 Tool 进入 pending（Redis）
+    └── resumeContext 携带 taskPlan
     ▼
-用户 confirmWrite
-    │
-    ▼
-同步执行写 Tool → resolveTaskPlanAdvance（post_tools）
-    ├── 下一步是 summarize → worker **跳过 skill/plan/llm**，直接 summarize
-    └── 写已执行但 Plan 未结束 → worker 从 **resultCheck** 接续（带 taskPlan / observations）
-    └── 写失败 → resultCheck 直接 summarize 报错，**不回 LLM 重试**
+用户 confirmWrite → worker 执行写 → resolveTaskPlanAdvance（post_tools）
 ```
 
 要点：
@@ -71,11 +79,63 @@ tools 节点
 |------|------|
 | 同轮 read + write | **读先执行**，写暂停确认；observations 已含读结果 |
 | Plan 当前步为写 Tool | 确认执行写后按 Plan **推进到下一步** |
-| 下一步为 summarize | 确认后 **跳过决策 LLM**，直接 summarize |
+| 下一步为 summarize（`confirm`） | worker **跳过决策 LLM**，直接 summarize 写结果 |
 | 下一步仍为 tool | worker 从 resultCheck 续跑（极少见；回复类 Plan 通常为 write→summarize） |
-| worker run steps | **仅记录**确认后新产生的 step（写 tool / result_check / summarize），不重复 primary 的 skill/plan |
+| worker run steps | **仅记录**确认后新产生的 step（写 tool / result_check / summarize），从 step **1** 重新编号 |
+| 写失败 | worker summarize **不调 LLM**，仅 alert + metric（与 SSE、落库一致） |
+| 写成功 | LLM 生成补充说明；SSE 在 patch 后推送解析 blocks，**complete 前**再推权威 full |
+| 整轮轨迹 | `GET /agent-run/:id` → `turnExecutionTimeline` 合并 primary + worker（见 [agent-run-steps.md](./agent-run-steps.md)） |
 
-Plan 推进规则与正常 tools 轮次一致，由 `resolveTaskPlanAdvance` 在 `post_tools` 阶段判定；写确认续跑时在 graph 外先执行写，再注入 `pendingSummaryObservation`（若应 summarize）。
+Plan 推进规则与正常 tools 轮次一致，由 `resolveTaskPlanAdvance` 在 `post_tools` 阶段判定；写确认续跑时在 graph 外先执行写，再注入 `pendingRespond`（若应 summarize）。
+
+### 1.2 Plan compose → present 步（回复类任务）
+
+评论回复等 **mutation** 类 Plan 现为四段式：
+
+```text
+read_detail(tool) → compose_write(tool/llm) → present(summarize) → write(tool) → confirm(summarize)
+```
+
+| 步 | 节点 | 产出 |
+|----|------|------|
+| `read_detail` | tools | 读 API observation |
+| `compose_write` | llm（bind write tool） | **机器层**：`plan_compose_write` observation（tool + arguments），**不执行 HTTP** |
+| `present` | summarize | **用户层**：基于 compose 参数展示 Markdown 草稿；双 gate → `plan_draft_reply` + `pendingToolCalls` |
+| `write` | tools（或写确认快路径） | 执行写 API |
+| `confirm` | summarize | 写结果说明 |
+
+**compose_write 步**（llm 节点拦截，不进 tools）：
+
+```text
+llm（plan:compose_write）→ tool_calls
+    ├─ 写入 observation：plan_compose_write
+    ├─ Plan 推进 → present
+    └─ pendingRespond → summarize（不执行 HTTP）
+```
+
+**present 步**（summarize 节点，只展示、不再生成机器层参数）：
+
+```text
+summarize（plan:present）
+    ├─ 读取 plan_compose_write 作为机器层真值
+    ├─ LLM 仅生成用户层 Markdown（prompt: agent.summarize_plan_present_from_compose）
+    ├─ 若 compose 缺正文类字段 → 补轮 prose → runtime 注入 arguments
+    ├─ 双 gate：用户层 + finalize(composed args) 均成功 → pendingWrite
+    ├─ SSE message：phase=draft，仅推送用户层 Markdown
+    ├─ observation：plan_draft_reply（draftReply + pendingWriteToolCall）
+    └─ pendingToolCalls → tools → write_confirmation_gate
+```
+
+| 项 | 说明 |
+|----|------|
+| 顺序 | **先读 → 再产参 → 再展示 → 再确认 → 再写** |
+| 用户可见 | 仅 **present** 步用户层 Markdown；禁止 observation JSON dump |
+| 落库 | SSE `stream` blocks（含 draft）与 `confirmation_required` 文案均在 primary run 结束时入库 |
+| 机器层真值 | `plan_compose_write`；present 只引用/补正文，不重新 bindTools 产参 |
+| 写确认快路径 | **双 gate** 成功 → `summarize → tools → confirmation_required` |
+| 写步 fallback | present 未产出 pending 时，`write` 步 llm **复用** `plan_draft_reply` / `plan_compose_write`，不重新产参 |
+
+实现：`task-plan.util.ts`、`task-plan-llm.util.ts`、`plan-compose-write.util.ts`、`plan-draft-summarize.util.ts`、`plan-draft-summarize-llm.util.ts`、`mutation-preview-before-gate.util.ts`、`write-tool-draft-injection.util.ts`。
 
 **写步未完成前禁止 summarize**：若 Plan 队列中仍有 `write-*` tool 步，或 LLM 已产出待执行的写 `tool_calls`，`resultCheck` / `llm` 不会进入 summarize，而是继续 `llm → tools`；写确认仍在 **tools 节点**断开主 run（`confirmation_required`），不会用总结代替确认。
 
@@ -164,8 +224,8 @@ Skill 列表接口中的 `requiresWriteConfirmation` 字段可供管理端展示
 
 1. 服务端先 **同步执行** 缓存的写 Tool（HTTP）
 2. 创建同一 `turnId` 下的 **worker** AgentRun（`sequence > 1`）
-3. 对 `taskPlan` 做 `post_tools` 推进；若下一步为 summarize，预置 `pendingSummaryObservation`
-4. 从 LLM 节点续跑（`resumeFromLlm`）；若已预置 summarize observation，**跳过决策 LLM** 直接进入 summarize
+3. 对 `taskPlan` 做 `post_tools` 推进；若下一步为 summarize，预置 `pendingRespond`
+4. Graph **START → `resultCheck` 或 `summarize`**（`resumeFromWriteConfirm`；若已有 `pendingRespond` 则直达 summarize）
 5. 后续 SSE 与正常对话一致：`think` → `message` stream/patch → `complete`
 6. 新的 `runId` 与 primary run **不同**，应用新 `runId` 开消息槽
 
@@ -290,7 +350,8 @@ Skill 列表接口中的 `requiresWriteConfirmation` 字段可供管理端展示
 2. **按钮**：「确认执行」「取消」；取消调用 `cancelWrite: true`。
 3. **防重复提交**：确认请求发出后禁用按钮，直到收到 `complete` 或 `error`。
 4. **过期提示**：收到 `WRITE_CONFIRMATION_EXPIRED` 时关闭弹窗并 Toast，引导用户重新描述需求。
-5. **与消息列表**：确认前的 assistant 消息可能仅为提示文案；确认后续跑会产生 **新的 runId** 与完整回复，按 `runId` 分槽展示。
+5. **与消息列表**：primary `complete` 落库内容与 SSE 一致：**present 草稿** + **写确认提示**（`confirmation_required.message` 已追加到 artifact blocks）。用户确认后 worker run 在同一条 turn 输出消息上 **覆盖为写后总结**（`phase=final`）。取消则在同条消息末尾 **追加**「已取消操作。」
+6. **调试轨迹**：排查 step 顺序时用 `turnExecutionTimeline`，勿只看 primary run 的 `steps`。
 
 ---
 
@@ -407,7 +468,11 @@ async function onCancelWrite(sessionId: string) {
 - [ ] `confirmWrite` 与 `cancelWrite` 同时为 true 时仅取消
 - [ ] 未向用户展示 Tool 名称与 arguments（服务端不返回）
 - [ ] 同轮 read+write 时，确认前 SSE think 已出现读 Tool 完成
+- [ ] Plan present 步：primary run 在 gate 前已有 `summarize`（name=`plan:present`）且 SSE 展示 Markdown 草稿（`phase=draft`）
+- [ ] gate 前无预览时：primary run 被阻断（`pendingToolCalls` 清空），不出现无预览的 `confirmation_required`
 - [ ] Plan 写步确认后，若下一步为 summarize，worker run 直接出最终回复
+- [ ] `GET /agent-run/:primaryRunId` 的 `turnExecutionTimeline` 含 gate + worker steps
+- [ ] primary run steps 末尾为 `write_confirmation_gate`，且 run `status=success`
 - [ ] 确认/取消空 content 消息：`toolName` 为 `__confirm_write__` / `__cancel_write__`，无空白用户气泡
 - [ ] 过期确认仅 `error`，无 `complete`
 
@@ -417,8 +482,17 @@ async function onCancelWrite(sessionId: string) {
 
 | 模块 | 路径 |
 |------|------|
+| Plan mutation 模板 / 合规 | `src/core/agent-engine/engine/main/task-plan.util.ts` |
+| 外层/内层 Plan 解析 | `src/core/agent-engine/engine/main/task-plan-llm.util.ts` |
+| compose_write 拦截 | `src/core/agent-engine/engine/main/plan-compose-write.util.ts` |
+| Plan present / 双 gate | `src/core/agent-engine/engine/main/plan-draft-summarize.util.ts` |
+| Present 展示 LLM | `src/core/agent-engine/engine/main/plan-draft-summarize-llm.util.ts` |
+| Gate 前预览校验 | `src/core/agent-engine/engine/mutation-preview-before-gate.util.ts` |
+| Write body 注入 / 校验 | `src/core/tool-engine/write-tool-draft-injection.util.ts` |
+| plan_draft_reply observation | `src/core/agent-engine/engine/main/plan-draft-reply.util.ts` |
 | 写确认拦截 | `src/core/agent-engine/engine/write-confirmation-gate.util.ts` |
 | tools 节点暂停 | `src/core/agent-engine/engine/main/agent-lang-graph.runner.ts` |
+| step 编号 / timeline | `src/core/agent-engine/engine/main/agent-run-steps.util.ts` |
 | pending 存储 | `src/modules/chat/pending-write-confirmation.store.ts` |
 | 确认续跑 | `src/core/agent-engine/engine/agent-engine.service.ts` → `resumeAfterWriteConfirm` |
 | 发消息入口 | `src/modules/message/message.service.ts` → `runAgentPipeline` |

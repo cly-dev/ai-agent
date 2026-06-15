@@ -9,8 +9,10 @@ import type { ToolResponseProfile } from '../../../tool-engine/tool-response-pro
 import type { RunMetricsAccumulator } from '../run-metrics.util';
 import type { ToolBuildContext } from '../../../tool-engine/tool-engine.service';
 import type { ToolErrorDisposition, ToolExecutionStatus } from '../tool/tool-execution-status.util';
+import type { PlanRunContext } from './plan-observation-scope.util';
 import type { TaskPlanSnapshot } from './task-plan.types';
 import type { ToolHttpRequestLayout } from '../../../tool-engine/tool-http-request-layout.util';
+import type { PendingRespond } from '../turn/turn-respond.types';
 
 export type AgentRunInput = {
   userId: number;
@@ -28,9 +30,13 @@ export type ResumeAfterWriteConfirmInput = {
 export type AgentRunStepType =
   | 'skill'
   | 'plan'
+  | 'plan_sync'
+  | 'route_plan'
   | 'intent'
+  | 'readiness'
   | 'llm'
   | 'tool'
+  | 'write_confirmation_gate'
   | 'gather'
   | 'result_check'
   | 'summarize';
@@ -132,7 +138,8 @@ export type AgentGraphState = {
   /** 图启动时从 GOA 或写确认上下文注入的历史观测。 */
   preloadedToolObservations?: ToolObservation[];
   pendingToolCalls: GraphToolCall[];
-  pendingSummaryObservation: ToolObservation | null;
+  /** 待 respond 节点处理：回合层反问或 execute 产出观测。 */
+  pendingRespond: PendingRespond | null;
   intentKind: 'task' | 'smalltalk' | 'unclear';
   finalOutput: string;
   status: AgentRunStatus;
@@ -165,6 +172,11 @@ export type AgentGraphState = {
   pagedListHttpUsed?: number;
   /** Plan 因工具终态失败或 400 同参重试耗尽而中止；写入 GOA 时清除 activeTask。 */
   planAborted?: boolean;
+  /**
+   * 本 turn 运行上下文：session / 写确认续跑为 resume（telemetry、plan 首步 summarize 放行）。
+   * gather 跳步始终仅认本 run toolObservations。
+   */
+  planRunContext?: PlanRunContext;
 };
 
 export type AgentLangGraphRunInput = {

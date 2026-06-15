@@ -5,32 +5,33 @@ import type { AgentMachineCode } from '../agent-run-user-messages.util';
 import type { MessageBlock, MessageBlockPatch } from '../message/message-blocks.types';
 import {
   filterLlmBlocksAvoidDuplicatingRule,
-  isStructuredMessageBlock,
   looksLikeBlocksJsonOutput,
   createSummarizeMessageStreamState,
   processSummarizeMessageStreamChunk,
-  stripBlocksJsonTailFromStreamedProse,
   mergeStreamedDeltaTextForStorage,
   mergeSummarizeBlocksForStorage,
+  nextSanitizedSummarizeStreamDelta,
   normalizeMessageBlocks,
   planStructuredBlockStreaming,
   sanitizeMessageBlocks,
-  shouldBufferSummarizeLlmStream,
+  summarizeStreamedProseFromState,
   textBlock,
   tryParseLlmBlocksFromSummarizeOutput,
   type SummarizeMessageStreamState,
 } from '../message/message-blocks.util';
 import type { LlmChatMessage } from '../../../llm/llm.types';
 import { LlmService } from '../../../llm/llm.service';
-import {
-  emitLlmPromptDebug,
-  isLlmPromptDebugEnabled,
-} from '../llm-prompt-debug.util';
+import { emitLlmPromptDebug } from '../llm-prompt-debug.util';
 import { sanitizeLlmFinalOutput } from '../llm-output-sanitize.util';
 import {
   createLlmStreamRouterState,
+  extractRoutedMessageFromLlmText,
   routeLlmStreamChunk,
 } from '../llm-stream-router.util';
+import {
+  RunAssistantArtifactStore,
+  type RunAssistantArtifactPhase,
+} from './run-assistant-artifact.store';
 
 @Injectable()
 export class AgentRunSseEmitter {
@@ -39,67 +40,76 @@ export class AgentRunSseEmitter {
   private readonly streamSeq = new Map<string, number>();
   /** 本 run 已推送过 message 流式增量（key = sessionId:runId） */
   private readonly messageStreamDeltaEmitted = new Set<string>();
-  /** 本 run 正文已通过 SSE 交付，run() 末尾无需再补 stream full */
-  readonly runSseContentDelivered = new Set<string>();
 
   constructor(
     private readonly chatEvents: ChatEventsService,
     private readonly llmService: LlmService,
+    private readonly assistantArtifact: RunAssistantArtifactStore,
   ) {}
 
   thinkBufferKey(sessionId: string, runId: number): string {
     return `${sessionId}:${runId}`;
   }
 
-  resetThinkBuffer(_sessionId: string, _runId: number): void {
-    // no-op：think/message 均由前端按 SSE 增量拼接
-  }
-
   clearThinkBuffer(sessionId: string, runId: number): void {
     const key = this.thinkBufferKey(sessionId, runId);
     this.streamSeq.delete(key);
     this.messageStreamDeltaEmitted.delete(key);
-    this.runSseContentDelivered.delete(key);
   }
 
-  markRunSseContentDelivered(
-    runKey: string,
-    blocks: MessageBlock[],
-    options: {
-      textStreamed: boolean;
-      structuredPatches: number;
-      emittedConsolidatedFull?: boolean;
-    },
-  ): void {
-    const hasStructured = blocks.some(isStructuredMessageBlock);
-    if (options.emittedConsolidatedFull) {
-      this.runSseContentDelivered.add(runKey);
-      return;
-    }
-    if (hasStructured && options.structuredPatches > 0) {
-      this.runSseContentDelivered.add(runKey);
-    }
-  }
-
+  /** run 收尾前推送与 artifact / 落库一致的权威 full（`complete` 前必达）。 */
   emitRunMessageBlocksIfNeeded(
     sessionId: string,
     runId: number,
     turnId: number,
-    blocks: MessageBlock[],
   ): void {
-    const runKey = this.thinkBufferKey(sessionId, runId);
-    if (blocks.length === 0) {
+    const toEmit = this.assistantArtifact.peekBlocks(sessionId, runId);
+    if (toEmit.length === 0) {
       return;
     }
-    if (this.runSseContentDelivered.has(runKey)) {
-      return;
-    }
-    this.emitMessageBlocks(sessionId, runId, blocks, {
+    const turnIdResolved =
+      turnId ??
+      this.assistantArtifact.peekTurnId(sessionId, runId) ??
+      undefined;
+    this.emitMessageBlocks(sessionId, runId, toEmit, {
       action: 'stream',
       mode: 'full',
-      turnId,
+      turnId: turnIdResolved,
     });
-    this.runSseContentDelivered.add(runKey);
+  }
+
+  /** 仅规则化 blocks（alert/metric 等）：loading → patch → 权威 full，不调 LLM。 */
+  publishRuleBlocksOnly(
+    sessionId: string,
+    runId: number,
+    blocks: MessageBlock[],
+    turnId?: number,
+  ): MessageBlock[] {
+    const sanitized = sanitizeMessageBlocks(blocks);
+    if (sanitized.length === 0) {
+      return [];
+    }
+    const turnIdResolved =
+      turnId ??
+      this.assistantArtifact.peekTurnId(sessionId, runId) ??
+      undefined;
+    const { placeholders, patches } = planStructuredBlockStreaming(
+      runId,
+      sanitized,
+    );
+    for (const placeholder of placeholders) {
+      this.emitMessageBlocks(sessionId, runId, [placeholder], {
+        action: 'stream',
+        mode: 'full',
+        turnId: turnIdResolved,
+      });
+    }
+    for (const patch of patches) {
+      this.emitBlockPatch(sessionId, runId, patch);
+    }
+    return this.publishAssistantBlocks(sessionId, runId, sanitized, {
+      turnId: turnIdResolved,
+    });
   }
 
   emitThink(
@@ -181,27 +191,6 @@ export class AgentRunSseEmitter {
     });
   }
 
-  emitLlmReply(
-    sessionId: string,
-    runId: number | undefined,
-    output: string,
-    options?: {
-      code?: AgentMachineCode;
-      mode?: 'delta' | 'full';
-      turnId?: number;
-    },
-  ): void {
-    const text = this.sanitizeFinalOutput(output);
-    if (!text) {
-      return;
-    }
-    this.emitMessageBlocks(sessionId, runId, [textBlock(text)], {
-      code: options?.code,
-      mode: options?.mode ?? 'delta',
-      turnId: options?.turnId,
-    });
-  }
-
   async streamRunnableMessages(
     runnable: {
       stream: (messages: unknown[]) => Promise<AsyncIterable<unknown>>;
@@ -263,8 +252,10 @@ export class AgentRunSseEmitter {
     runId: number,
     ruleBlocks: MessageBlock[],
     fallbackPlainText: string,
-  ): Promise<MessageBlock[]> {
+  ): Promise<{ blocks: MessageBlock[]; rawOutput: string }> {
     const runKey = this.thinkBufferKey(sessionId, runId);
+    const turnId =
+      this.assistantArtifact.peekTurnId(sessionId, runId) ?? undefined;
     const summarizeDebugFile = emitLlmPromptDebug(
       (message) => this.logger.log(message),
       {
@@ -288,13 +279,35 @@ export class AgentRunSseEmitter {
       this.emitMessageBlocks(sessionId, runId, [placeholder], {
         action: 'stream',
         mode: 'full',
+        turnId,
       });
     }
 
-    // 有 table/chart 占位时全程不推正文 delta；否则由 message 状态机判定 prose / buffer
-    const structuredRuleBlocks = shouldBufferSummarizeLlmStream(ruleBlocks);
     let summarizeStreamState: SummarizeMessageStreamState =
       createSummarizeMessageStreamState();
+    let sanitizedEmitted = '';
+    const emitSummarizeProseProgress = (
+      state: SummarizeMessageStreamState,
+    ): void => {
+      const proseSnapshot = summarizeStreamedProseFromState(state);
+      if (!proseSnapshot) {
+        return;
+      }
+      const next = nextSanitizedSummarizeStreamDelta(
+        proseSnapshot,
+        sanitizedEmitted,
+      );
+      sanitizedEmitted = next.emitted;
+      if (!next.delta) {
+        return;
+      }
+      this.emitMessageBlocks(sessionId, runId, [textBlock(next.delta)], {
+        mode: 'delta',
+        action: 'stream',
+        turnId,
+      });
+    };
+
     let streamed = '';
     let streamRouter = createLlmStreamRouterState();
     const result = await this.llmService.streamChat(
@@ -313,7 +326,7 @@ export class AgentRunSseEmitter {
           if (routed.think) {
             this.emitThink(sessionId, runId, routed.think, 'delta');
           }
-          if (structuredRuleBlocks || !routed.message) {
+          if (!routed.message) {
             return;
           }
           const processed = processSummarizeMessageStreamChunk(
@@ -322,33 +335,49 @@ export class AgentRunSseEmitter {
           );
           summarizeStreamState = processed.state;
           if (processed.delta) {
-            this.emitMessageBlocks(
-              sessionId,
-              runId,
-              [textBlock(processed.delta)],
-              { mode: 'delta', action: 'stream' },
-            );
+            emitSummarizeProseProgress(summarizeStreamState);
           }
         },
       },
     );
     const rawStreamedText = streamed.trim();
     const rawResultText = (result.content ?? '').trim();
-    if (!rawStreamedText && rawResultText) {
+    const rawLlmSource = rawStreamedText || rawResultText;
+    const routedMessage = rawLlmSource
+      ? extractRoutedMessageFromLlmText(rawLlmSource)
+      : '';
+
+    if (!this.messageStreamDeltaEmitted.has(runKey) && routedMessage) {
       const streamMeta = result.streamMeta;
+      const replayReason = streamMeta?.fellBackToInvoke
+        ? 'invoke_fallback'
+        : 'buffer_or_json_no_delta';
       if (streamMeta?.fellBackToInvoke) {
         this.logger.warn(
           `summarize stream fallback to invoke runId=${runId} model=${result.model}`,
         );
       } else {
         this.logger.warn(
-          `summarize stream no delta runId=${runId} model=${result.model} emittedDeltaCount=${streamMeta?.emittedDeltaCount ?? 0}`,
+          `summarize stream replay deltas reason=${replayReason} runId=${runId} model=${result.model}`,
         );
       }
+      let replayState = createSummarizeMessageStreamState();
+      for (const ch of routedMessage) {
+        const processed = processSummarizeMessageStreamChunk(replayState, ch);
+        replayState = processed.state;
+        if (processed.delta) {
+          emitSummarizeProseProgress(replayState);
+        }
+      }
+      summarizeStreamState = replayState;
+    } else if (!rawStreamedText && rawResultText) {
+      this.logger.warn(
+        `summarize stream no delta runId=${runId} model=${result.model} emittedDeltaCount=${result.streamMeta?.emittedDeltaCount ?? 0}`,
+      );
     }
-
-    const rawLlmSource = rawStreamedText || rawResultText;
-    const parsedLlmBlocks = tryParseLlmBlocksFromSummarizeOutput(rawLlmSource);
+    const parsedLlmBlocks = tryParseLlmBlocksFromSummarizeOutput(
+      routedMessage || rawLlmSource,
+    );
     const llmBlocksFromParse = parsedLlmBlocks
       ? sanitizeMessageBlocks(
           filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, parsedLlmBlocks),
@@ -357,20 +386,17 @@ export class AgentRunSseEmitter {
     const proseFallbackSource =
       llmBlocksFromParse.length > 0
         ? ''
-        : sanitizeLlmFinalOutput(rawLlmSource || fallbackPlainText);
+        : sanitizeLlmFinalOutput(routedMessage || rawLlmSource || fallbackPlainText);
 
     for (const patch of patches) {
       this.emitBlockPatch(sessionId, runId, patch);
     }
 
-    const streamedMessageText = stripBlocksJsonTailFromStreamedProse(
-      summarizeStreamState.messageText.slice(
-        0,
-        summarizeStreamState.emittedProseLength,
-      ),
-    );
-    const textStreamedViaDelta = streamedMessageText.trim().length > 0;
-    const canEmitSupplementaryTextFull = !textStreamedViaDelta;
+    const streamedMessageText =
+      sanitizedEmitted ||
+      sanitizeLlmFinalOutput(
+        summarizeStreamedProseFromState(summarizeStreamState),
+      );
 
     let llmBlocksForStorage =
       llmBlocksFromParse.length > 0
@@ -399,66 +425,55 @@ export class AgentRunSseEmitter {
       ),
     );
 
-    // 未走 prose delta：一次性 full；走过 delta：仍推 authoritative full 与落库 blocks 对齐
-    const needsConsolidatedFullEmit =
-      sanitizedMerged.length > 0 && !textStreamedViaDelta;
-    const needsReconcileAfterDelta =
-      sanitizedMerged.length > 0 && textStreamedViaDelta;
-    let emittedConsolidatedFull = false;
-
-    if (needsReconcileAfterDelta) {
-      this.emitMessageBlocks(sessionId, runId, sanitizedMerged, {
-        action: 'stream',
-        mode: 'full',
-      });
-      emittedConsolidatedFull = true;
-    } else if (needsConsolidatedFullEmit) {
-      this.emitMessageBlocks(sessionId, runId, sanitizedMerged, {
-        action: 'stream',
-        mode: 'full',
-      });
-      emittedConsolidatedFull = true;
-    } else if (llmBlocksFromParse.length > 0) {
-      const structuredFromLlm = llmBlocksFromParse.filter(
-        isStructuredMessageBlock,
-      );
-      const textFromLlm = llmBlocksFromParse.filter(
-        (block) => block.type === 'text',
-      );
-      if (structuredFromLlm.length > 0) {
-        this.emitMessageBlocks(sessionId, runId, structuredFromLlm, {
-          action: 'stream',
-          mode: 'full',
-        });
-      }
-      if (textFromLlm.length > 0 && canEmitSupplementaryTextFull) {
-        this.emitMessageBlocks(sessionId, runId, textFromLlm, {
-          action: 'stream',
-          mode: 'full',
-        });
-      }
-    } else if (canEmitSupplementaryTextFull && proseFallbackSource.trim()) {
-      const fallbackTextBlocks = filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
-        textBlock(proseFallbackSource, 'markdown'),
-      ]);
-      if (fallbackTextBlocks.length > 0) {
-        this.emitMessageBlocks(sessionId, runId, fallbackTextBlocks, {
-          action: 'stream',
-          mode: 'full',
-        });
-      }
-    }
-
-    this.markRunSseContentDelivered(runKey, sanitizedMerged, {
-      textStreamed:
-        textStreamedViaDelta ||
-        llmBlocksForStorage.some((block) => block.type === 'text'),
-      structuredPatches:
-        patches.length +
-        (llmBlocksFromParse.some(isStructuredMessageBlock) ? 1 : 0),
-      emittedConsolidatedFull,
+    const blocks = this.publishAssistantBlocks(sessionId, runId, sanitizedMerged, {
+      turnId,
     });
-    return sanitizedMerged;
+    return {
+      blocks,
+      rawOutput: routedMessage || rawLlmSource,
+    };
+  }
+
+  /**
+   * 定稿交付：权威 full SSE（与 artifact / 落库一致）。
+   * 正文 delta 须在 LLM stream 回调中已推送；此处不再模拟切片。
+   */
+  publishAssistantBlocks(
+    sessionId: string,
+    runId: number,
+    blocks: MessageBlock[],
+    options?: {
+      turnId?: number;
+      phase?: RunAssistantArtifactPhase;
+      code?: AgentMachineCode;
+      commitArtifact?: boolean;
+    },
+  ): MessageBlock[] {
+    const sanitized = sanitizeMessageBlocks(blocks);
+    if (sanitized.length === 0) {
+      return [];
+    }
+    const turnId =
+      options?.turnId ??
+      this.assistantArtifact.peekTurnId(sessionId, runId) ??
+      undefined;
+
+    this.emitMessageBlocks(sessionId, runId, sanitized, {
+      action: 'stream',
+      mode: 'full',
+      turnId,
+      code: options?.code,
+    });
+
+    if (options?.commitArtifact !== false) {
+      this.assistantArtifact.commit(
+        sessionId,
+        runId,
+        sanitized,
+        options?.phase ?? 'final',
+      );
+    }
+    return sanitized;
   }
 
   private extractAiMessageText(message: AIMessage): string {
@@ -475,10 +490,6 @@ export class AgentRunSseEmitter {
         .join('');
     }
     return '';
-  }
-
-  private sanitizeFinalOutput(value: string): string {
-    return sanitizeLlmFinalOutput(value);
   }
 
 }

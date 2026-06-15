@@ -23,7 +23,6 @@ import type {
   AgentGraphState,
   AgentRunInput,
   AgentRunResult,
-  AgentRunStep,
   ResumeAfterWriteConfirmInput,
 } from './main/agent-engine.types';
 import { AgentLangGraphRunner } from './main/agent-lang-graph.runner';
@@ -31,15 +30,18 @@ import { AgentRunLifecycleService } from './main/agent-run-lifecycle.service';
 import { SessionGoaService } from '../../memory/goa/session-goa.service';
 import type { SessionMemoryUpdateContext } from '../../memory/goa/session-goa.types';
 import { AgentRunSseEmitter } from './main/agent-run-sse.emitter';
+import { RunAssistantArtifactStore } from './main/run-assistant-artifact.store';
+import { RunAssistantMessagePersistService } from './main/run-assistant-message-persist.service';
 import { AgentSessionScopeService } from './main/agent-session-scope.service';
 import {
   buildEngineToolsFromAllowed,
   executePendingWriteToolCalls,
-  maxStepFromSteps,
 } from './main/agent-tool-runtime.util';
+import { maxRunStepNumber } from './main/agent-run-steps.util';
 import { deserializePendingObservations } from './agent-write-confirmation.util';
 import { resolveTaskPlanAdvance } from './main/task-plan.util';
 import { buildWriteConfirmResumeSummaryObservation } from './write-confirm-resume-summary.util';
+import { pendingRespondFromObservation } from './turn/turn-respond.util';
 import type { ToolObservation } from './main/agent-engine.types';
 
 /**
@@ -59,6 +61,8 @@ export class AgentEngineService {
     private readonly agentService: AgentService,
     private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
     private readonly sse: AgentRunSseEmitter,
+    private readonly assistantArtifact: RunAssistantArtifactStore,
+    private readonly messagePersist: RunAssistantMessagePersistService,
     private readonly lifecycle: AgentRunLifecycleService,
     private readonly langGraphRunner: AgentLangGraphRunner,
     private readonly sessionScope: AgentSessionScopeService,
@@ -88,6 +92,14 @@ export class AgentEngineService {
         message,
       },
     });
+    if (pending.turnId != null) {
+      await this.messagePersist.appendNoticeToTurnOutput({
+        userId,
+        sessionId,
+        turnId: pending.turnId,
+        noticeMarkdown: message,
+      });
+    }
     this.chatEvents.emit(sessionId, {
       event: 'complete',
       payload: {
@@ -95,6 +107,21 @@ export class AgentEngineService {
         runId: pending.runId,
         turnId: pending.turnId,
         status: 'success',
+      },
+    });
+  }
+
+  private emitAgentRunComplete(
+    sessionId: string,
+    result: AgentRunResult,
+  ): void {
+    this.chatEvents.emit(sessionId, {
+      event: 'complete',
+      payload: {
+        source: 'agent-run',
+        runId: result.runId,
+        turnId: result.turnId,
+        status: result.status,
       },
     });
   }
@@ -205,8 +232,6 @@ export class AgentEngineService {
     );
 
     const approvedWriteToolNames = consumed.toolCalls.map((call) => call.name);
-    const contextSteps = consumed.resumeContext.steps as AgentRunStep[];
-    const contextMaxStep = maxStepFromSteps(contextSteps);
     let priorObservations = deserializePendingObservations(
       consumed.resumeContext.toolObservations,
     );
@@ -247,7 +272,7 @@ export class AgentEngineService {
       toolCalls: consumed.toolCalls,
       tools: resolvedScopedTools,
       langChainBundle: scopedToolBundle,
-      afterStep: contextMaxStep,
+      priorSteps: [],
       priorObservations,
       toolEngine: this.toolEngine,
       assessObservationQuality: (output, agentMetadata) =>
@@ -261,7 +286,7 @@ export class AgentEngineService {
     });
 
     if (writeObservations.length === 0) {
-      await this.lifecycle.updateRun(resumeRun.id, [], 0, AgentRunStatus.failed);
+      await this.lifecycle.updateRun(resumeRun.id, [], AgentRunStatus.failed);
       this.emitWriteConfirmationExpired(input.sessionId);
       return null;
     }
@@ -269,22 +294,24 @@ export class AgentEngineService {
     await this.lifecycle.updateRun(
       resumeRun.id,
       writeSteps,
-      maxStepFromSteps(writeSteps),
       AgentRunStatus.running,
     );
 
     const runMetrics = createRunMetricsAccumulator();
-    this.sse.resetThinkBuffer(input.sessionId, resumeRun.id);
-
-    const iterationAfterWrites = maxStepFromSteps(
-      writeSteps.length > 0 ? writeSteps : contextSteps,
+    this.assistantArtifact.reset(
+      input.sessionId,
+      resumeRun.id,
+      primaryRun.turnId,
     );
+    this.sse.clearThinkBuffer(input.sessionId, resumeRun.id);
+
+    const iterationAfterWrites = maxRunStepNumber(writeSteps);
     const allObservations: ToolObservation[] = [
       ...priorObservations,
       ...writeObservations,
     ];
     let taskPlan = consumed.resumeContext.taskPlan ?? null;
-    let pendingSummaryObservation: ToolObservation | null = null;
+    let pendingRespond: AgentGraphState['pendingRespond'] = null;
 
     if (writeRoundMeta.toolCalls.length > 0) {
       if (taskPlan) {
@@ -302,12 +329,15 @@ export class AgentEngineService {
         }
       }
 
-      pendingSummaryObservation = buildWriteConfirmResumeSummaryObservation({
+      const resumeSummaryObservation = buildWriteConfirmResumeSummaryObservation({
         userMessage: consumed.latestUserMessage,
         writeRoundMeta,
         observations: allObservations,
         scopedTools: resolvedScopedTools,
       });
+      pendingRespond = resumeSummaryObservation
+        ? pendingRespondFromObservation(resumeSummaryObservation)
+        : null;
     }
 
     const graphInitialState: Partial<AgentGraphState> = {
@@ -317,7 +347,7 @@ export class AgentEngineService {
       preloadedToolObservations: priorObservations,
       toolObservations: writeObservations,
       pendingToolCalls: [],
-      pendingSummaryObservation,
+      pendingRespond,
       lastToolRoundMeta: writeRoundMeta,
       intentKind: consumed.resumeContext.intentKind,
       scopedTools: resolvedScopedTools,
@@ -361,24 +391,27 @@ export class AgentEngineService {
         approvedWriteToolNames,
       });
 
-      return await this.lifecycle.completeAgentRunFromGraph({
+      const result = await this.lifecycle.completeAgentRunFromGraph({
+        userId: input.userId,
         sessionId: input.sessionId,
         turnId: primaryRun.turnId,
         runId: resumeRun.id,
         agent,
-        tools,
         latestUserMessage: consumed.latestUserMessage,
         graphState,
         runMetrics,
       });
+      this.emitAgentRunComplete(input.sessionId, result);
+      return result;
     } catch (error) {
       const partial = await this.prisma.agentRun.findUnique({
         where: { id: resumeRun.id },
         select: { steps: true },
       });
       const partialSteps = this.lifecycle.parseStepsFromRun(partial?.steps);
-      return this.handleRunFailure({
+      const result = await this.handleRunFailure({
         error,
+        userId: input.userId,
         sessionId: input.sessionId,
         turnId: primaryRun.turnId,
         runId: resumeRun.id,
@@ -392,8 +425,13 @@ export class AgentEngineService {
           steps: partialSteps,
         }),
       });
+      if (result) {
+        this.emitAgentRunComplete(input.sessionId, result);
+      }
+      return result;
     } finally {
       this.sse.clearThinkBuffer(input.sessionId, resumeRun.id);
+      this.assistantArtifact.clear(input.sessionId, resumeRun.id);
     }
   }
 
@@ -484,7 +522,8 @@ export class AgentEngineService {
     });
 
     const runMetrics = createRunMetricsAccumulator();
-    this.sse.resetThinkBuffer(input.sessionId, run.id);
+    this.assistantArtifact.reset(input.sessionId, run.id, turn.id);
+    this.sse.clearThinkBuffer(input.sessionId, run.id);
 
     try {
       const graphState = await this.langGraphRunner.run({
@@ -507,24 +546,27 @@ export class AgentEngineService {
         turnId: turn.id,
       });
 
-      return await this.lifecycle.completeAgentRunFromGraph({
+      const result = await this.lifecycle.completeAgentRunFromGraph({
+        userId: input.userId,
         sessionId: input.sessionId,
         turnId: turn.id,
         runId: run.id,
         agent,
-        tools,
         latestUserMessage: input.input,
         graphState,
         runMetrics,
       });
+      this.emitAgentRunComplete(input.sessionId, result);
+      return result;
     } catch (error) {
       const partial = await this.prisma.agentRun.findUnique({
         where: { id: run.id },
         select: { steps: true },
       });
       const partialSteps = this.lifecycle.parseStepsFromRun(partial?.steps);
-      return this.handleRunFailure({
+      const result = await this.handleRunFailure({
         error,
+        userId: input.userId,
         sessionId: input.sessionId,
         turnId: turn.id,
         runId: run.id,
@@ -538,20 +580,26 @@ export class AgentEngineService {
           steps: partialSteps,
         }),
       });
+      if (result) {
+        this.emitAgentRunComplete(input.sessionId, result);
+      }
+      return result;
     } finally {
       this.sse.clearThinkBuffer(input.sessionId, run.id);
+      this.assistantArtifact.clear(input.sessionId, run.id);
     }
   }
 
   private async handleRunFailure(input: {
     error: unknown;
+    userId: number;
     sessionId: string;
     turnId: number;
     runId: number;
     runMetrics: ReturnType<typeof createRunMetricsAccumulator>;
     scopedToolCount: number;
     scheduleMemory?: SessionMemoryUpdateContext;
-  }): Promise<AgentRunResult> {
+  }): Promise<AgentRunResult | null> {
     const errorText = input.error instanceof Error ? input.error.message : String(input.error);
     const userFacing = resolveAgentRunFailureUserMessage(input.error);
     const errorCode = resolveAgentRunFailureCode(input.error);
@@ -576,46 +624,31 @@ export class AgentEngineService {
       });
       throw input.error;
     }
-    const finalOutput = this.lifecycle.sanitizeFinalOutput(userFacing);
+    const sanitizedUserFacing = this.lifecycle.sanitizeFinalOutput(userFacing);
     recordMachineCodeUsage(input.runMetrics, errorCode);
-    this.sse.emitLlmReply(input.sessionId, input.runId, finalOutput, {
-      code: errorCode ?? undefined,
-      mode: 'full',
-    });
-    this.sse.runSseContentDelivered.add(
-      this.sse.thinkBufferKey(input.sessionId, input.runId),
-    );
-    const finishReason = resolveFinishReason({
-      status: AgentRunStatus.success,
-      steps: [],
-      finishedEarly: false,
-      error: errorText,
-    });
-    await this.lifecycle.finalizeRunAndTurn({
+    this.sse.publishAssistantBlocks(input.sessionId, input.runId, [
+      { type: 'text', content: sanitizedUserFacing, format: 'markdown' },
+    ]);
+    const result = await this.lifecycle.finishAgentRun({
+      userId: input.userId,
+      sessionId: input.sessionId,
       turnId: input.turnId,
       runId: input.runId,
-      runMetrics: input.runMetrics,
-      finalOutput,
       status: AgentRunStatus.success,
-      finishReason,
-      scopedToolCount: input.scopedToolCount,
       steps: [],
-      currentStep: 0,
+      scopedToolCount: input.scopedToolCount,
+      runMetrics: input.runMetrics,
+      error: errorText,
     });
     if (input.scheduleMemory) {
       await this.lifecycle.awaitPostRunMemoryTasks(input.sessionId, {
         ...input.scheduleMemory,
         turnId: input.turnId,
         runId: input.runId,
-        finalOutput: input.scheduleMemory.finalOutput || finalOutput,
+        finalOutput: this.lifecycle.finalOutputPlainText(result.output),
         runStatus: 'failed',
       });
     }
-    return {
-      runId: input.runId,
-      turnId: input.turnId,
-      output: finalOutput,
-      status: AgentRunStatus.success,
-    };
+    return result;
   }
 }

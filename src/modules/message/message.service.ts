@@ -9,16 +9,7 @@ import type { Message } from '../../../generated/prisma/client';
 import type { Prisma } from '../../../generated/prisma/client';
 import { AgentEngineService } from '../../core/agent-engine/engine/agent-engine.service';
 import { LlmService } from '../../core/llm/llm.service';
-import {
-  isSessionHistoryTrimTurnsAfterCompressEnabled,
-} from '../../core/memory/shared/memory.constants';
-import { SessionContextStore } from '../../core/memory/context/session-context.store';
-import { trimTurnsByCompressedWatermark } from '../../core/memory/context/session-context-trim.util';
-import {
-  isSessionContextPayload,
-  type SessionContextPayload,
-  type SessionContextTurn,
-} from '../../core/memory/context/session-context.types';
+import { SessionMessageContextSyncService } from '../../core/memory/context/session-message-context-sync.service';
 import { PromptComposerService } from '../../core/prompt/prompt-composer.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChatEventsService } from '../chat/chat-events.service';
@@ -37,7 +28,7 @@ export class MessageService {
     @Inject(forwardRef(() => ChatService))
     private readonly chatService: ChatService,
     private readonly chatEvents: ChatEventsService,
-    private readonly sessionContextStore: SessionContextStore,
+    private readonly sessionMessageContext: SessionMessageContextSyncService,
     private readonly promptComposer: PromptComposerService,
     private readonly llmService: LlmService,
     private readonly agentEngine: AgentEngineService,
@@ -76,7 +67,15 @@ export class MessageService {
         toolOutput: this.toJson(dto.toolOutput),
       },
     });
-    await this.syncSessionContextAfterCreate(session.id, message);
+    await this.sessionMessageContext.syncAfterMessageCreate(session.id, message);
+    if (message.role === 'assistant' && dto.turnId != null) {
+      await this.linkAssistantOutputToTurn(
+        userId,
+        session.id,
+        dto.turnId,
+        message.id,
+      );
+    }
     if (message.role === 'user') {
       const boundSession = await this.chatService.ensureSessionAgent(
         session,
@@ -155,7 +154,7 @@ export class MessageService {
         message,
       },
     });
-    await this.rebuildSessionContextFromDb(existing.sessionId);
+    await this.sessionMessageContext.rebuildFromDb(existing.sessionId);
     return message;
   }
 
@@ -170,7 +169,7 @@ export class MessageService {
         id,
       },
     });
-    await this.rebuildSessionContextFromDb(existing.sessionId);
+    await this.sessionMessageContext.rebuildFromDb(existing.sessionId);
   }
 
   async composePromptAndChat(
@@ -260,48 +259,6 @@ export class MessageService {
         });
         return;
       }
-      this.chatEvents.emit(sessionId, {
-        event: 'complete',
-        payload: {
-          source: 'agent-run',
-          runId: run.runId,
-          turnId: run.turnId,
-          status: run.status,
-        },
-      });
-
-      try {
-        const sessionRow = await this.prisma.session.findFirst({
-          where: { id: sessionId, userId },
-          select: { appClientId: true },
-        });
-        if (!sessionRow) {
-          return;
-        }
-        const assistantMessage = await this.create(
-          userId,
-          sessionId,
-          {
-            role: 'assistant',
-            content: run.output,
-          },
-          sessionRow.appClientId,
-        );
-        if (run.turnId) {
-          await this.prisma.messageTurn.update({
-            where: { id: run.turnId },
-            data: { outputMessageId: assistantMessage.id },
-          });
-        }
-      } catch (persistError) {
-        this.logger.warn(
-          `assistant persist failed after complete sessionId=${sessionId} runId=${run.runId}: ${
-            persistError instanceof Error
-              ? persistError.message
-              : String(persistError)
-          }`,
-        );
-      }
     } catch (error) {
       this.logger.warn(
         `agent run failed for sessionId=${sessionId}: ${
@@ -316,6 +273,25 @@ export class MessageService {
         },
       });
     }
+  }
+
+  private async linkAssistantOutputToTurn(
+    userId: number,
+    sessionId: string,
+    turnId: number,
+    messageId: number,
+  ): Promise<void> {
+    const turn = await this.prisma.messageTurn.findFirst({
+      where: { id: turnId, sessionId, userId },
+      select: { id: true },
+    });
+    if (!turn) {
+      throw new NotFoundException('message turn not found');
+    }
+    await this.prisma.messageTurn.update({
+      where: { id: turnId },
+      data: { outputMessageId: messageId },
+    });
   }
 
   private toJson(
@@ -356,100 +332,4 @@ export class MessageService {
     };
   }
 
-  private toMessageTurn(message: Message): SessionContextTurn {
-    return {
-      messageId: message.id,
-      role: message.role,
-      content: message.content ?? null,
-      toolName: message.toolName ?? null,
-      toolInput: (message.toolInput as Prisma.JsonValue | null) ?? null,
-      toolOutput: (message.toolOutput as Prisma.JsonValue | null) ?? null,
-      createdAt: message.createdAt.toISOString(),
-    };
-  }
-
-  private async syncSessionContextAfterCreate(
-    sessionId: string,
-    message: Message,
-  ): Promise<void> {
-    try {
-      const turn = this.toMessageTurn(message);
-      const patched = await this.sessionContextStore.tryPatchMerge(
-        sessionId,
-        (current) => {
-          if (!isSessionContextPayload(current)) {
-            return current;
-          }
-          const payload = current as SessionContextPayload;
-          const last = payload.turns[payload.turns.length - 1];
-          if (last?.messageId === turn.messageId) {
-            return payload;
-          }
-          return {
-            ...payload,
-            sessionId,
-            turns: [...payload.turns, turn],
-            updatedAt: new Date().toISOString(),
-          };
-        },
-      );
-      if (patched == null) {
-        await this.rebuildSessionContextFromDb(sessionId);
-        return;
-      }
-      if (!isSessionContextPayload(patched)) {
-        await this.rebuildSessionContextFromDb(sessionId);
-      }
-    } catch (error) {
-      this.logger.warn(
-        `failed to sync redis session context for sessionId=${sessionId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
-  private async rebuildSessionContextFromDb(sessionId: string): Promise<void> {
-    try {
-      const rows = await this.prisma.message.findMany({
-        where: { sessionId },
-        orderBy: { createdAt: 'asc' },
-      });
-      const existing = await this.sessionContextStore.get(sessionId);
-      const prevPayload =
-        existing && isSessionContextPayload(existing) ? existing : undefined;
-      let turns = rows.map((row) => this.toMessageTurn(row));
-      const compressedUpToMessageId = prevPayload?.compressedUpToMessageId;
-      if (
-        isSessionHistoryTrimTurnsAfterCompressEnabled() &&
-        compressedUpToMessageId != null
-      ) {
-        turns = trimTurnsByCompressedWatermark(turns, compressedUpToMessageId);
-      }
-      const updatedAt = new Date().toISOString();
-      const cached =
-        prevPayload != null
-          ? await this.sessionContextStore.tryPatch(sessionId, {
-              turns,
-              updatedAt,
-            })
-          : await this.sessionContextStore.tryPatch(sessionId, {
-              sessionId,
-              turns,
-              compressedUpToMessageId,
-              updatedAt,
-            });
-      if (!cached) {
-        this.logger.debug(
-          `session context rebuild skipped (Redis unavailable) sessionId=${sessionId}`,
-        );
-      }
-    } catch (error) {
-      this.logger.warn(
-        `failed to rebuild redis session context for sessionId=${sessionId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
 }

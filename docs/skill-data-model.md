@@ -64,21 +64,33 @@ Role
 ## 运行时（LangGraph）
 
 ```text
-skill ──命中──→ plan → llm ⇄ tools ⇄ resultCheck
-    └──未命中──→ intent → plan → llm ⇄ …
+START → intent（收窄 scopedTools）
+     → plan（外层编排：kind=skill | tool | summarize）
+     → readiness → llm ⇄ resultCheck ⇄ tools → summarize
 ```
 
 完整 Plan 节点原理与配置见 **[plan-node.md](./plan-node.md)**。
 
-- `SkillService.resolveForRun`：按 `UserApp.roleId` 可选 `RoleSkill` 白名单 → **两阶段召回（默认 `two_stage`）** → `allowed ∩ skillTools` gate。详见 **[skill-recall-two-stage.md](./skill-recall-two-stage.md)**。
-  - **Stage A (`solo`)**：query 仅本轮 `userMessage`；走 **L0/L1 渐进召回**。
-  - **Stage B (`contextual`)**：solo miss 且满足 gate（短句、有上轮 episode、同话题、lift 够）时，query 拼最近 1 轮 `episode.goal` + 可选 `deliverable`，再跑 L0/L1。
-  - **L0 (`router`)**：向量/关键词 Top-1，文本 `name + capabilityKey + description`；单候选需 ≥ `SKILL_SINGLE_MIN_SCORE`（默认 `0.42`）。
-  - **L1 (`prompt_excerpt`)**：L0 miss 且候选数 ≤ `SKILL_PROGRESSIVE_RECALL_MAX_CANDIDATES`（默认 `5`）时，在 L0 文本上追加 `prompt` 前 `SKILL_RECALL_PROMPT_EXCERPT_CHARS`（默认 `300`）字再召回。`SKILL_PROGRESSIVE_RECALL=0` 可关闭 L1。
-- 命中：写 `step.type=skill`，跳过 intent；`recallPhase` 为 `solo` | `contextual`；含 `soloTopScore`、`contextLift`、`contextGateReason` 等可观测字段。
-- 未命中：走原 intent / bind 召回逻辑。
-- 向量阈值：默认 `max(IntentRecallConfig.vectorMinScore, 0.38)`；`SKILL_VECTOR_MIN_SCORE` 可覆盖。标题加分 `SKILL_VECTOR_NAME_BOOST` 仅作用于本轮短句。多候选需 Top-1 领先 ≥ `SKILL_RECALL_MIN_GAP`（默认 `0.08`）。
-- 写确认续跑：Redis `resumeContext` 含 `skillApplied` / `activeSkillPrompt` / `taskPlan` 等，确认后第二轮 graph 恢复 Plan 状态；skill 命中时不触发「放宽工具范围」expand-once。
+### Skill 如何进入执行（无独立 skill 图节点）
+
+1. **intent** 按类目召回收窄 `scopedTools`。
+2. **plan** 调用 `listAvailableSkillsForScopedTools`：`SkillTool ∩ scopedTools` + 可选 `RoleSkill` 白名单 → `availableSkills` 写入 Plan LLM prompt。
+3. 外层 Plan LLM 输出 `kind=skill` 步 + `skillId`（须 ∈ `availableSkills`）；校验失败则整份 outer plan 作废并 minimal 兜底。
+4. **`expandPendingSkillStepIfNeeded`**（在 plan/readiness/llm/resultCheck 入口）：`getAvailableSkillById` → `bindSkillToScopedTools` → `resolveTaskPlan` 生成内层步序 → `pushPlanFrame`。
+5. 内层帧执行完毕 → `popPlanFrameIfInnerComplete`，外层下一 `kind=skill` 步重复上述展开。
+
+**不做向量召回选 skill**；由 Plan LLM 在 `availableSkills` 列表中编排 `kind=skill` 步。
+
+### 关键 API（`SkillService`）
+
+| 方法 | 用途 |
+|------|------|
+| `listAvailableSkillsForScopedTools` | Plan 外层候选列表 |
+| `getAvailableSkillById` | 展开 skill 帧时二次校验 |
+| `bindSkillToScopedTools` | 将 scopedTools 收窄到 skill 工具子集 |
+| `listAgentSkillsForUser` | Session prepare 预热（不按 tool 过滤） |
+
+- 写确认续跑：Redis `resumeContext` 含 `skillApplied` / `activeSkillPrompt` / `taskPlan`（含 `frames`）等，确认后 graph 恢复 Plan 栈状态。
 
 ## 模板样例
 

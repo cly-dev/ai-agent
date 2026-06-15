@@ -5,7 +5,10 @@ import type { LlmChatMessage } from '../../llm/llm.types';
 import { PROMPT_KEYS } from '../../prompt/prompt-template.keys';
 import { PromptRegistryService } from '../../prompt/prompt-registry.service';
 import { formatGoaContextHint } from '../goa/session-goa-projection.util';
-import { isActiveTaskResumable, type SessionGoaPayload } from '../goa/session-goa.types';
+import {
+  isActiveTaskChatResumable,
+  type SessionGoaPayload,
+} from '../goa/session-goa.types';
 
 export const taskResumeFollowUpSchema = z.object({
   continueActiveTask: z.boolean(),
@@ -31,7 +34,7 @@ export class SessionTaskResumeFollowUpService {
     goa: SessionGoaPayload;
   }): Promise<TaskResumeFollowUpDecision | null> {
     const activeTask = input.goa.activeTask;
-    if (!isActiveTaskResumable(activeTask)) {
+    if (!isActiveTaskChatResumable(activeTask)) {
       return null;
     }
     const task = activeTask!;

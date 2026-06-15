@@ -4,6 +4,7 @@ import { PrismaService } from '../../../../prisma/prisma.service';
 import { SessionPrepareStore } from '../../../../modules/chat/session-prepare.store';
 import { AgentService } from '../../../../modules/agent/agent.service';
 import { IntentScopeService } from '../../../intent/intent-scope.service';
+import { SkillService } from '../../../skill/skill.service';
 import {
   ToolEngineService,
   type BuiltLangChainTools,
@@ -43,6 +44,7 @@ export class AgentSessionScopeService {
     private readonly prisma: PrismaService,
     private readonly agentService: AgentService,
     private readonly sessionPrepareStore: SessionPrepareStore,
+    private readonly skillService: SkillService,
     private readonly intentScopeService: IntentScopeService,
     private readonly toolEngine: ToolEngineService,
   ) {}
@@ -97,16 +99,26 @@ export class AgentSessionScopeService {
       appClientId,
       agentId,
     );
-    if (fromRedis && areToolIdSetsEqual(fromRedis, freshTools)) {
+    if (fromRedis && areToolIdSetsEqual(fromRedis.tools, freshTools)) {
       this.sessionAllowedToolsCache.set(cacheKey, {
-        tools: fromRedis,
+        tools: fromRedis.tools,
         expiresAt: Date.now() + SESSION_TOOL_CACHE_TTL_MS,
       });
-      return fromRedis;
+      return fromRedis.tools;
     }
     if (fromRedis) {
       await this.sessionPrepareStore.delete(sessionId);
     }
+
+    const freshSkills = await this.skillService.listAgentSkillsForUser({
+      agentId,
+      userId,
+      appClientId,
+    });
+    const skillRows = freshSkills.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+    }));
 
     this.sessionAllowedToolsCache.set(cacheKey, {
       tools: freshTools,
@@ -119,6 +131,7 @@ export class AgentSessionScopeService {
       appClientId,
       agentId,
       freshTools,
+      skillRows,
     );
     return freshTools;
   }

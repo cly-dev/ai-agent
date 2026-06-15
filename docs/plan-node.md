@@ -3,7 +3,8 @@
 Plan 节点是 Agent 运行时的 **任务规划层**，与 ReAct 决策环配合：**Plan 拆一次，ReAct 逐步执行**。  
 目标：避免每轮 LLM 决策仍携带完整用户原话、重复调用同一 READ 工具（如「分析评论」场景下反复 list）。
 
-> **规则与状态详解**（字段、枚举、advance、gather vs 分页拉数、排错）：[plan-rules-and-state.md](./plan-rules-and-state.md)
+> **规则与状态详解**（字段、枚举、advance、gather vs 分页拉数、排错）：[plan-rules-and-state.md](./plan-rules-and-state.md)  
+> **Run 步骤编号 / Turn 时间线**：[agent-run-steps.md](./agent-run-steps.md)
 
 ---
 
@@ -48,30 +49,34 @@ Plan 节点是 Agent 运行时的 **任务规划层**，与 ReAct 决策环配�
 
 | 层 | 管什么 | 不负责什么 |
 |----|--------|------------|
-| Skill 召回 | 选场景、gate 工具子集 | 不拆步骤 |
-| **Plan** | deliverable、步骤队列、currentObjective | 不 parse prompt 正文、不调 HTTP |
+| **外层 Plan** | 编排 `kind=skill` 复合步、tool 步、summarize | 不执行工具、不向量选 skill |
+| **Skill 帧展开** | bind 工具子集、内层 `resolveTaskPlan` | 不做类目召回 |
+| **Plan 栈** | outer + inner 帧 push/pop | 不支持 skill 嵌套超过 2 层 |
 | Tool metadata | role、参数、businessFields | 不拆用户问句 |
-| resultCheck | dedupe、EMPTY/ERROR、**plan advance** | 不调 LLM |
+| resultCheck | dedupe、EMPTY/ERROR、**plan advance**、skill 步展开 | 不调 LLM |
 
 ---
 
 ## 2. Graph 路由
 
+> 节点职责、共享状态与条件边总表：[agent-graph.md](./agent-graph.md)
+
 ```text
-START
-  → skill
-       ├─ hit  ──→ plan → llm ⇄ tools ⇄ resultCheck
-       └─ miss ──→ intent → plan → llm ⇄ …
-  → summarize → END
+START → intent → plan → readiness → llm ⇄ resultCheck ⇄ tools → summarize → END
+         │                              │
+         └──────── pendingRespond ──────┘
+
+写确认续跑：START → resultCheck | summarize
+LLM 续跑：  START → llm
 ```
 
 **要点：**
 
-- Plan 在 **scopedTools 已确定之后** 运行。
-  - Skill 命中：gate 后的 `skillTools ∩ allowed`。
-  - Skill 未命中：intent + bind 收窄之后。
-- Plan **每 turn 只执行一次**（`state.taskPlan` 已存在则跳过）。
-- Plan **每 turn 只执行一次**；默认调 `agent.plan` LLM 拆步（失败则规则 template），`PLAN_LLM=0` 时纯规则；**不调 Tool**。
+- **intent** 先收窄 `scopedTools`（类目向量召回 + bind cap）。
+- **plan** 在 scopedTools 确定后运行：`listAvailableSkillsForScopedTools` → **外层** `resolveOuterPlan`（`planMode=outer_orchestration`）。
+- **skill** 不作为独立节点；外层 `kind=skill` 步由 `expandPendingSkillStepIfNeeded` 展开为内层帧（`resolveTaskPlan`）。
+- Plan **每 turn 只执行一次**（`state.taskPlan` 已存在则跳过；session resume 从 GOA 恢复 `frames`）。
+- 外层 Plan 默认调 `agent.plan` LLM；**mutation 且步序不合规**时强制替换为确定性模板（`mutation_template_forced`）；LLM 失败则 `buildTaskPlan` 规则兜底；`PLAN_LLM=0` 时仅规则。**不调 Tool**。
 
 实现位置：`src/core/agent-engine/engine/main/agent-lang-graph.runner.ts`（`plan` 节点 + 条件边）。
 
@@ -96,6 +101,8 @@ START
 | `taskPhase` | 当前阶段：`gather` \| `analyze` \| `answer` \| `mutate` |
 | `currentObjective` | **ReAct Reason 的主 user 指令** |
 | `currentStepId` | 当前步骤 id |
+| `frames` | Plan 帧栈（outer + skill 内层） |
+| `activeFrameIndex` | 当前活跃帧下标 |
 
 ### 3.2 TaskPlanStep
 
@@ -103,7 +110,8 @@ START
 |------|------|
 | `id` | 步骤唯一 id，如 `fetch`、`analyze` |
 | `phase` | 与 taskPhase 对齐 |
-| `kind` | `tool`：需 LLM 选 tool；`summarize`：由 resultCheck 短路汇总；`reason`：预留 |
+| `kind` | `skill`：外层复合步，运行时 push 内层帧；`tool`：需 LLM 选 tool；`summarize` / `reason`：由 resultCheck 或 llm 短路汇总 |
+| `skillId` | `kind=skill` 时必填，须 ∈ plan 时 `availableSkills` |
 | `toolRole` | 可选，期望的 decisionRole（如 `read-list`） |
 | `objective` | 给 LLM 的子目标英文指令 |
 | `stopWhen` | tool 步完成条件，见 §5 |
@@ -170,9 +178,18 @@ Plan 节点调用前，skill 命中时会写入 `activeSkillName` / `activeSkill
 
 解析：`parseSkillPlanConfig()` → `validatePlanStepsAgainstScoped()` 校验 toolRole 与 scoped tools 一致；**无效 workflow 会降级**到后续路径，不会静默使用坏步骤。
 
-#### 路径 ② 确定性 mutation 回复模板
+#### 路径 ② 确定性 mutation 模板
 
-Skill 命中 + scoped 含 read + write（L2/L3 或 `deliverable=mutation`）→ `read → write → summarize`，**跳过 Plan LLM**（`shouldUseDeterministicMutationReplyPlan`）。
+**内层**（`resolveTaskPlan`）：`shouldUseDeterministicMutationPlan()` 为 true 时（scoped 含 write，且 `deliverable=mutation` / 外层无 skill / L2·L3 回复类 Skill）→ **跳过 Plan LLM**，产出固定步序：
+
+```text
+read_detail|list(gather) → compose_write(analyze/tool) → present(answer/summarize)
+  → write(mutate/tool) → confirm(answer/summarize)
+```
+
+**外层**（`resolveOuterPlan`）：LLM 返回 `deliverable=mutation` 或含 write tool 步但 **不含** `compose_write`/`present`/`write` 合规序时，同样强制替换为上述模板（`llmFallbackReason: mutation_template_forced`）。外层含 `kind=skill` 步时不替换，由内层 `resolveTaskPlan` 处理。
+
+合规判定：`isCompliantMutationPlan()`（`task-plan.util.ts`）。`skill.config.workflow` 若不合规 mutation 步序，**降级**到本模板。
 
 #### 路径 ③ Plan LLM（无 workflow / 非确定性回复场景时默认）
 
@@ -180,10 +197,53 @@ Skill 命中 + scoped 含 read + write（L2/L3 或 `deliverable=mutation`）→ 
 
 - Prompt 模板：`agent.plan`（DB/Redis，代码兜底见 `prompt-defaults.ts`）。
 - 输出：structured JSON（`llmTaskPlanSchema` / zod）。
-- 输入 payload：`userMessage`、skill 摘要、`scopedTools`（name + role）。
+- 输入 payload：`userMessage`、skill 摘要、`scopedTools`（name + role）、`sessionWorkingMemory`（有 GOA 时）。
 - 校验：`kind=tool` 的 `toolRole` 必须在当前 scoped 工具 role 集合内。
+- **mutation**：若 LLM 步序不合规（缺 `compose_write`/`present`/`write` 或顺序错误）→ 强制路径 ② 模板（`method: template`，`llmFallbackReason: mutation_template_forced`）。
 - 失败或 `PLAN_LLM=0` → 走路径 ④ 规则 template。
 - `source: 'llm'`；plan step 的 `method: 'llm'`。
+
+##### 观测满足与跳步（执行层，`plan-observation-scope.util.ts`）
+
+Graph 内观测分两层（见 [working-memory.md](./working-memory.md)）：
+
+| 桶 | 来源 | 用途 |
+|----|------|------|
+| `preloadedToolObservations` | GOA / 写确认续跑注入 | LLM / summarize 上下文；**分页 gather 续拉** |
+| `toolObservations` | 本 run 工具执行 | **pre_tools 跳步**（gather 满足判定） |
+
+观测选取函数：
+
+| 函数 | 合并策略 | 用于 |
+|------|----------|------|
+| `selectObservationsForPlanToolSatisfaction` | **仅** `runOwned` | readiness、`plan_sync`、`pre_tools` 步满足 |
+| `selectObservationsForPagedGatherResume` | `preloaded + runOwned` | `paged_gather_resume`、图边 `shouldRouteGraphToTools` |
+
+`planRunContext`（`fresh` / `resume`）仅标记本 turn 运行上下文（telemetry、`plan_sync` 输出、**plan 首步 summarize 放行**），**不参与** pre_tools 选桶。
+
+硬性规则（`isPlanToolStepSatisfiedByObservations`，`purpose=pre_tools_advance`）：
+
+- **写步（`write-*`）永不** 被历史观测满足；只有 `post_tools` 本轮 HTTP 成功后才 advance。
+- **gather 步** 本 run 无观测 → readiness **不会** `observation_satisfied` → 必须 `llm → tools`（即使 GOA 有历史数据）。
+- **Plan 首步 summarize**（`resolveTaskPlanInitialAdvance`）：`fresh` 且 `runOwned` 为空 → **不**跳过 ReAct；`resume` 续跑可凭 GOA 直接进入 summarize。
+- `satisfiedToolRoles`（Plan LLM 提示）仅反映 **本 run** 已满足的 role。
+
+实现：`plan-observation-scope.util.ts`、`task-plan.util.ts`（`PlanToolStepSatisfactionPurpose`）。
+
+##### Session 工作区与是否重新拉数（Plan LLM，`agent.plan`）
+
+Plan LLM 收到 `sessionWorkingMemory`（`coverage: full_session_goa`）时，须先做 **data fitness** 判断，再决定是否规划 gather（与执行层 run-scoped 跳步互补）：
+
+| 条件 | 规划行为 |
+|------|----------|
+| 工作区观测与用户意图一致（同筛选、同数量范围、成功非空） | 可跳过对应 `read-*` gather，直接 `analyze` / `answer` summarize |
+| 筛选/店铺/时间/关键词/条数与用户要求不一致 | **必须** 规划 gather / tool 重新拉数 |
+| 历史 episode 为 EMPTY / 失败 / 结果不可用 | **必须** 调整 gather 或先 clarify |
+| `satisfiedToolRoles` 含某 role 但 fitness 不通过 | **忽略** satisfied 提示，仍规划 gather |
+| 写操作缺字段、无法从观测草拟 payload | 先 gather，再 draft summarize → write |
+| 用户明确要求刷新 / 最新 / 重新获取 | 规划 gather，即使 role 已 satisfied |
+
+原则：**工作区是上下文，不是「永远不用再调工具」的许可证**；执行层在 `fresh` 模式下仍要求本 run 有观测才能 pre_tools 跳步。完整英文提示词见 `prompt-defaults.ts` → `AGENT_PLAN`；部署后执行 `npm run db:publish-prompts`。
 
 环境变量：
 
@@ -212,7 +272,7 @@ Skill 命中 + scoped 含 read + write（L2/L3 或 `deliverable=mutation`）→ 
 | `analysis` | fetch(tool, read-list) → analyze(summarize) |
 | `list` | fetch(tool) → answer(summarize) |
 | `detail` | list/detail(tool…) → answer(summarize) |
-| `mutation` | write(tool) → answer(summarize) |
+| `mutation` | read_detail/list → compose_write → present → write → confirm |
 
 `source: 'template'`。plan step 可能带 `llmFallbackReason: llm_plan_failed | llm_plan_disabled`。
 
@@ -243,7 +303,7 @@ Skill 命中 + scoped 含 read + write（L2/L3 或 `deliverable=mutation`）→ 
 
 ### 5.0 Plan 首步即为 summarize/reason
 
-`plan` 节点内调用 `resolveTaskPlanInitialAdvance()`：若 pending 首步不是 tool，直接写入 `pendingSummaryObservation` 并 advance，**跳过** ReAct tool 环（reason: `plan_initial_summarize`）。
+`plan` 节点内调用 `resolveTaskPlanInitialAdvance()`：若 pending 首步为 `summarize`/`reason`，且（本 run 已有观测 **或** `planRunContext=resume`），直接写入 `pendingRespond`，**跳过** readiness / ReAct tool 环（reason: `plan_initial_summarize`）。`fresh` 且 `runOwned` 为空时返回 null，强制走 readiness → tools。
 
 ### 5.2 stopWhen 完成判定
 
@@ -271,15 +331,19 @@ plan: [fetch(tool), analyze(summarize)]
   → resultCheck: plan_advance_summarize → summarize（不再回 llm）
 ```
 
-**回复/写操作典型路径（有 workflow 或 LLM 拆步正确时）：**
+**mutation 典型路径（确定性模板）：**
 
 ```text
-plan: [fetch(tool, read-detail), submit(tool, write), confirm(summarize)]
-  → tools: detail → resultCheck: plan_advance_tool_step → llm → tools: remark
-  → resultCheck: plan_advance_summarize → summarize → 结束
+plan: [read_detail(tool), compose_write(tool), present(summarize), write(tool), confirm(summarize)]
+  → tools: read-detail → resultCheck: plan_advance_tool_step → llm
+  → llm（compose_write 拦截）: plan_compose_write observation → summarize（present）
+  → summarize: plan_draft_reply + pendingToolCalls → tools → write_confirmation_gate
+  → 用户 confirmWrite → worker 执行 write HTTP → confirm summarize
 ```
 
-勿将 Plan 排成 `fetch → summarize → write`：中间 summarize 完成后若仍有 pending tool 步，会续跑 llm（`shouldContinuePlanAfterSummarize`）；但优先在 **workflow / Plan prompt** 中把 summarize 放在最后一步，减少多段 SSE 与重复汇总。
+`compose_write` **不进 tools**（llm 节点拦截）；`present` **不调 write tool**；`write` 步若已有 `plan_draft_reply` / `plan_compose_write` 则 **复用参数**，不重新 LLM 产参。
+
+勿将 Plan 排成 `read → summarize(draft) → write`（无 compose_write）：预览与执行参数会分叉。优先走路径 ② 模板或让外层 LLM 被 runtime 强制替换。
 
 **EMPTY 终态（中断 plan）：**
 
@@ -308,7 +372,7 @@ plan: [fetch(tool), analyze(summarize)]  （或多步 detail plan）
 
 当 pending 首步 `kind === 'summarize'` 或 `reason` 时（`isPendingPlanAnswerStep`）：
 
-- **不再进入 decision LLM**：`llm` 节点短路，直接 `pendingSummaryObservation` → `summarize` 节点。
+- **不再进入 decision LLM**：设 `pendingRespond` → `summarize` 节点（或经 readiness 放行后由 `llm` 检测 `plan_answer` 再设）。
 - 兜底：`buildPlanSummarizeObservation()`（合并 observations，否则 `direct_user`）。
 
 `plan_advance_summarize` 在 resultCheck 中**始终**进入 summarize（合并失败也有 `buildPlanSummarizeObservation` 兜底），不会被 expand 打断。
@@ -393,7 +457,7 @@ Skill prompt 仍由 `buildDecisionPrompt()` 注入 `<active_skill>`，与 Plan �
 ```json
 {
   "method": "llm | workflow | template | minimal",
-  "llmFallbackReason": "llm_plan_failed | null",
+  "llmFallbackReason": "mutation_template_forced | llm_plan_failed | outer_plan_llm_failed | null",
   "source": "llm | workflow | template | minimal",
   "deliverable": "analysis",
   "goal": "…",
@@ -495,5 +559,5 @@ Skill prompt 仍由 `buildDecisionPrompt()` 注入 `<active_skill>`，与 Plan �
 
 ## 12. 与 Skill 文档关系
 
-Skill 召回、gate、prompt 注入见 [skill-data-model.md](./skill-data-model.md)。  
-Plan 节点在 skill/intent **之后**、llm **之前** 运行，与 skill 渐进披露（L0/L1 召回）独立。
+Skill 数据模型、scopedTools 交集选型、帧展开见 [skill-data-model.md](./skill-data-model.md)。  
+Plan 节点在 **intent 之后**、**readiness/llm 之前** 运行；外层编排 skill 步，内层步序由 `resolveTaskPlan` 生成。Skill 选型见 [skill-data-model.md](./skill-data-model.md) 运行时一节。

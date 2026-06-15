@@ -1,4 +1,5 @@
 import type { Prisma } from '../../../generated/prisma/client';
+import type { TurnExecutionStep } from '../../core/agent-engine/engine/main/agent-run-steps.util';
 
 export const AGENT_RUN_DETAIL_INCLUDE = {
   turn: {
@@ -44,4 +45,6 @@ export type AgentRunResponse = AgentRunDetailRow & {
   toolsUsed: string[] | null;
   toolQualityCounts: ToolQualityCounts | null;
   toolMachineCodeCounts: ToolMachineCodeCounts | null;
+  /** 同一 turn 内 primary + worker 等 run 的合并执行时间线（按 sequence 拼接）。 */
+  turnExecutionTimeline?: TurnExecutionStep[] | null;
 };

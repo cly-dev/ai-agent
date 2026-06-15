@@ -1,6 +1,6 @@
 # 评论回复 Skill · 模板样例
 
-> 与「评论分析 skill」配对使用，通过 **capabilityKey / description** 在 L0 向量召回中拉开差距。  
+> 与「评论分析 skill」配对使用，通过 **capabilityKey / description / toolRoles** 在外层 Plan LLM 选型中拉开差距。  
 > 创建前请确认 Tool 已绑定到 Agent，且 `agentMetadata.decisionRole` 正确（见文末）。
 
 ---
@@ -167,36 +167,31 @@
 
 ---
 
-## 5. 召回与环境变量（双 Skill）
+## 5. 外层 Plan 选型（双 Skill）
 
-```env
-SKILL_VECTOR_MIN_SCORE=0.42
-SKILL_SINGLE_MIN_SCORE=0.42
-SKILL_RECALL_MIN_GAP=0.08
-```
-
-- 两个 skill 分数接近（差 < 0.08）→ **miss**，走 intent + 全量 tool（比绑错 skill 安全）。
-- 回复类 query 应更贴近 `review-reply` 描述；分析类更贴近 `review-analyze`。
+- `listAvailableSkillsForScopedTools` 列出两个 skill（须与 scopedTools 有工具交集）。
+- 外层 Plan LLM 根据 `userMessage` + 各 skill 的 `description` / `toolRoles` 输出 `kind=skill` + `skillId`。
+- 回复类 query 应让 Plan 选 `评论回复skill`；分析类选 `评论分析skill`。
+- 两 skill 的 `description` 须互斥（分析写「不适用回复」，回复写「不适用纯分析」），避免 Plan 混选。
 
 ---
 
 ## 6. 联调检查
 
-- [ ] 「识别 reviewId…**回复**」→ 命中 `评论回复skill`，`recallScore` Top-1 为 id=回复
-- [ ] 「**分析** reviewId…评论」→ 命中 `评论分析skill`
-- [ ] 两句分数差 < 0.08 时 → `hit: false`，`reason: no_relevant_match`
-- [ ] 命中回复 skill 后 `gatedToolCount` ≥ 2（detail + remark）
+- [ ] 「识别 reviewId…**回复**」→ plan step `kind=skill` 指向 `评论回复skill`
+- [ ] 「**分析** reviewId…评论」→ plan step 指向 `评论分析skill`
+- [ ] plan run step 的 `availableSkillIds` 含两个 skill id
+- [ ] 展开回复 skill 后 `gatedToolCount` ≥ 2（detail + remark）
 - [ ] 调用 remark 时出现写确认 SSE（`confirmation_required`）
 
 ---
 
-## 7. 「评论分析 skill」召回优化
+## 7. 「评论分析 skill」选型优化
 
-L0 嵌入文本 = `name` + `capabilityKey` + `description`（见 `buildSkillRouterEmbedText`）。  
-关键词召回对用户 query 做分词（含中文双字切分），在嵌入文本里算命中率；向量召回做语义相似度。  
-要与回复 skill 拉开 **Top-1 分差 ≥ 0.08**，分析侧需在描述里**密集覆盖分析类触发词**，回复侧则覆盖「回复/回评/remark」。
+外层 Plan 读 `availableSkills[].description`、`capabilityKey`、`toolRoles`。  
+分析侧需在描述里**密集覆盖分析类触发词**，回复侧覆盖「回复/回评/remark」，便于 Plan LLM 区分。
 
-### 7.1 推荐字段（提升分析类 query 分数）
+### 7.1 推荐字段（提升分析类选型准确率）
 
 完整模板见 **[review-analyze-skill.example.md](./review-analyze-skill.example.md)**。
 
@@ -209,23 +204,21 @@ L0 嵌入文本 = `name` + `capabilityKey` + `description`（见 `buildSkillRout
 }
 ```
 
-| 字段 | 召回作用 |
+| 字段 | 选型作用 |
 |------|----------|
-| `name` 含「评论分析」 | 命中「分析」「评论」双字 token |
-| `capabilityKey` `review-analyze` | 与分析类英文 query / reviewId 场景语义靠近 |
-| `description` 前置分析同义词 +「先查数再分析」 | 抬高关键词命中率；与回复 skill 工作流形成对比 |
-| 末尾「不适用：回复…」 | 与 `review-reply` 划界，避免两 skill 分数胶着导致 `no_relevant_match` |
+| `name` 含「评论分析」 | Plan 摘要中易于识别场景 |
+| `capabilityKey` `review-analyze` | 与分析类 query 语义对齐 |
+| `description` 前置分析同义词 +「先查数再分析」 | 与回复 skill 工作流形成对比 |
+| 末尾「不适用：回复…」 | 与 `review-reply` 划界，减少 Plan 误选 |
 
-### 7.2 L1 二次召回
+### 7.2 内层 Plan 与 prompt excerpt
 
-L0 miss 且候选数 ≤ 5 时，会追加 `prompt` **前 300 字**再召回（`prompt_excerpt` 阶段）。  
-上方 §7.1 的 `prompt` 开头已按此优化（分析/统计/差评/报告等触发词集中在前 300 字内）。
+进入 skill 帧后 `resolveTaskPlan` 可能调内层 Plan LLM，会读 `prompt` 前缀（`PLAN_SKILL_PROMPT_EXCERPT_CHARS`）。  
+§7.1 的 `prompt` 开头已集中分析/统计/差评/报告等触发词。
 
 ### 7.3 PATCH 示例
 
-**`PATCH /skill/:skillId`** — 与 §7.1 相同，需同时更新 `description` 与 `prompt`。
-
-修改 `name` / `description` / `prompt` 后需等 skill 向量缓存失效（服务重启或 fingerprint 变更）后分数才会更新。
+**`PATCH /skill/:skillId`** — 与 §7.1 相同，建议同时更新 `description` 与 `prompt`。
 
 ---
 

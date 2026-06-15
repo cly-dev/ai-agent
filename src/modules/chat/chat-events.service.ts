@@ -69,6 +69,9 @@ export class ChatEventsService {
     const subject = this.getSubject(normalized);
     return new Observable<ChatSseEvent>((subscriber) => {
       for (const evt of this.replayBuffers.get(normalized) ?? []) {
+        if (evt.event === 'error') {
+          continue;
+        }
         subscriber.next(evt);
       }
       const inner = subject.subscribe({
@@ -82,12 +85,15 @@ export class ChatEventsService {
 
   emit(sessionId: string, evt: ChatSseEvent): void {
     const normalized = this.normalizeSessionId(sessionId);
-    const buffer = this.replayBuffers.get(normalized) ?? [];
-    buffer.push(evt);
-    while (buffer.length > ChatEventsService.REPLAY_BUFFER) {
-      buffer.shift();
+    // error 为瞬时信号，不重放，避免打开/重连会话时展示上一轮失败
+    if (evt.event !== 'error') {
+      const buffer = this.replayBuffers.get(normalized) ?? [];
+      buffer.push(evt);
+      while (buffer.length > ChatEventsService.REPLAY_BUFFER) {
+        buffer.shift();
+      }
+      this.replayBuffers.set(normalized, buffer);
     }
-    this.replayBuffers.set(normalized, buffer);
     this.getSubject(normalized).next(evt);
   }
 

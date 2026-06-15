@@ -92,7 +92,8 @@ function buildActiveTaskForPlan(
 
 function buildSatisfiedToolRolesForPlan(input: {
   scopedTools: PlanScopedTool[];
-  observations: ToolObservation[];
+  /** 仅本 run 观测可标记 satisfied（与 pre_tools 跳步语义一致）。 */
+  runOwnedObservations: ToolObservation[];
 }): string[] {
   const roles = new Set<ToolDecisionRole>();
   for (const tool of input.scopedTools) {
@@ -113,8 +114,9 @@ function buildSatisfiedToolRolesForPlan(input: {
     if (
       isPlanToolStepSatisfiedByObservations({
         step,
-        observations: input.observations,
+        observations: input.runOwnedObservations,
         scopedTools: input.scopedTools,
+        purpose: 'pre_tools_advance',
       })
     ) {
       satisfied.push(role);
@@ -177,7 +179,7 @@ function isPlanWorkingMemoryEmpty(
 export function buildPlanSessionWorkingMemory(input: {
   goa: SessionGoaPayload | null;
   scopedTools: PlanScopedTool[];
-  preloadedObservations: ToolObservation[];
+  runOwnedObservations: ToolObservation[];
 }): PlanSessionWorkingMemory | null {
   if (!input.goa) {
     return null;
@@ -207,7 +209,7 @@ export function buildPlanSessionWorkingMemory(input: {
     }),
     satisfiedToolRoles: buildSatisfiedToolRolesForPlan({
       scopedTools: input.scopedTools,
-      observations: input.preloadedObservations,
+      runOwnedObservations: input.runOwnedObservations,
     }),
     entities: buildEntitiesForPlan(input.goa.entities),
     activeTask: buildActiveTaskForPlan(input.goa.activeTask),

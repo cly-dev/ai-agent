@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { AgentRunStatus } from '../../../../../generated/prisma/client';
+import type { Message } from '../../../../../generated/prisma/client';
 import type { Prisma } from '../../../../../generated/prisma/client';
 import { PrismaService } from '../../../../prisma/prisma.service';
 import { SessionGoaService } from '../../../memory/goa/session-goa.service';
@@ -13,19 +14,19 @@ import {
 import type { AgentService } from '../../../../modules/agent/agent.service';
 import {
   messageBlocksToPlainText,
-  sanitizeMessageBlocks,
   sanitizeStoredFinalOutput,
   textBlock,
   tryParseStoredMessageBlocks,
 } from '../message/message-blocks.util';
-import type { MessageBlock } from '../message/message-blocks.types';
 import { AgentRunSseEmitter } from './agent-run-sse.emitter';
+import { RunAssistantArtifactStore } from './run-assistant-artifact.store';
+import { RunAssistantMessagePersistService } from './run-assistant-message-persist.service';
 import type {
-  AgentEngineTool,
   AgentGraphState,
   AgentRunResult,
   AgentRunStep,
 } from './agent-engine.types';
+import { maxRunStepNumber } from './agent-run-steps.util';
 import { buildAgentRunGoaSnapshot } from '../../../memory/goa/session-goa-run-snapshot.util';
 import type { AgentRunGoaSnapshot } from '../../../memory/goa/session-goa.types';
 import { toStoredTaskPlan } from './session-graph-resume.util';
@@ -45,12 +46,12 @@ function buildMemoryUpdateContext(input: {
   runId: number;
   userInput: string;
   finalOutput: string;
+  runStatus: 'success' | 'failed';
   graphState: Pick<
     AgentGraphState,
     | 'toolObservations'
     | 'steps'
     | 'taskPlan'
-    | 'status'
     | 'intentKind'
     | 'awaitingWriteConfirmation'
     | 'planAborted'
@@ -70,8 +71,7 @@ function buildMemoryUpdateContext(input: {
     storedTaskPlan: input.graphState.taskPlan
       ? toStoredTaskPlan(input.graphState.taskPlan)
       : null,
-    runStatus:
-      input.graphState.status === AgentRunStatus.failed ? 'failed' : 'success',
+    runStatus: input.runStatus,
     intentKind: input.graphState.intentKind,
     phase: input.graphState.awaitingWriteConfirmation ? 'task_only' : 'full',
     awaitingWriteConfirmation: input.graphState.awaitingWriteConfirmation,
@@ -86,6 +86,8 @@ export class AgentRunLifecycleService {
     private readonly goaService: SessionGoaService,
     private readonly sessionHistoryCompression: SessionHistoryCompressionService,
     private readonly sse: AgentRunSseEmitter,
+    private readonly assistantArtifact: RunAssistantArtifactStore,
+    private readonly messagePersist: RunAssistantMessagePersistService,
   ) {}
 
   parseStepsFromRun(steps: unknown): AgentRunStep[] {
@@ -98,15 +100,83 @@ export class AgentRunLifecycleService {
   async updateRun(
     runId: number,
     steps: AgentRunStep[],
-    currentStep: number,
     status: AgentRunStatus,
   ): Promise<void> {
     await this.prisma.agentRun.update({
       where: { id: runId },
       data: {
         steps: steps as unknown as Prisma.InputJsonValue,
-        currentStep,
+        currentStep: maxRunStepNumber(steps),
         status,
+      },
+    });
+  }
+
+  private buildRunFinishMetricsData(runMetrics: RunMetricsAccumulator, finishReason: string) {
+    const snapshot = snapshotRunMetrics(runMetrics);
+    return {
+      finishedAt: new Date(),
+      durationMs: snapshot.durationMs,
+      llmDurationMs: snapshot.llmDurationMs,
+      toolDurationMs: snapshot.toolDurationMs,
+      model: snapshot.model ?? null,
+      promptTokens: snapshot.promptTokens,
+      completionTokens: snapshot.completionTokens,
+      totalTokens: snapshot.totalTokens,
+      llmCallCount: snapshot.llmCallCount,
+      toolCallCount: snapshot.toolCallCount,
+      toolsUsed: snapshot.toolsUsed as Prisma.InputJsonValue,
+      finishReason,
+    };
+  }
+
+  private async finalizeRunAndTurnInTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      turnId: number;
+      runId: number;
+      runMetrics: RunMetricsAccumulator;
+      finalOutput: string;
+      persistTurnAssistant: boolean;
+      status: AgentRunStatus;
+      finishReason: string;
+      scopedToolCount?: number;
+      error?: string;
+      steps?: AgentRunStep[];
+      currentStep?: number;
+      goaSnapshot?: AgentRunGoaSnapshot | null;
+    },
+  ): Promise<void> {
+    const metricsData = this.buildRunFinishMetricsData(
+      input.runMetrics,
+      input.finishReason,
+    );
+    await tx.agentRun.update({
+      where: { id: input.runId },
+      data: {
+        ...(input.persistTurnAssistant
+          ? { output: input.finalOutput || null }
+          : {}),
+        status: input.status,
+        error: input.error ?? null,
+        steps: input.steps
+          ? (input.steps as unknown as Prisma.InputJsonValue)
+          : undefined,
+        currentStep: input.currentStep,
+        goaSnapshot: input.goaSnapshot
+          ? (input.goaSnapshot as unknown as Prisma.InputJsonValue)
+          : undefined,
+        ...metricsData,
+      },
+    });
+    await tx.messageTurn.update({
+      where: { id: input.turnId },
+      data: {
+        status: input.status,
+        ...(input.persistTurnAssistant
+          ? { finalOutput: input.finalOutput || null }
+          : {}),
+        ...metricsData,
       },
     });
   }
@@ -123,50 +193,28 @@ export class AgentRunLifecycleService {
     steps?: AgentRunStep[];
     currentStep?: number;
     goaSnapshot?: AgentRunGoaSnapshot | null;
+    persistTurnAssistant?: boolean;
   }): Promise<void> {
-    const snapshot = snapshotRunMetrics(input.runMetrics);
-    const metricsData = {
-      finishedAt: new Date(),
-      durationMs: snapshot.durationMs,
-      llmDurationMs: snapshot.llmDurationMs,
-      toolDurationMs: snapshot.toolDurationMs,
-      model: snapshot.model ?? null,
-      promptTokens: snapshot.promptTokens,
-      completionTokens: snapshot.completionTokens,
-      totalTokens: snapshot.totalTokens,
-      llmCallCount: snapshot.llmCallCount,
-      toolCallCount: snapshot.toolCallCount,
-      toolsUsed: snapshot.toolsUsed as Prisma.InputJsonValue,
-      finishReason: input.finishReason,
-    };
-    await this.prisma.agentRun.update({
-      where: { id: input.runId },
-      data: {
-        output: input.finalOutput || null,
-        status: input.status,
-        error: input.error ?? null,
-        steps: input.steps
-          ? (input.steps as unknown as Prisma.InputJsonValue)
-          : undefined,
-        currentStep: input.currentStep,
-        goaSnapshot: input.goaSnapshot
-          ? (input.goaSnapshot as unknown as Prisma.InputJsonValue)
-          : undefined,
-        ...metricsData,
-      },
-    });
-    await this.prisma.messageTurn.update({
-      where: { id: input.turnId },
-      data: {
-        status: input.status,
-        finalOutput: input.finalOutput || null,
-        ...metricsData,
-      },
-    });
+    const finishReason = input.finishReason;
+    const persistTurnAssistant =
+      input.persistTurnAssistant ?? input.finalOutput.trim().length > 0;
+    await this.prisma.$transaction((tx) =>
+      this.finalizeRunAndTurnInTx(tx, {
+        ...input,
+        finishReason,
+        persistTurnAssistant,
+      }),
+    );
   }
 
   sanitizeFinalOutput(finalOutput: string): string {
     return sanitizeStoredFinalOutput(finalOutput);
+  }
+
+  /** AgentRun.output / Message 内容仅来自本轮 assistant artifact。 */
+  resolveFinalOutputFromArtifact(sessionId: string, runId: number): string {
+    const fromArtifact = this.assistantArtifact.peekSerialized(sessionId, runId);
+    return this.sanitizeFinalOutput(fromArtifact ?? '');
   }
 
   finalOutputPlainText(finalOutput: string): string {
@@ -175,24 +223,6 @@ export class AgentRunLifecycleService {
       return messageBlocksToPlainText(blocks);
     }
     return finalOutput;
-  }
-
-  blocksFromFinalOutput(finalOutput: string): MessageBlock[] {
-    const blocks = tryParseStoredMessageBlocks(finalOutput);
-    if (blocks?.length) {
-      return sanitizeMessageBlocks(blocks);
-    }
-    const text = this.sanitizeFinalOutput(finalOutput);
-    return text ? [textBlock(text)] : [];
-  }
-
-  emitRunMessageBlocksIfNeeded(
-    sessionId: string,
-    runId: number,
-    turnId: number,
-    blocks: MessageBlock[],
-  ): void {
-    this.sse.emitRunMessageBlocksIfNeeded(sessionId, runId, turnId, blocks);
   }
 
   async awaitPostRunMemoryTasks(
@@ -272,117 +302,142 @@ export class AgentRunLifecycleService {
     return fallback.trim().length > 0 ? fallback.trim() : null;
   }
 
+  /**
+   * 统一 run 收尾：补 SSE → 事务（定稿 AgentRun/MessageTurn + 落库 Message）→ 记忆刷新。
+   * 凡经 SSE stream full 推送的用户可见 blocks（含 draft 预览）均落库。
+   */
+  async finishAgentRun(input: {
+    userId: number;
+    sessionId: string;
+    turnId: number;
+    runId: number;
+    status: AgentRunStatus;
+    steps: AgentRunStep[];
+    scopedToolCount: number;
+    runMetrics: RunMetricsAccumulator;
+    finishedEarly?: boolean;
+    goaSnapshot?: AgentRunGoaSnapshot | null;
+    error?: string;
+    memoryContext?: SessionMemoryUpdateContext;
+  }): Promise<AgentRunResult> {
+    const finalOutput = this.resolveFinalOutputFromArtifact(
+      input.sessionId,
+      input.runId,
+    );
+    const persistTurnAssistant = this.assistantArtifact.isPersistableAssistantArtifact(
+      input.sessionId,
+      input.runId,
+    );
+    const finishReason = resolveFinishReason({
+      status: input.status,
+      steps: input.steps,
+      finishedEarly: input.finishedEarly === true,
+      error: input.error,
+    });
+    this.sse.emitRunMessageBlocksIfNeeded(
+      input.sessionId,
+      input.runId,
+      input.turnId,
+    );
+    let persistedMessage: Message | null = null;
+    let replacedTurnOutput = false;
+    await this.prisma.$transaction(async (tx) => {
+      await this.finalizeRunAndTurnInTx(tx, {
+        turnId: input.turnId,
+        runId: input.runId,
+        runMetrics: input.runMetrics,
+        finalOutput,
+        persistTurnAssistant,
+        status: input.status,
+        finishReason,
+        error: input.error,
+        scopedToolCount: input.scopedToolCount,
+        steps: input.steps,
+        currentStep: maxRunStepNumber(input.steps),
+        goaSnapshot: input.goaSnapshot,
+      });
+      const persisted = await this.messagePersist.persistFromArtifactInTx(tx, {
+        userId: input.userId,
+        sessionId: input.sessionId,
+        runId: input.runId,
+        turnId: input.turnId,
+      });
+      persistedMessage = persisted.message;
+      replacedTurnOutput = persisted.replacedTurnOutput;
+    });
+    if (persistedMessage) {
+      await this.messagePersist.syncPersistedMessage(
+        input.sessionId,
+        persistedMessage,
+        { replacedTurnOutput },
+      );
+    }
+    if (input.memoryContext) {
+      await this.awaitPostRunMemoryTasks(input.sessionId, input.memoryContext);
+    }
+    return {
+      runId: input.runId,
+      turnId: input.turnId,
+      output: finalOutput,
+      status: input.status,
+    };
+  }
+
   async completeAgentRunFromGraph(input: {
+    userId: number;
     sessionId: string;
     turnId: number;
     runId: number;
     agent: NonNullable<Awaited<ReturnType<AgentService['getRuntimeAgent']>>>;
-    tools: AgentEngineTool[];
     latestUserMessage: string;
     graphState: AgentGraphState;
     runMetrics: RunMetricsAccumulator;
   }): Promise<AgentRunResult> {
     let status = input.graphState.status;
-    let finalOutput = input.graphState.finalOutput;
     const steps = [...input.graphState.steps];
     const goaSnapshot = buildAgentRunGoaSnapshot({
       graphState: input.graphState,
       runFailed: input.graphState.status === AgentRunStatus.failed,
     });
 
-    if (input.graphState.awaitingWriteConfirmation) {
-      finalOutput = this.sanitizeFinalOutput(finalOutput);
-      const finishReason = resolveFinishReason({
-        status,
-        steps,
-        finishedEarly: false,
-      });
-      await this.finalizeRunAndTurn({
-        turnId: input.turnId,
-        runId: input.runId,
-        runMetrics: input.runMetrics,
-        finalOutput,
-        status,
-        finishReason,
-        scopedToolCount: input.graphState.scopedTools.length,
-        steps,
-        currentStep: input.graphState.iteration,
-        goaSnapshot,
-      });
-      this.emitRunMessageBlocksIfNeeded(
-        input.sessionId,
-        input.runId,
-        input.turnId,
-        this.blocksFromFinalOutput(finalOutput),
-      );
-      await this.awaitPostRunMemoryTasks(
-        input.sessionId,
-        buildMemoryUpdateContext({
-          turnId: input.turnId,
-          runId: input.runId,
-          userInput: input.latestUserMessage,
-          finalOutput: this.finalOutputPlainText(finalOutput),
-          graphState: input.graphState,
-        }),
-      );
-      return {
-        runId: input.runId,
-        turnId: input.turnId,
-        output: finalOutput,
-        status,
-      };
-    }
-
-    if (status !== AgentRunStatus.success) {
+    if (
+      !input.graphState.awaitingWriteConfirmation &&
+      status !== AgentRunStatus.success
+    ) {
       const fallback = this.resolveFallbackReply(input.agent.config);
       if (!fallback) {
         throw new BadRequestException('agent run exceeded max steps');
       }
-      finalOutput = fallback;
+      this.sse.publishAssistantBlocks(input.sessionId, input.runId, [
+        textBlock(fallback),
+      ]);
       status = AgentRunStatus.success;
     }
-    finalOutput = this.sanitizeFinalOutput(finalOutput);
 
-    const finishReason = resolveFinishReason({
-      status,
-      steps,
-      finishedEarly:
-        input.graphState.finished && input.graphState.iteration === 0,
-    });
-    await this.finalizeRunAndTurn({
+    const result = await this.finishAgentRun({
+      userId: input.userId,
+      sessionId: input.sessionId,
       turnId: input.turnId,
       runId: input.runId,
-      runMetrics: input.runMetrics,
-      finalOutput,
       status,
-      finishReason,
-      scopedToolCount: input.graphState.scopedTools.length,
       steps,
-      currentStep: input.graphState.iteration,
+      scopedToolCount: input.graphState.scopedTools.length,
+      runMetrics: input.runMetrics,
+      finishedEarly:
+        input.graphState.finished && input.graphState.iteration === 0,
       goaSnapshot,
     });
-    this.emitRunMessageBlocksIfNeeded(
-      input.sessionId,
-      input.runId,
-      input.turnId,
-      this.blocksFromFinalOutput(finalOutput),
-    );
     await this.awaitPostRunMemoryTasks(
       input.sessionId,
       buildMemoryUpdateContext({
         turnId: input.turnId,
         runId: input.runId,
         userInput: input.latestUserMessage,
-        finalOutput: this.finalOutputPlainText(finalOutput),
+        finalOutput: this.finalOutputPlainText(result.output),
+        runStatus: status === AgentRunStatus.failed ? 'failed' : 'success',
         graphState: input.graphState,
       }),
     );
-
-    return {
-      runId: input.runId,
-      turnId: input.turnId,
-      output: finalOutput,
-      status,
-    };
+    return result;
   }
 }

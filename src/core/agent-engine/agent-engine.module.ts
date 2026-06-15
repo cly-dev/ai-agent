@@ -10,6 +10,8 @@ import { AgentEngineService } from './engine/agent-engine.service';
 import { AgentLangGraphRunner } from './engine/main/agent-lang-graph.runner';
 import { AgentRunLifecycleService } from './engine/main/agent-run-lifecycle.service';
 import { AgentRunSseEmitter } from './engine/main/agent-run-sse.emitter';
+import { RunAssistantArtifactStore } from './engine/main/run-assistant-artifact.store';
+import { RunAssistantMessagePersistService } from './engine/main/run-assistant-message-persist.service';
 import { AgentSessionScopeService } from './engine/main/agent-session-scope.service';
 import { SessionToolPrepareCacheService } from './engine/main/session-tool-prepare-cache.service';
 
@@ -24,6 +26,8 @@ import { SessionToolPrepareCacheService } from './engine/main/session-tool-prepa
     forwardRef(() => ChatModule),
   ],
   providers: [
+    RunAssistantArtifactStore,
+    RunAssistantMessagePersistService,
     AgentRunSseEmitter,
     AgentSessionScopeService,
     SessionToolPrepareCacheService,

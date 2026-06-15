@@ -1,5 +1,8 @@
 import type { LlmChatMessage } from '../../../llm/llm.types';
-import { resolveToolDecisionRole } from '../../../tool-engine/tool-agent-metadata.util';
+import {
+  parseAgentMetadata,
+  resolveToolDecisionRole,
+} from '../../../tool-engine/tool-agent-metadata.util';
 import type { ToolDecisionRole } from '../../../tool-engine/tool-decision-role.enum';
 import { hasSummarizableToolObservations } from '../tool/tool-observation.util';
 import type { ToolExecutionStatus } from '../tool/tool-execution-status.util';
@@ -8,6 +11,7 @@ import { resolveMapReduceGatherPhase } from '../gather/list-map-reduce.util';
 import { observationNeedsPagedFetch } from '../../../mcp-utils/pagination';
 import type {
   BuildTaskPlanInput,
+  ResolveTaskPlanResult,
   TaskDeliverable,
   TaskPlanAdvanceResult,
   TaskPlanInitialAdvanceResult,
@@ -16,6 +20,11 @@ import type {
   TaskPlanStep,
   TaskStepPhase,
 } from './task-plan.types';
+import {
+  applyActiveFrameStepComplete,
+  syncPlanFromActiveFrame,
+  wrapSnapshotWithPlanStack,
+} from './plan-stack.util';
 
 /** Plan 步 toolRole 过滤 / dedupe 判定用的最小工具字段。 */
 export type PlanScopedTool = {
@@ -34,7 +43,7 @@ const VALID_DELIVERABLES: TaskDeliverable[] = [
   'answer',
 ];
 
-const VALID_STEP_KINDS = new Set(['tool', 'summarize', 'reason']);
+const VALID_STEP_KINDS = new Set(['skill', 'tool', 'summarize', 'reason']);
 const VALID_STEP_PHASES = new Set(['gather', 'analyze', 'answer', 'mutate']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -392,6 +401,8 @@ function normalizePlanStepsForDeliverable(
   });
 }
 
+type FlatPlanSnapshot = Omit<TaskPlanSnapshot, 'frames' | 'activeFrameIndex'>;
+
 function finalizePlanSnapshot(input: {
   source: TaskPlanSource;
   userMessage: string;
@@ -399,7 +410,7 @@ function finalizePlanSnapshot(input: {
   deliverable: TaskDeliverable;
   steps: TaskPlanStep[];
   constraints?: string[];
-}): TaskPlanSnapshot {
+}): FlatPlanSnapshot {
   const steps = normalizePlanStepsForDeliverable(
     input.steps,
     input.deliverable,
@@ -429,7 +440,7 @@ export function buildPlanSnapshot(input: {
   steps: TaskPlanStep[];
   constraints?: string[];
 }): TaskPlanSnapshot {
-  return finalizePlanSnapshot(input);
+  return wrapSnapshotWithPlanStack(finalizePlanSnapshot(input));
 }
 
 export function buildTaskPlan(input: BuildTaskPlanInput): TaskPlanSnapshot {
@@ -454,14 +465,21 @@ export function buildTaskPlan(input: BuildTaskPlanInput): TaskPlanSnapshot {
         input.skillApplied,
         input.skillRiskLevel,
       );
-      return buildPlanSnapshot({
-        source: 'workflow',
-        userMessage,
-        goal,
-        deliverable,
-        steps: validatedSteps,
-        constraints: [],
-      });
+      const { hasWrite } = summarizeScopedRoles(scopedToolSummaries);
+      const workflowUsable =
+        deliverable !== 'mutation' ||
+        !hasWrite ||
+        isCompliantMutationPlan(validatedSteps);
+      if (workflowUsable) {
+        return buildPlanSnapshot({
+          source: 'workflow',
+          userMessage,
+          goal,
+          deliverable,
+          steps: validatedSteps,
+          constraints: [],
+        });
+      }
     }
   }
 
@@ -513,8 +531,8 @@ function getStepById(
   return plan.steps.find((step) => step.id === stepId) ?? null;
 }
 
-/** pending 队列首步（当前应执行的 plan 步，含 tool / summarize / reason）。 */
-export function getPendingPlanToolStep(
+/** pending 队列首步（含 skill / tool / summarize / reason）。 */
+export function getPendingPlanStep(
   plan: TaskPlanSnapshot | null | undefined,
 ): TaskPlanStep | null {
   if (!plan) {
@@ -524,11 +542,19 @@ export function getPendingPlanToolStep(
   return getStepById(plan, stepId);
 }
 
+/** pending 队列首步（仅 kind=tool）。 */
+export function getPendingPlanToolStep(
+  plan: TaskPlanSnapshot | null | undefined,
+): TaskPlanStep | null {
+  const step = getPendingPlanStep(plan);
+  return step?.kind === 'tool' ? step : null;
+}
+
 /** summarize / reason 步不应再 bind 工具，仅文本决策或走 summarize 节点。 */
 export function isPendingPlanAnswerStep(
   plan: TaskPlanSnapshot | null | undefined,
 ): boolean {
-  const step = getPendingPlanToolStep(plan);
+  const step = getPendingPlanStep(plan);
   return step?.kind === 'summarize' || step?.kind === 'reason';
 }
 
@@ -543,6 +569,30 @@ function matchingToolNamesForPlanStep(
     .filter((tool) => resolveScopedToolRoleForPlan(tool) === step.toolRole)
     .map((tool) => tool.name);
   return names.length > 0 ? new Set(names) : null;
+}
+
+/** 当前 gather 步关联工具的 businessFields（去重）。 */
+export function listBusinessFieldsForPlanGatherStep(
+  step: TaskPlanStep,
+  scopedTools: PlanScopedTool[],
+): string[] {
+  const matchingToolNames = matchingToolNamesForPlanStep(step, scopedTools);
+  if (!matchingToolNames) {
+    return [];
+  }
+  const fields = new Set<string>();
+  for (const tool of scopedTools) {
+    if (!matchingToolNames.has(tool.name)) {
+      continue;
+    }
+    const meta = parseAgentMetadata(tool.agentMetadata);
+    for (const field of meta?.businessFields ?? []) {
+      if (field.trim()) {
+        fields.add(field.trim());
+      }
+    }
+  }
+  return [...fields];
 }
 
 /** 仅保留与 plan 当前 tool 步 toolRole 匹配的 observations（避免 step1 数据误判 step2 完成）。 */
@@ -604,83 +654,16 @@ function observationsSatisfyPlanToolStepStopWhen(
   return hasSummarizableToolObservations(observations);
 }
 
-function isObservationRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function extractListRecordsFromObservationOutput(output: unknown): Record<string, unknown>[] {
-  if (Array.isArray(output)) {
-    return output.filter(isObservationRecord);
-  }
-  if (!isObservationRecord(output)) {
-    return [];
-  }
-  const data = output.data;
-  if (Array.isArray(data)) {
-    return data.filter(isObservationRecord);
-  }
-  return [output];
-}
-
-function recordHasUsableDetailContent(record: Record<string, unknown>): boolean {
-  for (const key of ['content', 'body', 'text', 'comment', 'description']) {
-    const value = record[key];
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** read-detail 步：若 ledger/预载的 read-list 已含目标 id 且正文非空，则不必再调 detail。 */
-function readDetailSatisfiedByListObservations(input: {
-  step: TaskPlanStep;
-  observations: ToolObservation[];
-  scopedTools?: PlanScopedTool[];
-  taskPlan?: TaskPlanSnapshot | null;
-}): boolean {
-  if (input.step.toolRole !== 'read-detail') {
-    return false;
-  }
-  const hintText = [
-    input.taskPlan?.originalUserRequest,
-    input.taskPlan?.goal,
-  ]
-    .filter((row): row is string => typeof row === 'string' && row.trim().length > 0)
-    .join(' ');
-  if (!hintText.trim()) {
-    return false;
-  }
-  const listToolNames = matchingToolNamesForPlanStep(
-    { ...input.step, toolRole: 'read-list' },
-    input.scopedTools,
-  );
-  if (!listToolNames) {
-    return false;
-  }
-  for (const observation of input.observations) {
-    if (!listToolNames.has(observation.name)) {
-      continue;
-    }
-    for (const record of extractListRecordsFromObservationOutput(observation.output)) {
-      const id = record.id ?? record.reviewId;
-      if (id == null) {
-        continue;
-      }
-      const idStr = String(id).trim();
-      if (idStr.length === 0 || !hintText.includes(idStr)) {
-        continue;
-      }
-      if (recordHasUsableDetailContent(record)) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
+/**
+ * - pre_tools_advance：readiness / plan_sync / resultCheck 跳步；写步永不满足；观测集为 runOwned（由 plan-observation-scope 选取）。
+ * - observation_bucket：summarize reflect 等；在调用方提供的观测桶内按 stopWhen 判定（可含 write 步）。
+ */
+export type PlanToolStepSatisfactionPurpose =
+  | 'pre_tools_advance'
+  | 'observation_bucket';
 
 /**
- * pre_tools：当前 plan tool 步是否已被 observations 满足。
+ * 当前 plan tool 步是否已被 observations 满足。
  * 必须有 toolRole；EMPTY 列表不算满足；与 post_tools 语义对齐。
  */
 export function isPlanToolStepSatisfiedByObservations(input: {
@@ -689,20 +672,23 @@ export function isPlanToolStepSatisfiedByObservations(input: {
   scopedTools?: PlanScopedTool[];
   taskPlan?: TaskPlanSnapshot | null;
   skillConfig?: unknown;
+  purpose?: PlanToolStepSatisfactionPurpose;
 }): boolean {
+  const purpose = input.purpose ?? 'pre_tools_advance';
   if (input.step.kind !== 'tool' || !input.step.toolRole) {
     return false;
   }
-  const relevant = observationsForPlanToolStep(input);
   if (
-    observationsSatisfyPlanToolStepStopWhen(input.step, relevant, {
-      taskPlan: input.taskPlan,
-      skillConfig: input.skillConfig,
-    })
+    purpose === 'pre_tools_advance' &&
+    isPlanWriteToolRole(input.step.toolRole)
   ) {
-    return true;
+    return false;
   }
-  return readDetailSatisfiedByListObservations(input);
+  const relevant = observationsForPlanToolStep(input);
+  return observationsSatisfyPlanToolStepStopWhen(input.step, relevant, {
+    taskPlan: input.taskPlan,
+    skillConfig: input.skillConfig,
+  });
 }
 
 /** 连续多少次 decision LLM 未产出 tool_calls（用于 plan tool 步脱困）。 */
@@ -777,84 +763,101 @@ export function isPlanWriteToolRole(
   );
 }
 
+/** Plan 当前 pending 步是否为写 tool 步（仅描述步类型，不改队列顺序）。 */
 export function isPlanWriteToolStep(
   step: TaskPlanStep | null | undefined,
 ): boolean {
   return step?.kind === 'tool' && isPlanWriteToolRole(step.toolRole);
 }
 
-/** Plan 队列中是否仍有未完成的写 tool 步。 */
-export function hasPendingWriteToolStep(
-  plan: TaskPlanSnapshot | null | undefined,
+export const PLAN_COMPOSE_WRITE_STEP_ID = 'compose_write';
+export const PLAN_PRESENT_STEP_ID = 'present';
+export const PLAN_WRITE_STEP_ID = 'write';
+/** @deprecated 旧模板步 id，与 present 等价 */
+export const PLAN_DRAFT_STEP_ID = 'draft';
+
+export function isPlanComposeWriteStep(
+  step: TaskPlanStep | null | undefined,
 ): boolean {
-  if (!plan) {
-    return false;
-  }
-  return plan.pendingStepIds.some((id) =>
-    isPlanWriteToolStep(getStepById(plan, id)),
+  return (
+    step?.kind === 'tool' &&
+    step.id === PLAN_COMPOSE_WRITE_STEP_ID &&
+    isPlanWriteToolStep(step)
   );
 }
 
-/** 是否应拦截 summarize（写步未完成）；exhausted 终态需放行以输出失败说明。 */
-export function shouldDeferSummarizeForPendingWritePlan(
-  plan: TaskPlanSnapshot | null | undefined,
-  summarizeReason?: string | null,
+/** present 失败后 write 步 fallback（非 compose）。 */
+export function isPlanWriteFallbackStep(
+  step: TaskPlanStep | null | undefined,
 ): boolean {
-  if (summarizeReason === 'plan_write_step_exhausted') {
+  return (
+    step?.kind === 'tool' &&
+    step.id === PLAN_WRITE_STEP_ID &&
+    isPlanWriteToolStep(step)
+  );
+}
+
+export function isPlanPresentSummarizeStep(
+  step: TaskPlanStep | null | undefined,
+): boolean {
+  if (step?.kind !== 'summarize') {
     return false;
   }
-  return hasPendingWriteToolStep(plan);
+  return (
+    step.id === PLAN_PRESENT_STEP_ID || step.id === PLAN_DRAFT_STEP_ID
+  );
 }
 
-function findFirstPendingWriteToolStepId(
-  plan: TaskPlanSnapshot,
-): string | null {
-  for (const id of plan.pendingStepIds) {
-    if (isPlanWriteToolStep(getStepById(plan, id))) {
-      return id;
+const MUTATION_CORE_STEP_IDS = [
+  PLAN_COMPOSE_WRITE_STEP_ID,
+  PLAN_PRESENT_STEP_ID,
+  PLAN_WRITE_STEP_ID,
+] as const;
+
+function mutationStepById(
+  steps: TaskPlanStep[],
+  id: string,
+): TaskPlanStep | undefined {
+  return steps.find((step) => step.id === id);
+}
+
+/** Plan 步序是否符合 read → compose_write → present → write → confirm 模板。 */
+export function isCompliantMutationPlan(steps: TaskPlanStep[]): boolean {
+  for (const id of MUTATION_CORE_STEP_IDS) {
+    if (!mutationStepById(steps, id)) {
+      return false;
     }
   }
-  return null;
+  const compose = mutationStepById(steps, PLAN_COMPOSE_WRITE_STEP_ID);
+  const present = mutationStepById(steps, PLAN_PRESENT_STEP_ID);
+  const write = mutationStepById(steps, PLAN_WRITE_STEP_ID);
+  if (
+    compose?.kind !== 'tool' ||
+    !isPlanWriteToolRole(compose.toolRole) ||
+    present?.kind !== 'summarize' ||
+    write?.kind !== 'tool' ||
+    !isPlanWriteToolRole(write.toolRole)
+  ) {
+    return false;
+  }
+  const composeIndex = steps.findIndex(
+    (step) => step.id === PLAN_COMPOSE_WRITE_STEP_ID,
+  );
+  const presentIndex = steps.findIndex((step) => step.id === PLAN_PRESENT_STEP_ID);
+  const writeIndex = steps.findIndex((step) => step.id === PLAN_WRITE_STEP_ID);
+  return composeIndex < presentIndex && presentIndex < writeIndex;
 }
 
-/**
- * summarize/reason 步排在写 tool 步之前时，将写步提前（避免未确认写操作就汇总）。
- * 当前 pending 已是 tool 步时不调整顺序。
- */
-export function reprioritizePlanForPendingWriteStep(
-  plan: TaskPlanSnapshot | null | undefined,
-): TaskPlanSnapshot | null {
-  if (!plan) {
-    return null;
-  }
-  const writeStepId = findFirstPendingWriteToolStepId(plan);
-  if (!writeStepId) {
-    return null;
-  }
-  const headId = plan.pendingStepIds[0] ?? plan.currentStepId;
-  const head = getStepById(plan, headId);
-  if (isPlanWriteToolStep(head)) {
-    return null;
-  }
-  if (head?.kind === 'tool') {
-    return null;
-  }
-  const writeStep = getStepById(plan, writeStepId);
-  if (!writeStep) {
-    return null;
-  }
-  const rest = plan.pendingStepIds.filter((id) => id !== writeStepId);
-  return {
-    ...plan,
-    pendingStepIds: [writeStepId, ...rest],
-    currentStepId: writeStepId,
-    currentObjective: writeStep.objective,
-    taskPhase: writeStep.phase,
-  };
+/** compose_write 完成后推进 Plan（进入 present summarize）。 */
+export function advancePlanAfterStepComplete(
+  plan: TaskPlanSnapshot,
+  completedStepId: string,
+): TaskPlanAdvanceResult {
+  return buildPlanAdvanceAfterStepComplete(plan, completedStepId);
 }
 
-/** read(-detail) → write → summarize；与 skill.config.workflow 或 deliverable=mutation 模板一致。 */
-function buildMutationSteps(
+/** read → compose_write(tool/llm 产参) → present(summarize) → write → confirm */
+export function buildMutationSteps(
   scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'],
 ): TaskPlanStep[] {
   const { hasReadList, hasReadDetail } = summarizeScopedRoles(
@@ -884,12 +887,29 @@ function buildMutationSteps(
     });
   }
   steps.push({
+    id: 'compose_write',
+    phase: 'analyze',
+    kind: 'tool',
+    toolRole: writeToolRole,
+    objective:
+      'Compose write parameters only: emit one bound write tool_call with all required parameters from tool_schema (identifiers, headers, enums) and full submit body from read observations. Runtime stores plan_compose_write; do not wait for user draft.',
+    // 完成由 llm 节点 intercept 推进，不经 tools HTTP。
+  });
+  steps.push({
+    id: 'present',
+    phase: 'answer',
+    kind: 'summarize',
+    objective:
+      'Present user-facing draft from plan_compose_write observation. Quote the submit body from composed arguments verbatim. Do not call write tools.',
+    stopWhen: 'always',
+  });
+  steps.push({
     id: 'write',
     phase: 'mutate',
     kind: 'tool',
     toolRole: writeToolRole,
     objective:
-      'Call the write tool when businessFields are satisfied. Map user_intent values to write params per tool_schema; use exact fixed text verbatim when specified.',
+      'Fallback only if present did not gate: call the bound write tool from <tool_schema> using plan_compose_write arguments verbatim. Never call observation names as tools.',
     stopWhen: 'observation_non_empty',
   });
   steps.push({
@@ -913,6 +933,108 @@ function pickWriteToolRoleForTemplate(
     }
   }
   return 'write-single';
+}
+
+export function buildDeterministicMutationPlanSnapshot(input: {
+  userMessage: string;
+  goal?: string;
+  scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'];
+}): TaskPlanSnapshot {
+  const userMessage = input.userMessage.trim();
+  const goal =
+    input.goal?.trim() ||
+    userMessage ||
+    'Complete the mutation request';
+  return buildPlanSnapshot({
+    source: 'template',
+    userMessage,
+    goal,
+    deliverable: 'mutation',
+    steps: buildMutationSteps(input.scopedToolSummaries),
+    constraints: [],
+  });
+}
+
+/** scoped 含 write 且意图为 mutation 时，使用确定性 mutation 模板。 */
+export function shouldUseDeterministicMutationPlan(
+  planInput: BuildTaskPlanInput,
+): boolean {
+  const planConfig = parseSkillPlanConfig(planInput.skillConfig);
+  if (planConfig.deliverable === 'answer') {
+    return false;
+  }
+  const { hasWrite, hasReadDetail, hasReadList } = summarizeScopedRoles(
+    planInput.scopedToolSummaries,
+  );
+  if (!hasWrite) {
+    return false;
+  }
+  if (planConfig.deliverable === 'mutation') {
+    return true;
+  }
+  if (!planInput.skillApplied) {
+    return true;
+  }
+  const risk = planInput.skillRiskLevel;
+  if (risk === 'L2' || risk === 'L3') {
+    return hasReadDetail || hasReadList;
+  }
+  return false;
+}
+
+/** 强制 mutation 模板 Plan 结果（外层/内层 LLM 步序不合规时）。 */
+export function buildDeterministicMutationPlanResult(input: {
+  userMessage: string;
+  goal: string;
+  scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'];
+  llmFallbackReason?: string;
+}): ResolveTaskPlanResult {
+  const plan = buildDeterministicMutationPlanSnapshot({
+    userMessage: input.userMessage,
+    goal: input.goal,
+    scopedToolSummaries: input.scopedToolSummaries,
+  });
+  return {
+    plan,
+    method: 'template',
+    llmFallbackReason: input.llmFallbackReason,
+  };
+}
+
+export function scopedToolsIncludeWrite(
+  scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'],
+): boolean {
+  return summarizeScopedRoles(scopedToolSummaries).hasWrite;
+}
+
+function planHasNonCompliantMutationSteps(plan: TaskPlanSnapshot): boolean {
+  if (plan.deliverable === 'mutation') {
+    return !isCompliantMutationPlan(plan.steps);
+  }
+  return plan.steps.some(
+    (step) => step.kind === 'tool' && isPlanWriteToolRole(step.toolRole),
+  );
+}
+
+/**
+ * 将 LLM 自由步序替换为 mutation 模板。
+ * 外层不传 planInput；内层传入以校验 skill 是否应走 mutation。
+ */
+export function shouldReplacePlanWithMutationTemplate(
+  plan: TaskPlanSnapshot,
+  hasWrite: boolean,
+  planInput?: BuildTaskPlanInput,
+): boolean {
+  if (!hasWrite) {
+    return false;
+  }
+  if (planInput && !shouldUseDeterministicMutationPlan(planInput)) {
+    return false;
+  }
+  if (plan.steps.some((step) => step.kind === 'skill')) {
+    return false;
+  }
+  return planHasNonCompliantMutationSteps(plan);
 }
 
 /** tool call 是否符合 plan 当前 pending tool 步的 toolRole。 */
@@ -1019,21 +1141,9 @@ function applyPlanAdvance(
   plan: TaskPlanSnapshot,
   completedStepId: string,
 ): TaskPlanSnapshot {
-  const pendingStepIds = plan.pendingStepIds.filter(
-    (id) => id !== completedStepId,
+  return syncPlanFromActiveFrame(
+    applyActiveFrameStepComplete(plan, completedStepId),
   );
-  const completedStepIds = plan.completedStepIds.includes(completedStepId)
-    ? plan.completedStepIds
-    : [...plan.completedStepIds, completedStepId];
-  const nextStep = getStepById(plan, pendingStepIds[0] ?? null);
-  return {
-    ...plan,
-    pendingStepIds,
-    completedStepIds,
-    currentStepId: nextStep?.id ?? null,
-    currentObjective: nextStep?.objective ?? plan.goal,
-    taskPhase: nextStep?.phase ?? 'answer',
-  };
 }
 
 /** post_tools 后推进 Plan；返回 null 表示不干预原有 resultCheck 路由。 */
@@ -1105,18 +1215,18 @@ function buildPlanAdvanceAfterStepComplete(
   }
 
   if (nextStep.kind === 'summarize' || nextStep.kind === 'reason') {
-    const deferred = reprioritizePlanForPendingWriteStep(updatedPlan);
-    if (deferred) {
-      return {
-        updatedPlan: deferred,
-        route: 'llm',
-        reason: 'plan_defer_summarize_pending_write',
-      };
-    }
     return {
       updatedPlan,
       route: 'summarize',
       reason: 'plan_advance_summarize',
+    };
+  }
+
+  if (nextStep.kind === 'skill') {
+    return {
+      updatedPlan,
+      route: 'llm',
+      reason: 'plan_advance_skill_step',
     };
   }
 
@@ -1135,6 +1245,7 @@ export function resolveTaskPlanAdvanceWhenStepSatisfied(input: {
   observations: ToolObservation[];
   scopedTools?: PlanScopedTool[];
   skillConfig?: unknown;
+  purpose?: PlanToolStepSatisfactionPurpose;
 }): TaskPlanAdvanceResult | null {
   const currentStepId =
     input.plan.pendingStepIds[0] ?? input.plan.currentStepId;
@@ -1149,6 +1260,7 @@ export function resolveTaskPlanAdvanceWhenStepSatisfied(input: {
       scopedTools: input.scopedTools,
       taskPlan: input.plan,
       skillConfig: input.skillConfig,
+      purpose: input.purpose ?? 'pre_tools_advance',
     })
   ) {
     return null;
@@ -1175,6 +1287,7 @@ export function resolveTaskPlanAdvance(
         observations: ToolObservation[];
         scopedTools?: PlanScopedTool[];
         skillConfig?: unknown;
+        purpose?: PlanToolStepSatisfactionPurpose;
       },
 ): TaskPlanAdvanceResult | null {
   if (input.phase === 'post_tools') {
@@ -1193,6 +1306,7 @@ export function resolveTaskPlanAdvance(
     observations: input.observations,
     scopedTools: input.scopedTools,
     skillConfig: input.skillConfig,
+    purpose: input.purpose ?? 'pre_tools_advance',
   });
 }
 
@@ -1227,8 +1341,11 @@ export function shouldContinuePlanAfterSummarize(
 /** Plan 首步即为 summarize/reason 时，跳过 ReAct tool 环。 */
 export function resolveTaskPlanInitialAdvance(input: {
   plan: TaskPlanSnapshot;
-  observations: ToolObservation[];
+  allObservations: ToolObservation[];
+  runOwnedObservations: ToolObservation[];
   userMessage: string;
+  /** resume 续跑允许仅凭 GOA 预载进入 summarize；fresh 须本 run 已有观测。 */
+  planRunContext?: 'fresh' | 'resume';
   buildMergedObservation: (
     observations: ToolObservation[],
   ) => ToolObservation | null;
@@ -1242,7 +1359,15 @@ export function resolveTaskPlanInitialAdvance(input: {
     return null;
   }
 
-  const merged = input.buildMergedObservation(input.observations);
+  const planRunContext = input.planRunContext ?? 'fresh';
+  if (
+    input.runOwnedObservations.length === 0 &&
+    planRunContext !== 'resume'
+  ) {
+    return null;
+  }
+
+  const merged = input.buildMergedObservation(input.allObservations);
   const summaryObservation = buildPlanSummarizeObservation({
     userMessage: input.userMessage,
     merged,
@@ -1255,46 +1380,6 @@ export function resolveTaskPlanInitialAdvance(input: {
     summaryObservation,
     reason: 'plan_initial_summarize',
   };
-}
-
-/** Skill 命中且 scoped 含 read-detail + write → 必须走确定性回复/提交模板，不由 Plan LLM 猜步序。 */
-export function shouldUseDeterministicMutationReplyPlan(
-  planInput: BuildTaskPlanInput,
-): boolean {
-  if (!planInput.skillApplied) {
-    return false;
-  }
-  const planConfig = parseSkillPlanConfig(planInput.skillConfig);
-  if (planConfig.deliverable === 'answer') {
-    return false;
-  }
-  const { hasWrite, hasReadDetail, hasReadList } = summarizeScopedRoles(
-    planInput.scopedToolSummaries,
-  );
-  if (!hasWrite) {
-    return false;
-  }
-  if (planConfig.deliverable === 'mutation') {
-    return hasReadDetail || hasReadList;
-  }
-  const risk = planInput.skillRiskLevel;
-  if (risk === 'L2' || risk === 'L3') {
-    return hasReadDetail || hasReadList;
-  }
-  return false;
-}
-
-/** LLM Plan 在回复场景下若缺少 write 步则视为无效。 */
-export function llmPlanMissingRequiredWriteStep(
-  steps: TaskPlanStep[],
-  planInput: BuildTaskPlanInput,
-): boolean {
-  if (!shouldUseDeterministicMutationReplyPlan(planInput)) {
-    return false;
-  }
-  return !steps.some(
-    (step) => step.kind === 'tool' && isPlanWriteToolRole(step.toolRole),
-  );
 }
 
 function observationArgsFingerprint(observation: ToolObservation): string {
@@ -1328,9 +1413,14 @@ function completedGatherToolStepsForPlan(
       steps = listSteps;
     }
   } else if (plan.deliverable === 'mutation') {
-    const writeSteps = steps.filter((step) => isPlanWriteToolRole(step.toolRole));
-    if (writeSteps.length > 0) {
-      steps = writeSteps;
+    const readSteps = steps.filter(
+      (step) =>
+        step.toolRole === 'read-detail' || step.toolRole === 'read-list',
+    );
+    if (readSteps.length > 0) {
+      steps = readSteps;
+    } else {
+      steps = [];
     }
   }
   return steps;
@@ -1416,6 +1506,7 @@ export function completedGatherStepsSatisfiedInObservations(input: {
       observations: input.observations,
       scopedTools: input.scopedTools,
       taskPlan: input.plan,
+      purpose: 'observation_bucket',
     }),
   );
 }

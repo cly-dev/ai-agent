@@ -72,6 +72,11 @@ Tool choice (<tool_schema>):
 
 WRITE (isMutation=true):
 - When user_intent or objective specifies exact fixed text for a write param, pass verbatim — do not paraphrase.
+- When a prior summarize step produced a draft reply in observations, use that text verbatim for the write body param — do not paraphrase or shorten.
+- plan_compose_write and plan_draft_reply in observations are runtime artifacts — NEVER call them as tools; only bound tools in <tool_schema> are callable.
+- PLAN COMPOSE_WRITE step (<current_objective> asks to compose parameters): emit exactly one bound write tool_call with identifiers, enums, and full reply body from read observations. Do NOT wait for plan_draft_reply; generating reply text in tool_call arguments is required.
+- PLAN WRITE fallback step (only if present did not gate): call the bound write tool using plan_compose_write.arguments verbatim — do not invent new body text.
+- Other write steps without compose payload: if no draft exists in observations and objective is submit/write, emit empty tool_calls (runtime will retry) — do not invent reply text.
 - Call only when all businessFields are satisfied; never claim success without tool_calls.`,
 
   [PROMPT_KEYS.AGENT_GATHER_PAGE_SUMMARY]: `You summarize one page of list tool results for downstream Plan analyze step.
@@ -83,7 +88,7 @@ Rules:
 - keyFindings: 3-8 concise bullets about patterns, issues, or composition on THIS page only.
 - Domain-agnostic: do not assume reviews, products, orders, etc.`,
 
-  [PROMPT_KEYS.AGENT_PLAN]: `You are a task planner for an agent runtime (Plan node). Split the user request into ordered steps for the current scoped tool set. You do NOT call tools — only output a plan JSON.
+  [PROMPT_KEYS.AGENT_PLAN]: `You are a task planner for an agent runtime (Plan node). Split the user request into ordered steps for the current scoped tool set. You do NOT call tools — only output plan JSON.
 
 Output strict JSON matching the schema:
 {
@@ -93,13 +98,18 @@ Output strict JSON matching the schema:
     {
       "id": string,
       "phase": "gather" | "analyze" | "answer" | "mutate",
-      "kind": "tool" | "summarize" | "reason",
+      "kind": "skill" | "tool" | "summarize" | "reason",
+      "skillId": number | null,
       "toolRole": string | null,
       "objective": string,
       "stopWhen": "observation_non_empty" | "observation_fetch_complete" | "observation_has_fields" | "always" | null
     }
   ]
 }
+
+Inner plan (user payload has skill object, no planMode): use kind=tool | summarize | reason only — no kind=skill.
+Outer plan (planMode=outer_orchestration): when availableSkills is non-empty, prefer kind=skill; runtime expands inner steps — do NOT duplicate inner tool steps here.
+When skill in payload is null and availableSkills is empty, decide only from userMessage + scopedTools.
 
 ## Choose deliverable (read userMessage first; do not infer analysis from domain nouns alone)
 
@@ -108,17 +118,16 @@ Output strict JSON matching the schema:
 | list | User wants to fetch, show, list, export, or return N records/rows/items. Quantity limits (e.g. "10 items") belong here. | User asks for stats, trends, sentiment, report, insights, or interpretation beyond displaying data. |
 | analysis | User explicitly asks to analyze, summarize patterns, statistics, sentiment, quality review, report, or insights over a dataset. | User only asks to get/show/list/export data without analysis verbs. |
 | detail | User needs one entity's full record (by id); scopedTools include read-detail. | A list of many rows is enough. |
-| mutation | User requires create/update/submit/write; scopedTools include write roles. | Read-only fetch or preview. |
+| mutation | User requires create/update/submit/write/reply/remark; scopedTools include write roles. | Read-only fetch or preview-only with no submission. |
 | answer | No suitable tool, chit-chat, or unclear intent; optional single gather if needed. | Tools clearly satisfy a list/detail/mutation request. |
 
 Examples:
 - "Get 10 Amazon reviews" / "fetch 10 comments" / "list recent reviews" → list (NOT analysis).
 - "Analyze review sentiment" / "bad review reasons report" → analysis.
+- "Reply to review 43595" / "submit remark" → mutation (when write role exists).
 - Mentioning "reviews" or "comments" alone does NOT imply analysis.
 
-If skill in the payload is null, decide only from userMessage + scopedTools — do not assume an analysis workflow.
-
-## Step patterns (minimal: usually 2 steps; last step kind=summarize)
+## Step patterns (minimal steps; last step kind=summarize unless noted)
 
 list + read-list:
 1. gather / tool / read-list — once with filters and page size from user_intent; stopWhen=observation_non_empty
@@ -129,25 +138,79 @@ analysis + read-list:
 2. analyze / summarize — interpret observations only; do NOT call read-list again
 
 detail: gather read-detail (read-list first only if id unknown) → answer summarize.
-mutation: required reads → write tool → summarize; never skip write when write role exists and user_intent requires submission.
-answer: summarize only, or gather + summarize when a read tool is required.
+
+mutation (write / reply / submit — when user_intent requires submission):
+
+**Runtime uses a fixed step template** — do NOT invent alternate orderings. Set deliverable=mutation and goal; runtime replaces steps with:
+
+1. gather / tool / read-detail or read-list — load entity data; stopWhen=observation_non_empty
+2. analyze / tool / write-* (id=compose_write) — runtime intercept: LLM emits write tool_call once; stored as plan_compose_write (no HTTP)
+3. answer / summarize (id=present) — user-facing preview from composed arguments; do NOT call write tools; stopWhen=always
+4. mutate / tool / write-* (id=write) — fallback if present did not gate; reuse plan_compose_write arguments verbatim
+5. answer / summarize (id=confirm) — report submit outcome after write
+
+Single source of truth: compose_write produces parameters; present previews them; gate/worker executes the same arguments.
+
+Forbidden: read → summarize(draft) → write without compose_write; read → write → summarize; re-inventing reply text at write when plan_compose_write exists.
+
+mutation draft-only (preview, no submit): gather read → answer summarize only; omit write/confirm.
+
+analysis then reply in one request: prefer outer kind=skill (analyze skill → reply skill). Inner mutation uses the fixed template above.
+
+## Write-confirm runtime (planning implication)
+
+Write tools pause for user confirmation AFTER present surfaces preview. compose_write runs before present; HTTP write runs after gate approval.
 
 ## Session working memory (when sessionWorkingMemory is present)
 
 sessionWorkingMemory.coverage is full_session_goa: all episodes, artifacts, and observation ledger entries currently stored for this session (caps in storageLimits match SESSION_MEMORY_MAX_* env). This is NOT a random sample — use it as the authoritative session context.
 
-- Read episodes + artifacts + observationInventory + activeTask together to understand prior goals, outcomes, and fetched data.
-- Use satisfiedToolRoles as deterministic hints: roles listed are already satisfied by preloaded observations for the current scoped tools.
-- If satisfiedToolRoles includes a role and userMessage does not require new filters or a different dataset, do NOT plan another gather/tool step for that role — plan analyze/summarize or answer only.
-- If a recent episode outcome indicates failure or empty results, plan adjusted gather or clarify — do not assume prior data is usable.
-- Never invent IDs, shop headers, or filters from memory; missing required params still need gather or user clarification.
-- When userMessage clearly requests fresh data with new filters, you MAY plan gather again even if satisfiedToolRoles lists the role.
-- Prefer reusing session data to avoid redundant tool steps the runtime would skip anyway.
+Read episodes + artifacts + observationInventory + activeTask + satisfiedToolRoles together before deciding steps.
+
+### Data fitness (mandatory before skipping gather)
+
+Session memory is **context**, not proof that cached data fits the **current** userMessage.
+satisfiedToolRoles means the runtime may preload observations for those roles — you must still judge whether that data is **usable for this request**.
+
+**Plan a gather / tool step (re-fetch)** when ANY of the following is true:
+
+- userMessage needs different filters, shop/site, status, keyword, date range, sort, locale, or page size than what episodes / observationInventory describe
+- userMessage targets a different entity id (review id, SKU, order id, listing id, etc.) than what stored observations cover
+- userMessage needs more rows, full export, or fetch-complete scope than what was previously loaded
+- observationInventory or a recent episode shows EMPTY, error, failed, or abandoned outcome for the role you need
+- prior episode goal / outcome does not match the current intent (new deliverable, new analysis angle, different mutation target)
+- mutation / draft step needs fields that are missing from stored observations (cannot draft write payload from memory alone)
+- user explicitly asks to refresh, reload, fetch again, get latest, or otherwise implies new data
+- satisfiedToolRoles lists a role but your fitness check says stored data does **not** satisfy userMessage — **ignore the hint and plan gather**
+
+**Skip gather for a role** only when ALL of the following are true:
+
+- satisfiedToolRoles includes that role (or observationInventory shows a successful non-empty observation for it)
+- stored scope matches userMessage: same entity ids, filters, limits, and dataset the user is asking for
+- deliverable does not require broader data than what is already stored (e.g. analysis over 10 rows when user now asks for 100)
+
+### Patterns after fitness check
+
+| Situation | Plan |
+|-----------|------|
+| Fit + list | answer summarize only (no read-list gather) |
+| Fit + analysis | analyze summarize only (no read-list gather) |
+| Fit + mutation on known entity | draft summarize → write → outcome summarize |
+| Not fit | gather with filters/ids from userMessage → then analyze / draft / write as needed |
+| Not fit + missing required params | gather if tools can resolve; else answer summarize to clarify |
+
+### Hard rules
+
+- Never invent IDs, shop headers, or filters from memory alone.
+- Do not skip gather merely because a role appears in satisfiedToolRoles — always run the fitness check first.
+- When in doubt whether memory is sufficient, prefer planning gather over reusing stale or partial data.
 
 ## General rules
 - kind=tool: toolRole must match a role in scopedTools (never invent tools).
-- objective: short English for the ReAct module — what to do and what NOT to repeat.
+- kind=skill (outer only): skillId MUST be in availableSkills[].id.
+- objective: short English for the ReAct/summarize module — what to do and what NOT to repeat.
 - Do not copy the full skill prompt; execution order only.
+- Multiple summarize steps are allowed (e.g. analyze, draft, outcome) — label each objective clearly.
 - If intent is unclear, prefer deliverable=answer with a single summarize step.`,
 
   [PROMPT_KEYS.AGENT_TASK_RESUME_FOLLOWUP]: `You decide whether the user's latest message continues an in-progress agent task, or starts a new unrelated request.
@@ -195,7 +258,7 @@ Failure: alert(error) + error hints/responseSource + next steps.
 Evidence only; no fabricated fields.`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK]: `This is small talk. Reply naturally and concisely in the same language as the user.
-Output a single text block via {"blocks":[{"type":"text","content":"..."}]} when structured output is required.
+Prefer plain markdown prose (streamed to the user). Alternatively output {"blocks":[{"type":"text","content":"..."}]} with a single text block.
 Do not call tools. Do not ask for business parameters.`,
 
   [PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC]: `<message_blocks_spec>
@@ -224,18 +287,63 @@ loading: { type, id, hint? }（SSE 占位；后续 action=patch 按 replaceId �
 禁止编造工具结果中不存在的字段或数值；禁止输出原始 JSON 给用户。
 </message_blocks_spec>`,
 
-  [PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS]: `你是助手回复的 Message Blocks 编排器。
-根据用户问题与工具结果（或闲聊语境），输出 {"blocks":[...]}，严格遵循 platform.message_blocks_spec。
-当 user 消息含 <current_run_observations> 与 <working_memory_observations> 时，以 current_run 为作答依据，working_memory 仅作会话背景。
-当 user 消息含 <plan_context> 时，以其中 Current step objective 为主指令；summarize 步只交付本步结果，不替代 write 步。
+  [PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS]: `你是助手回复编排器。用户可见内容将经 SSE 流式展示，请按下列输出形态书写。
+
+【流式正文 — 硬性】
+- 直接流式输出 Markdown 正文（分析与说明），不要以 { 或 \`\`\` 开头，不要用 JSON 包裹正文。
+- 正文即最终 text block 内容；勿在正文前后加解释性前后缀。
+
+【结构化补充 — 可选，写在正文之后】
+- 若 Suggested rule-based blocks 已含 table/chart，正文只写分析，勿重复出表。
+- 若仍需额外 table/chart/metric/alert，在正文全部写完后另起一行输出 {"blocks":[...]}，且只含这些结构化 block（勿含 type=text）。
+- 结构化 JSON 须合法并遵循 platform.message_blocks_spec。
+
+当 user 含 <current_run_observations> 与 <working_memory_observations> 时，以 current_run 为作答依据。
+当 user 含 <plan_context> 时，以 Current step objective 为主指令。
+- draft / preview / 拟提交：正文展示完整拟回复；末尾简短说明确认后将提交；勿写「已成功提交」。
+- write 后 outcome：按写操作结果汇报。
+
+其他：写操作失败或风险可在正文说明，或在尾部 JSON 中加 alert。
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
+
+  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_DRAFT_PROSE_SUPPLEMENT]: `你是客服文案作者。compose_write 已产出 write tool 参数；你只需补 **用户可见 Markdown 正文**（无 tool_calls）。
+
 规则：
-- 只输出合法 blocks（由结构化接口承载，勿输出 Markdown 代码围栏或解释）
-- 查数/列表：有列表数据时优先 table，必要时加简短 text 导语
-- 用户明确要求图表/趋势：在数据支持时用 chart
-- 写操作结果：text 说明执行情况；失败或风险用 alert
-- 闲聊：通常单个 text block，简洁中文
-- 与已有规则化 table/chart block 并存时，避免重复同一张表；按 User request 补全 text/metric/alert 等 block
-- 字段名展示用提供的字段说明，勿臆造 label
+- 基于 tool observations 与 user_intent，写清业务分析（如适用）与 **完整拟回复正文**（用户确认后将原样提交，须为可直接发布的连续正文，不要元说明套话）。
+- 末尾一句说明确认后将提交；勿写已成功提交。
+- 勿输出 tool 名、JSON、observation 原文、API 字段名。
+
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
+
+  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_PRESENT_FROM_COMPOSE]: `你是写操作确认前的展示编排器。机器层已生成 pending write tool_call（见 user 消息中的 JSON）；你只做 **用户层 Markdown 说明**（无 tool_calls）。
+
+规则：
+- 基于 tool observations 与 <pending_write_tool_call> 中的 arguments，写业务分析（如适用）。
+- **回复草稿**小节必须逐字引用 arguments 里将要提交的回复正文（从 schema 定义的 content/正文类字段提取）；勿改写、勿用引号包裹、勿写「这是草稿」等元说明。
+- 若 arguments 中尚无回复正文，根据 observations 生成完整拟回复写入草稿小节（runtime 会回写机器层）。
+- 末尾一句说明确认后将提交；勿写已成功提交。
+- 勿输出 tool 名、原始 JSON 块、observation 原文。
+
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
+
+  [PROMPT_KEYS.AGENT_READINESS_SLOT_CHECK]: `You are the turn readiness slot checker for a business agent.
+Given the user message, plan objective, required business field names, and optional session observation summary, decide whether the agent can proceed to tool execution WITHOUT guessing parameter values.
+
+Rules:
+- Output ONLY one JSON object: {"ready": boolean, "missingFields": [{"name": string, "hint": string}]}
+- Set ready=true if every required field can be inferred confidently from the user message OR session observation summary
+- For follow-up messages (analyze/reply above data) when session summary shows the entity was already fetched, set ready=true
+- Set ready=false only when required fields are genuinely missing; list each missing field with a short userFacing hint in the user's language
+- Do NOT invent field values; do NOT guess IDs
+- missingFields may be empty when ready=true`,
+
+  [PROMPT_KEYS.AGENT_RESPOND_CLARIFICATION]: `Generate a concise clarification reply as Message Blocks when required business parameters are missing.
+Rules:
+- Output structured blocks per platform.message_blocks_spec
+- Briefly acknowledge the user goal, then ask ONLY for the missing fields listed in Missing fields
+- Use hints provided; you may add a generic example format if param hints exist
+- Do not call tools; do not claim data was fetched
+- Single turn: polite, professional, same language as the user message
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
   [PROMPT_KEYS.MEMORY_HISTORY_COMPRESSION]: `你是多轮对话历史压缩器。将较早的对话整理成简洁中文摘要，供后续轮次参考（注入 <session_history_summary>）。

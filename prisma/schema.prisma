@@ -220,6 +220,7 @@ model Message {
   session            Session       @relation(fields: [sessionId], references: [id])
   messageTurns       MessageTurn[] @relation("MessageTurnInput")
   outputMessageTurns MessageTurn[] @relation("MessageTurnOutput")
+  agentRunOutputs    AgentRun[]    @relation("AgentRunOutput")
 
   @@index([sessionId])
 }
@@ -518,12 +519,15 @@ model AgentRun {
   toolsUsed        Json?
   finishReason     String?
   scopedToolCount  Int?
+  /// 本轮 run 落库的 assistant Message（幂等重试时复用）。
+  outputMessageId  Int?
   /// Run 结束时的 Plan / activeTask 快照，供 GOA 冷启动 replay 权威恢复。
   goaSnapshot        Json?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  turn       MessageTurn? @relation(fields: [turnId], references: [id], onDelete: Cascade)
+  turn          MessageTurn? @relation(fields: [turnId], references: [id], onDelete: Cascade)
+  outputMessage Message?     @relation("AgentRunOutput", fields: [outputMessageId], references: [id], onDelete: SetNull)
   agent      Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
   appClient  AppClient    @relation(fields: [appClientId], references: [id])
   session    Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -538,6 +542,7 @@ model AgentRun {
   @@index([status])
   @@index([createdAt])
   @@index([parentRunId])
+  @@index([outputMessageId])
 }
 
 model AgentTool {

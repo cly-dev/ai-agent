@@ -42,7 +42,7 @@ Plan（一次）→ currentObjective + pendingStepIds
 | `list` | 获取/展示/导出 N 条记录 | gather read-list → answer summarize |
 | `analysis` | 分析、统计、报告、洞察 | gather read-list → analyze summarize |
 | `detail` | 单实体详情 | read-detail（必要时先 list）→ answer |
-| `mutation` | 创建/更新/提交/写操作 | read → write → summarize |
+| `mutation` | 创建/更新/提交/写操作 | read → compose_write → present → write → confirm |
 | `answer` | 无工具、闲聊、意图不清 | 单步 summarize（或 gather+summarize） |
 
 **Skill 未命中**且走规则兜底时：`仅有 read-list` → 默认 `list`；**Skill 命中** → 默认 `analysis`（见 `inferDeliverableFromTools`）。
@@ -70,7 +70,7 @@ Plan（一次）→ currentObjective + pendingStepIds
 
 | 值 | 判定逻辑（`observationsSatisfyPlanToolStepStopWhen`） |
 |----|------------------------------------------------------|
-| `observation_non_empty` | 默认。存在可汇总的 observation（**空列表也算有数据**） |
+| `observation_non_empty` | 默认。存在可汇总的 observation（**空列表也算有数据**）。**pre_tools 跳步** 仅在本 run `toolObservations` 内判定；分页续拉另用 `selectObservationsForPagedGatherResume`（见 [plan-node.md](./plan-node.md)） |
 | `observation_has_fields` | 存在非空、可汇总字段的 observation |
 | `observation_fetch_complete` | analyze 路径 gather 专用：无 `resumable` mapReduce；且无需 `observationNeedsPagedFetch`；或 mapReduce 已 `complete`/`partial` |
 | `always` | 立即视为完成 |
@@ -143,36 +143,49 @@ type TaskPlanSnapshot = {
 
 ---
 
-## 4. Plan 生成规则（`resolveTaskPlan` 优先级）
+## 4. Plan 生成规则
 
-实现：`task-plan-llm.util.ts` → `resolveTaskPlan()`。
+### 4.0 外层 vs 内层
+
+| 入口 | 函数 | 场景 |
+|------|------|------|
+| Plan 节点（主 turn） | `resolveOuterPlan()` | 无 skill 帧或外层编排 `kind=skill` |
+| Skill 帧展开 | `resolveTaskPlan()` | 内层 tool/summarize 步 |
+
+内层优先级（`resolveTaskPlan`）：
 
 ```text
-① skill.config.workflow（显式 steps，校验 toolRole ⊆ scoped）
-        ↓ 无效或无
-② 确定性 mutation 回复模板（Skill 命中 + read + write，L2/L3 等）
+① skill.config.workflow（显式 steps，校验 toolRole ⊆ scoped；mutation 须 isCompliantMutationPlan）
+        ↓ 无效 / mutation 不合规
+② shouldUseDeterministicMutationPlan → buildMutationSteps 模板
         ↓ 不适用
 ③ Plan LLM（agent.plan；PLAN_LLM=0 跳过）
-        ↓ 失败 / 缺 write 步（回复场景）
+        ↓ 步序不合规 mutation → 强制模板（mutation_template_forced）
 ④ buildTaskPlan 规则 template / minimal
 ```
+
+外层（`resolveOuterPlan`）：默认 Plan LLM；**mutation 步序不合规**或含 write 步但无合规 compose/present/write 序 → `buildDeterministicMutationPlanResult`；LLM 失败 → `buildTaskPlan`（非 minimal-only）。
+
+`llmFallbackReason`：`mutation_template_forced` \| `outer_plan_llm_failed` \| `outer_plan_llm_disabled` \| `llm_plan_failed` \| `llm_plan_disabled`
 
 ### 4.1 路径 ① workflow
 
 - 配置：`Skill.config.deliverable` + `config.workflow.steps[]`
 - `validatePlanStepsAgainstScoped()` 失败 → **降级**，不静默使用坏步骤
+- `deliverable=mutation` 时 workflow 须通过 `isCompliantMutationPlan()`，否则降级路径 ②
 
 ### 4.2 路径 ② 确定性 mutation
 
-- `shouldUseDeterministicMutationReplyPlan()`：Skill 命中 + 有 write + 有 read-list/read-detail
-- 产出 `read → write → summarize`（`buildMutationSteps`），**跳过 Plan LLM**
+- `shouldUseDeterministicMutationPlan()`：scoped 含 write，且非 `deliverable=answer`；Skill 场景另需 `deliverable=mutation` 或 L2/L3 + read
+- `buildMutationSteps()` 产出五步：`read_detail|list` → `compose_write` → `present` → `write` → `confirm`
+- **跳过 Plan LLM**（内层路径 ②）或 **替换 LLM 步序**（外层 / 内层路径 ③ 不合规时）
 
 ### 4.3 路径 ③ Plan LLM
 
 - Prompt：`agent.plan`（`prompt-defaults.ts` / DB）
 - 校验：`kind=tool` 的 `toolRole` 必须在 scoped roles 内
-- 回复类场景：LLM 计划 **缺 write 步** → 丢弃，走路径 ④
-- `llmFallbackReason`：`llm_plan_missing_write_step` \| `llm_plan_failed` \| `llm_plan_disabled`
+- mutation：LLM 可产出 `deliverable` + `goal`，但 **步序由 runtime 替换**（若不合规）
+- 失败 → 路径 ④；`llmFallbackReason: llm_plan_failed` \| `llm_plan_disabled`
 
 ### 4.4 路径 ④ 规则 template
 
@@ -183,7 +196,7 @@ type TaskPlanSnapshot = {
 | `analysis` | fetch(gather, read-list, fetch_complete) → analyze(summarize) |
 | `list` | fetch(gather, read-list, non_empty) → answer(summarize) |
 | `detail` | list/detail gather → answer |
-| `mutation` | read → write(mutate) → confirm(answer) |
+| `mutation` | read_detail/list → compose_write → present → write → confirm |
 
 `skillApplied=false` 且仅 read-list → **`list`**（「获取 10 条」应落此路径）。
 
@@ -225,11 +238,12 @@ type TaskPlanSnapshot = {
 | `kind: summarize` \| `reason` | **summarize** | `plan_advance_summarize` |
 | `kind: tool` | **llm** | `plan_advance_tool_step` |
 | 无 pending | **summarize** | `plan_complete` |
-| 下一步为 write 且需写确认 | **llm** | `plan_defer_summarize_pending_write` |
+
+Plan 步序在生成时确定（workflow / 模板 / Plan LLM）；advance **仅线性推进**，不在 ReAct 环内为 pending write 重排队列。写操作安全由 tools 写确认闸门与 `plan_write_step_*` 规则保障。
 
 ### 5.4 首步即为 summarize
 
-`resolveTaskPlanInitialAdvance()`：pending 首步为 `summarize`/`reason` → 直接设 `pendingSummaryObservation`，**跳过** tool 环（`plan_initial_summarize`）。
+`resolveTaskPlanInitialAdvance()`：pending 首步为 `summarize`/`reason` → 直接设 `pendingRespond`，**跳过** readiness / tool 环（`plan_initial_summarize`）。
 
 ### 5.5 summarize 完成后
 
@@ -328,7 +342,28 @@ gather 后若 hasMore → 分页 Gather（引擎）→ 满足 fetch_complete →
 | `AgentRun.goaSnapshot.storedTaskPlan` | run 结束时的 Plan 快照 |
 | GOA `ActiveTask.plan` | `StoredTaskPlan`（与 `TaskPlanSnapshot` 互转） |
 
-会话续跑：`SessionResumeGateService` 在 plan 节点前评估；`resume` 时从 GOA `activeTask.plan` 恢复，**跳过** 重新 `resolveTaskPlan`。
+### 9.1 Session 续跑 gate
+
+`SessionResumeGateService.evaluate()`（plan 节点内）：
+
+| 条件 | 决策 |
+|------|------|
+| `activeTask.status === awaiting_confirmation` | `abandon_and_fresh`（新消息不走 session resume；须写确认 API 或 abandon） |
+| `intentKind !== task` | `fresh` |
+| follow-up LLM 判定换题 | `abandon_and_fresh` |
+| 否则 | `resume`（从 GOA `activeTask.plan` 恢复，跳过 `resolveTaskPlan`） |
+
+仅 `status === in_progress` 的任务可被 **chat message** session resume（`isActiveTaskChatResumable`）。
+
+### 9.2 观测选桶（与续跑正交）
+
+| 场景 | 观测来源 | 能否 pre_tools 跳 gather |
+|------|----------|---------------------------|
+| fresh turn + GOA 有历史 read-detail | `preloaded` 可见于 LLM；**跳步只看 `runOwned`** | 否，须本 run 调 tool |
+| session resume（`planRunContext=resume`） | 同上 + 首步 summarize 可放行 | gather 仍须 `runOwned`；summarize 步可凭 GOA |
+| 分页 gather 续拉 | `preloaded + runOwned` | 见 `selectObservationsForPagedGatherResume` |
+
+详见 [plan-node.md §观测满足](./plan-node.md#观测满足与跳步执行层plan-observation-scopeutilts)。
 
 转换：`toStoredTaskPlan` / `fromStoredTaskPlan`（`session-graph-resume.util.ts`）。
 
@@ -356,4 +391,7 @@ gather 后若 hasMore → 分页 Gather（引擎）→ 满足 fetch_complete →
 | `list` 却走了分页拉数 | 检查是否误为 `analysis` 或 step_2 是否为 `analyze` |
 | LLM 重复 read-list | advance 未触发：stopWhen 未满足 / 全 EMPTY / toolRole 不匹配 |
 | 「获取 N 条」变成 analysis | Plan LLM 误判；规则兜底在 `skillApplied=false` 时应为 `list` |
+| fresh turn 有 GOA 观测却未调 read 工具 | 正常：pre_tools 只看 `runOwned`；检查 `planRunContext` 与 readiness 是否 `observation_satisfied` |
+| 写确认等待中发新消息仍 resume 到 write | 应 abandon；查 `SessionResumeGate` 与 `awaiting_confirmation` |
+| primary/worker step 序号重复 | 用 `turnExecutionTimeline`；见 [agent-run-steps.md](./agent-run-steps.md) |
 | 有 plan 仍每轮全文 user | 检查 `buildDecisionUserFrame` 是否拿到 `taskPlan` |

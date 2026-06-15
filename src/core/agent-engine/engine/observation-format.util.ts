@@ -3,6 +3,8 @@ import {
   isAgentToolErrorObservation,
 } from './agent-run-user-messages.util';
 import type { ToolObservation } from './main/agent-engine.types';
+import { PLAN_DRAFT_REPLY_OBSERVATION_NAME } from './main/plan-draft-reply.util';
+import { PLAN_COMPOSE_WRITE_OBSERVATION_NAME } from './main/plan-compose-write.util';
 import { isEmptyListToolObservation } from './tool/tool-observation.util';
 import { resolveDefaultListArrayLimit } from '../../tool-engine/tool-pagination-params.util';
 import {
@@ -20,6 +22,8 @@ export type LlmObservationPayload = {
   executed: boolean;
   /** session = GOA 预载；current_run = 本 run 新增 */
   source?: ObservationPromptSource;
+  /** runtime 内部 observation，不可作为 tool 调用 */
+  internal?: boolean;
   /** 本次调用使用的参数（精简后），便于模型避免重复 tool_calls */
   args?: Record<string, unknown>;
   /** 给决策模型的复用说明 */
@@ -288,6 +292,61 @@ export function formatObservationForLlm(input: {
   args?: Record<string, unknown>;
   source?: ObservationPromptSource;
 }): LlmObservationPayload {
+  if (input.toolName === PLAN_COMPOSE_WRITE_OBSERVATION_NAME) {
+    const output = input.output as {
+      tool?: string;
+      arguments?: Record<string, unknown>;
+    } | null;
+    const pendingTool =
+      typeof output?.tool === 'string' ? output.tool.trim() : '';
+    const args = output?.arguments;
+    return {
+      tool: input.toolName,
+      executed: true,
+      success: true,
+      internal: true,
+      ...(input.source ? { source: input.source } : {}),
+      reuseNote:
+        'Runtime compose payload (NOT a callable tool). For write fallback, copy pendingWriteTool + arguments verbatim to the bound write tool in <tool_schema>.',
+      summary: {
+        pendingWriteTool: pendingTool || undefined,
+        ...(args && typeof args === 'object' && !Array.isArray(args)
+          ? { arguments: args }
+          : {}),
+      },
+    };
+  }
+
+  if (input.toolName === PLAN_DRAFT_REPLY_OBSERVATION_NAME) {
+    const output = input.output as {
+      draftReply?: string;
+      submitText?: string;
+      pendingWriteToolCall?: { tool?: string } | null;
+    } | null;
+    const draftReply =
+      typeof output?.draftReply === 'string' ? output.draftReply.trim() : '';
+    const submitText =
+      typeof output?.submitText === 'string'
+        ? output.submitText.trim()
+        : draftReply;
+    return {
+      tool: input.toolName,
+      executed: true,
+      success: true,
+      internal: true,
+      ...(input.source ? { source: input.source } : {}),
+      reuseNote:
+        'Runtime draft from plan present (NOT a callable tool). Use submitText / pendingWriteToolCall for write body; never emit tool_calls to this name.',
+      summary: {
+        draftReply,
+        submitText,
+        ...(output?.pendingWriteToolCall?.tool
+          ? { pendingWriteTool: output.pendingWriteToolCall.tool }
+          : {}),
+      },
+    };
+  }
+
   const fieldLabels = input.fieldLabels ?? {};
   const envelope = buildObservationEnvelope({
     output: input.output,

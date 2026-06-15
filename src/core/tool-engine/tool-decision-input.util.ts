@@ -569,6 +569,14 @@ function listAllCompactParamsFromInputDocument(
   return merged;
 }
 
+/** 展开 OpenAPI input 全部参数路径（含嵌套 body 字段，如 `bodyRoot.items[].field`）。 */
+export function listToolInputCompactParams(
+  inputSchema: unknown,
+  fallbackSchema: unknown,
+): ToolParamCompact[] {
+  return listAllCompactParamsFromInputDocument(inputSchema, fallbackSchema);
+}
+
 /**
  * 合并 agentMetadata.paramFormatHints 与 inputSchema 推导 hint。
  * 同一 param：显式声明优先；未声明的 param 用 OpenAPI description/format/enum 备选。

@@ -35,6 +35,15 @@ export class SaveMessageDto {
   @MaxLength(1_000_000)
   content!: string;
 
+  @ApiPropertyOptional({
+    description:
+      'MessageTurn ID。role=assistant 时写入 outputMessageId；正常对话由 Agent run 收尾自动落库，前端一般无需传。',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  turnId?: number;
+
   @ApiPropertyOptional({ description: '工具调用名称' })
   @IsOptional()
   @IsString()

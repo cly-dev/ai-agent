@@ -1,6 +1,8 @@
 export type AgentRunStepType =
   | 'skill'
   | 'plan'
+  | 'plan_sync'
+  | 'readiness'
   | 'intent'
   | 'llm'
   | 'tool'

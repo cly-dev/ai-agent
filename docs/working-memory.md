@@ -55,6 +55,7 @@ type ActiveTask = {
 ```
 
 - **写确认暂停**：`status = awaiting_confirmation`，`phase = task_only` 只更新 activeTask，不写 episode
+- **新 userMessage 在写确认等待期间**：`SessionResumeGate` 会 `abandon` 该 activeTask 并 **fresh plan**（不走 session resume）；续写仅通过写确认 API → worker run
 - **记忆写入**：`newToolObservations` 仅含本 run 新增 obs（不含图预载）
 - **会话 ledger**：每 run 结束 append 到 `sessionObservationLedger`（按 tool+args 去重，任务 completed 后仍保留）
 - **图预载**：`mergePriorToolObservationsFromGoa` = ledger + 可续跑 `activeTask.observationLog`
@@ -77,9 +78,13 @@ Agent run 结束
 
 `SessionResumeGateService.evaluate()`（run 前，Plan 节点调用）：
 
-1. `classifyIntentKind` — smalltalk 不续跑
-2. `SessionTaskResumeFollowUpService` — LLM 判断是否换题
-3. 返回 `resume` | `fresh` | `abandon_and_fresh`
+1. **`awaiting_confirmation`** → 立即 `abandonActiveTask`，返回 `abandon_and_fresh`（写确认只能走 `confirmWrite` → worker run）
+2. `classifyIntentKind` — smalltalk 不续跑
+3. `SessionTaskResumeFollowUpService` — LLM 判断是否换题
+4. 返回 `resume` | `fresh` | `abandon_and_fresh`
+
+**可 chat resume 的状态**：仅 `activeTask.status === in_progress`（`isActiveTaskChatResumable`）。  
+**不可 chat resume**：`awaiting_confirmation`（写确认暂停）、`completed`、`failed`、`abandoned`。
 
 Plan 节点只消费 gate 决策，不再内嵌 Redis 写入。
 
@@ -109,8 +114,8 @@ Plan 节点（fresh 路径，非 session resume）：
 
 - `buildPlanSessionWorkingMemory()` 注入 **完整 GOA 快照**（与 Decision PromptComposer 一致，`coverage: full_session_goa`）
 - 条数上限与 `SESSION_MEMORY_MAX_*` 一致，无 prompt 层二次截断
-- Plan 额外含 `satisfiedToolRoles`（需 scopedTools + preloadedObs）
-- 执行层仍用 preloadedObs + resultCheck 硬跳步
+- Plan 额外含 `satisfiedToolRoles`（**仅本 run** `toolObservations` 判定）
+- **pre_tools 跳步**（readiness / plan_sync）**始终**只看 `toolObservations`；分页续拉例外，见 [plan-node.md §观测满足](./plan-node.md#观测满足与跳步执行层plan-observation-scopeutilts)
 
 ---
 
@@ -154,7 +159,7 @@ Plan 节点（fresh 路径，非 session resume）：
 | `session-goa-full-projection.util.ts` | 完整 GOA prompt 投影（Decision + Plan 共用） |
 | `session-goa-ledger.util.ts` | 会话 observation ledger 写入 / 去重 / 图预载合并 |
 | `graph-tool-observations.util.ts` | preloaded / run-owned 观测合并 |
-| `session-resume-gate.service.ts` | 续跑门控 |
+| `session-resume-gate.service.ts` | 续跑门控（含 awaiting_confirmation → abandon） |
 | `session-context.types.ts` | 仅 turns + 压缩（Redis） |
 | `session-task-resume-followup.service.ts` | LLM 追问门控 |
 

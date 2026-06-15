@@ -3,7 +3,11 @@ import { detectIntentKind as classifyIntentKind } from '../../agent-engine/inten
 import { loadSmallTalkHints } from '../../intent/smalltalk-hints.util';
 import { SessionGoaService } from '../goa/session-goa.service';
 import { SessionTaskResumeFollowUpService } from './session-task-resume-followup.service';
-import type { SessionGoaPayload, StoredTaskPlan } from '../goa/session-goa.types';
+import {
+  isActiveTaskAwaitingWriteConfirmation,
+  type SessionGoaPayload,
+  type StoredTaskPlan,
+} from '../goa/session-goa.types';
 
 export type SessionResumeDecision =
   | {
@@ -29,6 +33,12 @@ export class SessionResumeGateService {
     latestUserMessage: string;
     goa: SessionGoaPayload;
   }): Promise<SessionResumeDecision> {
+    const activeTask = input.goa.activeTask;
+    if (isActiveTaskAwaitingWriteConfirmation(activeTask)) {
+      await this.goaService.abandonActiveTask(input.sessionId);
+      return { action: 'abandon_and_fresh' };
+    }
+
     const resumeIntentKind = classifyIntentKind(
       input.latestUserMessage,
       loadSmallTalkHints(),
@@ -37,7 +47,6 @@ export class SessionResumeGateService {
       return { action: 'fresh' };
     }
 
-    const activeTask = input.goa.activeTask!;
     const followUp = await this.taskResumeFollowUp.classify({
       sessionId: input.sessionId,
       appClientId: input.appClientId,
@@ -56,10 +65,10 @@ export class SessionResumeGateService {
 
     return {
       action: 'resume',
-      plan: activeTask.plan,
+      plan: activeTask!.plan,
       followUpReason:
         typeof followUp.reason === 'string' ? followUp.reason : null,
-      resumedFromRunId: activeTask.lastRunId,
+      resumedFromRunId: activeTask!.lastRunId,
     };
   }
 }

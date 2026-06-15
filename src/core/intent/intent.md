@@ -251,7 +251,7 @@ LangGraph 在 `agent-lang-graph.runner.ts` 中运行。**无论工具总数多�
 |------|------|
 | `skill` 命中 | `llm`（带 skill prompt） |
 | 类目召回 `matchedCategoryIds.length > 0` | 按类目过滤 →（>5 则 bind 召回）→ `llm` → `tools` → `summarize` |
-| 类目未命中 / 过滤后无工具 / 无工具可用 / 意图不清 / 召回失败 | `intent` 设 `pendingSummaryObservation` → **`summarize`（跳过 llm）** |
+| 类目未命中 / 过滤后无工具 / 无工具可用 / 意图不清 / 召回失败 | `intent` 设 `pendingRespond` → **`summarize`（跳过 plan/readiness/llm）** |
 
 类目未命中时 summarize 使用 `buildUnsupportedIntentGuidance()` 引导语，向用户说明当前问题不在系统支持范围内。
 

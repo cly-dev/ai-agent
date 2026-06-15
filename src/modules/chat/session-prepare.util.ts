@@ -3,8 +3,18 @@ import type { SessionAllowedToolsRow } from './session-prepare.types';
 export function buildToolIdsFingerprint(
   tools: Array<{ id: number }>,
 ): string {
-  return tools
-    .map((tool) => tool.id)
+  return buildIdsFingerprint(tools);
+}
+
+export function buildSkillIdsFingerprint(
+  skills: Array<{ id: number }>,
+): string {
+  return buildIdsFingerprint(skills);
+}
+
+function buildIdsFingerprint(rows: Array<{ id: number }>): string {
+  return rows
+    .map((row) => row.id)
     .sort((a, b) => a - b)
     .join(',');
 }
@@ -14,6 +24,13 @@ export function areToolIdSetsEqual(
   right: Array<{ id: number }>,
 ): boolean {
   return buildToolIdsFingerprint(left) === buildToolIdsFingerprint(right);
+}
+
+export function areSkillIdSetsEqual(
+  left: Array<{ id: number }>,
+  right: Array<{ id: number }>,
+): boolean {
+  return buildSkillIdsFingerprint(left) === buildSkillIdsFingerprint(right);
 }
 
 export function snapshotContainsAnyToolId(

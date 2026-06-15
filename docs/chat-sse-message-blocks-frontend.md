@@ -2,7 +2,8 @@
 
 > 版本：与 agent-server 当前实现同步（2026-06）  
 > 适用接口：`GET /chat/:sessionId/stream`（`text/event-stream`）  
-> 写操作确认（`confirmation_required` / `confirmWrite`）：见 [write-confirmation-frontend.md](./write-confirmation-frontend.md)
+> 写操作确认（`confirmation_required` / `confirmWrite`）：见 [write-confirmation-frontend.md](./write-confirmation-frontend.md)  
+> Run 步骤与 Turn 时间线（调试 primary/worker）：见 [agent-run-steps.md](./agent-run-steps.md)
 
 ---
 
@@ -97,7 +98,11 @@ es.addEventListener('error', (e) => onError(JSON.parse(e.data)));
 }
 ```
 
-表示本轮编排结束。此时 DB 中已有 assistant 消息（`content` 为 `{"blocks":[...]}` 字符串），可拉历史对齐；UI 上应结束「输入中/流式中」状态。
+表示本轮编排结束。**收到 `complete` 时 assistant 消息已落库**（`finishAgentRun` 在发 `complete` 之前从 `RunAssistantArtifact` 写入 `Message`，`content` 为 `{"blocks":[...]}`，与 summarize 定稿及 SSE 权威 `full` 一致）。UI 上应结束「输入中/流式中」状态，并可拉历史对齐。
+
+若曾收到 `stream.mode: 'full'` 的权威 blocks，应以该条覆盖 delta 拼接结果；落库内容与该权威快照一致。
+
+写确认暂停（primary `complete`）：落库 **draft summarize 的 blocks**（artifact `phase=draft`，与此前 SSE 草稿一致）；「请确认是否继续」仅走 `confirmation_required`，不入库 blocks。
 
 ---
 
@@ -206,10 +211,17 @@ for (const { replaceId, block } of patches) {
 }
 ```
 
-### 4.4 兜底 `stream` + `mode: full`（无 `final`）
+### 4.4 定稿 `stream` + `mode: full`（无 `final`）
 
-少数路径未走 summarize 流式时，run 结束前可能 **补一条** `action: stream` + `mode: full` + 完整 `blocks`（与 delta/patch 已交付互斥）。  
-前端按 §4.2 的 `stream.full` 处理即可；**不要**实现 `action: final`。
+每条用户可见回复在 `complete` 前都会经历：
+
+1. **若干 `stream.delta`**（LLM 实时 token；invoke 兜底时由服务端按同一状态机回放）
+2. **一条权威 `stream.full`**（与 artifact / 落库 blocks 完全一致，用于覆盖/对齐 delta）
+3. 工具类回复可有 **`patch`** 替换 `loading` 占位
+
+仅当本轮从未推过任何 `message` 时，run 收尾可能 **补发** delta+full（与 artifact 一致）。  
+**`finishAgentRun` 在 `complete` 前始终再推一条权威 `stream.full`**（与 artifact / 落库 blocks 一致），用于对齐 delta/patch 拼接结果；前端应以 **最后一条** `stream.mode: full` 覆盖槽位。  
+前端按 §4.2 处理；**不要**实现 `action: final`。
 
 ---
 
@@ -221,21 +233,29 @@ for (const { replaceId, block } of patches) {
 message stream delta seq=1  "晚上好"
 message stream delta seq=2  "！请问"
 message stream delta seq=3  "有什么…"
+message stream full   seq=4  blocks=[...]   // 可选：与 delta 对齐的权威快照
 complete
 ```
 
-→ 只需维护 **一个** `text` block，delta 追加；然后等 `complete`。
+→ 只需维护 **一个** `text` block，按 `stream.mode: delta` 追加；若随后收到同 run 的 `stream.full`，用 full 覆盖 delta 拼接结果；然后等 `complete`。
+
+模型若直接流式 Markdown 正文，服务端在 **prose** 模式逐 token 推 **delta**。  
+若输出 `{"blocks":[{"type":"text","content":"..."}]}`，则从 `content` 字段增量解码推 **delta**。  
+定稿时的 `stream.full` 与入库内容相同，前端应以 full 为准对齐。
 
 ### 5.2 工具结果 + 表格/图表
 
 ```text
 message stream full   seq=1   blocks=[loading id=blk-216-0]
-message stream delta  seq=2..n  text 片段（可选）
+message stream delta  seq=2..n  text 片段（可选；blocks JSON 时不推围栏碎片）
 message patch         seq=n+1  patches=[{ replaceId: blk-216-0, block: table }]
+message stream full   seq=n+2..  LLM 解析出的 list/text 等（多 block JSON 时逐条追加）
+message stream full   seq=last  权威全文（与落库一致，覆盖 delta）
+complete 前           seq=final  finishAgentRun 再推一条权威 full（与落库一致）
 complete
 ```
 
-→ `loading` 先占位，`patch` 替换，文本与表格并存。
+→ `loading` 先占位，`patch` 替换；多 block JSON 时 LLM 块在 patch 后逐条 `full` 追加；**`complete` 前最后一条 `stream.full` 为权威快照**。
 
 ### 5.3 处理顺序（伪代码）
 

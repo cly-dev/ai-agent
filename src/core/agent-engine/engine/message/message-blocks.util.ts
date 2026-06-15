@@ -74,7 +74,10 @@ export function looksLikeBlocksJsonOutput(text: string): boolean {
   }
   if (
     trimmed.startsWith('{') &&
-    (trimmed.includes('"blocks"') || trimmed.includes("'blocks'"))
+    (trimmed.includes('"blocks"') ||
+      trimmed.includes("'blocks'") ||
+      trimmed.includes('"pendingWriteToolCall"') ||
+      trimmed.includes("'pendingWriteToolCall'"))
   ) {
     return true;
   }
@@ -89,8 +92,20 @@ const SUMMARIZE_BLOCKS_JSON_TAIL_PATTERNS: RegExp[] = [
   /\n\s*\]\s*\}\s*$/,
 ];
 
-/** 返回 message 正文中 blocks JSON 尾巴起始下标；-1 表示无。 */
+/** 返回 message 正文中 blocks / pendingWriteToolCall 协议尾巴起始下标；-1 表示无。 */
 export function findSummarizeBlocksJsonTailStart(text: string): number {
+  const xmlPending = /<pendingWriteToolCall>\s*/i.exec(text);
+  if (xmlPending?.index != null) {
+    return xmlPending.index;
+  }
+  const pendingWrite = /\n\s*\{\s*["']pendingWriteToolCall["']\s*:/.exec(text);
+  if (pendingWrite?.index != null) {
+    return pendingWrite.index;
+  }
+  const pendingAtStart = /^\s*\{\s*["']pendingWriteToolCall["']\s*:/.exec(text);
+  if (pendingAtStart?.index === 0) {
+    return 0;
+  }
   for (const pattern of SUMMARIZE_BLOCKS_JSON_TAIL_PATTERNS) {
     const match = pattern.exec(text);
     if (match?.index != null) {
@@ -104,7 +119,7 @@ export function findSummarizeBlocksJsonTailStart(text: string): number {
   return -1;
 }
 
-/** 去掉已流式正文末尾误拼上的 blocks JSON 尾巴。 */
+/** 去掉已流式正文末尾误拼上的 blocks / pendingWriteToolCall 协议。 */
 export function stripBlocksJsonTailFromStreamedProse(text: string): string {
   const idx = findSummarizeBlocksJsonTailStart(text);
   if (idx >= 0) {
@@ -113,6 +128,65 @@ export function stripBlocksJsonTailFromStreamedProse(text: string): string {
   return text
     .replace(/",\s*"(?:format|type)"[\s\S]*$/i, '')
     .trimEnd();
+}
+
+/** 去掉 ```json 代码块（内容为 JSON object 且非 message blocks）。 */
+function stripJsonObjectMarkdownFences(text: string): string {
+  return text.replace(/```(?:json)?\s*\n([\s\S]*?)```/gi, (full, inner: string) => {
+    const trimmed = inner.trim();
+    if (!trimmed.startsWith('{')) {
+      return full;
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (!isRecord(parsed)) {
+        return full;
+      }
+      if (Array.isArray(parsed.blocks)) {
+        return full;
+      }
+      return '';
+    } catch {
+      return full;
+    }
+  });
+}
+
+/** summarize 用户可见正文：去掉协议尾巴、XML 包裹、API 参数 JSON 围栏。 */
+export function sanitizeSummarizeUserFacingProse(text: string): string {
+  let next = text.replace(
+    /<pendingWriteToolCall>[\s\S]*?<\/pendingWriteToolCall>/gi,
+    '',
+  );
+  next = stripJsonObjectMarkdownFences(next);
+  next = stripBlocksJsonTailFromStreamedProse(next);
+  return next.replace(/\n{3,}/g, '\n\n').trimEnd();
+}
+
+/** 流式正文是否仅为未完成的 markdown 围栏或纯反引号（勿推 delta、勿落库）。 */
+export function isStreamedProseFenceGarbage(text: string): boolean {
+  const trimmed = stripBlocksJsonTailFromStreamedProse(text).trim();
+  if (!trimmed) {
+    return true;
+  }
+  if (/^`+$/.test(trimmed)) {
+    return true;
+  }
+  if (trimmed.startsWith('```') && !/```[\s\S]*```/.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
+function isSummarizeStreamFencePrefix(text: string): boolean {
+  const trimmed = text.trimStart();
+  if (!trimmed.startsWith('`')) {
+    return false;
+  }
+  if (isLikelySummarizeBlocksJsonStart(trimmed)) {
+    return true;
+  }
+  return /^`{1,2}$/.test(trimmed);
 }
 
 /** message 通道累积文本是否将进入 / 已是 blocks JSON（勿推 delta）。 */
@@ -128,7 +202,7 @@ export function isLikelySummarizeBlocksJsonStart(text: string): boolean {
   ) {
     return true;
   }
-  return /["']blocks["']\s*:/.test(trimmed);
+  return /["'](?:blocks|pendingWriteToolCall)["']\s*:/.test(trimmed);
 }
 
 /** 正文中内联出现的 blocks JSON 起始位置（prose 后拼接 JSON 等）。 */
@@ -141,7 +215,9 @@ export function findInlineSummarizeBlocksJsonStart(
     return tailStart;
   }
   const rest = messageText.slice(emittedProseLength);
-  const inline = rest.search(/\{\s*["']?(?:blocks|type|content)["']?\s*:/);
+  const inline = rest.search(
+    /\{\s*["']?(?:blocks|pendingWriteToolCall|type|content)["']?\s*:/,
+  );
   if (inline >= 0) {
     return emittedProseLength + inline;
   }
@@ -155,7 +231,12 @@ export function findInlineSummarizeBlocksJsonStart(
   return -1;
 }
 
-export type SummarizeMessageStreamMode = 'detect' | 'prose' | 'buffer';
+export type SummarizeMessageStreamMode =
+  | 'detect'
+  | 'prose'
+  | 'buffer'
+  | 'fence'
+  | 'json_text';
 
 export type SummarizeMessageStreamState = {
   mode: SummarizeMessageStreamMode;
@@ -163,28 +244,265 @@ export type SummarizeMessageStreamState = {
   messageText: string;
   /** 已通过 SSE delta 推送的正文长度 */
   emittedProseLength: number;
+  /** json_text：`content` 字段起始引号下标 */
+  jsonContentValueStart?: number;
+  /** fence：未闭合 markdown 围栏起始下标（含 ```） */
+  fenceStartIndex?: number;
 };
+
+/** 单 text block JSON：`{"blocks":[{"type":"text",...,"content":"` */
+const SINGLE_TEXT_BLOCK_CONTENT_PREFIX =
+  /^\s*(?:```(?:json)?\s*)?\{\s*["']blocks["']\s*:\s*\[\s*\{\s*["']type["']\s*:\s*["']text["']\s*,\s*(?:["']format["']\s*:\s*["'][^"']*["']\s*,\s*)?["']content["']\s*:\s*["']/;
+
+export function findSingleTextBlockContentValueStart(text: string): number | null {
+  const match = SINGLE_TEXT_BLOCK_CONTENT_PREFIX.exec(text);
+  if (!match) {
+    return null;
+  }
+  return match[0].length - 1;
+}
+
+/** 解码 JSON 字符串 value（可未完成）；`openQuoteIndex` 指向 opening `"`。 */
+export function decodePartialJsonStringAt(
+  text: string,
+  openQuoteIndex: number,
+): { decoded: string; closed: boolean } {
+  let i = openQuoteIndex + 1;
+  let decoded = '';
+  while (i < text.length) {
+    const ch = text[i]!;
+    if (ch === '\\') {
+      if (i + 1 >= text.length) {
+        return { decoded, closed: false };
+      }
+      const esc = text[i + 1]!;
+      switch (esc) {
+        case '"':
+          decoded += '"';
+          break;
+        case '\\':
+          decoded += '\\';
+          break;
+        case '/':
+          decoded += '/';
+          break;
+        case 'n':
+          decoded += '\n';
+          break;
+        case 'r':
+          decoded += '\r';
+          break;
+        case 't':
+          decoded += '\t';
+          break;
+        case 'b':
+          decoded += '\b';
+          break;
+        case 'f':
+          decoded += '\f';
+          break;
+        case 'u': {
+          if (i + 5 >= text.length) {
+            return { decoded, closed: false };
+          }
+          const hex = text.slice(i + 2, i + 6);
+          decoded += String.fromCharCode(Number.parseInt(hex, 16));
+          i += 6;
+          continue;
+        }
+        default:
+          decoded += esc;
+      }
+      i += 2;
+      continue;
+    }
+    if (ch === '"') {
+      return { decoded, closed: true };
+    }
+    decoded += ch;
+    i += 1;
+  }
+  return { decoded, closed: false };
+}
+
+export function summarizeStreamedProseFromState(
+  state: SummarizeMessageStreamState,
+): string {
+  if (state.mode === 'json_text' && state.jsonContentValueStart != null) {
+    return decodePartialJsonStringAt(
+      state.messageText,
+      state.jsonContentValueStart,
+    ).decoded.slice(0, state.emittedProseLength);
+  }
+  return sanitizeSummarizeUserFacingProse(
+    stripBlocksJsonTailFromStreamedProse(
+      state.messageText.slice(0, state.emittedProseLength),
+    ),
+  );
+}
 
 export function createSummarizeMessageStreamState(): SummarizeMessageStreamState {
   return { mode: 'detect', messageText: '', emittedProseLength: 0 };
 }
 
+function emitSummarizeJsonTextDelta(
+  state: SummarizeMessageStreamState & { jsonContentValueStart: number },
+): { state: SummarizeMessageStreamState; delta: string } {
+  const { decoded } = decodePartialJsonStringAt(
+    state.messageText,
+    state.jsonContentValueStart,
+  );
+  const delta = decoded.slice(state.emittedProseLength);
+  return {
+    state: {
+      ...state,
+      mode: 'json_text',
+      emittedProseLength: state.emittedProseLength + delta.length,
+    },
+    delta,
+  };
+}
+
+function tryEnterJsonTextStreamMode(
+  messageText: string,
+  emittedProseLength: number,
+): { state: SummarizeMessageStreamState; delta: string } | null {
+  const quoteStart = findSingleTextBlockContentValueStart(messageText);
+  if (quoteStart == null) {
+    return null;
+  }
+  return emitSummarizeJsonTextDelta({
+    mode: 'json_text',
+    messageText,
+    emittedProseLength,
+    jsonContentValueStart: quoteStart,
+  });
+}
+
+function findMarkdownFenceOpenAfter(text: string, fromIndex: number): number {
+  const slice = text.slice(fromIndex);
+  const match = /(?:^|\n)```[\w-]*/.exec(slice);
+  if (match?.index == null) {
+    return -1;
+  }
+  return fromIndex + match.index + (match[0].startsWith('\n') ? 1 : 0);
+}
+
+function findPartialMarkdownFenceSuffixStart(
+  text: string,
+  fromIndex: number,
+): number {
+  const tail = text.slice(fromIndex);
+  const match = /(?:^|\n)(`{1,2}|```[\w-]*)$/.exec(tail);
+  if (match?.index == null) {
+    return -1;
+  }
+  return fromIndex + match.index + (match[0].startsWith('\n') ? 1 : 0);
+}
+
+function tryParseMarkdownFenceAt(
+  text: string,
+  openIndex: number,
+): { endIndex: number; body: string } | null {
+  const slice = text.slice(openIndex);
+  const match = /^```([\w-]*)\s*\n([\s\S]*?)\n```/.exec(slice);
+  if (!match) {
+    return null;
+  }
+  return {
+    endIndex: openIndex + match[0].length,
+    body: match[2],
+  };
+}
+
+function shouldHideSummarizeMarkdownFence(body: string): boolean {
+  const trimmed = body.trim();
+  if (/pendingWriteToolCall/i.test(trimmed)) {
+    return true;
+  }
+  if (!trimmed.startsWith('{')) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!isRecord(parsed)) {
+      return false;
+    }
+    return !Array.isArray(parsed.blocks);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * summarize message 流式状态机（仅消费 route 后的 message 文本，不含 think / 原始流）。
  *
- * - detect：见到首个非空白前不推送；若以 {/[ /``` 或 blocks 开头 → buffer
- * - prose：安全正文走 delta；见 JSON 尾巴或内联 blocks → buffer
- * - buffer：不再推 delta，结束后由 full blocks 兜底
+ * - detect：首个非空白前不推送；单 text block JSON → json_text；其它 blocks JSON → buffer
+ * - prose：正文走 delta
+ * - json_text：从 `content` 字段增量解码推 delta
+ * - buffer：等待更多 JSON；若可识别单 text block 则转入 json_text
  */
 export function processSummarizeMessageStreamChunk(
   state: SummarizeMessageStreamState,
   chunk: string,
 ): { state: SummarizeMessageStreamState; delta: string } {
-  if (!chunk || state.mode === 'buffer') {
-    return { state: { ...state, mode: 'buffer' }, delta: '' };
+  if (!chunk) {
+    return { state, delta: '' };
   }
 
   const messageText = state.messageText + chunk;
+
+  if (state.mode === 'fence' && state.fenceStartIndex != null) {
+    const closed = tryParseMarkdownFenceAt(messageText, state.fenceStartIndex);
+    if (!closed) {
+      return { state: { ...state, messageText }, delta: '' };
+    }
+    if (shouldHideSummarizeMarkdownFence(closed.body)) {
+      return {
+        state: {
+          mode: 'prose',
+          messageText,
+          emittedProseLength: closed.endIndex,
+        },
+        delta: '',
+      };
+    }
+    const fenceMarkdown = messageText.slice(
+      state.fenceStartIndex,
+      closed.endIndex,
+    );
+    return {
+      state: {
+        mode: 'prose',
+        messageText,
+        emittedProseLength: closed.endIndex,
+      },
+      delta: fenceMarkdown,
+    };
+  }
+
+  if (state.mode === 'buffer') {
+    const jsonText = tryEnterJsonTextStreamMode(
+      messageText,
+      state.emittedProseLength,
+    );
+    if (jsonText) {
+      return jsonText;
+    }
+    return {
+      state: { ...state, mode: 'buffer', messageText },
+      delta: '',
+    };
+  }
+
+  if (state.mode === 'json_text' && state.jsonContentValueStart != null) {
+    return emitSummarizeJsonTextDelta({
+      mode: 'json_text',
+      messageText,
+      emittedProseLength: state.emittedProseLength,
+      jsonContentValueStart: state.jsonContentValueStart,
+    });
+  }
 
   if (state.mode === 'detect') {
     const meaningful = messageText.trimStart();
@@ -192,6 +510,23 @@ export function processSummarizeMessageStreamChunk(
       return { state: { ...state, messageText }, delta: '' };
     }
     if (isLikelySummarizeBlocksJsonStart(meaningful)) {
+      const jsonText = tryEnterJsonTextStreamMode(
+        messageText,
+        state.emittedProseLength,
+      );
+      if (jsonText) {
+        return jsonText;
+      }
+      return {
+        state: {
+          mode: 'buffer',
+          messageText,
+          emittedProseLength: state.emittedProseLength,
+        },
+        delta: '',
+      };
+    }
+    if (isSummarizeStreamFencePrefix(messageText)) {
       return {
         state: {
           mode: 'buffer',
@@ -216,8 +551,50 @@ function emitSummarizeProseDelta(
 ): { state: SummarizeMessageStreamState; delta: string } {
   const { messageText, emittedProseLength } = state;
 
+  if (isSummarizeStreamFencePrefix(messageText)) {
+    return { state: { ...state, mode: 'buffer', messageText }, delta: '' };
+  }
+
   if (isLikelySummarizeBlocksJsonStart(messageText)) {
+    const jsonText = tryEnterJsonTextStreamMode(
+      messageText,
+      emittedProseLength,
+    );
+    if (jsonText) {
+      return jsonText;
+    }
     return { state: { ...state, mode: 'buffer' }, delta: '' };
+  }
+
+  const partialFence = findPartialMarkdownFenceSuffixStart(
+    messageText,
+    emittedProseLength,
+  );
+  if (partialFence >= 0) {
+    const delta = messageText.slice(emittedProseLength, partialFence);
+    return {
+      state: {
+        mode: 'fence',
+        messageText,
+        emittedProseLength: emittedProseLength + delta.length,
+        fenceStartIndex: partialFence,
+      },
+      delta,
+    };
+  }
+
+  const fenceOpen = findMarkdownFenceOpenAfter(messageText, emittedProseLength);
+  if (fenceOpen >= 0) {
+    const delta = messageText.slice(emittedProseLength, fenceOpen);
+    return {
+      state: {
+        mode: 'fence',
+        messageText,
+        emittedProseLength: emittedProseLength + delta.length,
+        fenceStartIndex: fenceOpen,
+      },
+      delta,
+    };
   }
 
   const inlineJsonStart = findInlineSummarizeBlocksJsonStart(
@@ -255,20 +632,6 @@ function emitSummarizeProseDelta(
     },
     delta,
   };
-}
-
-/** summarize 流式输出是否应缓冲（勿按 token 推 message delta）。 */
-export function shouldBufferSummarizeStreamOutput(text: string): boolean {
-  if (looksLikeBlocksJsonOutput(text)) {
-    return true;
-  }
-  if (isLikelySummarizeBlocksJsonStart(text)) {
-    return true;
-  }
-  if (findSummarizeBlocksJsonTailStart(text) >= 0) {
-    return true;
-  }
-  return false;
 }
 
 export function stripMarkdownFenceForBlocksParse(text: string): string {
@@ -447,8 +810,10 @@ export function mergeStreamedDeltaTextForStorage(
   llmBlocks: MessageBlock[],
   streamedMessageText: string,
 ): MessageBlock[] {
-  const trimmed = stripBlocksJsonTailFromStreamedProse(streamedMessageText).trim();
-  if (!trimmed) {
+  const trimmed = sanitizeSummarizeUserFacingProse(
+    stripBlocksJsonTailFromStreamedProse(streamedMessageText),
+  ).trim();
+  if (!trimmed || isStreamedProseFenceGarbage(streamedMessageText)) {
     return llmBlocks;
   }
   const normalized = normalizeSupplementaryTextContent(trimmed, ruleBlocks);
@@ -603,7 +968,12 @@ export function tryParseLlmBlocksFromSummarizeOutput(
 function sanitizeMessageBlock(block: MessageBlock): MessageBlock {
   switch (block.type) {
     case 'text':
-      return { ...block, content: sanitizeTextForStorage(block.content) };
+      return {
+        ...block,
+        content: sanitizeSummarizeUserFacingProse(
+          sanitizeTextForStorage(block.content),
+        ),
+      };
     case 'quote':
       return { ...block, content: sanitizeTextForStorage(block.content) };
     case 'code':
@@ -655,6 +1025,29 @@ export function sanitizeStoredFinalOutput(value: string): string {
     return serializeMessageBlocksForStorage(blocks);
   }
   return sanitizeTextForStorage(trimmed);
+}
+
+/**
+ * 从 summarize 正文快照计算下一段 SSE delta（与落库 sanitize 一致）。
+ * 若净化改写前缀导致无法安全追加，本段返回空 delta，由最终 full 对齐。
+ */
+export function nextSanitizedSummarizeStreamDelta(
+  proseSnapshot: string,
+  previouslyEmitted: string,
+): { delta: string; emitted: string } {
+  const sanitized = sanitizeSummarizeUserFacingProse(
+    sanitizeTextForStorage(proseSnapshot),
+  );
+  if (!sanitized) {
+    return { delta: '', emitted: previouslyEmitted };
+  }
+  if (sanitized.startsWith(previouslyEmitted)) {
+    return {
+      delta: sanitized.slice(previouslyEmitted.length),
+      emitted: sanitized,
+    };
+  }
+  return { delta: '', emitted: previouslyEmitted };
 }
 
 export function messageBlocksToPlainText(blocks: MessageBlock[]): string {

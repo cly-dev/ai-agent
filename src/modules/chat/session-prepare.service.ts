@@ -5,10 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PromptComposerService } from '../../core/prompt/prompt-composer.service';
+import { SkillService } from '../../core/skill/skill.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentService } from '../agent/agent.service';
 import type { SessionPrepareResult } from './session-prepare.types';
-import { areToolIdSetsEqual } from './session-prepare.util';
+import {
+  areSkillIdSetsEqual,
+  areToolIdSetsEqual,
+} from './session-prepare.util';
 import { SessionPrepareStore } from './session-prepare.store';
 
 @Injectable()
@@ -19,6 +23,7 @@ export class SessionPrepareService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agentService: AgentService,
+    private readonly skillService: SkillService,
     private readonly promptComposer: PromptComposerService,
     private readonly sessionPrepareStore: SessionPrepareStore,
   ) {}
@@ -56,24 +61,39 @@ export class SessionPrepareService {
     }
 
     if (session.agentId) {
-      const cachedTools = await this.sessionPrepareStore.get(
+      const cached = await this.sessionPrepareStore.get(
         session.id,
         userId,
         appClientId,
         session.agentId,
       );
-      if (cachedTools) {
-        const freshTools = await this.agentService.getAllowedTools(
-          session.agentId,
-          userId,
-          appClientId,
-        );
-        if (areToolIdSetsEqual(cachedTools, freshTools)) {
+      if (cached) {
+        const [freshTools, freshSkills] = await Promise.all([
+          this.agentService.getAllowedTools(
+            session.agentId,
+            userId,
+            appClientId,
+          ),
+          this.skillService.listAgentSkillsForUser({
+            agentId: session.agentId,
+            userId,
+            appClientId,
+          }),
+        ]);
+        const freshSkillRows = freshSkills.map((skill) => ({
+          id: skill.id,
+          name: skill.name,
+        }));
+        if (
+          areToolIdSetsEqual(cached.tools, freshTools) &&
+          areSkillIdSetsEqual(cached.skills, freshSkillRows)
+        ) {
           return {
             sessionId: session.id,
             prepared: true,
             agentReady: true,
-            toolsCount: cachedTools.length,
+            toolsCount: cached.tools.length,
+            skillsCount: cached.skills.length,
             sessionContextWarmed: await this.promptComposer.warmSessionContext(
               session.id,
             ),
@@ -94,21 +114,32 @@ export class SessionPrepareService {
         prepared: sessionContextWarmed,
         agentReady: false,
         toolsCount: 0,
+        skillsCount: 0,
         sessionContextWarmed,
         warmedAt,
         fromCache: false,
       };
     }
 
-    const [agent, tools, sessionContextWarmed] = await Promise.all([
+    const [agent, tools, skills, sessionContextWarmed] = await Promise.all([
       this.agentService.getRuntimeAgent(appClientId, session.agentId),
       this.agentService.getAllowedTools(
         session.agentId,
         userId,
         appClientId,
       ),
+      this.skillService.listAgentSkillsForUser({
+        agentId: session.agentId,
+        userId,
+        appClientId,
+      }),
       this.promptComposer.warmSessionContext(session.id),
     ]);
+
+    const skillRows = skills.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+    }));
 
     await this.sessionPrepareStore.trySet(
       session.id,
@@ -116,6 +147,7 @@ export class SessionPrepareService {
       appClientId,
       session.agentId,
       tools,
+      skillRows,
     );
 
     return {
@@ -123,6 +155,7 @@ export class SessionPrepareService {
       prepared: true,
       agentReady: agent != null,
       toolsCount: tools.length,
+      skillsCount: skillRows.length,
       sessionContextWarmed,
       warmedAt,
       fromCache: false,

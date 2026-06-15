@@ -91,3 +91,18 @@ export function routeLlmStreamChunk(
     message,
   };
 }
+
+/** invoke 兜底：将完整 LLM 文本经 think/message 路由后得到用户可见 message 部分。 */
+export function extractRoutedMessageFromLlmText(source: string): string {
+  let state = createLlmStreamRouterState();
+  let message = '';
+  for (const ch of source) {
+    const routed = routeLlmStreamChunk(state, ch);
+    state = routed.state;
+    message += routed.message;
+  }
+  if (state.pending && !state.inThink) {
+    message += state.pending;
+  }
+  return message;
+}

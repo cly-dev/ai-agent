@@ -13,6 +13,9 @@ export class PrepareChatResponseDto {
   @ApiProperty({ description: '权限内可用工具数量' })
   toolsCount!: number;
 
+  @ApiProperty({ description: 'Agent 关联且角色可见的 Skill 数量' })
+  skillsCount!: number;
+
   @ApiProperty({ description: '会话历史 context 是否已写入 Redis' })
   sessionContextWarmed!: boolean;
 

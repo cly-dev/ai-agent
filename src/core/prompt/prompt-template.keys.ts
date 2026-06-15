@@ -6,6 +6,10 @@ export const PROMPT_KEYS = {
   AGENT_TOOL_DECISION: 'agent.tool_decision',
   /** 未完成会话任务：判断用户是否在续接 active task（Plan 续跑门控） */
   AGENT_TASK_RESUME_FOLLOWUP: 'agent.task_resume_followup',
+  /** readiness 节点：判断业务槽位是否齐全 */
+  AGENT_READINESS_SLOT_CHECK: 'agent.readiness_slot_check',
+  /** respond 节点：槽位缺失时的反问 */
+  AGENT_RESPOND_CLARIFICATION: 'agent.respond_clarification',
   AGENT_PLAN: 'agent.plan',
   /** gather 分页：单页列表 LLM map 摘要（通用业务字段） */
   AGENT_GATHER_PAGE_SUMMARY: 'agent.gather_page_summary',
@@ -19,6 +23,10 @@ export const PROMPT_KEYS = {
   PLATFORM_MESSAGE_BLOCKS_SPEC: 'platform.message_blocks_spec',
   /** summarize 节点：按 blocks 协议输出 */
   AGENT_SUMMARIZE_MESSAGE_BLOCKS: 'agent.summarize_message_blocks',
+  /** Plan draft 补轮：compose 缺正文或 present 需补用户层时 */
+  AGENT_SUMMARIZE_PLAN_DRAFT_PROSE_SUPPLEMENT: 'agent.summarize_plan_draft_prose_supplement',
+  /** Plan present 步：基于 plan_compose_write 向用户展示草稿 */
+  AGENT_SUMMARIZE_PLAN_PRESENT_FROM_COMPOSE: 'agent.summarize_plan_present_from_compose',
   /** 写确认续跑后 summarize：汇报已确认写操作的成功/失败与条数 */
   AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME: 'agent.summarize_write_confirm_resume',
   MEMORY_HISTORY_COMPRESSION: 'memory.history_compression',

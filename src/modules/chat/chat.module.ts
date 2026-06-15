@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { AuthModule } from '../../auth/auth.module';
 import { PromptModule } from '../../core/prompt/prompt.module';
+import { SkillModule } from '../../core/skill/skill.module';
 import { AgentModule } from '../agent/agent.module';
 import { MessageModule } from '../message/message.module';
 import { ChatController } from './chat.controller';
@@ -14,6 +15,7 @@ import { PendingWriteConfirmationStore } from './pending-write-confirmation.stor
   imports: [
     AuthModule,
     forwardRef(() => AgentModule),
+    SkillModule,
     PromptModule,
     forwardRef(() => MessageModule),
   ],

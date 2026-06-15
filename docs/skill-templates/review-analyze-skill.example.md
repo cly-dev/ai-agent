@@ -42,9 +42,9 @@
 
 > `deliverable: analysis` 使 Plan 拆为 gather → analyze。列表跨多页时引擎按 Plan 自动分页并做页内摘要；单页数据则直接用 raw observation 进入 analyze，无需额外配置。
 
-### L1 召回用的 prompt 前 300 字（仅供参考，勿单独存 DB）
+### prompt 开头（内层 Plan LLM 会读 excerpt）
 
-运行时由 `buildSkillRecallEmbedText(skill, 'prompt_excerpt')` 自动截取；**请保证下列内容落在 prompt 开头**：
+外层 Plan 选型看 `description` / `toolRoles`；进入 skill 帧后内层 Plan LLM 会读 `prompt` 前缀（`PLAN_SKILL_PROMPT_EXCERPT_CHARS`，默认 1200）。**请保证意图说明落在 prompt 开头**：
 
 ```text
 你是评论数据分析助手。处理评论分析、评论统计、差评分析、差评原因、差评归因、评论构成、情感分析、评论报告、数据洞察类请求时遵循本技能。
@@ -78,7 +78,7 @@
 
 ## 4. 评论列表 Tool 描述（`S02S1101`）
 
-决策环与向量召回会读 `description`（及 `agentMetadata.aliases`）。建议：
+外层 Plan LLM 选型会读 `description`、`capabilityKey`、`toolRoles`。建议：
 
 **`PATCH /tool/:toolId`**
 

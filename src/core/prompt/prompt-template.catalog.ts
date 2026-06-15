@@ -32,6 +32,18 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     description: 'Plan 节点：判断用户是否在续接未完成 active task',
   },
   {
+    key: PROMPT_KEYS.AGENT_READINESS_SLOT_CHECK,
+    category: 'agent_runtime',
+    title: '回合就绪槽位检查',
+    description: 'readiness 节点：判断 gather 步 businessFields 是否可从用户消息或会话 obs 解析',
+  },
+  {
+    key: PROMPT_KEYS.AGENT_RESPOND_CLARIFICATION,
+    category: 'agent_runtime',
+    title: '槽位缺失反问',
+    description: 'respond 节点：根据 missingFields 生成用户可见澄清话术（Message Blocks）',
+  },
+  {
     key: PROMPT_KEYS.AGENT_PLAN,
     category: 'agent_runtime',
     title: '任务 Plan 拆分',
@@ -84,6 +96,18 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     category: 'agent_runtime',
     title: 'Summarize Message Blocks',
     description: 'summarize 节点结构化 blocks 输出',
+  },
+  {
+    key: PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_DRAFT_PROSE_SUPPLEMENT,
+    category: 'agent_runtime',
+    title: 'Plan 正文补轮',
+    description: 'compose 缺 submit 正文或 present 需补用户可见文案时',
+  },
+  {
+    key: PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_PRESENT_FROM_COMPOSE,
+    category: 'agent_runtime',
+    title: 'Plan present 步展示',
+    description: '基于 plan_compose_write 机器层 payload 生成用户可见 Markdown',
   },
   {
     key: PROMPT_KEYS.MEMORY_HISTORY_COMPRESSION,

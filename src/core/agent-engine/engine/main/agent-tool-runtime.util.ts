@@ -58,6 +58,10 @@ import {
   emitToolExecutionDebug,
   serializeAgentRunStepPayload,
 } from '../tool/tool-execution-debug.util';
+import {
+  maxRunStepNumber,
+  nextRunStepNumber,
+} from './agent-run-steps.util';
 
 export type ToolExecutionResultWithMeta = ToolExecutionResult & {
   attempts: number;
@@ -116,15 +120,6 @@ export function buildEngineToolsFromAllowed(
     langChainTools,
     toolBuildCtx,
   };
-}
-
-export function maxStepFromSteps(
-  steps: Array<{ step?: number | string }>,
-): number {
-  return steps.reduce(
-    (max, row) => Math.max(max, typeof row.step === 'number' ? row.step : 0),
-    0,
-  );
 }
 
 function sleep(ms: number): Promise<void> {
@@ -430,13 +425,14 @@ export async function executeToolCallsRound(
           executedInput,
         )
       : undefined;
+    const toolStepNumber = nextRunStepNumber(steps);
     const debugFile = emitToolExecutionDebug(
       input.onToolDebugLog ?? (() => {}),
       {
         runId: input.runId,
         sessionId: input.sessionId,
         toolName: toolResult.name,
-        step: input.iteration,
+        step: toolStepNumber,
         iteration: input.iteration,
         latencyMs: toolResult.latency,
         executionStatus,
@@ -454,7 +450,7 @@ export async function executeToolCallsRound(
       );
     }
     steps.push({
-      step: input.iteration,
+      step: toolStepNumber,
       type: 'tool',
       name: toolResult.name,
       input: executedInput,
@@ -506,7 +502,7 @@ export async function executePendingWriteToolCalls(input: {
   toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>;
   tools: AgentEngineTool[];
   langChainBundle: BuiltLangChainTools;
-  afterStep: number;
+  priorSteps?: AgentRunStep[];
   priorObservations?: ToolObservation[];
   toolEngine: ToolEngineService;
   assessObservationQuality: (
@@ -532,6 +528,7 @@ export async function executePendingWriteToolCalls(input: {
     arguments: call.arguments,
   }));
   const priorObservations = input.priorObservations ?? [];
+  const priorSteps = input.priorSteps ?? [];
   const round = await executeToolCallsRound({
     latestUserMessage: input.latestUserMessage,
     toolCalls: pendingCalls,
@@ -540,8 +537,8 @@ export async function executePendingWriteToolCalls(input: {
     langChainBundle: input.langChainBundle,
     toolEngine: input.toolEngine,
     observations: priorObservations,
-    steps: [],
-    iteration: input.afterStep,
+    steps: [...priorSteps],
+    iteration: maxRunStepNumber(priorSteps),
     assessObservationQuality: input.assessObservationQuality,
     runId: input.runId,
     sessionId: input.sessionId,
@@ -550,13 +547,9 @@ export async function executePendingWriteToolCalls(input: {
   const newObservations = round.toolObservations.slice(
     priorObservations.length,
   );
-  const steps = round.steps.map((row, idx) => ({
-    ...row,
-    step: input.afterStep + idx + 1,
-  }));
   return {
     observations: newObservations,
-    steps,
+    steps: round.steps,
     lastToolRoundMeta: round.lastToolRoundMeta,
   };
 }

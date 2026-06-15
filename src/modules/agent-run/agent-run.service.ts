@@ -15,6 +15,10 @@ import {
 import { UpdateAgentRunDto } from './dto/update-agent-run.dto';
 import { toAgentRunResponse, toAgentRunResponseList } from './agent-run.mapper';
 import { AGENT_RUN_DETAIL_INCLUDE, type AgentRunResponse } from './agent-run.types';
+import {
+  mergeTurnExecutionSteps,
+  parseAgentRunSteps,
+} from '../../core/agent-engine/engine/main/agent-run-steps.util';
 
 @Injectable()
 export class AgentRunService {
@@ -199,7 +203,31 @@ export class AgentRunService {
         `agentRun ${id} not found under appClient ${appClientId}`,
       );
     }
-    return toAgentRunResponse(row);
+    const response = toAgentRunResponse(row);
+    if (row.turnId == null) {
+      return response;
+    }
+    const turnRuns = await this.prisma.agentRun.findMany({
+      where: { turnId: row.turnId, appClientId },
+      orderBy: [{ sequence: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        role: true,
+        sequence: true,
+        steps: true,
+      },
+    });
+    return {
+      ...response,
+      turnExecutionTimeline: mergeTurnExecutionSteps(
+        turnRuns.map((run) => ({
+          runId: run.id,
+          role: run.role,
+          sequence: run.sequence,
+          steps: parseAgentRunSteps(run.steps),
+        })),
+      ),
+    };
   }
 
   async update(
@@ -207,7 +235,7 @@ export class AgentRunService {
     id: number,
     dto: UpdateAgentRunDto,
   ): Promise<AgentRunResponse> {
-    await this.findOne(appClientId, id);
+    await this.assertAgentRunBelongsToApp(id, appClientId);
     if (dto.agentId != null) {
       await this.assertAgentBelongsToApp(dto.agentId, appClientId);
     }
@@ -321,6 +349,22 @@ export class AgentRunService {
       case 'id':
       default:
         return { id: direction };
+    }
+  }
+
+  private async assertAgentRunBelongsToApp(
+    id: number,
+    appClientId: number,
+  ): Promise<void> {
+    await this.assertAppClientExists(appClientId);
+    const row = await this.prisma.agentRun.findFirst({
+      where: { id, appClientId },
+      select: { id: true },
+    });
+    if (!row) {
+      throw new NotFoundException(
+        `agentRun ${id} not found under appClient ${appClientId}`,
+      );
     }
   }
 
