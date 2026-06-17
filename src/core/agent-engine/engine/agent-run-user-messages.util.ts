@@ -1,8 +1,14 @@
 import { HttpException, NotFoundException } from '@nestjs/common';
 import { ToolHttpResponseError } from '../../tool-engine/tool-response-source.util';
+import { isRequestedSkillRunError } from './main/requested-skill-run.error';
+import { requestedSkillUserMessage } from './main/requested-skill-run.service';
 
 export type AgentMachineCode =
   | 'INTENT_RECALL_FAILED'
+  | 'SKILL_NOT_VISIBLE'
+  | 'SKILL_TOOLS_EMPTY'
+  | 'SKILL_NOT_IN_SCOPE'
+  | 'SKILL_EXPAND_FAILED'
   | 'TOOL_AUTH_FAILED'
   | 'TOOL_TIMEOUT'
   | 'TOOL_EMPTY_RESULT'
@@ -323,6 +329,9 @@ export function resolveAgentRunFailureUserMessage(
   if (error instanceof NotFoundException) {
     return null;
   }
+  if (isRequestedSkillRunError(error)) {
+    return requestedSkillUserMessage(error.code);
+  }
   const raw = error instanceof Error ? error.message : String(error);
   const lower = raw.toLowerCase();
   if (
@@ -354,6 +363,9 @@ export function resolveAgentRunFailureCode(
 ): AgentMachineCode | null {
   if (error instanceof NotFoundException) {
     return null;
+  }
+  if (isRequestedSkillRunError(error)) {
+    return error.code;
   }
   const raw = error instanceof Error ? error.message : String(error);
   const lower = raw.toLowerCase();

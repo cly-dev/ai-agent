@@ -13,18 +13,25 @@ import type { PlanRunContext } from './plan-observation-scope.util';
 import type { TaskPlanSnapshot } from './task-plan.types';
 import type { ToolHttpRequestLayout } from '../../../tool-engine/tool-http-request-layout.util';
 import type { PendingRespond } from '../turn/turn-respond.types';
+import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
 
 export type AgentRunInput = {
   userId: number;
   sessionId: string;
   input: string;
   userMessageId: number;
+  /** C 端用户指定的 Skill；外层 Plan 固定进入该 Skill。 */
+  requestedSkillId?: number;
+  /** 宿主页面上下文（omnix-chat pageContext）。 */
+  pageContext?: AgentChatPageContext | null;
 };
 
 export type ResumeAfterWriteConfirmInput = {
   userId: number;
   sessionId: string;
   userMessageId?: number;
+  /** 写确认消息可附带最新 pageContext（优先于 gate 时缓存）。 */
+  pageContext?: AgentChatPageContext | null;
 };
 
 export type AgentRunStepType =
@@ -177,6 +184,10 @@ export type AgentGraphState = {
    * gather 跳步始终仅认本 run toolObservations。
    */
   planRunContext?: PlanRunContext;
+  /** 写确认续跑：gate 时固化的 primary present 草稿（artifact 序列化）。 */
+  confirmedPreviewSerialized?: string | null;
+  /** 本 turn 用户消息附带的宿主页面上下文。 */
+  pageContext?: AgentChatPageContext | null;
 };
 
 export type AgentLangGraphRunInput = {
@@ -202,4 +213,8 @@ export type AgentLangGraphRunInput = {
   resumeFromWriteConfirm?: boolean;
   graphInitialState?: Partial<AgentGraphState>;
   approvedWriteToolNames?: string[];
+  /** C 端用户指定的 Skill；外层 Plan 固定进入该 Skill。 */
+  requestedSkillId?: number;
+  /** 宿主页面上下文（omnix-chat pageContext）。 */
+  pageContext?: AgentChatPageContext | null;
 };

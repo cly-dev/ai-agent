@@ -8,12 +8,19 @@ import {
 import type { Message } from '../../../generated/prisma/client';
 import type { Prisma } from '../../../generated/prisma/client';
 import { AgentEngineService } from '../../core/agent-engine/engine/agent-engine.service';
+import {
+  resolveAgentRunFailureCode,
+  resolveAgentRunFailureUserMessage,
+} from '../../core/agent-engine/engine/agent-run-user-messages.util';
 import { LlmService } from '../../core/llm/llm.service';
 import { SessionMessageContextSyncService } from '../../core/memory/context/session-message-context-sync.service';
 import { PromptComposerService } from '../../core/prompt/prompt-composer.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { PaginatedResult } from '../../common/pagination';
 import { ChatEventsService } from '../chat/chat-events.service';
 import { ChatService } from '../chat/chat.service';
+import type { QueryChatListDto } from '../chat/dto/query-chat-list.dto';
+import { parsePageContextFromMessageFields } from '../../core/host-bridge';
 import { SaveMessageDto } from './dto/save-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 
@@ -51,6 +58,24 @@ export class MessageService {
       dto.role === 'user' &&
       (confirmWrite || cancelWrite) &&
       !String(dto.content ?? '').trim();
+    let boundSession = session;
+    if (dto.role === 'user') {
+      boundSession = await this.chatService.ensureSessionAgent(
+        session,
+        dto.agentId,
+        appClientId,
+      );
+      if (dto.skillId != null && !confirmWrite && !cancelWrite) {
+        await this.agentEngine.assertRequestedSkillRunnable({
+          userId,
+          appClientId,
+          agentId: boundSession.agentId!,
+          sessionId: boundSession.id,
+          skillId: dto.skillId,
+        });
+      }
+    }
+    const pageContext = parsePageContextFromMessageFields(dto);
     const message = await this.prisma.message.create({
       data: {
         sessionId: session.id,
@@ -65,6 +90,9 @@ export class MessageService {
           : (dto.toolName ?? null),
         toolInput: this.toJson(dto.toolInput),
         toolOutput: this.toJson(dto.toolOutput),
+        pageContextJson: pageContext
+          ? (pageContext as Prisma.InputJsonValue)
+          : undefined,
       },
     });
     await this.sessionMessageContext.syncAfterMessageCreate(session.id, message);
@@ -77,11 +105,6 @@ export class MessageService {
       );
     }
     if (message.role === 'user') {
-      const boundSession = await this.chatService.ensureSessionAgent(
-        session,
-        dto.agentId,
-        appClientId,
-      );
       this.scheduleAgentRun(boundSession.id, () =>
         this.runAgentPipeline(
           userId,
@@ -90,6 +113,8 @@ export class MessageService {
           message.id,
           confirmWrite && !cancelWrite,
           cancelWrite,
+          dto.skillId,
+          pageContext,
         ),
       );
     }
@@ -100,16 +125,15 @@ export class MessageService {
     sessionId: string,
     userId: number,
     appClientId: number,
-  ): Promise<Message[]> {
-    const session = await this.chatService.assertSessionOwnedByUser(
+    query: QueryChatListDto,
+  ): Promise<PaginatedResult<Message>> {
+    const detail = await this.chatService.findOneForUser(
       sessionId,
       userId,
       appClientId,
+      query,
     );
-    return this.prisma.message.findMany({
-      where: { sessionId: session.id },
-      orderBy: { createdAt: 'asc' },
-    });
+    return detail.messages;
   }
 
   async findOne(id: number, userId: number): Promise<Message> {
@@ -223,6 +247,8 @@ export class MessageService {
     userMessageId?: number,
     confirmWrite?: boolean,
     cancelWrite?: boolean,
+    requestedSkillId?: number,
+    pageContext?: ReturnType<typeof parsePageContextFromMessageFields>,
   ): Promise<void> {
     if (cancelWrite) {
       await this.agentEngine.cancelPendingWriteConfirmation(userId, sessionId);
@@ -238,12 +264,15 @@ export class MessageService {
             userId,
             sessionId,
             userMessageId,
+            pageContext: pageContext ?? null,
           })
         : await this.agentEngine.run({
             userId,
             sessionId,
             input: content,
             userMessageId: userMessageId!,
+            requestedSkillId,
+            pageContext: pageContext ?? null,
           });
       if (!run) {
         if (confirmWrite) {
@@ -260,6 +289,10 @@ export class MessageService {
         return;
       }
     } catch (error) {
+      const userMessage = resolveAgentRunFailureUserMessage(error);
+      if (userMessage == null) {
+        throw error;
+      }
       this.logger.warn(
         `agent run failed for sessionId=${sessionId}: ${
           error instanceof Error ? error.message : String(error)
@@ -268,8 +301,8 @@ export class MessageService {
       this.chatEvents.emit(sessionId, {
         event: 'error',
         payload: {
-          message: '处理你的请求时遇到问题，请稍后重试；若持续失败请联系管理员。',
-          code: 'LLM_TIMEOUT',
+          message: userMessage,
+          code: resolveAgentRunFailureCode(error) ?? 'LLM_TIMEOUT',
         },
       });
     }
@@ -328,6 +361,7 @@ export class MessageService {
       toolName: row.toolName,
       toolInput: row.toolInput,
       toolOutput: row.toolOutput,
+      pageContextJson: row.pageContextJson,
       createdAt: row.createdAt,
     };
   }

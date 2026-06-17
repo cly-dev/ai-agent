@@ -2,7 +2,6 @@
 export * from './admin-user/admin-user.module';
 export * from './agent/agent.module';
 export * from './agent-run/agent-run.module';
-export * from './agent-skill/agent-skill.module';
 export * from './app-client/app-client.module';
 export * from './integration/integration.module';
 export * from './llm-model-config/llm-model-config.module';

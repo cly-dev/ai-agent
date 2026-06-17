@@ -1,9 +1,9 @@
-import type { Prisma } from '../../../generated/prisma/client';
+import type { Prisma } from '../../../../generated/prisma/client';
 import {
   buildToolWhereFromFilters,
   type ToolListFilterInput,
-} from '../tool/tool-list-filter.util';
-import type { AgentToolOrderByField } from './dto/query-agent-tools.dto';
+} from '../../tool/tool-list-filter.util';
+import type { AgentToolOrderByField } from '../dto/query-agent-tools.dto';
 
 export function buildAgentToolBindingsWhere(
   agentId: number,

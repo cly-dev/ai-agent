@@ -4,7 +4,6 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ToolLevel } from '../../../generated/prisma/client';
 import type { Prisma } from '../../../generated/prisma/client';
 import {
   resolvePagination,
@@ -16,25 +15,31 @@ import {
   toAgentToolsBindingResponse,
   toAgentWithToolsResponse,
   toAgentWithToolsResponseList,
-} from './agent.mapper';
+} from './mapper/agent.mapper';
 import {
   AGENT_LINKED_TOOL_SELECT,
   AGENT_WITH_TOOLS_INCLUDE,
   type AgentToolsBindingResponse,
   type AgentToolsPageResponse,
   type AgentClientListItem,
-} from './agent.types';
+} from './types/agent.types';
 import {
   buildAgentToolBindingsOrderBy,
   buildAgentToolBindingsWhere,
-} from './agent-tool-query.util';
+} from './util/agent-tool-query.util';
 import type { QueryAgentToolsDto } from './dto/query-agent-tools.dto';
 import { BindAgentToolsDto } from './dto/bind-agent-tools.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 import { SessionPrepareStore } from '../chat/session-prepare.store';
-import { AgentCacheStore } from './agent-cache.store';
-import type { AgentRuntimeSnapshot } from './agent-runtime.types';
+import { AgentCacheStore } from './cache/agent-cache.store';
+import type { AgentRuntimeSnapshot } from './cache/agent-runtime.types';
+import {
+  allowedToolLevels,
+  buildRoleAccessibleToolWhere,
+  resolveMaxToolLevel,
+  type UserRoleToolAccessContext,
+} from './util/agent-client-access.util';
 
 @Injectable()
 export class AgentService {
@@ -139,6 +144,52 @@ export class AgentService {
     await this.assertAppClientExists(appClientId);
     return this.prisma.agent.findMany({
       where: { appClientId },
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+      },
+    });
+  }
+
+  /**
+   * C 端：按用户 Role → RoleTool 与 Agent 绑定 Tool 的交集，返回可用 Agent 列表。
+   */
+  async findClientAvailableAgentsForUser(
+    userId: number,
+    appClientId: number,
+  ): Promise<AgentClientListItem[]> {
+    await this.assertAppClientExists(appClientId);
+    const roleCtx = await this.resolveUserRoleToolContext(userId, appClientId);
+    if (!roleCtx || roleCtx.roleToolIds.length === 0) {
+      return [];
+    }
+
+    const accessibleTools = await this.prisma.tool.findMany({
+      where: buildRoleAccessibleToolWhere(appClientId, roleCtx, {}),
+      select: { id: true },
+    });
+    const accessibleToolIds = accessibleTools.map((tool) => tool.id);
+    if (accessibleToolIds.length === 0) {
+      return [];
+    }
+
+    const bindings = await this.prisma.agentTool.findMany({
+      where: {
+        toolId: { in: accessibleToolIds },
+        agent: { appClientId },
+      },
+      select: { agentId: true },
+      distinct: ['agentId'],
+    });
+    const agentIds = bindings.map((row) => row.agentId);
+    if (agentIds.length === 0) {
+      return [];
+    }
+
+    return this.prisma.agent.findMany({
+      where: { id: { in: agentIds }, appClientId },
       orderBy: { id: 'asc' },
       select: {
         id: true,
@@ -295,47 +346,25 @@ export class AgentService {
     this.logger.debug(
       `getAllowedTools start agentId=${agentId} userId=${userId} appClientId=${appClientId}`,
     );
-    const [agent, user] = await Promise.all([
+    const [agent, roleCtx] = await Promise.all([
       this.prisma.agent.findFirst({
         where: { id: agentId, appClientId },
         select: { id: true },
       }),
-      this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true },
-      }),
+      this.resolveUserRoleToolContext(userId, appClientId),
     ]);
 
     if (!agent) {
       throw new NotFoundException(`agent ${agentId} not found`);
     }
-    if (!user) {
-      throw new NotFoundException(`user ${userId} not found`);
-    }
-    const userApp = await this.prisma.userApp.findFirst({
-      where: { userId: user.id, appId: appClientId },
-      select: {
-        roleId: true,
-        role: {
-          select: {
-            allowToolLevel: true,
-          },
-        },
-      },
-    });
-    if (!userApp) {
+    if (!roleCtx) {
       this.logger.warn(
         `getAllowedTools empty: no userApp binding userId=${userId} appClientId=${appClientId}`,
       );
       return [];
     }
-    const roleIds = [userApp.roleId];
-    const maxLevel = this.resolveMaxToolLevel([userApp.role.allowToolLevel]);
-    const roleTools = await this.prisma.roleTool.findMany({
-      where: { roleId: { in: roleIds } },
-      select: { toolId: true },
-    });
-    const roleToolIds = new Set(roleTools.map((item) => item.toolId));
+
+    const roleToolIds = new Set(roleCtx.roleToolIds);
     const agentTools = await this.prisma.agentTool.findMany({
       where: { agentId: agent.id },
       select: { toolId: true },
@@ -344,7 +373,7 @@ export class AgentService {
       .map((item) => item.toolId)
       .filter((id) => roleToolIds.has(id));
     this.logger.debug(
-      `getAllowedTools candidate counts agentTools=${agentTools.length} roleTools=${roleTools.length} intersection=${effectiveToolIds.length} roleId=${userApp.roleId} maxLevel=${maxLevel}`,
+      `getAllowedTools candidate counts agentTools=${agentTools.length} roleTools=${roleCtx.roleToolIds.length} intersection=${effectiveToolIds.length} roleId=${roleCtx.roleId} maxLevel=${roleCtx.maxLevel}`,
     );
     if (effectiveToolIds.length === 0) {
       this.logger.warn(
@@ -358,7 +387,7 @@ export class AgentService {
         id: { in: effectiveToolIds },
         appClientId,
         isActive: true,
-        riskLevel: { in: this.allowedLevels(maxLevel) },
+        riskLevel: { in: allowedToolLevels(roleCtx.maxLevel) },
       },
       include: {
         integration: {
@@ -393,24 +422,39 @@ export class AgentService {
     return filtered;
   }
 
-  private resolveMaxToolLevel(levels: ToolLevel[]): ToolLevel {
-    if (levels.includes(ToolLevel.L3)) {
-      return ToolLevel.L3;
+  private async resolveUserRoleToolContext(
+    userId: number,
+    appClientId: number,
+  ): Promise<UserRoleToolAccessContext | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) {
+      throw new NotFoundException(`user ${userId} not found`);
     }
-    if (levels.includes(ToolLevel.L2)) {
-      return ToolLevel.L2;
+    const userApp = await this.prisma.userApp.findFirst({
+      where: { userId: user.id, appId: appClientId },
+      select: {
+        roleId: true,
+        role: {
+          select: {
+            allowToolLevel: true,
+            roleTools: {
+              select: { toolId: true },
+            },
+          },
+        },
+      },
+    });
+    if (!userApp) {
+      return null;
     }
-    return ToolLevel.L1;
-  }
-
-  private allowedLevels(maxLevel: ToolLevel): ToolLevel[] {
-    if (maxLevel === ToolLevel.L3) {
-      return [ToolLevel.L1, ToolLevel.L2, ToolLevel.L3];
-    }
-    if (maxLevel === ToolLevel.L2) {
-      return [ToolLevel.L1, ToolLevel.L2];
-    }
-    return [ToolLevel.L1];
+    return {
+      roleId: userApp.roleId,
+      maxLevel: resolveMaxToolLevel([userApp.role.allowToolLevel]),
+      roleToolIds: userApp.role.roleTools.map((row) => row.toolId),
+    };
   }
 
   private async assertAppClientExists(appClientId: number): Promise<void> {

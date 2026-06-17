@@ -14,6 +14,7 @@ import {
   normalizeMessageBlocks,
   planStructuredBlockStreaming,
   sanitizeMessageBlocks,
+  serializeMessageBlocksForStorage,
   summarizeStreamedProseFromState,
   textBlock,
   tryParseLlmBlocksFromSummarizeOutput,
@@ -32,6 +33,10 @@ import {
   RunAssistantArtifactStore,
   type RunAssistantArtifactPhase,
 } from './run-assistant-artifact.store';
+import {
+  emitAgentMessagePersistDebug,
+  emitAgentMessageSseDebug,
+} from '../message/message-blocks-debug.util';
 
 @Injectable()
 export class AgentRunSseEmitter {
@@ -40,6 +45,8 @@ export class AgentRunSseEmitter {
   private readonly streamSeq = new Map<string, number>();
   /** 本 run 已推送过 message 流式增量（key = sessionId:runId） */
   private readonly messageStreamDeltaEmitted = new Set<string>();
+  /** 本 run 经 delta 推送的正文累积（用于与 artifact 定稿对比） */
+  private readonly streamedProseAccumulator = new Map<string, string>();
 
   constructor(
     private readonly chatEvents: ChatEventsService,
@@ -55,6 +62,7 @@ export class AgentRunSseEmitter {
     const key = this.thinkBufferKey(sessionId, runId);
     this.streamSeq.delete(key);
     this.messageStreamDeltaEmitted.delete(key);
+    this.streamedProseAccumulator.delete(key);
   }
 
   /** run 收尾前推送与 artifact / 落库一致的权威 full（`complete` 前必达）。 */
@@ -75,6 +83,11 @@ export class AgentRunSseEmitter {
       action: 'stream',
       mode: 'full',
       turnId: turnIdResolved,
+      debugSource: {
+        origin: 'emitRunMessageBlocksIfNeeded',
+        artifactBlocks: toEmit,
+        artifactSerialized: serializeMessageBlocksForStorage(toEmit),
+      },
     });
   }
 
@@ -136,35 +149,78 @@ export class AgentRunSseEmitter {
       mode?: 'delta' | 'full';
       action?: 'stream';
       turnId?: number;
+      debugSource?: Record<string, unknown>;
     },
   ): void {
-    const normalized = normalizeMessageBlocks(blocks);
+    const action = options?.action ?? 'stream';
+    const mode = options?.mode ?? 'full';
+    const normalized =
+      mode === 'full'
+        ? sanitizeMessageBlocks(blocks)
+        : normalizeMessageBlocks(blocks);
     if (normalized.length === 0) {
       return;
     }
     const key = runId == null ? null : this.thinkBufferKey(sessionId, runId);
-    const action = options?.action ?? 'stream';
-    const mode = options?.mode ?? 'full';
     if (key && action === 'stream' && mode === 'delta') {
       this.messageStreamDeltaEmitted.add(key);
+      const deltaPlain = normalized
+        .filter((block): block is Extract<MessageBlock, { type: 'text' }> =>
+          block.type === 'text',
+        )
+        .map((block) => block.content)
+        .join('');
+      if (deltaPlain) {
+        this.streamedProseAccumulator.set(
+          key,
+          (this.streamedProseAccumulator.get(key) ?? '') + deltaPlain,
+        );
+      }
     }
     const nextSeq = key ? (this.streamSeq.get(key) ?? 0) + 1 : undefined;
     if (key && nextSeq != null) {
       this.streamSeq.set(key, nextSeq);
     }
+    const payload = {
+      source: 'agent-run' as const,
+      action,
+      runId,
+      turnId: options?.turnId,
+      blocks: normalized,
+      code: options?.code,
+      seq: nextSeq,
+      mode,
+    };
     this.chatEvents.emit(sessionId, {
       event: 'message',
-      payload: {
-        source: 'agent-run',
-        action,
+      payload,
+    });
+    if (runId != null) {
+      const artifact = this.assistantArtifact.peek(sessionId, runId);
+      emitAgentMessageSseDebug({
+        tag: `emitMessageBlocks:${action}:${mode}`,
+        sessionId,
         runId,
         turnId: options?.turnId,
-        blocks: normalized,
-        code: options?.code,
-        seq: nextSeq,
-        mode,
-      },
-    });
+        ssePayload: payload,
+        source: {
+          ...(options?.debugSource ?? {}),
+          inputBlocks: blocks,
+          normalizedBlocks: normalized,
+          storageSerialized:
+            mode === 'full'
+              ? serializeMessageBlocksForStorage(normalized)
+              : undefined,
+          artifactSlot: artifact
+            ? {
+                phase: artifact.phase,
+                blocks: artifact.blocks,
+                serialized: artifact.serialized,
+              }
+            : null,
+        },
+      });
+    }
   }
 
   emitBlockPatch(
@@ -179,14 +235,25 @@ export class AgentRunSseEmitter {
     const key = this.thinkBufferKey(sessionId, runId);
     const nextSeq = (this.streamSeq.get(key) ?? 0) + 1;
     this.streamSeq.set(key, nextSeq);
+    const payload = {
+      source: 'agent-run' as const,
+      action: 'patch' as const,
+      runId,
+      patches: [{ replaceId: patch.replaceId, block }],
+      seq: nextSeq,
+    };
     this.chatEvents.emit(sessionId, {
       event: 'message',
-      payload: {
-        source: 'agent-run',
-        action: 'patch',
-        runId,
-        patches: [{ replaceId: patch.replaceId, block }],
-        seq: nextSeq,
+      payload,
+    });
+    emitAgentMessageSseDebug({
+      tag: 'emitBlockPatch',
+      sessionId,
+      runId,
+      ssePayload: payload,
+      source: {
+        inputPatch: patch,
+        normalizedBlock: block,
       },
     });
   }
@@ -428,6 +495,28 @@ export class AgentRunSseEmitter {
     const blocks = this.publishAssistantBlocks(sessionId, runId, sanitizedMerged, {
       turnId,
     });
+    const streamedProse = this.streamedProseAccumulator.get(runKey) ?? '';
+    if (streamedProse.trim() && runId != null) {
+      const publishedSerialized = serializeMessageBlocksForStorage(blocks);
+      const deltaOnlySerialized = serializeMessageBlocksForStorage([
+        textBlock(streamedProse, 'markdown'),
+      ]);
+      if (deltaOnlySerialized !== publishedSerialized) {
+        emitAgentMessagePersistDebug({
+          tag: 'SSE_DELTA_VS_PUBLISH_MISMATCH',
+          sessionId,
+          runId,
+          turnId,
+          dbContent: publishedSerialized,
+          source: {
+            streamedDeltaProse: streamedProse,
+            publishedBlocks: blocks,
+            publishedSerialized,
+            deltaOnlySerialized,
+          },
+        });
+      }
+    }
     return {
       blocks,
       rawOutput: routedMessage || rawLlmSource,
@@ -463,6 +552,12 @@ export class AgentRunSseEmitter {
       mode: 'full',
       turnId,
       code: options?.code,
+      debugSource: {
+        origin: 'publishAssistantBlocks',
+        phase: options?.phase ?? 'final',
+        commitArtifact: options?.commitArtifact !== false,
+        inputBlocks: blocks,
+      },
     });
 
     if (options?.commitArtifact !== false) {

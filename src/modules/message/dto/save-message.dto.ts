@@ -7,11 +7,13 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  Min,
 } from 'class-validator';
+import { PageContextMessageFieldsDto } from '../../chat/dto/page-context-fields.dto';
 
 const MESSAGE_ROLES = ['user', 'assistant', 'tool', 'system'] as const;
 
-export class SaveMessageDto {
+export class SaveMessageDto extends PageContextMessageFieldsDto {
   @ApiPropertyOptional({
     description: '关联 Agent ID（须属于同一 AppClient），默认 1',
     default: 1,
@@ -75,4 +77,14 @@ export class SaveMessageDto {
   @IsOptional()
   @Type(() => Boolean)
   cancelWrite?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      '指定 Agent Skill ID（来自 GET /agent/:agentId/skills/client）。传入后外层 Plan 固定进入该 Skill，不再由 LLM 选择。',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  skillId?: number;
 }

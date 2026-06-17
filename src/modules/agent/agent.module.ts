@@ -3,7 +3,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { ChatModule } from '../chat/chat.module';
 import { AgentService } from './agent.service';
 import { AgentController } from './agent.controller';
-import { AgentCacheStore } from './agent-cache.store';
+import { AgentCacheStore } from './cache/agent-cache.store';
 
 @Module({
   imports: [forwardRef(() => ChatModule)],

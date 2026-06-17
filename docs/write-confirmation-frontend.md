@@ -130,7 +130,8 @@ summarize（plan:present）
 |----|------|
 | 顺序 | **先读 → 再产参 → 再展示 → 再确认 → 再写** |
 | 用户可见 | 仅 **present** 步用户层 Markdown；禁止 observation JSON dump |
-| 落库 | SSE `stream` blocks（含 draft）与 `confirmation_required` 文案均在 primary run 结束时入库 |
+| 落库 | primary run 结束时入库 **present LLM 展示稿**（自然语言操作说明 + fenced 拟提交正文；不含 gate 弹窗文案） |
+| present SSE | LLM 流式 delta → 定稿 full（与落库一致）；submit 执行真值始终来自 compose arguments |
 | 机器层真值 | `plan_compose_write`；present 只引用/补正文，不重新 bindTools 产参 |
 | 写确认快路径 | **双 gate** 成功 → `summarize → tools → confirmation_required` |
 | 写步 fallback | present 未产出 pending 时，`write` 步 llm **复用** `plan_draft_reply` / `plan_compose_write`，不重新产参 |
@@ -182,7 +183,9 @@ Skill 列表接口中的 `requiresWriteConfirmation` 字段可供管理端展示
 | `message` | 弹窗/气泡展示文案（当前为固定中文，勿硬编码，以服务端为准） |
 | `code` | 机器可读码 `WRITE_CONFIRMATION_REQUIRED` |
 
-> **同一时刻** 还可能收到一条 `action: stream` 的 message（`code` 同为 `WRITE_CONFIRMATION_REQUIRED`，`blocks` 含相同文案）。**以 `confirmation_required` 作为弹窗触发条件**；stream 仅作正文展示兜底。
+> **同一时刻** 还可能收到一条 `action: stream` 的 message（`blocks` 含草稿正文）。**以 `confirmation_required` 作为弹窗触发条件**；stream 用于展示待确认内容。
+
+**SSE 重连 / 打开会话**：`confirmation_required` **不会**写入重放缓冲。用户已确认或取消后，重连 **不会**再收到该事件。若仍有未消费的 pending（Redis TTL 30 分钟），连接 `GET /chat/:sessionId/stream` 时会 **根据 pending 存储重新下发一条** `confirmation_required`（`runId` / `turnId` 与当时 gate 一致）。
 
 ### 3.2 primary run 结束
 
@@ -350,7 +353,7 @@ Skill 列表接口中的 `requiresWriteConfirmation` 字段可供管理端展示
 2. **按钮**：「确认执行」「取消」；取消调用 `cancelWrite: true`。
 3. **防重复提交**：确认请求发出后禁用按钮，直到收到 `complete` 或 `error`。
 4. **过期提示**：收到 `WRITE_CONFIRMATION_EXPIRED` 时关闭弹窗并 Toast，引导用户重新描述需求。
-5. **与消息列表**：primary `complete` 落库内容与 SSE 一致：**present 草稿** + **写确认提示**（`confirmation_required.message` 已追加到 artifact blocks）。用户确认后 worker run 在同一条 turn 输出消息上 **覆盖为写后总结**（`phase=final`）。取消则在同条消息末尾 **追加**「已取消操作。」
+5. **与消息列表**：primary `complete` 落库 **present 草稿**（与 SSE 权威 `full` 一致）；gate 文案 **仅** `confirmation_required` SSE，不入 artifact/DB。用户确认后 worker 在同一条 turn 消息上发布终稿：**primary 快照草稿** + 写执行产生的结构化状态块（metric 等，来自 payload/observation 规则化）；无快照时走 LLM summarize。取消则在同条消息末尾 **追加**「已取消操作。」
 6. **调试轨迹**：排查 step 顺序时用 `turnExecutionTimeline`，勿只看 primary run 的 `steps`。
 
 ---

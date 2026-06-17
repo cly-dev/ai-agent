@@ -9,6 +9,9 @@ export function serializeChatSseData(evt: ChatSseEvent): string {
     }
     return JSON.stringify(body);
   }
+  if (evt.event === 'host_action') {
+    return JSON.stringify(evt.payload);
+  }
   if (
     evt.event === 'message' &&
     evt.payload.source === 'agent-run' &&

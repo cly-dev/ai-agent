@@ -15,10 +15,12 @@ import type {
   TaskDeliverable,
   TaskPlanStep,
 } from './task-plan.types';
+import { RequestedSkillRunError } from './requested-skill-run.error';
 import {
   alignDeliverableWithScopedTools,
   buildDeterministicMutationPlanResult,
   buildPlanSnapshot,
+  buildRequestedSkillOuterPlanResult,
   buildTaskPlan,
   parseSkillPlanConfig,
   scopedToolsIncludeWrite,
@@ -420,6 +422,24 @@ export async function resolveOuterPlan(input: {
   const scopedSummaries = input.planInput.scopedToolSummaries;
   const hasWrite = scopedToolsIncludeWrite(scopedSummaries);
   const userMessage = input.planInput.userMessage.trim();
+  const requestedSkillId = input.planInput.requestedSkillId;
+
+  if (requestedSkillId != null) {
+    const skill = input.planInput.availableSkills.find(
+      (row) => row.id === requestedSkillId,
+    );
+    if (!skill) {
+      throw new RequestedSkillRunError(
+        'SKILL_NOT_IN_SCOPE',
+        `requested skill ${requestedSkillId} is not available for scoped tools`,
+      );
+    }
+    return buildRequestedSkillOuterPlanResult({
+      userMessage: input.planInput.userMessage,
+      skill,
+      scopedToolSummaries: scopedSummaries,
+    });
+  }
 
   const llmResult = await tryBuildOuterPlanViaLlm(input);
   if (llmResult) {

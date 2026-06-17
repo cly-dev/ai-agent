@@ -443,6 +443,56 @@ export function buildPlanSnapshot(input: {
   return wrapSnapshotWithPlanStack(finalizePlanSnapshot(input));
 }
 
+/** C 端指定 Skill 时的外层 Plan：单步 kind=skill，跳过外层 Plan LLM。 */
+export function buildRequestedSkillOuterPlanResult(input: {
+  userMessage: string;
+  skill: {
+    id: number;
+    name: string;
+    description: string | null;
+    riskLevel: BuildTaskPlanInput['skillRiskLevel'];
+  };
+  scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'];
+}): ResolveTaskPlanResult {
+  const userMessage = input.userMessage.trim();
+  const goal =
+    input.skill.description?.trim() ||
+    input.skill.name.trim() ||
+    userMessage ||
+    'Complete the user request';
+  const deliverable = inferDeliverableFromTools(
+    input.scopedToolSummaries,
+    undefined,
+    true,
+    input.skill.riskLevel,
+  );
+  const phase: TaskStepPhase =
+    deliverable === 'mutation'
+      ? 'mutate'
+      : deliverable === 'answer'
+        ? 'answer'
+        : deliverable === 'analysis'
+          ? 'analyze'
+          : 'gather';
+  const plan = buildPlanSnapshot({
+    source: 'template',
+    userMessage,
+    goal,
+    deliverable,
+    steps: [
+      {
+        id: 'requested-skill',
+        phase,
+        kind: 'skill',
+        skillId: input.skill.id,
+        objective: goal,
+      },
+    ],
+    constraints: [],
+  });
+  return { plan, method: 'template' };
+}
+
 export function buildTaskPlan(input: BuildTaskPlanInput): TaskPlanSnapshot {
   const userMessage = input.userMessage.trim();
   const scopedToolSummaries = input.scopedToolSummaries;

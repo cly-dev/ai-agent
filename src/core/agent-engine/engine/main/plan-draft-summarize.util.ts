@@ -8,13 +8,20 @@ import {
   writeToolArgsContainSubmitText,
   writeToolHasSubmitBodyPath,
 } from '../../../tool-engine/write-tool-draft-injection.util';
+import {
+  isBareMachineSubmitDisplay,
+} from './plan-present-display.util';
 import type {
   AgentEngineTool,
   GraphToolCall,
   ToolObservation,
 } from './agent-engine.types';
 import type { PlanComposeWriteObservationOutput } from './plan-compose-write.util';
-import { resolveLatestPlanComposeWrite } from './plan-compose-write.util';
+import {
+  buildReadToolObservationMatcher,
+  resolveLatestPlanComposeWrite,
+} from './plan-compose-write.util';
+import { normalizeWriteToolArguments } from '../../../tool-engine/write-tool-draft-injection.util';
 import { resolveLatestPlanDraftReply, resolvePlanSubmitTextForWrite } from './plan-draft-reply.util';
 import {
   filterScopedToolsForPlanStep,
@@ -27,6 +34,7 @@ import {
   isPlanWriteToolStep,
 } from './task-plan.util';
 import type { TaskPlanSnapshot } from './task-plan.types';
+import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
 
 export type PendingWriteToolCallPayload = {
   tool: string;
@@ -37,6 +45,14 @@ export type PlanDraftSummarizePendingWrite = {
   draftReply: string;
   submitText: string;
   pendingWriteToolCall: GraphToolCall | null;
+};
+
+/** present summarize 产出：用户层草稿 + 同步后的机器层 compose 真值。 */
+export type PlanPresentSummarizeResult = PlanDraftSummarizePendingWrite & {
+  serialized: string;
+  machineLayer: PlanComposeWriteObservationOutput | null;
+  /** prose supplement 等导致机器层与 compose observation 不一致，需 patch。 */
+  machineLayerDirty: boolean;
 };
 
 export type FinalizePlanPendingWriteResult = {
@@ -122,32 +138,42 @@ export function isUsablePlanMutationPreviewDraft(
     AgentEngineTool,
     'inputSchema' | 'schema' | 'agentMetadata' | 'description'
   >,
+  machineSubmitText?: string | null,
 ): boolean {
   const trimmed = draft.trim();
   if (!trimmed || isPlanDraftToolObservationDump(trimmed)) {
     return false;
   }
   if (writeTool && writeToolHasSubmitBodyPath(writeTool)) {
-    return isUsablePlanDraftUserFacingDraft(trimmed);
+    if (!isUsablePlanDraftUserFacingDraft(trimmed)) {
+      return false;
+    }
+    if (
+      machineSubmitText?.trim() &&
+      isBareMachineSubmitDisplay(trimmed, machineSubmitText)
+    ) {
+      return false;
+    }
+    return true;
   }
   return trimmed.replace(/\s/g, '').length >= MIN_PLAN_DRAFT_SUBSTANTIVE_CHARS;
 }
 
-/** 优先用户可见草稿正文，arguments 仅作 fallback（write 步 fallback 等）。 */
+/** 优先机器层 arguments 中的 submit 正文，避免说明文案误入写参数。 */
 export function resolveSubmitTextForWriteTool(input: {
   draftReply: string;
   arguments: Record<string, unknown>;
   writeTool: AgentEngineTool | undefined;
 }): string {
-  const fromDraft = extractSubmitTextFromDraftReply(input.draftReply);
-  if (isUsablePlanDraftSubmitText(fromDraft)) {
-    return fromDraft.trim();
-  }
   const fromArgs = input.writeTool
     ? extractSubmitTextFromWriteArguments(input.arguments, input.writeTool)
     : null;
   if (fromArgs && isUsablePlanDraftSubmitText(fromArgs)) {
     return fromArgs.trim();
+  }
+  const fromDraft = extractSubmitTextFromDraftReply(input.draftReply);
+  if (isUsablePlanDraftSubmitText(fromDraft)) {
+    return fromDraft.trim();
   }
   const trimmedDraft = input.draftReply.trim();
   return isUsablePlanDraftSubmitText(trimmedDraft) ? trimmedDraft : '';
@@ -158,11 +184,13 @@ export function buildFallbackUserDraftFromSubmitText(submitText: string): string
   return submitText.trim();
 }
 
-/** 从 plan_compose_write finalize 为可进 gate 的 pending write call。 */
+/** 从 plan_compose_write finalize 为可进 gate 的 pending write call（含 normalize）。 */
 export function finalizeComposedWritePendingCall(input: {
   composed: PlanComposeWriteObservationOutput;
   taskPlan: TaskPlanSnapshot;
   scopedTools: AgentEngineTool[];
+  observations: ToolObservation[];
+  pageContext?: AgentChatPageContext | null;
 }): GraphToolCall | null {
   const writeTool = resolveWriteToolDef(
     input.composed.tool,
@@ -172,13 +200,23 @@ export function finalizeComposedWritePendingCall(input: {
   if (!writeTool) {
     return null;
   }
+  const isReadToolObservation = buildReadToolObservationMatcher(input.scopedTools);
+  const normalizedArgs = normalizeWriteToolArguments(
+    input.composed.arguments,
+    writeTool,
+    input.observations,
+    {
+      isReadToolObservation,
+      pageContext: input.pageContext ?? null,
+    },
+  );
   const payload = {
     tool: input.composed.tool,
-    arguments: { ...input.composed.arguments },
+    arguments: normalizedArgs,
   };
   if (writeToolHasSubmitBodyPath(writeTool)) {
     const submitText = extractSubmitTextFromWriteArguments(
-      input.composed.arguments,
+      normalizedArgs,
       writeTool,
     );
     if (!submitText || !isUsablePlanDraftSubmitText(submitText)) {
@@ -198,11 +236,37 @@ export function finalizeComposedWritePendingCall(input: {
   }).call;
 }
 
-/** write 步：优先 plan_draft_reply，否则从 plan_compose_write 直出 pending call。 */
+/**
+ * present 完成后从 compose 机器层直出 gate pending（不依赖 present LLM finalize）。
+ */
+export function resolveComposedWriteGateCall(input: {
+  observations: ToolObservation[];
+  taskPlan: TaskPlanSnapshot | null | undefined;
+  scopedTools: AgentEngineTool[];
+  pageContext?: AgentChatPageContext | null;
+}): GraphToolCall | null {
+  if (!input.taskPlan) {
+    return null;
+  }
+  const composed = resolveLatestPlanComposeWrite(input.observations);
+  if (!composed) {
+    return null;
+  }
+  return finalizeComposedWritePendingCall({
+    composed,
+    taskPlan: input.taskPlan,
+    scopedTools: input.scopedTools,
+    observations: input.observations,
+    pageContext: input.pageContext ?? null,
+  });
+}
+
+/** write 步：机器层 plan_compose_write 优先；无 compose 时再 normalize plan_draft_reply pending。 */
 export function resolvePendingWriteForPlanWriteStep(input: {
   observations: ToolObservation[];
   taskPlan: TaskPlanSnapshot | null | undefined;
   scopedTools: AgentEngineTool[];
+  pageContext?: AgentChatPageContext | null;
 }): GraphToolCall | null {
   if (
     !input.taskPlan ||
@@ -210,22 +274,54 @@ export function resolvePendingWriteForPlanWriteStep(input: {
   ) {
     return null;
   }
+  const fromComposed = resolvePendingWriteFromComposedObservation(input);
+  if (fromComposed) {
+    return fromComposed;
+  }
   const draftReply = resolveLatestPlanDraftReply(input.observations);
   const pending = draftReply?.pendingWriteToolCall;
-  if (pending?.tool && pending.arguments && typeof pending.arguments === 'object') {
-    const writeTool = resolveWriteToolDef(
-      pending.tool,
-      input.scopedTools,
-      input.taskPlan,
-    );
-    if (writeTool) {
-      return {
-        name: pending.tool,
-        arguments: { ...(pending.arguments as Record<string, unknown>) },
-      };
-    }
+  if (!pending?.tool || !pending.arguments || typeof pending.arguments !== 'object') {
+    return null;
   }
-  return resolvePendingWriteFromComposedObservation(input);
+  return finalizeDraftReplyPendingWriteCall({
+    tool: pending.tool,
+    arguments: pending.arguments as Record<string, unknown>,
+    taskPlan: input.taskPlan,
+    scopedTools: input.scopedTools,
+    observations: input.observations,
+    pageContext: input.pageContext ?? null,
+  });
+}
+
+/** plan_draft_reply 中 pending 无 compose 可复用时的 normalize + finalize。 */
+export function finalizeDraftReplyPendingWriteCall(input: {
+  tool: string;
+  arguments: Record<string, unknown>;
+  taskPlan: TaskPlanSnapshot;
+  scopedTools: AgentEngineTool[];
+  observations: ToolObservation[];
+  pageContext?: AgentChatPageContext | null;
+}): GraphToolCall | null {
+  const writeTool = resolveWriteToolDef(
+    input.tool,
+    input.scopedTools,
+    input.taskPlan,
+  );
+  if (!writeTool) {
+    return null;
+  }
+  const composed: PlanComposeWriteObservationOutput = {
+    tool: writeTool.name,
+    arguments: input.arguments,
+    planStepId: null,
+  };
+  return finalizeComposedWritePendingCall({
+    composed,
+    taskPlan: input.taskPlan,
+    scopedTools: input.scopedTools,
+    observations: input.observations,
+    pageContext: input.pageContext ?? null,
+  });
 }
 
 /** write fallback 步：从 observations 中的 compose payload 直出 pending call。 */
@@ -233,6 +329,7 @@ export function resolvePendingWriteFromComposedObservation(input: {
   observations: ToolObservation[];
   taskPlan: TaskPlanSnapshot | null | undefined;
   scopedTools: AgentEngineTool[];
+  pageContext?: AgentChatPageContext | null;
 }): GraphToolCall | null {
   if (
     !input.taskPlan ||
@@ -248,58 +345,93 @@ export function resolvePendingWriteFromComposedObservation(input: {
     composed,
     taskPlan: input.taskPlan,
     scopedTools: input.scopedTools,
+    observations: input.observations,
+    pageContext: input.pageContext ?? null,
   });
 }
 
 /**
- * present 双 gate 未产出 pending 时，从 plan_compose_write 机器层兜底 pending call 与草稿。
+ * present 展示层不足而 gate 已就绪时，补齐用户可见草稿（不改机器层 pending）。
  */
-export function tryPlanPresentComposeGateFallback(input: {
-  pending: PlanDraftSummarizePendingWrite;
+export function enrichPlanPresentDisplayForGate(input: {
+  pending: Pick<PlanDraftSummarizePendingWrite, 'draftReply' | 'submitText'>;
+  gateCall: GraphToolCall;
   observations: ToolObservation[];
-  taskPlan: TaskPlanSnapshot | null | undefined;
+  taskPlan: TaskPlanSnapshot;
   scopedTools: AgentEngineTool[];
-}): PlanDraftSummarizePendingWrite | null {
-  if (input.pending.pendingWriteToolCall != null) {
-    return null;
-  }
-  const call = resolvePendingWriteForPlanWriteStep({
-    observations: input.observations,
-    taskPlan: input.taskPlan,
-    scopedTools: input.scopedTools,
+}): Pick<PlanDraftSummarizePendingWrite, 'draftReply' | 'submitText'> {
+  const resolved = resolvePlanDraftReplyContentForGateObservation({
+    draftReply: input.pending.draftReply,
+    submitText: input.pending.submitText,
+    gateCall: input.gateCall,
+    writeTool: resolveWriteToolForGateCall(input),
   });
-  if (!call) {
-    return null;
-  }
-  const composed = resolveLatestPlanComposeWrite(input.observations);
-  const writeTool =
-    composed && input.taskPlan
-      ? resolveWriteToolDef(composed.tool, input.scopedTools, input.taskPlan)
-      : undefined;
-  const submitText =
-    input.pending.submitText.trim() ||
-    resolvePlanSubmitTextForWrite({
-      observations: input.observations,
-      scopedTools: input.scopedTools,
-    });
-  let draftReply = input.pending.draftReply.trim();
-  if (!isUsablePlanMutationPreviewDraft(draftReply, writeTool)) {
-    if (submitText && isUsablePlanDraftSubmitText(submitText)) {
-      draftReply = buildFallbackUserDraftFromSubmitText(submitText);
-    } else if (writeTool) {
-      const schemaPreview = formatWriteToolArgumentsForUserPreview(
-        call.arguments,
-        writeTool,
-        writeTool.description,
-      );
-      draftReply = schemaPreview.trim() || draftReply;
-    }
+  if (resolved) {
+    return resolved;
   }
   return {
-    draftReply,
-    submitText,
-    pendingWriteToolCall: call,
+    draftReply: input.pending.draftReply.trim(),
+    submitText: input.pending.submitText,
   };
+}
+
+function resolveWriteToolForGateCall(input: {
+  gateCall: GraphToolCall;
+  observations: ToolObservation[];
+  taskPlan: TaskPlanSnapshot;
+  scopedTools: AgentEngineTool[];
+}): AgentEngineTool | undefined {
+  const composed = resolveLatestPlanComposeWrite(input.observations);
+  if (composed != null) {
+    return resolveWriteToolDef(composed.tool, input.scopedTools, input.taskPlan);
+  }
+  return input.scopedTools.find((tool) => tool.name === input.gateCall.name);
+}
+
+/**
+ * gate 已就绪时解析 plan_draft_reply 内容：优先 present 草稿，否则 submit / schema 预览。
+ */
+export function resolvePlanDraftReplyContentForGateObservation(input: {
+  draftReply: string;
+  submitText: string;
+  gateCall: GraphToolCall;
+  writeTool?: AgentEngineTool;
+}): { draftReply: string; submitText: string } | null {
+  const trimmedDraft = input.draftReply.trim();
+  let submitText = input.submitText.trim();
+  if (input.writeTool) {
+    const fromArgs = extractSubmitTextFromWriteArguments(
+      input.gateCall.arguments,
+      input.writeTool,
+    );
+    if (!submitText && fromArgs && isUsablePlanDraftSubmitText(fromArgs)) {
+      submitText = fromArgs.trim();
+    }
+  }
+  if (
+    input.writeTool &&
+    isUsablePlanMutationPreviewDraft(trimmedDraft, input.writeTool, submitText)
+  ) {
+    return { draftReply: trimmedDraft, submitText };
+  }
+  if (!input.writeTool) {
+    return null;
+  }
+  if (submitText && isUsablePlanDraftSubmitText(submitText)) {
+    const fallbackDraft = buildFallbackUserDraftFromSubmitText(submitText);
+    if (isUsablePlanMutationPreviewDraft(fallbackDraft, input.writeTool, submitText)) {
+      return { draftReply: fallbackDraft, submitText };
+    }
+  }
+  const schemaPreview = formatWriteToolArgumentsForUserPreview(
+    input.gateCall.arguments,
+    input.writeTool,
+    input.writeTool.description,
+  ).trim();
+  if (schemaPreview.replace(/\s/g, '').length >= MIN_PLAN_DRAFT_SUBSTANTIVE_CHARS) {
+    return { draftReply: schemaPreview, submitText };
+  }
+  return null;
 }
 
 /** 校验 + schema 注入 submit 正文，失败返回 null（回退 write 步 LLM）。 */
@@ -397,98 +529,39 @@ function finalizePlanPendingWriteToolCallWithArgs(input: {
 }
 
 /**
- * present 步：机器层来自 plan_compose_write，用户层来自展示 LLM。
- * 展示与执行分离：有 submit 正文即展示；pendingWriteToolCall 仅 finalize 成功时产出。
+ * present 步用户层：展示草稿与 submit 文案；机器层 pending 由 resolveComposedWriteGateCall 统一产出。
  */
-export function buildPlanPresentFromComposed(input: {
+export function buildPlanPresentUserLayer(input: {
   composed: PlanComposeWriteObservationOutput;
   draftReply: string;
   taskPlanBeforeFinalize: TaskPlanSnapshot | null | undefined;
   scopedTools: AgentEngineTool[];
-  logWarn?: (message: string) => void;
-}): PlanDraftSummarizePendingWrite {
+}): Pick<PlanDraftSummarizePendingWrite, 'draftReply' | 'submitText'> {
   const llmDraft = input.draftReply.trim();
   const taskPlanAfterFinalize = input.taskPlanBeforeFinalize
     ? finalizePlanAfterSummarize(input.taskPlanBeforeFinalize)
     : null;
   if (!taskPlanAfterFinalize) {
-    return { draftReply: llmDraft, submitText: '', pendingWriteToolCall: null };
+    return { draftReply: llmDraft, submitText: '' };
   }
-  const payload: PendingWriteToolCallPayload = {
-    tool: input.composed.tool,
-    arguments: { ...input.composed.arguments },
-  };
   const writeTool = resolveWriteToolDef(
-    payload.tool,
+    input.composed.tool,
     input.scopedTools,
     taskPlanAfterFinalize,
   );
   if (!writeTool) {
-    input.logWarn?.(
-      `plan present: write tool not allowed tool=${payload.tool || 'unknown'}`,
-    );
-    return { draftReply: llmDraft, submitText: '', pendingWriteToolCall: null };
+    return { draftReply: llmDraft, submitText: '' };
   }
   const hasSubmitBody = writeToolHasSubmitBodyPath(writeTool);
-  if (!hasSubmitBody) {
-    const schemaPreview = formatWriteToolArgumentsForUserPreview(
-      payload.arguments,
-      writeTool,
-      writeTool.description,
-    );
-    const displayDraft = isUsablePlanMutationPreviewDraft(llmDraft, writeTool)
-      ? llmDraft
-      : schemaPreview.trim() || llmDraft;
-    const finalized = finalizePlanPendingWriteToolCallFromComposedArgs({
-      payload,
-      taskPlan: taskPlanAfterFinalize,
-      scopedTools: input.scopedTools,
-    });
-    if (!finalized.call && finalized.failureReason) {
-      input.logWarn?.(
-        `plan present finalize failed: ${finalized.failureReason} tool=${payload.tool}`,
-      );
-    }
-    return {
-      draftReply: displayDraft,
-      submitText: '',
-      pendingWriteToolCall: finalized.call,
-    };
-  }
-  const submitText = resolveSubmitTextForWriteTool({
-    draftReply: llmDraft,
-    arguments: payload.arguments,
-    writeTool,
-  });
-  const machineDraft = submitText
-    ? buildFallbackUserDraftFromSubmitText(submitText)
-    : '';
-  const displayDraft = isUsablePlanDraftUserFacingDraft(llmDraft)
-    ? llmDraft
-    : isUsablePlanDraftUserFacingDraft(machineDraft)
-      ? machineDraft
-      : llmDraft;
-  const finalized = submitText
-    ? finalizePlanPendingWriteToolCall({
-        payload,
-        taskPlan: taskPlanAfterFinalize,
-        scopedTools: input.scopedTools,
-        submitText,
+  const submitText = hasSubmitBody
+    ? resolveSubmitTextForWriteTool({
+        draftReply: llmDraft,
+        arguments: input.composed.arguments,
+        writeTool,
       })
-    : { call: null as GraphToolCall | null, failureReason: 'missing_submit_text' };
-  if (!finalized.call && finalized.failureReason) {
-    input.logWarn?.(
-      `plan present finalize failed: ${finalized.failureReason} tool=${payload.tool}`,
-    );
-  }
-  if (!finalized.call && machineDraft) {
-    input.logWarn?.(
-      'plan present: showing machine draft; write gate deferred until params validate',
-    );
-  }
+    : '';
   return {
-    draftReply: displayDraft,
+    draftReply: llmDraft,
     submitText,
-    pendingWriteToolCall: finalized.call,
   };
 }

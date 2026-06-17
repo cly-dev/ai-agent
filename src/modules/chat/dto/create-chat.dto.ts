@@ -8,11 +8,13 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  Min,
 } from 'class-validator';
+import { PageContextMessageFieldsDto } from './page-context-fields.dto';
 
 const MESSAGE_ROLES = ['user', 'assistant', 'tool', 'system'] as const;
 
-export class CreateChatDto {
+export class CreateChatDto extends PageContextMessageFieldsDto {
   @ApiPropertyOptional({ description: '会话标题' })
   @IsOptional()
   @IsString()
@@ -58,4 +60,14 @@ export class CreateChatDto {
   @IsOptional()
   @IsObject()
   toolOutput?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description:
+      '指定 Agent Skill ID（来自 GET /agent/:agentId/skills/client）。传入后外层 Plan 固定进入该 Skill。',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  skillId?: number;
 }

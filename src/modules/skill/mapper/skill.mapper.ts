@@ -1,8 +1,8 @@
 import {
   skillRequiresWriteConfirmation,
   toolRequiresWriteConfirmation,
-} from '../../core/risk/risk-level.util';
-import type { SkillDetailRow, SkillResponse } from './skill.types';
+} from '../../../core/risk/risk-level.util';
+import type { SkillDetailRow, SkillResponse } from '../types/skill.types';
 
 export function toSkillResponse(row: SkillDetailRow): SkillResponse {
   const { appClient, ...agent } = row.agent;

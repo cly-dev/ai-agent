@@ -1,5 +1,5 @@
-import { ToolLevel } from '../../../generated/prisma/client';
-import { maxToolLevel } from '../../core/risk/risk-level.util';
+import { ToolLevel } from '../../../../generated/prisma/client';
+import { maxToolLevel } from '../../../core/risk/risk-level.util';
 
 export function resolveSkillRiskLevel(input: {
   explicit?: ToolLevel | null;

@@ -7,23 +7,40 @@ import { Prisma, ToolLevel } from '../../../generated/prisma/client';
 import {
   type PaginatedResult,
   resolvePagination,
-  resolveSortOrder,
   toPaginatedResult,
 } from '../../common/pagination';
+import { skillRequiresWriteConfirmation } from '../../core/risk/risk-level.util';
+import { filterSkillsWithRunnableToolIds } from '../../core/skill/skill-runnable.util';
+import { SkillService as SkillRuntimeService } from '../../core/skill/skill.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { normalizeCapabilityKey } from './skill-capability-key.util';
+import { AgentService } from '../agent/agent.service';
+import { normalizeCapabilityKey } from './util/skill-capability-key.util';
 import { CreateSkillDto } from './dto/create-skill.dto';
-import { QuerySkillDto, type SkillOrderByField } from './dto/query-skill.dto';
+import { QueryClientSkillByAgentDto } from './dto/query-client-skill-by-agent.dto';
+import { QuerySkillDto } from './dto/query-skill.dto';
 import { ReplaceSkillToolsDto } from './dto/skill-tool-binding.dto';
 import type { SkillToolBindingItemDto } from './dto/skill-tool-binding.dto';
 import { UpdateSkillDto } from './dto/update-skill.dto';
-import { toSkillResponse, toSkillResponseList } from './skill.mapper';
-import { resolveSkillRiskLevel } from './skill-risk.util';
-import { SKILL_DETAIL_INCLUDE, type SkillResponse } from './skill.types';
+import { toSkillResponse, toSkillResponseList } from './mapper/skill.mapper';
+import { resolveSkillRiskLevel } from './util/skill-risk.util';
+import {
+  buildSkillFilterFields,
+  buildSkillOrderBy,
+  buildSkillWhereForAgent,
+} from './util/skill-query.util';
+import {
+  SKILL_DETAIL_INCLUDE,
+  type SkillClientListItem,
+  type SkillResponse,
+} from './types/skill.types';
 
 @Injectable()
 export class SkillService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly skillRuntime: SkillRuntimeService,
+    private readonly agentService: AgentService,
+  ) {}
 
   async create(
     agentId: number,
@@ -87,8 +104,8 @@ export class SkillService {
       query.page,
       query.pageSize,
     );
-    const where = this.buildWhere(agentId, query);
-    const orderBy = this.buildOrderBy(query.orderBy, query.order);
+    const where = buildSkillWhereForAgent(agentId, query);
+    const orderBy = buildSkillOrderBy(query.orderBy, query.order);
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.skill.findMany({
         where,
@@ -107,6 +124,45 @@ export class SkillService {
     );
   }
 
+  /**
+   * C 端：按 agentId 返回当前用户可选且可运行的 active Skill 摘要。
+   * 角色可见 + Skill Tool 与用户允许 Tool 有交集（与 POST messages skillId 校验一致）。
+   */
+  async findClientListByAgentForUser(
+    agentId: number,
+    userId: number,
+    appClientId: number,
+    query: QueryClientSkillByAgentDto = {},
+  ): Promise<SkillClientListItem[]> {
+    await this.assertAgentInAppClient(agentId, appClientId);
+    const allowedTools = await this.agentService.getAllowedTools(
+      agentId,
+      userId,
+      appClientId,
+    );
+    const allowedToolIds = new Set(allowedTools.map((tool) => tool.id));
+    const rows = filterSkillsWithRunnableToolIds(
+      await this.skillRuntime.listAgentSkillsForUser({
+        agentId,
+        userId,
+        appClientId,
+      }),
+      allowedToolIds,
+    );
+    const filtered = rows.filter((row) =>
+      this.matchesClientSkillQuery(row, query),
+    );
+    return filtered.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      capabilityKey: row.capabilityKey,
+      riskLevel: row.riskLevel,
+      requiresWriteConfirmation: skillRequiresWriteConfirmation(row.riskLevel),
+      toolIds: row.toolIds,
+    }));
+  }
+
   async findPageByAppClient(
     appClientId: number,
     query: QuerySkillDto & { agentId?: number },
@@ -122,9 +178,9 @@ export class SkillService {
     const where: Prisma.SkillWhereInput = {
       agent: { appClientId },
       ...(query.agentId != null ? { agentId: query.agentId } : {}),
-      ...this.buildFilterFields(query),
+      ...buildSkillFilterFields(query),
     };
-    const orderBy = this.buildOrderBy(query.orderBy, query.order);
+    const orderBy = buildSkillOrderBy(query.orderBy, query.order);
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.skill.findMany({
         where,
@@ -223,6 +279,40 @@ export class SkillService {
     return toSkillResponse(row);
   }
 
+  private matchesClientSkillQuery(
+    row: {
+      name: string;
+      description: string | null;
+      capabilityKey: string | null;
+    },
+    query: QueryClientSkillByAgentDto,
+  ): boolean {
+    if (query.name?.trim()) {
+      const needle = query.name.trim().toLowerCase();
+      if (!row.name.toLowerCase().includes(needle)) {
+        return false;
+      }
+    }
+    if (query.capabilityKey?.trim()) {
+      const needle = query.capabilityKey.trim().toLowerCase();
+      if (!row.capabilityKey?.toLowerCase().includes(needle)) {
+        return false;
+      }
+    }
+    if (query.keyword?.trim()) {
+      const needle = query.keyword.trim().toLowerCase();
+      const haystacks = [
+        row.name,
+        row.description ?? '',
+        row.capabilityKey ?? '',
+      ];
+      if (!haystacks.some((text) => text.toLowerCase().includes(needle))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private async getSkillOrThrow(skillId: number) {
     const row = await this.prisma.skill.findUnique({
       where: { id: skillId },
@@ -232,73 +322,6 @@ export class SkillService {
       throw new NotFoundException(`skill ${skillId} not found`);
     }
     return row;
-  }
-
-  private buildWhere(
-    agentId: number,
-    query: QuerySkillDto,
-  ): Prisma.SkillWhereInput {
-    return {
-      agentId,
-      ...this.buildFilterFields(query),
-    };
-  }
-
-  private buildFilterFields(
-    query: QuerySkillDto,
-  ): Prisma.SkillWhereInput {
-    const where: Prisma.SkillWhereInput = {};
-    if (query.id != null) {
-      where.id = query.id;
-    }
-    if (query.isActive != null) {
-      where.isActive = query.isActive;
-    }
-    if (query.riskLevel != null) {
-      where.riskLevel = query.riskLevel;
-    }
-    if (query.name?.trim()) {
-      where.name = { contains: query.name.trim(), mode: 'insensitive' };
-    }
-    if (query.capabilityKey?.trim()) {
-      where.capabilityKey = {
-        contains: query.capabilityKey.trim(),
-        mode: 'insensitive',
-      };
-    }
-    if (query.keyword?.trim()) {
-      const keyword = query.keyword.trim();
-      where.OR = [
-        { name: { contains: keyword, mode: 'insensitive' } },
-        { description: { contains: keyword, mode: 'insensitive' } },
-        { capabilityKey: { contains: keyword, mode: 'insensitive' } },
-      ];
-    }
-    return where;
-  }
-
-  private buildOrderBy(
-    orderBy?: SkillOrderByField,
-    order?: 'asc' | 'desc',
-  ): Prisma.SkillOrderByWithRelationInput {
-    const direction = resolveSortOrder(order);
-    switch (orderBy ?? 'createdAt') {
-      case 'id':
-        return { id: direction };
-      case 'name':
-        return { name: direction };
-      case 'capabilityKey':
-        return { capabilityKey: direction };
-      case 'isActive':
-        return { isActive: direction };
-      case 'riskLevel':
-        return { riskLevel: direction };
-      case 'updatedAt':
-        return { updatedAt: direction };
-      case 'createdAt':
-      default:
-        return { createdAt: direction };
-    }
   }
 
   private normalizeToolBindings(

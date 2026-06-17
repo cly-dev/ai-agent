@@ -1,5 +1,5 @@
-import type { Prisma } from '../../../generated/prisma/client';
-import type { PaginatedResult } from '../../common/pagination';
+import type { Prisma } from '../../../../generated/prisma/client';
+import type { PaginatedResult } from '../../../common/pagination';
 
 /** Agent 关联 Tool 摘要（不含 schema 等大字段，避免列表过重） */
 export const AGENT_LINKED_TOOL_SELECT = {

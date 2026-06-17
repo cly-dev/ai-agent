@@ -95,7 +95,7 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     key: PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS,
     category: 'agent_runtime',
     title: 'Summarize Message Blocks',
-    description: 'summarize 节点结构化 blocks 输出',
+    description: '流式 Markdown 正文 + 可选 blocks；含写预览、读结果与 table 防重复规则',
   },
   {
     key: PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_DRAFT_PROSE_SUPPLEMENT,
@@ -108,6 +108,12 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     category: 'agent_runtime',
     title: 'Plan present 步展示',
     description: '基于 plan_compose_write 机器层 payload 生成用户可见 Markdown',
+  },
+  {
+    key: PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_PRESENT_CONTEXT_RETRY,
+    category: 'agent_runtime',
+    title: 'Plan present 展示重写',
+    description: 'present 输出仅含 submit 正文时补充操作说明语境',
   },
   {
     key: PROMPT_KEYS.MEMORY_HISTORY_COMPRESSION,

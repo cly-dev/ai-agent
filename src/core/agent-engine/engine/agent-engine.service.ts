@@ -28,11 +28,18 @@ import type {
 import { AgentLangGraphRunner } from './main/agent-lang-graph.runner';
 import { AgentRunLifecycleService } from './main/agent-run-lifecycle.service';
 import { SessionGoaService } from '../../memory/goa/session-goa.service';
+import {
+  buildHostActionSyncPayload,
+  coalescePageContext,
+  hasSuccessfulMutationStep,
+  type AgentChatPageContext,
+} from '../../host-bridge';
 import type { SessionMemoryUpdateContext } from '../../memory/goa/session-goa.types';
 import { AgentRunSseEmitter } from './main/agent-run-sse.emitter';
 import { RunAssistantArtifactStore } from './main/run-assistant-artifact.store';
 import { RunAssistantMessagePersistService } from './main/run-assistant-message-persist.service';
 import { AgentSessionScopeService } from './main/agent-session-scope.service';
+import { RequestedSkillRunService } from './main/requested-skill-run.service';
 import {
   buildEngineToolsFromAllowed,
   executePendingWriteToolCalls,
@@ -67,7 +74,38 @@ export class AgentEngineService {
     private readonly langGraphRunner: AgentLangGraphRunner,
     private readonly sessionScope: AgentSessionScopeService,
     private readonly goaService: SessionGoaService,
+    private readonly requestedSkillRun: RequestedSkillRunService,
   ) {}
+
+  /**
+   * C 端发消息前：角色可见 + Skill Tool 与用户允许 Tool 有交集。
+   */
+  async assertRequestedSkillRunnable(input: {
+    userId: number;
+    appClientId: number;
+    agentId: number;
+    sessionId: string;
+    skillId: number;
+  }): Promise<void> {
+    const allowedRows = await this.sessionScope.getSessionAllowedTools(
+      input.sessionId,
+      input.agentId,
+      input.userId,
+      input.appClientId,
+    );
+    const { tools } = buildEngineToolsFromAllowed(
+      allowedRows,
+      input.userId,
+      this.toolEngine,
+    );
+    await this.requestedSkillRun.assertRunnableForMessage({
+      userId: input.userId,
+      appClientId: input.appClientId,
+      agentId: input.agentId,
+      skillId: input.skillId,
+      allowedTools: tools,
+    });
+  }
 
   async cancelPendingWriteConfirmation(
     userId: number,
@@ -81,6 +119,7 @@ export class AgentEngineService {
     if (!pending) {
       return;
     }
+    this.chatEvents.purgeWriteConfirmationGate(sessionId, pending.runId);
     const message = '已取消操作。';
     this.chatEvents.emit(sessionId, {
       event: 'message',
@@ -124,6 +163,31 @@ export class AgentEngineService {
         status: result.status,
       },
     });
+  }
+
+  private emitRunCompletion(
+    sessionId: string,
+    result: AgentRunResult,
+    graphState: AgentGraphState,
+    pageContext: AgentChatPageContext | null,
+  ): void {
+    if (
+      result.status === AgentRunStatus.success &&
+      !graphState.awaitingWriteConfirmation &&
+      pageContext?.page?.trim() &&
+      hasSuccessfulMutationStep(graphState.steps, graphState.scopedTools)
+    ) {
+      this.chatEvents.emit(sessionId, {
+        event: 'host_action',
+        payload: buildHostActionSyncPayload({
+          pageContext,
+          runId: result.runId,
+          turnId: result.turnId,
+          skillConfig: graphState.activeSkillConfig,
+        }),
+      });
+    }
+    this.emitAgentRunComplete(sessionId, result);
   }
 
   private emitWriteConfirmationExpired(sessionId: string): void {
@@ -186,8 +250,12 @@ export class AgentEngineService {
       this.emitWriteConfirmationExpired(input.sessionId);
       return null;
     }
+    this.chatEvents.purgeWriteConfirmationGate(
+      input.sessionId,
+      pending.runId,
+    );
 
-    const [allowedTools, messageTokenBudget, prompt, runCount] =
+    const [allowedTools, messageTokenBudget, goaPayload, runCount] =
       await Promise.all([
         this.agentService.getAllowedTools(
           session.agentId,
@@ -195,18 +263,31 @@ export class AgentEngineService {
           session.appClientId,
         ),
         this.llmService.getMessageTokenBudget(),
-        this.promptComposer.compose({
-          userId: input.userId,
-          sessionId: input.sessionId,
-          latestUserMessage: consumed.latestUserMessage,
-          agentSystemPrompt: agent.systemPrompt,
-          sessionScope: {
-            appClientId: session.appClientId,
-            agentId: session.agentId,
-          },
-        }),
+        this.goaService.ensurePayload(input.sessionId),
         this.prisma.agentRun.count({ where: { turnId: primaryRun.turnId } }),
       ]);
+    const resumePageContext = coalescePageContext(
+      input.pageContext,
+      consumed.resumeContext.pageContext,
+      goaPayload.lastPageContext,
+    );
+    if (input.pageContext) {
+      await this.goaService.syncHostPageContext(
+        input.sessionId,
+        input.pageContext,
+      );
+    }
+    const prompt = await this.promptComposer.compose({
+      userId: input.userId,
+      sessionId: input.sessionId,
+      latestUserMessage: consumed.latestUserMessage,
+      agentSystemPrompt: agent.systemPrompt,
+      sessionScope: {
+        appClientId: session.appClientId,
+        agentId: session.agentId,
+      },
+      pageContext: resumePageContext,
+    });
 
     const {
       tools,
@@ -365,6 +446,16 @@ export class AgentEngineService {
       activeSkillRiskLevel: consumed.resumeContext.activeSkillRiskLevel ?? null,
       taskPlan,
       pagedListHttpUsed: consumed.resumeContext.pagedListHttpUsed ?? 0,
+      confirmedPreviewSerialized:
+        consumed.resumeContext.confirmedPreviewSerialized?.trim() ||
+        (
+          await this.prisma.agentRun.findUnique({
+            where: { id: primaryRun.id },
+            select: { output: true },
+          })
+        )?.output ||
+        null,
+      pageContext: resumePageContext,
     };
 
     try {
@@ -389,6 +480,7 @@ export class AgentEngineService {
         resumeFromWriteConfirm: true,
         graphInitialState,
         approvedWriteToolNames,
+        pageContext: resumePageContext,
       });
 
       const result = await this.lifecycle.completeAgentRunFromGraph({
@@ -401,7 +493,12 @@ export class AgentEngineService {
         graphState,
         runMetrics,
       });
-      this.emitAgentRunComplete(input.sessionId, result);
+      this.emitRunCompletion(
+        input.sessionId,
+        result,
+        graphState,
+        resumePageContext,
+      );
       return result;
     } catch (error) {
       const partial = await this.prisma.agentRun.findUnique({
@@ -458,6 +555,11 @@ export class AgentEngineService {
       throw new NotFoundException(`agent ${session.agentId} not found`);
     }
 
+    const pageContext = await this.goaService.syncHostPageContext(
+      input.sessionId,
+      input.pageContext ?? null,
+    );
+
     const prompt = await this.promptComposer.compose({
       userId: input.userId,
       sessionId: input.sessionId,
@@ -467,6 +569,7 @@ export class AgentEngineService {
         appClientId: session.appClientId,
         agentId: session.agentId,
       },
+      pageContext,
     });
 
     const [allowedTools, turn] = await Promise.all([
@@ -544,6 +647,8 @@ export class AgentEngineService {
         runMetrics,
         toolProfilesByName,
         turnId: turn.id,
+        requestedSkillId: input.requestedSkillId,
+        pageContext,
       });
 
       const result = await this.lifecycle.completeAgentRunFromGraph({
@@ -556,7 +661,12 @@ export class AgentEngineService {
         graphState,
         runMetrics,
       });
-      this.emitAgentRunComplete(input.sessionId, result);
+      this.emitRunCompletion(
+        input.sessionId,
+        result,
+        graphState,
+        pageContext,
+      );
       return result;
     } catch (error) {
       const partial = await this.prisma.agentRun.findUnique({

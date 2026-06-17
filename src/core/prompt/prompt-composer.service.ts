@@ -15,6 +15,7 @@ import type { LlmChatMessage } from '../llm/llm.types';
 import { PROMPT_KEYS } from './prompt-template.keys';
 import { PromptRegistryService } from './prompt-registry.service';
 import type { PromptComposeInput, PromptComposeOutput } from './prompt.types';
+import { formatPageContextPromptBlock } from '../host-bridge/page-context.prompt.util';
 
 @Injectable()
 export class PromptComposerService {
@@ -112,6 +113,13 @@ export class PromptComposerService {
       lastTurn?.role === 'user' && (lastTurn.content ?? '').trim() === latest;
 
     if (!alreadyContainsLatest && latest.length > 0) {
+      const pageContextBlock = formatPageContextPromptBlock(input.pageContext);
+      if (pageContextBlock) {
+        messages.push({
+          role: 'system',
+          content: pageContextBlock,
+        });
+      }
       messages.push({
         role: 'user',
         content: input.latestUserMessage,

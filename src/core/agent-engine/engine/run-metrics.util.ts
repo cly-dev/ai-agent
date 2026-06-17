@@ -64,6 +64,10 @@ export function createRunMetricsAccumulator(): RunMetricsAccumulator {
     },
     machineCodeCounts: {
       INTENT_RECALL_FAILED: 0,
+      SKILL_NOT_VISIBLE: 0,
+      SKILL_TOOLS_EMPTY: 0,
+      SKILL_NOT_IN_SCOPE: 0,
+      SKILL_EXPAND_FAILED: 0,
       TOOL_AUTH_FAILED: 0,
       TOOL_TIMEOUT: 0,
       TOOL_EMPTY_RESULT: 0,
@@ -166,6 +170,10 @@ export function snapshotRunMetrics(
       },
       codeCounts: {
         INTENT_RECALL_FAILED: acc.machineCodeCounts.INTENT_RECALL_FAILED,
+        SKILL_NOT_VISIBLE: acc.machineCodeCounts.SKILL_NOT_VISIBLE,
+        SKILL_TOOLS_EMPTY: acc.machineCodeCounts.SKILL_TOOLS_EMPTY,
+        SKILL_NOT_IN_SCOPE: acc.machineCodeCounts.SKILL_NOT_IN_SCOPE,
+        SKILL_EXPAND_FAILED: acc.machineCodeCounts.SKILL_EXPAND_FAILED,
         TOOL_AUTH_FAILED: acc.machineCodeCounts.TOOL_AUTH_FAILED,
         TOOL_TIMEOUT: acc.machineCodeCounts.TOOL_TIMEOUT,
         TOOL_EMPTY_RESULT: acc.machineCodeCounts.TOOL_EMPTY_RESULT,
@@ -190,6 +198,10 @@ export function aggregateRunMetrics(
   };
   const machineCodeCounts: Record<AgentMachineCode, number> = {
     INTENT_RECALL_FAILED: 0,
+    SKILL_NOT_VISIBLE: 0,
+    SKILL_TOOLS_EMPTY: 0,
+    SKILL_NOT_IN_SCOPE: 0,
+    SKILL_EXPAND_FAILED: 0,
     TOOL_AUTH_FAILED: 0,
     TOOL_TIMEOUT: 0,
     TOOL_EMPTY_RESULT: 0,
@@ -227,6 +239,14 @@ export function aggregateRunMetrics(
     toolQualityCounts.low += row.toolsUsed.qualityCounts.low;
     machineCodeCounts.INTENT_RECALL_FAILED +=
       row.toolsUsed.codeCounts?.INTENT_RECALL_FAILED ?? 0;
+    machineCodeCounts.SKILL_NOT_VISIBLE +=
+      row.toolsUsed.codeCounts?.SKILL_NOT_VISIBLE ?? 0;
+    machineCodeCounts.SKILL_TOOLS_EMPTY +=
+      row.toolsUsed.codeCounts?.SKILL_TOOLS_EMPTY ?? 0;
+    machineCodeCounts.SKILL_NOT_IN_SCOPE +=
+      row.toolsUsed.codeCounts?.SKILL_NOT_IN_SCOPE ?? 0;
+    machineCodeCounts.SKILL_EXPAND_FAILED +=
+      row.toolsUsed.codeCounts?.SKILL_EXPAND_FAILED ?? 0;
     machineCodeCounts.TOOL_AUTH_FAILED +=
       row.toolsUsed.codeCounts?.TOOL_AUTH_FAILED ?? 0;
     machineCodeCounts.TOOL_TIMEOUT += row.toolsUsed.codeCounts?.TOOL_TIMEOUT ?? 0;

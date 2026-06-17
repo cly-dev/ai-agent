@@ -6,6 +6,11 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import {
+  type PaginatedResult,
+  resolvePagination,
+  toPaginatedResult,
+} from '../../common/pagination';
 import type { Message } from '../../../generated/prisma/client';
 import type { Session } from '../../../generated/prisma/client';
 import { SessionContextStore } from '../../core/memory/context/session-context.store';
@@ -14,6 +19,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MessageService } from '../message/message.service';
 import { ChatEventsService } from './chat-events.service';
 import { CreateChatDto } from './dto/create-chat.dto';
+import { QueryChatListDto } from './dto/query-chat-list.dto';
 import { DeleteChatResponseDto } from './dto/delete-chat-response.dto';
 import { SessionPrepareService } from './session-prepare.service';
 import { SessionPrepareStore } from './session-prepare.store';
@@ -69,54 +75,97 @@ export class ChatService {
   async findAllForUser(
     userId: number,
     appClientId: number,
+    query: QueryChatListDto,
   ): Promise<
-    Array<{
+    PaginatedResult<{
       sessionId: string;
       title: string | null;
       agentId: number | null;
       createdAt: Date;
     }>
   > {
-    const sessions = await this.prisma.session.findMany({
-      where: { userId, appClientId },
-      orderBy: { createdAt: 'desc' },
-    });
-    return sessions.map((session) => ({
-      sessionId: session.id,
-      title: session.title ?? null,
-      agentId: session.agentId ?? null,
-      createdAt: session.createdAt,
-    }));
+    const { page, pageSize, skip, take } = resolvePagination(
+      query.page,
+      query.size,
+    );
+    const where = { userId, appClientId };
+    const [sessions, total] = await this.prisma.$transaction([
+      this.prisma.session.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        select: {
+          id: true,
+          title: true,
+          agentId: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.session.count({ where }),
+    ]);
+    return toPaginatedResult(
+      sessions.map((session) => ({
+        sessionId: session.id,
+        title: session.title ?? null,
+        agentId: session.agentId ?? null,
+        createdAt: session.createdAt,
+      })),
+      total,
+      page,
+      pageSize,
+    );
   }
 
   async findOneForUser(
     sessionId: string,
     userId: number,
     appClientId: number,
+    query: QueryChatListDto,
   ): Promise<{
     sessionId: string;
     title: string | null;
     agentId: number | null;
     createdAt: Date;
-    messages: Message[];
+    messages: PaginatedResult<Message>;
   }> {
-    const row = await this.prisma.session.findFirst({
+    const session = await this.prisma.session.findFirst({
       where: { id: sessionId, userId, appClientId },
-      include: {
-        messages: {
-          orderBy: { createdAt: 'asc' },
-        },
+      select: {
+        id: true,
+        title: true,
+        agentId: true,
+        createdAt: true,
       },
     });
-    if (!row) {
+    if (!session) {
       throw new NotFoundException('chat not found');
     }
+    const { page, pageSize, skip, take } = resolvePagination(
+      query.page,
+      query.size,
+    );
+    const messageWhere = { sessionId: session.id };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.message.findMany({
+        where: messageWhere,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.message.count({ where: messageWhere }),
+    ]);
     return {
-      sessionId: row.id,
-      title: row.title ?? null,
-      agentId: row.agentId ?? null,
-      createdAt: row.createdAt,
-      messages: row.messages,
+      sessionId: session.id,
+      title: session.title ?? null,
+      agentId: session.agentId ?? null,
+      createdAt: session.createdAt,
+      messages: toPaginatedResult(
+        [...rows].reverse(),
+        total,
+        page,
+        pageSize,
+      ),
     };
   }
 

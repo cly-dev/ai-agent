@@ -9,16 +9,26 @@ import {
   Post,
   Put,
   Query,
+  Req,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiHeader,
   ApiOperation,
   ApiParam,
   ApiResponse,
+  ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
+import { Request } from 'express';
+import { AppClientDsnGuard } from '../../auth/app-client-dsn.guard';
+import { APP_CLIENT_DSN_HEADER } from '../../auth/app-client-dsn.constants';
+import { UserJwtAuthGuard } from '../../auth/user-jwt-auth.guard';
 import { SkillService } from './skill.service';
 import { CreateSkillDto } from './dto/create-skill.dto';
+import { QueryClientSkillByAgentDto } from './dto/query-client-skill-by-agent.dto';
 import { QuerySkillDto } from './dto/query-skill.dto';
 import { ReplaceSkillToolsDto } from './dto/skill-tool-binding.dto';
 import { UpdateSkillDto } from './dto/update-skill.dto';
@@ -28,6 +38,50 @@ import { UpdateSkillDto } from './dto/update-skill.dto';
 @Controller()
 export class SkillController {
   constructor(private readonly service: SkillService) {}
+
+  private appClientId(req: Request): number {
+    const id = req.appClient?.id;
+    if (id === undefined) {
+      throw new UnauthorizedException('missing app client context');
+    }
+    return id;
+  }
+
+  private userId(req: Request & { user?: { userId?: number } }): number {
+    const id = req.user?.userId;
+    if (id === undefined) {
+      throw new UnauthorizedException('invalid user token');
+    }
+    return id;
+  }
+
+  @Get('agent/:agentId/skills/client')
+  @UseGuards(UserJwtAuthGuard, AppClientDsnGuard)
+  @ApiSecurity('app-dsn')
+  @ApiHeader({
+    name: APP_CLIENT_DSN_HEADER,
+    description: '业务方 DSN',
+    required: true,
+  })
+  @ApiParam({ name: 'agentId', type: Number })
+  @ApiOperation({
+    summary: 'C 端：按 Agent 查询当前用户可运行的 Skill 列表',
+    description:
+      'UserApp.role → RoleSkill 白名单（若已配置）；仅 active Skill，且 Skill Tool 与用户允许 Tool 有交集（与发消息 skillId 校验一致）。不含 prompt/config。需用户 JWT + x-app-dsn。',
+  })
+  @ApiResponse({ status: 200, description: '查询成功' })
+  listForClientByAgent(
+    @Req() req: Request & { user?: { userId?: number } },
+    @Param('agentId', ParseIntPipe) agentId: number,
+    @Query() query: QueryClientSkillByAgentDto,
+  ) {
+    return this.service.findClientListByAgentForUser(
+      agentId,
+      this.userId(req),
+      this.appClientId(req),
+      query,
+    );
+  }
 
   @Post('agent/:agentId/app-client/:appClientId/skills')
   @ApiParam({ name: 'agentId', type: Number })

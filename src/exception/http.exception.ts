@@ -6,7 +6,11 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import {
+  applyClientPublicCors,
+  shouldApplyClientPublicCors,
+} from '../middleware/client-public-cors.util';
+import type { Request, Response } from 'express';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -43,6 +47,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
       this.logException(exception, req, status, message);
 
+      if (shouldApplyClientPublicCors(req)) {
+        applyClientPublicCors(req, res);
+      }
+
       res.status(200).send({
         status,
         data,
@@ -53,6 +61,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         `Exception filter failed: ${req.method} ${req.originalUrl ?? req.url}`,
         filterError instanceof Error ? filterError.stack : String(filterError),
       );
+      if (shouldApplyClientPublicCors(req)) {
+        applyClientPublicCors(req, res);
+      }
       res.status(200).send({
         status: 500,
         data: null,

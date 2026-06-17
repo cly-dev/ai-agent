@@ -55,11 +55,38 @@ enum IntegrationAuthMode {
   USER_PREFERRED
 }
 
+/// 前端 Host Tool 暴露方式（执行仍在浏览器；DB 仅存元数据）。
+enum HostToolExposure {
+  /// 仅登记；暂不参与 completed / LLM
+  CATALOG
+  /// mutation 成功后可在 host_action 中引用（未来 hostTool 字段）
+  ON_COMPLETE
+  /// Plan 绑定后可注入 LLM（host_tool / host_tools 段）
+  LLM
+  /// 完成通知与 LLM 调用均可
+  BOTH
+}
+
+/// Skill 在何种 Plan 场景下关联 Host Tool。
+enum HostToolSkillTrigger {
+  /// Plan deliverable=mutation 且成功后可引用
+  ON_MUTATION_SUCCESS
+  /// 指定 Plan 步 / host 交互步（未来）
+  ON_PLAN_STEP
+  /// 本轮允许 LLM 选择调用
+  LLM_SCOPED
+}
+
 /** LLM 库配置类型：对话模型 vs 本地 Transformers embedding vs 远程 embedding API。 */
 enum LlmModelKind {
   chat
   transformers_embedding
   api_embedding
+}
+
+enum MessageFeedbackRating {
+  up
+  down
 }
 
 model User {
@@ -74,6 +101,7 @@ model User {
 
   sessions         Session[]
   messageTurns     MessageTurn[]
+  messageFeedbacks MessageFeedback[]
   llmModelConfigs  UserLlmModelConfig[]
   userApps         UserApp[]
   userIntegrations UserIntegration[]
@@ -89,6 +117,7 @@ model Role {
   roleSkills RoleSkill[]
   userApps   UserApp[]
   roleTools  RoleTool[]
+  roleHostTools RoleHostTool[]
 
   @@map("role")
 }
@@ -110,6 +139,8 @@ model AppClient {
   name        String
   dsn         String   @unique
   description String?
+  /// 按 App 的外部账号鉴权配置；为空时回退 APP_CLIENT_HOST 等环境变量。
+  authConfig  Json?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -118,10 +149,13 @@ model AppClient {
   tools        Tool[]
   sessions     Session[]
   messageTurns MessageTurn[]
+  messageFeedbacks MessageFeedback[]
   agentRuns    AgentRun[]
   integrations    Integration[]
   userApps        UserApp[]
   promptTemplates PromptTemplate[]
+  hostPages       HostPage[]
+  hostTools       HostTool[]
 }
 
 model LlmModelConfig {
@@ -189,6 +223,7 @@ model Session {
   messages        Message[]
   agentRuns       AgentRun[]
   messageTurns    MessageTurn[]
+  messageFeedbacks MessageFeedback[]
   sessionGoaMemory SessionGoaMemory?
 
   @@index([userId])
@@ -214,6 +249,8 @@ model Message {
   toolName   String?
   toolInput  Json?
   toolOutput Json?
+  /// 用户消息附带的页面上下文（omnix-chat pageContext）
+  pageContextJson Json?
 
   createdAt DateTime @default(now())
 
@@ -221,8 +258,37 @@ model Message {
   messageTurns       MessageTurn[] @relation("MessageTurnInput")
   outputMessageTurns MessageTurn[] @relation("MessageTurnOutput")
   agentRunOutputs    AgentRun[]    @relation("AgentRunOutput")
+  feedbacks          MessageFeedback[]
 
   @@index([sessionId])
+}
+
+/// C 端用户对 assistant 消息的赞/踩；点踩须附带原因（标签和/或补充说明）。
+model MessageFeedback {
+  id          Int                   @id @default(autoincrement())
+  messageId   Int
+  sessionId   String                @db.VarChar(32)
+  userId      Int
+  appClientId Int
+  turnId      Int?
+  agentId     Int?
+  rating      MessageFeedbackRating
+  reasonTags  Json?
+  comment     String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  message   Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  session   Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appClient AppClient @relation(fields: [appClientId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([appClientId, rating])
+  @@index([turnId])
+  @@index([agentId])
 }
 
 /// 工具业务分类（商品、订单、搜索等），由用户在后台自由增删
@@ -328,6 +394,7 @@ model Skill {
 
   agent      Agent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
   skillTools SkillTool[]
+  skillHostTools SkillHostTool[]
   roleSkills RoleSkill[]
 
   @@unique([agentId, name])
@@ -411,6 +478,7 @@ model Agent {
   skills       Skill[]
   agentRuns       AgentRun[]
   agentTools      AgentTool[]
+  agentHostTools  AgentHostTool[]
   messageTurns    MessageTurn[]
   promptTemplates PromptTemplate[]
 
@@ -556,4 +624,113 @@ model AgentTool {
   @@unique([agentId, toolId])
   @@index([agentId])
   @@index([toolId])
+}
+
+/// App 内可嵌入 Chat 的业务页登记；scope 与 pageContext.page / host_action.scope 对齐。
+model HostPage {
+  id          Int      @id @default(autoincrement())
+  appClientId Int
+  /// 稳定页面标识，kebab-case，如 review-detail
+  scope       String
+  label       String
+  description String?
+  /// 可选：路由匹配提示（文档/管理端用；运行时仍以宿主传入 routePath 为准）
+  routePattern String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  appClient AppClient  @relation(fields: [appClientId], references: [id], onDelete: Cascade)
+  hostTools HostTool[]
+
+  @@unique([appClientId, scope])
+  @@index([appClientId, isActive])
+}
+
+/// 前端 Host Tool 元数据（执行在浏览器；与 HTTP Tool 并列但不同命名空间）。
+/// hostPageId 为空 = App 内通用工具（如 refreshEntity）；非空 = 仅该页可用。
+model HostTool {
+  id             Int              @id @default(autoincrement())
+  appClientId    Int
+  hostPageId     Int?
+  /// App 内稳定键；通用工具如 refreshEntity，页内工具如 review-detail.fillReplyDraft
+  definitionKey  String
+  /// LLM / host_action 使用的工具名；同一 AppClient 内唯一
+  name           String
+  description    String           @db.Text
+  /// 参数 JSON Schema（供 LLM 与前端校验）
+  argsSchema     Json
+  exposure       HostToolExposure @default(CATALOG)
+  /// ON_COMPLETE / BOTH 时：参数模板，如 { "entityId": "$entity.id", "entityType": "$entity.type" }
+  argsTemplate   Json?
+  sortOrder      Int              @default(0)
+  isActive       Boolean          @default(true)
+  /// 扩展配置（埋点 reason、UI 提示等）
+  config         Json?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  appClient      AppClient         @relation(fields: [appClientId], references: [id], onDelete: Cascade)
+  hostPage       HostPage?         @relation(fields: [hostPageId], references: [id], onDelete: Cascade)
+  agentHostTools AgentHostTool[]
+  skillHostTools SkillHostTool[]
+  roleHostTools  RoleHostTool[]
+
+  @@unique([appClientId, definitionKey])
+  @@unique([appClientId, name])
+  @@index([appClientId])
+  @@index([hostPageId])
+  @@index([appClientId, isActive])
+}
+
+/// Agent 可用的 Host Tool 白名单（类比 AgentTool）。
+model AgentHostTool {
+  id         Int      @id @default(autoincrement())
+  agentId    Int
+  hostToolId Int
+  createdAt  DateTime @default(now())
+
+  agent    Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  hostTool HostTool @relation(fields: [hostToolId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, hostToolId])
+  @@index([agentId])
+  @@index([hostToolId])
+}
+
+/// Skill 关联的 Host Tool；运行时 gate：SkillHostTool ∩ AgentHostTool ∩ pageContext.page。
+model SkillHostTool {
+  id         Int                  @id @default(autoincrement())
+  skillId    Int
+  hostToolId Int
+  trigger    HostToolSkillTrigger @default(ON_MUTATION_SUCCESS)
+  /// 覆盖 HostTool.argsTemplate（可选）
+  argsTemplate Json?
+  priority   Int                  @default(0)
+  isRequired Boolean              @default(false)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  skill    Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  hostTool HostTool @relation(fields: [hostToolId], references: [id], onDelete: Cascade)
+
+  @@unique([skillId, hostToolId])
+  @@index([skillId])
+  @@index([hostToolId])
+}
+
+/// Role 可用的 Host Tool 白名单（类比 RoleTool；可选用户侧授权）。
+model RoleHostTool {
+  id         Int      @id @default(autoincrement())
+  roleId     Int
+  hostToolId Int
+  createdAt  DateTime @default(now())
+
+  role     Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  hostTool HostTool @relation(fields: [hostToolId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, hostToolId])
+  @@index([roleId])
+  @@index([hostToolId])
 }

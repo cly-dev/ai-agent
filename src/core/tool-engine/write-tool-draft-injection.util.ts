@@ -6,6 +6,7 @@ import {
 } from './tool-decision-input.util';
 import { parseAgentMetadata } from './tool-agent-metadata.util';
 import { collectOpenApiParameterSpecs } from './tool-input-sanitize.util';
+import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 
 type WriteToolDef = {
   inputSchema?: unknown;
@@ -425,16 +426,34 @@ export function formatWriteToolArgumentsForUserPreview(
   args: Record<string, unknown>,
   writeTool: WriteToolDef,
   toolDescription?: string,
+  options?: { excludeSubmitBody?: boolean },
 ): string {
   const compactParams = listToolInputCompactParams(
     writeTool.inputSchema,
     writeTool.schema,
   );
+  const submitPaths = options?.excludeSubmitBody
+    ? resolveWriteToolSubmitPaths(writeTool)
+    : null;
+  const primarySubmitPath =
+    submitPaths != null
+      ? pickPrimaryWriteToolSubmitPath(
+          submitPaths,
+          compactParams,
+        )
+      : null;
   const lines: string[] = [];
-  if (toolDescription?.trim()) {
+  if (toolDescription?.trim() && !options?.excludeSubmitBody) {
     lines.push(toolDescription.trim());
   }
   for (const row of compactParams) {
+    if (
+      primarySubmitPath &&
+      (row.name === primarySubmitPath ||
+        row.name.startsWith(`${primarySubmitPath}.`))
+    ) {
+      continue;
+    }
     if (row.name.includes('[]')) {
       const match = /^(.+)\[\]\.(.+)$/.exec(row.name);
       if (!match) {
@@ -446,6 +465,12 @@ export function formatWriteToolArgumentsForUserPreview(
       }
       arrayValue.forEach((item, index) => {
         if (!isRecord(item)) {
+          return;
+        }
+        if (
+          primarySubmitPath &&
+          row.name === primarySubmitPath
+        ) {
           return;
         }
         const text = formatPreviewValue(item[match[2]]);
@@ -772,6 +797,136 @@ export function enrichWriteToolArgumentsFromReadObservations(
     );
   }
   return next;
+}
+
+/**
+ * 从 write args 自身嵌套结构补齐顶层必填项（如 reviewReply[].reviewId → reviewId）。
+ * 仅提升顶层 required，或 businessFields/identifier 标记的叶子，避免通用 leaf 歧义。
+ * 不覆盖已有值；与 read observation enrich 互补。
+ */
+export function enrichWriteArgumentsFromSelf(
+  args: Record<string, unknown>,
+  writeTool: WriteToolDef,
+): Record<string, unknown> {
+  const compactParams = listToolInputCompactParams(
+    writeTool.inputSchema,
+    writeTool.schema,
+  );
+  let requiredPaths = compactParams
+    .filter((row) => row.required)
+    .map((row) => row.name);
+  if (requiredPaths.length === 0) {
+    const compact = buildCompactToolInput(
+      writeTool.inputSchema,
+      writeTool.schema,
+      writeTool.agentMetadata,
+    );
+    requiredPaths = listRequiredParamNames(compact);
+  }
+  const paths = resolveWriteToolSubmitPaths(writeTool);
+  const next: Record<string, unknown> = JSON.parse(JSON.stringify(args));
+  for (const path of requiredPaths) {
+    if (isPresentAtWriteToolParamPath(next, path)) {
+      continue;
+    }
+    const normalizedPath = path.replace(/\[\]/g, '');
+    const leaf = lastPathSegment(normalizedPath);
+    const isTopLevelRequired =
+      !normalizedPath.includes('.') && !path.includes('[');
+    if (!isTopLevelRequired && !paths.identifierLeaves.has(leaf)) {
+      continue;
+    }
+    const value = findNestedValueByLeaf(next, leaf, paths.bodyRoot);
+    if (isPresent(value)) {
+      setValueAtParamPath(next, path, value, paths.bodyRoot);
+    }
+  }
+  return next;
+}
+
+/** 从 pageContext.entity 按 write tool schema + businessFields 补齐参数（无字段名硬编码）。 */
+export function enrichWriteArgumentsFromPageContext(
+  args: Record<string, unknown>,
+  writeTool: WriteToolDef,
+  pageContext: AgentChatPageContext | null | undefined,
+): Record<string, unknown> {
+  const entity = pageContext?.entity;
+  if (!entity || typeof entity !== 'object') {
+    return args;
+  }
+  const compactParams = listToolInputCompactParams(
+    writeTool.inputSchema,
+    writeTool.schema,
+  );
+  const paths = resolveWriteToolSubmitPaths(writeTool);
+  const next: Record<string, unknown> = JSON.parse(JSON.stringify(args));
+  const paramLeafByPath = new Map(
+    compactParams.map((row) => [
+      row.name,
+      lastPathSegment(row.name.replace(/\[\]/g, '')),
+    ]),
+  );
+
+  for (const row of compactParams) {
+    const leaf = paramLeafByPath.get(row.name) ?? '';
+    const value = entity[row.name] ?? entity[leaf];
+    if (!isPresent(value) || isPresentAtWriteToolParamPath(next, row.name)) {
+      continue;
+    }
+    setValueAtParamPath(next, row.name, value, paths.bodyRoot);
+  }
+
+  const entityId = typeof entity.id === 'string' ? entity.id.trim() : '';
+  if (!entityId) {
+    return next;
+  }
+
+  const missingIdentifierRequired = compactParams.filter((row) => {
+    if (!row.required) {
+      return false;
+    }
+    const leaf = paramLeafByPath.get(row.name) ?? '';
+    if (!paths.identifierLeaves.has(leaf)) {
+      return false;
+    }
+    return !isPresentAtWriteToolParamPath(next, row.name);
+  });
+  if (missingIdentifierRequired.length === 1) {
+    setValueAtParamPath(
+      next,
+      missingIdentifierRequired[0]!.name,
+      entityId,
+      paths.bodyRoot,
+    );
+  }
+
+  return next;
+}
+
+/**
+ * compose / gate 共用：LLM 产参 → read 补齐 → pageContext → 自身嵌套提升 → 待校验参数。
+ */
+export function normalizeWriteToolArguments(
+  args: Record<string, unknown>,
+  writeTool: WriteToolDef,
+  observations: Array<{ name: string; output: unknown }>,
+  input: {
+    isReadToolObservation: (toolName: string) => boolean;
+    pageContext?: AgentChatPageContext | null;
+  },
+): Record<string, unknown> {
+  const fromRead = enrichWriteToolArgumentsFromReadObservations(
+    args,
+    writeTool,
+    observations,
+    input,
+  );
+  const fromPage = enrichWriteArgumentsFromPageContext(
+    fromRead,
+    writeTool,
+    input.pageContext,
+  );
+  return enrichWriteArgumentsFromSelf(fromPage, writeTool);
 }
 
 /** 返回首个未满足的 required 参数路径，无缺失时返回 null。 */

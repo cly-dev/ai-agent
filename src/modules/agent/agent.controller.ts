@@ -32,7 +32,6 @@ import { BindAgentToolsDto } from './dto/bind-agent-tools.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { QueryAgentToolsDto } from './dto/query-agent-tools.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
-
 @ApiTags('agent')
 @Controller('agent')
 export class AgentController {
@@ -42,6 +41,14 @@ export class AgentController {
     const id = req.appClient?.id;
     if (id === undefined) {
       throw new UnauthorizedException('missing app client context');
+    }
+    return id;
+  }
+
+  private userId(req: Request & { user?: { userId?: number } }): number {
+    const id = req.user?.userId;
+    if (id === undefined) {
+      throw new UnauthorizedException('invalid user token');
     }
     return id;
   }
@@ -86,6 +93,30 @@ export class AgentController {
   @ApiResponse({ status: 200, description: '查询成功' })
   listForClient(@Req() req: Request) {
     return this.service.findClientListByAppClientId(this.appClientId(req));
+  }
+
+  @Get('client/available')
+  @UseGuards(UserJwtAuthGuard, AppClientDsnGuard)
+  @ApiBearerAuth()
+  @ApiSecurity('app-dsn')
+  @ApiHeader({
+    name: APP_CLIENT_DSN_HEADER,
+    description: '业务方 DSN',
+    required: true,
+  })
+  @ApiOperation({
+    summary: 'C 端：返回当前用户可用的 Agent 列表',
+    description:
+      '仅需用户 JWT + x-app-dsn。UserApp.role → RoleTool 与 Agent 绑定 Tool 求交集；至少有一个可用 Tool 的 Agent 才会返回。',
+  })
+  @ApiResponse({ status: 200, description: '查询成功' })
+  listAvailableForClient(
+    @Req() req: Request & { user?: { userId?: number } },
+  ) {
+    return this.service.findClientAvailableAgentsForUser(
+      this.userId(req),
+      this.appClientId(req),
+    );
   }
 
   @Get(':agentId/app-client/:appClientId/tools')

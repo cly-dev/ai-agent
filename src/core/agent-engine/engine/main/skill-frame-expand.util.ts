@@ -2,6 +2,7 @@ import type { LlmService } from '../../../llm/llm.service';
 import type { PromptRegistryService } from '../../../prompt/prompt-registry.service';
 import type { SkillService } from '../../../skill/skill.service';
 import type { AvailableSkillRow } from '../../../skill/skill.types';
+import { RequestedSkillRunError } from './requested-skill-run.error';
 import type { ToolBuildContext } from '../../../tool-engine/tool-engine.service';
 import type { AgentEngineTool } from './agent-engine.types';
 import type { PlanFrame } from './plan-stack.types';
@@ -95,6 +96,8 @@ export async function expandPendingSkillStepIfNeeded(input: {
   agentId: number;
   userId: number;
   appClientId: number;
+  /** 用户指定 skillId 时，展开失败须中止 run，不可静默跳过 skill 步。 */
+  enforceRequestedSkill?: boolean;
 }): Promise<SkillFrameExpandResult> {
   const base = {
     plan: input.plan,
@@ -144,6 +147,13 @@ export async function expandPendingSkillStepIfNeeded(input: {
     scopedTools: input.scopedTools,
   });
   if (!skill) {
+    if (input.enforceRequestedSkill) {
+      const skillId = skillStep.skillId;
+      throw new RequestedSkillRunError(
+        'SKILL_EXPAND_FAILED',
+        `requested skill ${skillId} could not be expanded into scoped tools`,
+      );
+    }
     return {
       ...base,
       plan: syncPlanFromActiveFrame(

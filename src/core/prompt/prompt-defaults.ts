@@ -11,6 +11,37 @@ const AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH = `
 - Suggested rule-based blocks 已提供 table/chart 时，仍需根据用户目标补全其余 block（如 text 分析/说明、metric、alert）
 - 表格只承担明细展示；用户若还要报告、解读、建议、对比、风险等，用独立 text block（可 markdown 分节）表达，勿用 markdown pipe 表格重复明细`;
 
+/** 流式 summarize 通用输出形态（与具体业务场景无关）。 */
+const AGENT_SUMMARIZE_STREAMING_OUTPUT_ZH = `
+【输出形态 — 硬性】
+- 直接流式输出 Markdown 正文；勿以 { 或 \`\`\` 开头，勿用 JSON 包裹正文。
+- 正文即用户最终可见内容；勿加元说明套话（如「以下为…」「我将…」）。`;
+
+/** 上游已产出 write 参数时的用户可见正文规则（present / preview / 补正文共用）。 */
+const AGENT_SUMMARIZE_WRITE_PREVIEW_PROSE_ZH = `
+【写操作预览 — 当上游已产出 write 参数，或 user 含 pending_write_tool_call / plan_compose_write 时】
+- 你只补用户可见 Markdown 正文，禁止 tool_calls。
+- 结合 tool observations 与 user_intent：
+  · 若用户需先理解再确认：用简短业务说明（对谁/哪条数据做什么、依据何在），自然语言表述，不列 API 字段名或参数键。
+  · 给出完整拟提交正文：与 arguments 中 submit/content 类字段一致，连续可读、可直接发布；确认后将原样提交，勿改写、勿缩短。
+- 末尾一句提示确认后将提交；勿写已成功提交。
+- 禁止输出：tool 名、JSON、observation 原文、API 字段名/键名。`;
+
+/** 流式正文之后的可选结构化 blocks。 */
+const AGENT_SUMMARIZE_BLOCKS_APPEND_ZH = `
+【结构化补充 — 可选，写在正文之后】
+- 若 Suggested rule-based blocks 已含 table/chart，正文侧重分析/说明，勿重复出表。
+- 若仍需 chart/metric/alert 等，正文全部写完后另起一行输出 {"blocks":[...]}，只含这些结构化 block（勿含 type=text）。
+- JSON 须合法并遵循 platform.message_blocks_spec。`;
+
+/** 非写预览类 summarize 的通用作答规则。 */
+const AGENT_SUMMARIZE_CONTEXT_AND_OUTCOME_ZH = `
+【读操作 / 写后结果 / 其他场景】
+- user 含 <current_run_observations> 与 <working_memory_observations> 时，以 current_run 为作答依据。
+- user 含 <plan_context> 时，以 Current step objective 为主指令。
+- 写操作已执行后的 outcome：按实际结果汇报，勿再要求确认。
+- 失败或风险：正文说明，或在尾部 blocks 中加 alert。`;
+
 const AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN = `
 Message Blocks / table guardrails (when Suggested rule-based blocks may be present):
 - If Suggested rule-based blocks already include type=table, do NOT output another type=table block
@@ -287,44 +318,37 @@ loading: { type, id, hint? }（SSE 占位；后续 action=patch 按 replaceId �
 禁止编造工具结果中不存在的字段或数值；禁止输出原始 JSON 给用户。
 </message_blocks_spec>`,
 
-  [PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS]: `你是助手回复编排器。用户可见内容将经 SSE 流式展示，请按下列输出形态书写。
-
-【流式正文 — 硬性】
-- 直接流式输出 Markdown 正文（分析与说明），不要以 { 或 \`\`\` 开头，不要用 JSON 包裹正文。
-- 正文即最终 text block 内容；勿在正文前后加解释性前后缀。
-
-【结构化补充 — 可选，写在正文之后】
-- 若 Suggested rule-based blocks 已含 table/chart，正文只写分析，勿重复出表。
-- 若仍需额外 table/chart/metric/alert，在正文全部写完后另起一行输出 {"blocks":[...]}，且只含这些结构化 block（勿含 type=text）。
-- 结构化 JSON 须合法并遵循 platform.message_blocks_spec。
-
-当 user 含 <current_run_observations> 与 <working_memory_observations> 时，以 current_run 为作答依据。
-当 user 含 <plan_context> 时，以 Current step objective 为主指令。
-- draft / preview / 拟提交：正文展示完整拟回复；末尾简短说明确认后将提交；勿写「已成功提交」。
-- write 后 outcome：按写操作结果汇报。
-
-其他：写操作失败或风险可在正文说明，或在尾部 JSON 中加 alert。
+  [PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS]: `你是助手回复编排器。用户可见内容经 SSE 流式展示。
+${AGENT_SUMMARIZE_STREAMING_OUTPUT_ZH}
+${AGENT_SUMMARIZE_WRITE_PREVIEW_PROSE_ZH}
+${AGENT_SUMMARIZE_BLOCKS_APPEND_ZH}
+${AGENT_SUMMARIZE_CONTEXT_AND_OUTCOME_ZH}
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
-  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_DRAFT_PROSE_SUPPLEMENT]: `你是客服文案作者。compose_write 已产出 write tool 参数；你只需补 **用户可见 Markdown 正文**（无 tool_calls）。
+  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_DRAFT_PROSE_SUPPLEMENT]: `上游 compose_write 已产出 write 参数骨架；你只补**拟提交正文**（无 tool_calls），供 runtime 写入 arguments。
 
 规则：
-- 基于 tool observations 与 user_intent，写清业务分析（如适用）与 **完整拟回复正文**（用户确认后将原样提交，须为可直接发布的连续正文，不要元说明套话）。
-- 末尾一句说明确认后将提交；勿写已成功提交。
-- 勿输出 tool 名、JSON、observation 原文、API 字段名。
+- 基于 tool observations 与 user_intent，输出完整、可直接发布的连续正文（与待写入 submit/content 字段一致）。
+- 只输出正文本身：勿操作说明、勿 Markdown 标题、勿 fenced code block、勿元说明套话。
+- 禁止输出：tool 名、JSON、observation 原文、API 字段名/键名。
 
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
-  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_PRESENT_FROM_COMPOSE]: `你是写操作确认前的展示编排器。机器层已生成 pending write tool_call（见 user 消息中的 JSON）；你只做 **用户层 Markdown 说明**（无 tool_calls）。
+  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_PRESENT_FROM_COMPOSE]: `你是写操作确认前的展示作者。机器层已生成待执行 write 参数（见 user 消息 pending_write_tool_call）；你输出用户可见 Markdown（无 tool_calls）。
 
 规则：
-- 基于 tool observations 与 <pending_write_tool_call> 中的 arguments，写业务分析（如适用）。
-- **回复草稿**小节必须逐字引用 arguments 里将要提交的回复正文（从 schema 定义的 content/正文类字段提取）；勿改写、勿用引号包裹、勿写「这是草稿」等元说明。
-- 若 arguments 中尚无回复正文，根据 observations 生成完整拟回复写入草稿小节（runtime 会回写机器层）。
-- 末尾一句说明确认后将提交；勿写已成功提交。
-- 勿输出 tool 名、原始 JSON 块、observation 原文。
+- 先用自然语言说明本次将执行的操作：结合 observations 与 arguments 中的业务含义，说明对谁/哪条数据做什么；用用户能读懂的表述，不要罗列 API 字段名、JSON 键名或参数清单。
+- 再展示拟提交正文：从 arguments 的 submit/content 类字段逐字引用，放在单独 fenced code block 内；正文块外不要重复粘贴全文。
+- 禁止只输出拟提交正文或只复述回复内容；须让用户先理解操作语境再看到待提交文案。
+- 可用一句自然提示「确认后将执行」；勿写已成功提交。
+- 禁止输出：tool 名、原始 JSON、observation dump。
 
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
+
+  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_PRESENT_CONTEXT_RETRY]: `上一次输出缺少操作说明（仅含拟提交正文）。请重写整段展示：
+- 先自然说明本次将代表用户对哪条/哪个对象执行什么操作（依据 observations 与 pending arguments，勿列字段名）。
+- 再将 arguments 中的提交正文逐字放入 fenced code block。
+- 不要只输出正文；不要罗列参数键值。`,
 
   [PROMPT_KEYS.AGENT_READINESS_SLOT_CHECK]: `You are the turn readiness slot checker for a business agent.
 Given the user message, plan objective, required business field names, and optional session observation summary, decide whether the agent can proceed to tool execution WITHOUT guessing parameter values.

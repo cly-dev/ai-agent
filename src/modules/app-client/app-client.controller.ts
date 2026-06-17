@@ -27,6 +27,7 @@ import { APP_CLIENT_DSN_HEADER } from '../../auth/app-client-dsn.constants';
 import { AppClientService } from './app-client.service';
 import { CreateAppClientDto } from './dto/create-app-client.dto';
 import { UpdateAppClientDto } from './dto/update-app-client.dto';
+import { TestAppClientAuthDto } from './dto/test-app-client-auth.dto';
 
 @ApiTags('admin-app-client')
 @ApiBearerAuth()
@@ -98,6 +99,20 @@ export class AppClientController {
   @ApiOperation({ summary: '管理员按 ID 查询 AppClient' })
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id);
+  }
+
+  @Post(':id/auth/test')
+  @ApiParam({ name: 'id', type: Number })
+  @ApiOperation({
+    summary: '测试 AppClient 外部账号鉴权配置',
+    description:
+      '使用指定 accountToken 调用当前 App 的 authConfig（或环境变量回退），仅返回解析后的账号信息，不建档、不签发 JWT。',
+  })
+  testAuth(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: TestAppClientAuthDto,
+  ) {
+    return this.service.testAuth(id, body.accountToken);
   }
 
   @Patch(':id')

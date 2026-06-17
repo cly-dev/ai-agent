@@ -183,4 +183,6 @@ export type ResolveOuterPlanInput = {
   scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'];
   availableSkills: OuterPlanSkillSummary[];
   sessionWorkingMemory?: PlanSessionWorkingMemory | null;
+  /** 用户指定 Skill 时跳过外层 Plan LLM，直接编排单步 kind=skill。 */
+  requestedSkillId?: number;
 };

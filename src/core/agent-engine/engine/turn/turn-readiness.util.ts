@@ -1,5 +1,3 @@
-import { detectIntentKind } from '../../intent-kind.util';
-import { isUserIntentClear } from '../../../intent/intent-scope.util';
 import type { ToolObservation } from '../main/agent-engine.types';
 import {
   getPendingPlanToolStep,
@@ -30,11 +28,10 @@ export function isTurnReadinessEnabled(): boolean {
   return raw !== '0' && raw !== 'false';
 }
 
-export type EvaluateTurnReadinessInput = {
+export type EvaluateExecutionReadinessInput = {
   userMessage: string;
   taskPlan?: TaskPlanSnapshot | null;
   scopedTools: PlanScopedTool[];
-  smalltalkHints: string[];
   skillConfig?: unknown;
   resumeFromWriteConfirm?: boolean;
   llmService?: LlmService;
@@ -55,8 +52,9 @@ function respond(
   return { status: 'respond', reason, request };
 }
 
-export async function evaluateTurnReadiness(
-  input: EvaluateTurnReadinessInput,
+/** Plan 之后：判断当前 gather 步是否具备执行条件（槽位 / observation），不做对话意图判断。 */
+export async function evaluateExecutionReadiness(
+  input: EvaluateExecutionReadinessInput,
 ): Promise<TurnReadinessResult> {
   if (!isTurnReadinessEnabled()) {
     return ready('disabled');
@@ -66,23 +64,6 @@ export async function evaluateTurnReadiness(
   }
 
   const userMessage = input.userMessage.trim();
-  if (!isUserIntentClear(userMessage)) {
-    return respond('message_unclear', {
-      kind: 'message_unclear',
-      userMessage,
-      payload: { readinessReason: 'message_unclear' },
-    });
-  }
-
-  const intentKind = detectIntentKind(userMessage, input.smalltalkHints);
-  if (intentKind === 'smalltalk') {
-    return respond('smalltalk', {
-      kind: 'smalltalk',
-      userMessage,
-      payload: { readinessReason: 'smalltalk' },
-    });
-  }
-
   const plan = input.taskPlan;
   if (!plan || isPendingPlanAnswerStep(plan)) {
     return ready('plan_answer_or_missing');

@@ -29,6 +29,7 @@
     "db:publish-prompts": "ts-node prisma/scripts/publish-prompt-templates.ts",
     "db:upsert-embedding": "ts-node prisma/scripts/upsert-transformers-embedding.ts",
     "db:migrate:user-auth-model": "ts-node prisma/scripts/migrate-user-role-to-new-model.ts",
+    "db:backfill-app-client-auth": "ts-node prisma/scripts/backfill-app-client-auth-from-env.ts",
     "db:delete-public-buyer-tools": "ts-node prisma/scripts/delete-public-buyer-tools.ts",
     "db:delete-obsolete-prompts": "ts-node prisma/scripts/delete-obsolete-prompt-templates.ts"
   },

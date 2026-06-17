@@ -9,9 +9,25 @@ import { AppModule } from './app.module';
 import { ReqInterceptor } from './interceptor/req.interceptor';
 import { HttpExceptionFilter } from './exception/http.exception';
 import { PrismaService } from './prisma/prisma.service';
+import {
+  applyClientPublicCors,
+  handleClientPublicCorsPreflight,
+  shouldApplyClientPublicCors,
+} from './middleware/client-public-cors.util';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.use((req: Request, res: Response, next) => {
+    if (!shouldApplyClientPublicCors(req)) {
+      next();
+      return;
+    }
+    applyClientPublicCors(req, res);
+    if (handleClientPublicCorsPreflight(req, res)) {
+      return;
+    }
+    next();
+  });
   const prisma = app.get(PrismaService);
   try {
     await prisma.$connect();
@@ -39,47 +55,10 @@ async function bootstrap() {
       { path: 'user/password-reminder', method: RequestMethod.GET },
       { path: 'chat/(.*)', method: RequestMethod.ALL },
       { path: 'app-client/auth', method: RequestMethod.POST },
+      { path: 'agent/client/available', method: RequestMethod.GET },
+      { path: 'agent/:agentId/skills/client', method: RequestMethod.GET},
     ],
   });
-  const cPublicPaths = ['/user/login', '/user/password-reminder', '/app-client/auth'];
-  app.use((req: Request, res: Response, next) => {
-    const isCPublicPath = cPublicPaths.some(
-      (path) => req.path === path || req.path.startsWith(`${path}/`),
-    );
-    if (!isCPublicPath) {
-      next();
-      return;
-    }
-    const origin = req.headers.origin;
-    if (typeof origin === 'string' && origin.length > 0) {
-      res.header('Access-Control-Allow-Origin', origin);
-      res.header('Vary', 'Origin');
-    } else {
-      res.header('Access-Control-Allow-Origin', '*');
-    }
-    res.header(
-      'Access-Control-Allow-Headers',
-      [
-        'Content-Type',
-        'Authorization',
-        'X-App-Dsn',
-        'X-Account-Token',
-        'Accept',
-        'Accept-Language',
-      ].join(', '),
-    );
-    res.header(
-      'Access-Control-Allow-Methods',
-      'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    );
-    res.header('Access-Control-Allow-Credentials', 'true');
-    if (req.method === 'OPTIONS') {
-      res.sendStatus(204);
-      return;
-    }
-    next();
-  });
-
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Agent Server API')
     .setDescription('API docs for Agent Server')

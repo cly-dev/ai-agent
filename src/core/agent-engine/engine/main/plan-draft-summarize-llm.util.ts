@@ -76,6 +76,7 @@ export async function invokePlanPresentFromCompose(input: {
   scope: { appClientId: number; agentId: number };
   userContext: string;
   logWarn?: (message: string) => void;
+  onExplainDelta?: (delta: string) => void;
 }): Promise<string> {
   const messages: LlmChatMessage[] = [...input.agentPrompts];
   messages.push({
@@ -90,7 +91,16 @@ export async function invokePlanPresentFromCompose(input: {
     content: input.userContext,
   });
   try {
-    const result = await input.llmService.chat({ messages, tools: [] });
+    const result = await input.llmService.streamChat(
+      { messages, tools: [] },
+      {
+        onDelta: (delta) => {
+          if (delta.contentDelta) {
+            input.onExplainDelta?.(delta.contentDelta);
+          }
+        },
+      },
+    );
     return extractLlmUserFacingText(result.content ?? '').trim();
   } catch (error) {
     input.logWarn?.(

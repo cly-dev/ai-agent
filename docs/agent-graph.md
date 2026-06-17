@@ -19,7 +19,7 @@
 START
   → intent          意图 + 工具收窄
   → plan            外层任务计划（每 turn 一次）
-  → readiness       回合就绪（槽位 / 澄清 / observation 已满足）
+  → readiness       执行就绪（gather 槽位 / observation；不做对话意图）
   → llm             ReAct · Reason（工具决策）
   → resultCheck     ReAct · 规则收拢 + Plan advance（L2/L3）
   → tools           ReAct · Act（HTTP / 分页 gather）
@@ -34,6 +34,7 @@ START
 | `AgentLangGraphRunInput` | START 后第一跳 | 说明 |
 |--------------------------|----------------|------|
 | 默认 | `intent` | 完整冷启动 |
+| `requestedSkillId` | `plan` | 跳过 intent；scopedTools 仅 Skill 绑定 |
 | `resumeFromLlm` | `llm` | 跳过 intent/plan/readiness |
 | `resumeFromWriteConfirm` | `resultCheck` 或 `summarize` | 写确认通过后接续 Plan |
 
@@ -164,8 +165,8 @@ Skill **无独立节点**；外层 `kind=skill` 在 `expandPendingSkillStepIfNee
 
 | 项 | 说明 |
 |----|------|
-| **职责** | CP1–CP7：smalltalk、消息质量、gather 步 businessFields 槽位（CP7 LLM）等 |
-| **进入** | `applySkillFrameContext`；`evaluateTurnReadiness` |
+| **职责** | CP1–CP5：gather 步 businessFields 槽位（CP5 LLM）、observation 已满足等；**不**含 smalltalk / 消息清晰度 |
+| **进入** | `applySkillFrameContext`；`evaluateExecutionReadiness` |
 | **离开** | `respond` → `pendingRespond`；否则仅附加 readiness step（**L1 在 `llm` 入口**） |
 | **steps** | `readiness` |
 | **下一跳** | `finished` / `pendingRespond` → `summarize`；否则 → `llm` |

@@ -66,6 +66,9 @@
 {
   "config": {
     "deliverable": "mutation",
+    "hostBridge": {
+      "reason": "review_reply_submitted"
+    },
     "workflow": {
       "steps": [
         {

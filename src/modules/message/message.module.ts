@@ -5,6 +5,7 @@ import { LlmModule } from '../../core/llm/llm.module';
 import { PromptModule } from '../../core/prompt/prompt.module';
 import { ChatModule } from '../chat/chat.module';
 import { MessageController } from './message.controller';
+import { MessageFeedbackService } from './message-feedback.service';
 import { MessageService } from './message.service';
 
 @Module({
@@ -15,7 +16,7 @@ import { MessageService } from './message.service';
     PromptModule,
     AgentEngineModule,
   ],
-  providers: [MessageService],
+  providers: [MessageService, MessageFeedbackService],
   controllers: [MessageController],
   exports: [MessageService],
 })

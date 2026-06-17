@@ -19,6 +19,7 @@ Role
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/agent/:agentId/app-client/:appClientId/skills` | 创建 Skill |
+| GET | `/agent/:agentId/skills/client` | C 端：按 Agent + 用户角色返回可见 Skill 摘要（见 [agent-skill-client-api-frontend.md](./agent-skill-client-api-frontend.md)） |
 | GET | `/agent/:agentId/app-client/:appClientId/skills` | Agent 下分页列表 |
 | GET | `/skill/by-app-client/:appClientId?agentId=` | App 维度汇总列表 |
 | GET | `/skill/:skillId` | 详情 |

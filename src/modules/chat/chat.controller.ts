@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, MessageEvent, Param, Post, Req, Sse, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, MessageEvent, Param, Post, Query, Req, Sse, UnauthorizedException, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -18,7 +18,9 @@ import { ChatService } from './chat.service';
 import { CreateChatDto } from './dto/create-chat.dto';
 import { DeleteChatResponseDto } from './dto/delete-chat-response.dto';
 import { PrepareChatResponseDto } from './dto/prepare-chat-response.dto';
+import { QueryChatListDto } from './dto/query-chat-list.dto';
 import { SessionPrepareService } from './session-prepare.service';
+import { MESSAGE_FEEDBACK_DOWN_REASON_TAGS } from '../message/message-feedback.constants';
 
 @ApiTags('chat')
 @Controller('chat')
@@ -66,14 +68,30 @@ export class ChatController {
     );
   }
 
+  @Get('feedback/down-reason-tags')
+  @ApiOperation({
+    summary: 'C 端：点踩原因标签列表',
+    description: '供点踩弹窗渲染；提交 upsert 时传 key 数组',
+  })
+  @ApiResponse({ status: 200, description: '查询成功' })
+  listMessageFeedbackDownReasonTags() {
+    return { items: [...MESSAGE_FEEDBACK_DOWN_REASON_TAGS] };
+  }
+
   @Get()
   @ApiOperation({
-    summary: '当前用户在当前 DSN 对应 AppClient 下的会话列表',
+    summary: '当前用户在当前 DSN 对应 AppClient 下的会话列表（分页）',
+    description:
+      '查询参数 page（默认 1）、size（默认 20，最大 100）。返回 items / total / page / pageSize / totalPages。',
   })
-  findAll(@Req() req: Request & { user?: { userId?: number } }) {
+  findAll(
+    @Req() req: Request & { user?: { userId?: number } },
+    @Query() query: QueryChatListDto,
+  ) {
     return this.chatService.findAllForUser(
       this.userId(req),
       this.appClientId(req),
+      query,
     );
   }
 
@@ -95,16 +113,22 @@ export class ChatController {
   }
 
   @Get(':sessionId')
-  @ApiOperation({ summary: '按 sessionId 获取会话详情（含历史消息）' })
+  @ApiOperation({
+    summary: '按 sessionId 获取会话详情（消息分页）',
+    description:
+      '查询参数 page（默认 1）、size（默认 20，最大 100）。messages 为分页对象；page=1 为最新一页，items 内按时间升序。',
+  })
   @ApiParam({ name: 'sessionId', type: String })
   findOne(
     @Req() req: Request & { user?: { userId?: number } },
     @Param('sessionId') sessionId: string,
+    @Query() query: QueryChatListDto,
   ) {
     return this.chatService.findOneForUser(
       this.normalizeSessionId(sessionId),
       this.userId(req),
       this.appClientId(req),
+      query,
     );
   }
 
@@ -147,7 +171,7 @@ export class ChatController {
             uid,
             aid,
           );
-          inner = this.chatEvents.observeSession(session.id).subscribe({
+          inner = this.chatEvents.observeSession(session.id, uid).subscribe({
             next: (evt) => {
               subscriber.next({
                 type: evt.event,

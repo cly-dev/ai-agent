@@ -1,5 +1,6 @@
 import type { ToolLevel } from '../../../generated/prisma/client';
 import type { TaskPlanSnapshot } from '../../core/agent-engine/engine/main/task-plan.types';
+import type { AgentChatPageContext } from '../../core/host-bridge/page-context.types';
 
 export type PendingWriteToolCall = {
   name: string;
@@ -44,6 +45,10 @@ export type PendingWriteResumeContext = {
   taskPlan?: TaskPlanSnapshot | null;
   /** 写确认挂起前本 turn 已消耗的分页 HTTP 次数。 */
   pagedListHttpUsed?: number;
+  /** gate 时 primary run artifact 快照（present 草稿，不含 gate 文案）。 */
+  confirmedPreviewSerialized?: string | null;
+  /** 写确认挂起时的宿主页面上下文（续跑 host_action 镜像）。 */
+  pageContext?: AgentChatPageContext | null;
 };
 
 export type PendingWriteConfirmationSnapshot = {

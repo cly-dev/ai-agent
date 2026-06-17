@@ -14,6 +14,7 @@ import { RunAssistantArtifactStore } from './engine/main/run-assistant-artifact.
 import { RunAssistantMessagePersistService } from './engine/main/run-assistant-message-persist.service';
 import { AgentSessionScopeService } from './engine/main/agent-session-scope.service';
 import { SessionToolPrepareCacheService } from './engine/main/session-tool-prepare-cache.service';
+import { RequestedSkillRunService } from './engine/main/requested-skill-run.service';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { SessionToolPrepareCacheService } from './engine/main/session-tool-prepa
     AgentSessionScopeService,
     SessionToolPrepareCacheService,
     AgentRunLifecycleService,
+    RequestedSkillRunService,
     AgentLangGraphRunner,
     AgentEngineService,
   ],

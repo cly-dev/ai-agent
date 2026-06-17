@@ -1,5 +1,7 @@
 /** 会话 GOA 记忆类型（DB 权威；与 Redis session context 解耦）。 */
 
+import type { AgentChatPageContext } from '../../host-bridge/page-context.types';
+
 export type TurnEpisodeStatus = 'task' | 'smalltalk' | 'failed';
 
 export type TurnEpisode = {
@@ -137,6 +139,8 @@ export type SessionGoaPayload = {
   activeTask: ActiveTask | null;
   /** 会话级实体（如 xShopId），非冗余 working memory。 */
   entities: Record<string, unknown>;
+  /** 最近一次用户消息附带的宿主页面上下文（追问未带时回落）。 */
+  lastPageContext?: AgentChatPageContext | null;
   updatedAt: string;
 };
 
@@ -200,6 +204,7 @@ export function normalizeSessionGoaPayload(
     sessionObservationLedger: Array.isArray(payload.sessionObservationLedger)
       ? payload.sessionObservationLedger
       : [],
+    lastPageContext: payload.lastPageContext ?? null,
   };
 }
 

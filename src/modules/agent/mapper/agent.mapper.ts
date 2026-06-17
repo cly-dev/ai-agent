@@ -4,7 +4,7 @@ import type {
   AgentToolBindingItem,
   AgentWithToolsResponse,
   AgentWithToolsRow,
-} from './agent.types';
+} from '../types/agent.types';
 
 export function toAgentLinkedToolResponse(
   tool: AgentLinkedToolRow,

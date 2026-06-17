@@ -1,10 +1,9 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import './core/env/load-env';
 import { AdminPrefixJwtGuard } from './auth/admin-prefix-jwt.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ChatPublicCorsMiddleware } from './middleware/chat-public-cors.middleware';
 import { LlmModule } from './core/llm/llm.module';
 import { MemoryModule } from './core/memory/memory.module';
 import { PromptModule } from './core/prompt/prompt.module';
@@ -14,9 +13,8 @@ import { AgentModule } from './modules/agent/agent.module';
 import { AppClientModule } from './modules/app-client/app-client.module';
 import { IntegrationModule } from './modules/integration/integration.module';
 import { ChatModule } from './modules/chat/chat.module';
-import { ChatController } from './modules/chat/chat.controller';
+import { MessageFeedbackModule } from './modules/message-feedback/message-feedback.module';
 import { MessageModule } from './modules/message/message.module';
-import { MessageController } from './modules/message/message.controller';
 import { SkillModule } from './modules/skill/skill.module';
 import { ToolModule } from './modules/tool/tool.module';
 import { MessageTurnModule } from './modules/message-turn/message-turn.module';
@@ -49,6 +47,7 @@ import { RoleModule } from './modules/role/role.module';
     AgentModule,
     ChatModule,
     MessageModule,
+    MessageFeedbackModule,
     ToolModule,
     MessageTurnModule,
     AgentRunModule,
@@ -58,14 +57,7 @@ import { RoleModule } from './modules/role/role.module';
   controllers: [AppController],
   providers: [
     AppService,
-    ChatPublicCorsMiddleware,
     { provide: APP_GUARD, useClass: AdminPrefixJwtGuard },
   ],
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    consumer
-      .apply(ChatPublicCorsMiddleware)
-      .forRoutes(ChatController, MessageController);
-  }
-}
+export class AppModule {}

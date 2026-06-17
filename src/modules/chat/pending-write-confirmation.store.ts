@@ -106,6 +106,7 @@ export class PendingWriteConfirmationStore {
         resumeContext: {
           ...parsed.resumeContext,
           hasExpandedOnce: parsed.resumeContext.hasExpandedOnce === true,
+          pageContext: parsed.resumeContext.pageContext ?? null,
         },
       };
     } catch {

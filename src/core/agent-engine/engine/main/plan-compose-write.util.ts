@@ -1,6 +1,6 @@
 import type { GraphToolCall, ToolObservation } from './agent-engine.types';
 import type { AgentEngineTool } from './agent-engine.types';
-import { enrichWriteToolArgumentsFromReadObservations } from '../../../tool-engine/write-tool-draft-injection.util';
+import { normalizeWriteToolArguments } from '../../../tool-engine/write-tool-draft-injection.util';
 import { isMutationTool } from '../tool/tool-execution-status.util';
 import {
   filterScopedToolsForPlanStep,
@@ -8,6 +8,7 @@ import {
   PLAN_PRESENT_STEP_ID,
 } from './task-plan.util';
 import type { TaskPlanSnapshot } from './task-plan.types';
+import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
 
 /** Plan compose_write 步产出：机器层 write 参数（尚未执行 HTTP）。 */
 export const PLAN_COMPOSE_WRITE_OBSERVATION_NAME = 'plan_compose_write';
@@ -61,6 +62,33 @@ export function resolveLatestPlanComposeWrite(
   return null;
 }
 
+/**
+ * 将 present / prose supplement 等机器层变更写回 plan_compose_write，供 gate 与 write fallback 共用。
+ */
+export function patchLatestPlanComposeWriteObservation(
+  observations: ToolObservation[],
+  machineLayer: PlanComposeWriteObservationOutput,
+): { observations: ToolObservation[]; patched: boolean } {
+  for (let i = observations.length - 1; i >= 0; i -= 1) {
+    const row = observations[i];
+    if (row?.name !== PLAN_COMPOSE_WRITE_OBSERVATION_NAME) {
+      continue;
+    }
+    const output = row.output as PlanComposeWriteObservationOutput;
+    const next = [...observations];
+    next[i] = {
+      ...row,
+      output: {
+        tool: machineLayer.tool.trim() || output.tool,
+        arguments: machineLayer.arguments,
+        planStepId: machineLayer.planStepId ?? output.planStepId ?? null,
+      } satisfies PlanComposeWriteObservationOutput,
+    };
+    return { observations: next, patched: true };
+  }
+  return { observations, patched: false };
+}
+
 /** compose_write 步：从 LLM tool_calls 中选取允许的写工具调用。 */
 export function pickComposeWriteToolCall(
   toolCalls: GraphToolCall[],
@@ -97,17 +125,21 @@ export function prepareComposeWriteToolCall(input: {
   writeTool: AgentEngineTool;
   observations: ToolObservation[];
   scopedTools: AgentEngineTool[];
+  pageContext?: AgentChatPageContext | null;
 }): GraphToolCall {
   const isReadToolObservation = buildReadToolObservationMatcher(
     input.scopedTools,
   );
   return {
     name: input.toolCall.name,
-    arguments: enrichWriteToolArgumentsFromReadObservations(
+    arguments: normalizeWriteToolArguments(
       input.toolCall.arguments,
       input.writeTool,
       input.observations,
-      { isReadToolObservation },
+      {
+        isReadToolObservation,
+        pageContext: input.pageContext ?? null,
+      },
     ),
   };
 }

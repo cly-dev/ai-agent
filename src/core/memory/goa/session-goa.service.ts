@@ -15,6 +15,11 @@ import {
   resolvePersistedActiveTask,
 } from './session-goa-projection.util';
 import { buildFullSessionGoaPromptMessages } from './session-goa-full-projection.util';
+import {
+  coalescePageContext,
+  type AgentChatPageContext,
+} from '../../host-bridge';
+import { parsePageContextFromMessageFields } from '../../host-bridge/parse-page-context.util';
 import { SessionGoaStore } from './session-goa.store';
 import {
   isActiveTaskChatResumable,
@@ -165,6 +170,43 @@ export class SessionGoaService {
     payload: SessionGoaPayload | null,
   ): Array<{ name: string; output: unknown }> {
     return mergePriorToolObservationsFromGoa(payload);
+  }
+
+  /**
+   * 同步宿主页面上下文：新 pageContext 写入 GOA；未带时回落 lastPageContext。
+   */
+  async syncHostPageContext(
+    sessionId: string,
+    incoming: AgentChatPageContext | null | undefined,
+  ): Promise<AgentChatPageContext | null> {
+    const normalizedIncoming = incoming
+      ? parsePageContextFromMessageFields({ pageContext: incoming })
+      : null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const base = await this.goaStore.get(sessionId);
+      const effective = coalescePageContext(
+        normalizedIncoming,
+        base.lastPageContext,
+      );
+      if (!normalizedIncoming) {
+        return effective;
+      }
+      const next: SessionGoaPayload = {
+        ...base,
+        lastPageContext: normalizedIncoming,
+        updatedAt: new Date().toISOString(),
+      };
+      const saved = await this.goaStore.saveIfUnchanged(
+        sessionId,
+        next,
+        base.updatedAt,
+      );
+      if (saved) {
+        return normalizedIncoming;
+      }
+    }
+    const base = await this.goaStore.get(sessionId);
+    return coalescePageContext(normalizedIncoming, base.lastPageContext);
   }
 
   async abandonActiveTask(sessionId: string): Promise<void> {

@@ -12,7 +12,7 @@
 用户发送消息后，前端应：
 
 1. **先建立 SSE**（或保持长连接），订阅 `sessionId` 对应会话。
-2. 监听 4 类事件：`think` | `message` | `complete` | `error`。
+2. 监听 5 类事件：`think` | `message` | `host_action` | `complete` | `error`。
 3. 助手回复以 **Message Blocks** 呈现；同一条助手消息在 UI 上对应一个「流式消息槽」，按 `runId` 聚合。
 4. **本轮结束只看 `complete`**，不要等待 `action: final`（协议已废弃，服务端不再推送）。
 
@@ -24,7 +24,10 @@ SSE think ─────────────► 思考区（全文覆盖，
 SSE message (stream) ───► 正文：delta 追加 / full 占位或兜底全文
 SSE message (patch) ───► 按 replaceId 替换 loading
 SSE complete ───────────► 本轮结束，可落库对齐、关闭 loading
+SSE host_action ────────► 宿主页面同步（mutation 成功后，在 complete 之前）
 ```
+
+> 页面上下文与 `host_action` 对接指南：[host-page-context-host-action-frontend.md](./host-page-context-host-action-frontend.md)（服务端摘要：[host-bridge-frontend.md](./host-bridge-frontend.md)）。
 
 ---
 
@@ -44,13 +47,14 @@ const es = new EventSourcePolyfill(url, {
 
 es.addEventListener('think', (e) => onThink(JSON.parse(e.data)));
 es.addEventListener('message', (e) => onMessage(JSON.parse(e.data)));
+es.addEventListener('host_action', (e) => onHostAction(JSON.parse(e.data)));
 es.addEventListener('complete', (e) => onComplete(JSON.parse(e.data)));
 es.addEventListener('error', (e) => onError(JSON.parse(e.data)));
 ```
 
 > 原生 `EventSource` 无法带自定义 Header，需 polyfill（如 `@microsoft/fetch-event-source`）或由网关注入 Cookie。
 
-**重连**：服务端会重放最近若干条 `message`（最多 8 条）。同一会话请复用同一消息槽，按 `seq` 去重，避免重复渲染。
+**重连**：服务端会重放最近若干条可重放的 `message`（最多 8 条）。**`confirmation_required` / `write_confirmation_cancelled` 不会进入重放缓冲**；若 Redis 中仍有 pending 写确认，连接 SSE 时会 **从 pending 存储重新下发一条** `confirmation_required`。同一会话请复用同一消息槽，按 `seq` 去重，避免重复渲染。
 
 ---
 
@@ -87,7 +91,27 @@ es.addEventListener('error', (e) => onError(JSON.parse(e.data)));
 
 ---
 
-### 3.3 `complete`
+### 3.3 `host_action`
+
+mutation 工具 HTTP 成功且 run 结束时，在 `complete` **之前**推送（需入站 `pageContext.page`）。语义为**操作完成**，非刷新指令：
+
+```json
+{
+  "action": "host_action",
+  "status": "completed",
+  "scope": "review-detail",
+  "entity": { "type": "review", "id": "123" },
+  "runId": 42,
+  "turnId": 7,
+  "reason": "agent_mutation_success"
+}
+```
+
+宿主通过 `registerHostAction(scope, handler)` 处理；收到 `status: 'completed'` 后自行决定 UI 反应。详见 [host-page-context-host-action-frontend.md](./host-page-context-host-action-frontend.md)。
+
+---
+
+### 3.4 `complete`
 
 ```json
 {
@@ -102,7 +126,7 @@ es.addEventListener('error', (e) => onError(JSON.parse(e.data)));
 
 若曾收到 `stream.mode: 'full'` 的权威 blocks，应以该条覆盖 delta 拼接结果；落库内容与该权威快照一致。
 
-写确认暂停（primary `complete`）：落库 **draft summarize 的 blocks**（artifact `phase=draft`，与此前 SSE 草稿一致）；「请确认是否继续」仅走 `confirmation_required`，不入库 blocks。
+写确认暂停（primary `complete`）：落库 **present 草稿**（artifact `phase=draft`）；gate 仅 `confirmation_required` SSE。worker 终稿以 gate 时固化的 **confirmedPreviewSerialized** 为正文，追加执行状态块；SSE `stream.mode=full` 与落库一致（无 loading 占位）。
 
 ---
 
@@ -332,6 +356,7 @@ function onComplete(slot: Slot) {
 | 同一段正文出现两次 | 既拼接了 `delta` 又应用了重复的 `stream.full` 全文 | 已有 delta 时忽略等价的 `stream.full`；以 `complete` 收束 |
 | 表格闪一下又变空白 | `patch` 前未渲染 `loading`，或 `replaceId` 不匹配 | 严格用 `loading.id === replaceId` 替换 |
 | 重连后重复一条 | 重放缓冲 + 本地未去重 | 用 `stream.seq` 或事件指纹去重 |
+| 打开会话又弹写确认 | 旧版曾重放 `confirmation_required` | 已修复：仅 pending 存在时下发；确认后勿再弹 |
 | 收不到用户消息 SSE | 产品已关闭 | 用户消息靠 POST 响应或拉列表 |
 | `think` 内容乱序 | 误把 think 当增量 | think 始终 **覆盖** `content` |
 

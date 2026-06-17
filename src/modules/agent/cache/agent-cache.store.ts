@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { agentRuntimeKey } from '../../core/memory/redis/redis-keys';
-import { RedisConnectionService } from '../../core/memory/redis/redis-connection.service';
+import { agentRuntimeKey } from '../../../core/memory/redis/redis-keys';
+import { RedisConnectionService } from '../../../core/memory/redis/redis-connection.service';
 import { getAgentRuntimeCacheTtlSec } from './agent-cache.constants';
 import type { AgentRuntimeSnapshot } from './agent-runtime.types';
 

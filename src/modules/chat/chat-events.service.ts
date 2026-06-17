@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, Subscription } from 'rxjs';
+import type { HostActionSsePayload } from '../../core/host-bridge/host-action.types';
 import type {
   MessageBlock,
   MessageBlockPatch,
 } from '../../core/agent-engine/engine/message/message-blocks.types';
+import { buildWriteConfirmationUserMessage } from '../../core/agent-engine/engine/write-confirmation-gate.util';
+import { PendingWriteConfirmationStore } from './pending-write-confirmation.store';
+import type { PendingWriteConfirmationSnapshot } from './pending-write-confirmation.types';
 
 /** SSE 事件：think-思考，message-结果/信息，complete-完成，error-错误 */
 export type ChatSseEvent =
@@ -54,6 +58,10 @@ export type ChatSseEvent =
         | Record<string, unknown>;
     }
   | { event: 'complete'; payload: Record<string, unknown> }
+  | {
+      event: 'host_action';
+      payload: HostActionSsePayload;
+    }
   | { event: 'error'; payload: { message: string; code?: string } };
 
 @Injectable()
@@ -64,29 +72,38 @@ export class ChatEventsService {
   /** 晚连接时重放最近事件（条数有限） */
   private readonly replayBuffers = new Map<string, ChatSseEvent[]>();
 
-  observeSession(sessionId: string): Observable<ChatSseEvent> {
+  constructor(
+    private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
+  ) {}
+
+  observeSession(sessionId: string, userId: number): Observable<ChatSseEvent> {
     const normalized = this.normalizeSessionId(sessionId);
     const subject = this.getSubject(normalized);
     return new Observable<ChatSseEvent>((subscriber) => {
-      for (const evt of this.replayBuffers.get(normalized) ?? []) {
-        if (evt.event === 'error') {
-          continue;
-        }
+      let inner: Subscription | null = null;
+      for (const evt of this.getReplayEvents(normalized)) {
         subscriber.next(evt);
       }
-      const inner = subject.subscribe({
-        next: (evt) => subscriber.next(evt),
-        error: (err: unknown) => subscriber.error(err),
-        complete: () => subscriber.complete(),
-      });
-      return () => inner.unsubscribe();
+      void this.pendingWriteConfirmationStore
+        .get(normalized, userId)
+        .then((pending) => {
+          if (pending) {
+            subscriber.next(this.buildPendingWriteConfirmationEvent(pending));
+          }
+          inner = subject.subscribe({
+            next: (evt) => subscriber.next(evt),
+            error: (err: unknown) => subscriber.error(err),
+            complete: () => subscriber.complete(),
+          });
+        })
+        .catch((err: unknown) => subscriber.error(err));
+      return () => inner?.unsubscribe();
     });
   }
 
   emit(sessionId: string, evt: ChatSseEvent): void {
     const normalized = this.normalizeSessionId(sessionId);
-    // error 为瞬时信号，不重放，避免打开/重连会话时展示上一轮失败
-    if (evt.event !== 'error') {
+    if (this.shouldBufferForReplay(evt)) {
       const buffer = this.replayBuffers.get(normalized) ?? [];
       buffer.push(evt);
       while (buffer.length > ChatEventsService.REPLAY_BUFFER) {
@@ -94,7 +111,28 @@ export class ChatEventsService {
       }
       this.replayBuffers.set(normalized, buffer);
     }
+    if (evt.event === 'complete' && evt.payload.source === 'agent-run') {
+      const runId = evt.payload.runId;
+      if (typeof runId === 'number') {
+        this.purgeWriteConfirmationGate(normalized, runId);
+      }
+    }
     this.getSubject(normalized).next(evt);
+  }
+
+  /** 确认/取消后移除缓冲区内可能残留的门闩事件（兼容旧版本曾写入缓冲区的数据）。 */
+  purgeWriteConfirmationGate(sessionId: string, runId: number): void {
+    const normalized = this.normalizeSessionId(sessionId);
+    const buffer = this.replayBuffers.get(normalized);
+    if (!buffer || buffer.length === 0) {
+      return;
+    }
+    const next = buffer.filter(
+      (evt) => !this.isWriteConfirmationGateEventForRun(evt, runId),
+    );
+    if (next.length !== buffer.length) {
+      this.replayBuffers.set(normalized, next);
+    }
   }
 
   closeSession(sessionId: string): void {
@@ -105,6 +143,63 @@ export class ChatEventsService {
       this.subjects.delete(normalized);
     }
     this.replayBuffers.delete(normalized);
+  }
+
+  private getReplayEvents(sessionId: string): ChatSseEvent[] {
+    const buffer = this.replayBuffers.get(sessionId) ?? [];
+    return buffer.filter((evt) => this.shouldReplayOnConnect(evt));
+  }
+
+  private shouldBufferForReplay(evt: ChatSseEvent): boolean {
+    return this.shouldReplayOnConnect(evt);
+  }
+
+  private shouldReplayOnConnect(evt: ChatSseEvent): boolean {
+    if (evt.event === 'error') {
+      return false;
+    }
+    if (evt.event === 'message' && evt.payload.source === 'agent-run') {
+      const action = evt.payload.action;
+      if (
+        action === 'confirmation_required' ||
+        action === 'write_confirmation_cancelled'
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private isWriteConfirmationGateEventForRun(
+    evt: ChatSseEvent,
+    runId: number,
+  ): boolean {
+    if (evt.event !== 'message' || evt.payload.source !== 'agent-run') {
+      return false;
+    }
+    const action = evt.payload.action;
+    if (
+      action !== 'confirmation_required' &&
+      action !== 'write_confirmation_cancelled'
+    ) {
+      return false;
+    }
+    return evt.payload.runId === runId;
+  }
+
+  private buildPendingWriteConfirmationEvent(
+    pending: PendingWriteConfirmationSnapshot,
+  ): ChatSseEvent {
+    return {
+      event: 'message',
+      payload: {
+        source: 'agent-run',
+        action: 'confirmation_required',
+        runId: pending.runId,
+        turnId: pending.turnId,
+        message: buildWriteConfirmationUserMessage(),
+      },
+    };
   }
 
   private normalizeSessionId(sessionId: string): string {
@@ -120,5 +215,4 @@ export class ChatEventsService {
     }
     return sub;
   }
-
 }

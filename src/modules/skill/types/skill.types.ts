@@ -1,5 +1,5 @@
-import type { Prisma, ToolLevel } from '../../../generated/prisma/client';
-import { AGENT_LINKED_TOOL_SELECT } from '../agent/agent.types';
+import type { Prisma, ToolLevel } from '../../../../generated/prisma/client';
+import { AGENT_LINKED_TOOL_SELECT } from '../../agent/types/agent.types';
 
 export const SKILL_APP_CLIENT_SELECT = {
   id: true,
@@ -94,4 +94,15 @@ export type SkillResponse = {
   skillTools: SkillToolBindingResponse[];
   toolCount: number;
   roleSkillCount: number;
+};
+
+/** C 端 Skill 列表项（不含 prompt / config）。 */
+export type SkillClientListItem = {
+  id: number;
+  name: string;
+  description: string | null;
+  capabilityKey: string | null;
+  riskLevel: ToolLevel;
+  requiresWriteConfirmation: boolean;
+  toolIds: number[];
 };

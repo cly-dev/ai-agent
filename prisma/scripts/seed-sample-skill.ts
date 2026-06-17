@@ -2,7 +2,7 @@ import '../../src/core/env/load-env';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { PrismaClient, ToolLevel } from '../../generated/prisma/client';
-import { resolveSkillRiskLevel } from '../../src/modules/skill/skill-risk.util';
+import { resolveSkillRiskLevel } from '../../src/modules/skill/util/skill-risk.util';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {

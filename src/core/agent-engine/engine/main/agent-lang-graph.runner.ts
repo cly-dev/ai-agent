@@ -78,6 +78,7 @@ import {
   buildRuleBasedMessageBlocks,
   ensureAtLeastOneTextBlock,
   filterLlmBlocksAvoidDuplicatingRule,
+  isStructuredMessageBlock,
   mergeSummarizeBlocksForStorage,
   messageBlocksToPlainText,
   sanitizeStoredFinalOutput,
@@ -85,6 +86,7 @@ import {
   textBlock,
   tryParseStoredMessageBlocks,
 } from '../message/message-blocks.util';
+import { emitAgentMessageSseDebug } from '../message/message-blocks-debug.util';
 import { isEmptyListToolObservation } from '../tool/tool-observation.util';
 import {
   allToolObservations,
@@ -106,6 +108,10 @@ import {
   isWriteConfirmResumeSummaryObservation,
   type WriteConfirmResumeSummaryPayload,
 } from '../write-confirm-resume-summary.util';
+import {
+  mergeConfirmedPreviewWithExecutionStatus,
+  parseConfirmedPreviewBlocks,
+} from '../write-confirm-resume-blocks.util';
 import { executeToolCallsRound } from './agent-tool-runtime.util';
 import { formatMapReduceFetchStatusNote } from '../gather/list-map-reduce.util';
 import { resolvePagedGatherAnalyzeObjective } from '../gather/plan-paged-gather.util';
@@ -176,6 +182,8 @@ import {
 } from './plan-sync.util';
 import type { TaskPlanAdvanceResult } from './task-plan.types';
 import { expandPendingSkillStepIfNeeded } from './skill-frame-expand.util';
+import { RequestedSkillRunService } from './requested-skill-run.service';
+import type { RequestedSkillRunContext } from './requested-skill-run.service';
 import { resolveSkillContextFromPlan } from './plan-stack.util';
 import { summarizeAvailableSkillsForOuterPlan } from './outer-plan-skills.util';
 import { resolveOuterPlan } from './task-plan-llm.util';
@@ -192,13 +200,15 @@ import {
   resolvePlanSubmitTextForWrite,
 } from './plan-draft-reply.util';
 import {
-  buildPlanPresentFromComposed,
+  buildPlanPresentUserLayer,
+  enrichPlanPresentDisplayForGate,
   isPlanDraftSummarizeBeforeWrite,
   isUsablePlanDraftUserFacingDraft,
   isUsablePlanMutationPreviewDraft,
+  resolveComposedWriteGateCall,
+  resolvePlanDraftReplyContentForGateObservation,
   resolvePendingWriteForPlanWriteStep,
-  tryPlanPresentComposeGateFallback,
-  type PlanDraftSummarizePendingWrite,
+  type PlanPresentSummarizeResult,
 } from './plan-draft-summarize.util';
 import {
   buildPlanDraftSummarizeUserContent,
@@ -211,7 +221,9 @@ import {
   pickComposeWriteToolCall,
   prepareComposeWriteToolCall,
   buildReadToolObservationMatcher,
+  patchLatestPlanComposeWriteObservation,
   resolveLatestPlanComposeWrite,
+  type PlanComposeWriteObservationOutput,
 } from './plan-compose-write.util';
 import { buildPlanSessionWorkingMemory } from './session-goa-plan-projection.util';
 import {
@@ -224,7 +236,7 @@ import {
 } from './summarize-memory-scope.util';
 import { shouldRouteToRespond } from '../turn/turn-graph.util';
 import {
-  evaluateTurnReadiness,
+  evaluateExecutionReadiness,
   summarizeSessionObservationsForReadiness,
 } from '../turn/turn-readiness.util';
 import {
@@ -241,7 +253,8 @@ import { fromStoredTaskPlan } from './session-graph-resume.util';
 import { serializeObservationsForPending } from '../agent-write-confirmation.util';
 import {
   extractSubmitTextFromDraftReply,
-  enrichWriteToolArgumentsFromReadObservations,
+  extractSubmitTextFromWriteArguments,
+  normalizeWriteToolArguments,
   injectDraftIntoWriteToolArguments,
   writeToolArgsContainSubmitText,
 } from '../../../tool-engine/write-tool-draft-injection.util';
@@ -273,6 +286,7 @@ export class AgentLangGraphRunner {
     private readonly chatEvents: ChatEventsService,
     private readonly sessionScope: AgentSessionScopeService,
     private readonly skillService: SkillService,
+    private readonly requestedSkillRun: RequestedSkillRunService,
   ) {}
 
   /** gate 阻断时向用户推送 draft 说明，并写入 artifact 供后续检测。 */
@@ -687,6 +701,17 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
     return sanitizeStoredFinalOutput(value);
   }
   async run(input: AgentLangGraphRunInput): Promise<AgentGraphState> {
+    const requestedSkillCtx: RequestedSkillRunContext | null =
+      input.requestedSkillId != null
+        ? await this.requestedSkillRun.loadRunContext({
+            agentId: input.agentId,
+            userId: input.userId,
+            appClientId: input.appClientId,
+            skillId: input.requestedSkillId,
+            allowedTools: input.tools,
+            toolBuildCtx: input.toolBuildCtx,
+          })
+        : null;
     const promptScope = {
       appClientId: input.appClientId,
       agentId: input.agentId,
@@ -713,6 +738,9 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
 
     /** 类目意图召回命中（任一 intent 步 matchedCategoryIds 非空）才进入 LLM 决策环。 */
     const isIntentMatched = (state: AgentGraphState): boolean => {
+      if (requestedSkillCtx) {
+        return true;
+      }
       if (allToolObservations(state).length > 0) {
         return true;
       }
@@ -858,6 +886,14 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
         default: () => undefined,
         reducer: (_state, update) => update,
       }),
+      confirmedPreviewSerialized: Annotation<string | null | undefined>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      pageContext: Annotation<AgentGraphState['pageContext']>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
     });
 
     const applySkillFrameContext = async (
@@ -877,6 +913,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
         agentId: input.agentId,
         userId: input.userId,
         appClientId: input.appClientId,
+        enforceRequestedSkill: requestedSkillCtx != null,
       });
       const skillCtx = resolveSkillContextFromPlan(expanded.plan);
       return {
@@ -956,7 +993,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
       if (state.taskPlan) {
         return state;
       }
-      if (sessionGoa) {
+      if (sessionGoa && !requestedSkillCtx) {
         const resumeDecision = await this.resumeGate.evaluate({
           sessionId: input.sessionId,
           appClientId: input.appClientId,
@@ -1068,7 +1105,9 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
       this.sse.emitThink(
         input.sessionId,
         input.runId,
-        '正在规划任务步骤…\n',
+        requestedSkillCtx
+          ? '正在按所选技能规划任务步骤…\n'
+          : '正在规划任务步骤…\n',
         'replace',
       );
 
@@ -1092,6 +1131,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
             state.scopedTools,
           ),
           sessionWorkingMemory,
+          requestedSkillId: input.requestedSkillId,
         },
       });
 
@@ -1104,6 +1144,8 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
           method: resolvedPlan.method,
           llmFallbackReason: resolvedPlan.llmFallbackReason ?? null,
           availableSkillIds: availableSkills.map((skill) => skill.id),
+          requestedSkillId: input.requestedSkillId ?? null,
+          requestedSkillSkipIntent: requestedSkillCtx != null,
           source: taskPlan.source,
           deliverable: taskPlan.deliverable,
           goal: taskPlan.goal,
@@ -1430,7 +1472,6 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
         scopedAllowedToolIds: scoped.scopedAllowedToolIds,
       };
     };
-
     // 节点2：主推理节点。基于当前的plan，选择工具-或者对结果进行观察。
     const llm = async (state: AgentGraphState): Promise<AgentGraphState> => {
       const prepared = await prepareReActPlanState(state);
@@ -1491,6 +1532,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
           observations: allToolObservations(graphStateForLlm),
           taskPlan: graphStateForLlm.taskPlan,
           scopedTools: graphStateForLlm.scopedTools,
+          pageContext: graphStateForLlm.pageContext ?? null,
         });
         if (composedPending) {
           this.logger.log(
@@ -1754,6 +1796,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
                     writeTool: writeToolDef,
                     observations: allToolObservations(graphStateForLlm),
                     scopedTools: graphStateForLlm.scopedTools,
+                    pageContext: graphStateForLlm.pageContext ?? null,
                   })
                 : composeCall;
             const composeObs = buildPlanComposeWriteObservation({
@@ -2011,11 +2054,14 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
         );
         return {
           ...call,
-          arguments: enrichWriteToolArgumentsFromReadObservations(
+          arguments: normalizeWriteToolArguments(
             call.arguments,
             def,
             allToolObservations(state),
-            { isReadToolObservation },
+            {
+              isReadToolObservation,
+              pageContext: state.pageContext ?? null,
+            },
           ),
         };
       });
@@ -2192,6 +2238,8 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
         }
 
         const message = buildWriteConfirmationUserMessage();
+        const confirmedPreviewSerialized =
+          this.assistantArtifact.peekSerialized(input.sessionId, input.runId);
         await this.pendingWriteConfirmationStore.set({
           runId: input.runId,
           turnId: input.turnId,
@@ -2217,24 +2265,36 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
             activeSkillRiskLevel: state.activeSkillRiskLevel ?? null,
             taskPlan,
             pagedListHttpUsed: pagedGatherHttpBudget.used,
+            confirmedPreviewSerialized,
+            pageContext: state.pageContext ?? null,
           },
           createdAt: new Date().toISOString(),
         });
+        const confirmationPayload = {
+          source: 'agent-run' as const,
+          action: 'confirmation_required' as const,
+          runId: input.runId,
+          turnId: input.turnId,
+          message,
+        };
         this.chatEvents.emit(input.sessionId, {
           event: 'message',
-          payload: {
-            source: 'agent-run',
-            action: 'confirmation_required',
-            runId: input.runId,
-            turnId: input.turnId,
-            message,
+          payload: confirmationPayload,
+        });
+        emitAgentMessageSseDebug({
+          tag: 'confirmation_required',
+          sessionId: input.sessionId,
+          runId: input.runId,
+          turnId: input.turnId,
+          ssePayload: confirmationPayload,
+          source: {
+            confirmedPreviewSerialized,
+            artifactBlocks: this.assistantArtifact.peekBlocks(
+              input.sessionId,
+              input.runId,
+            ),
           },
         });
-        this.assistantArtifact.appendBlocks(
-          input.sessionId,
-          input.runId,
-          [textBlock(message, 'markdown')],
-        );
         const gateStep: AgentRunStep = {
           step: nextRunStepNumber(nextSteps),
           type: 'write_confirmation_gate',
@@ -2612,6 +2672,9 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
       }
 
       if (outcome.route === 'expand_tools') {
+        const expandScopedTools = requestedSkillCtx
+          ? requestedSkillCtx.scoped.scopedTools
+          : input.tools;
         const expandedStep: AgentRunStep = {
           step: nextRunStepNumber(steps),
           type: 'intent',
@@ -2619,7 +2682,10 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
             fallback: true,
             fallbackReason: outcome.reason,
             toolsBeforeExpand: state.scopedTools.length,
-            toolsAfterExpand: input.tools.length,
+            toolsAfterExpand: expandScopedTools.length,
+            ...(requestedSkillCtx
+              ? { requestedSkillId: requestedSkillCtx.skillId, expandSkipped: true }
+              : {}),
           }),
         };
         steps = [...steps, expandedStep];
@@ -2628,13 +2694,17 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
           steps,
           AgentRunStatus.running,
         );
-        emitRouteThink('首轮结果信息不足，正在放宽工具范围再尝试一次…\n');
+        emitRouteThink(
+          requestedSkillCtx
+            ? '首轮结果信息不足，正在按所选技能重新规划…\n'
+            : '首轮结果信息不足，正在放宽工具范围再尝试一次…\n',
+        );
         const expandedSkills =
           await this.skillService.listAvailableSkillsForScopedTools({
             agentId: input.agentId,
             userId: input.userId,
             appClientId: input.appClientId,
-            scopedTools: input.tools,
+            scopedTools: expandScopedTools,
           });
         const expandedResolvedPlan = await resolveOuterPlan({
           llmService: this.llmService,
@@ -2642,32 +2712,35 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
           scope: promptScope,
           planInput: {
             userMessage: input.latestUserMessage,
-            scopedToolSummaries: summarizeScopedToolsForPlan(input.tools),
+            scopedToolSummaries: summarizeScopedToolsForPlan(expandScopedTools),
             availableSkills: summarizeAvailableSkillsForOuterPlan(
               expandedSkills,
-              input.tools,
+              expandScopedTools,
             ),
             sessionWorkingMemory: buildPlanSessionWorkingMemory({
               goa: sessionGoa,
-              scopedTools: input.tools,
+              scopedTools: expandScopedTools,
               runOwnedObservations: runOwnedToolObservations(state),
             }),
+            requestedSkillId: input.requestedSkillId,
           },
         });
-        const expandedBundle = this.toolEngine.buildLangChainTools(input.tools, {
-          ...input.toolBuildCtx,
-          allowedToolIds: input.tools.map((tool) => tool.id),
-        });
+        const expandedBundle = requestedSkillCtx
+          ? requestedSkillCtx.scoped.scopedToolBundle
+          : this.toolEngine.buildLangChainTools(expandScopedTools, {
+              ...input.toolBuildCtx,
+              allowedToolIds: expandScopedTools.map((tool) => tool.id),
+            });
         return applySkillFrameContext({
           ...state,
           steps,
           pendingToolCalls: [],
           pendingRespond: null,
           lastToolRoundMeta: null,
-          scopedTools: input.tools,
+          scopedTools: expandScopedTools,
           scopedLangChainTools: expandedBundle.tools,
           scopedToolBundle: expandedBundle,
-          scopedAllowedToolIds: input.tools.map((tool) => tool.id),
+          scopedAllowedToolIds: expandScopedTools.map((tool) => tool.id),
           hasExpandedOnce: true,
           taskPlan: expandedResolvedPlan.plan,
           skillApplied: false,
@@ -2813,7 +2886,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
       };
     };
 
-    // 节点：回合就绪 — 统一判断是否具备执行条件（含业务槽位澄清）。
+    // 节点：执行就绪 — 当前 plan gather 步业务参数 / observation 是否齐备（对话意图由 intent 负责）。
     const readiness = async (
       state: AgentGraphState,
     ): Promise<AgentGraphState> => {
@@ -2822,12 +2895,11 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
         return stateAfterSkill;
       }
       const stepNum = nextRunStepNumber(stateAfterSkill.steps);
-      const readinessResult = await evaluateTurnReadiness({
+      const readinessResult = await evaluateExecutionReadiness({
         userMessage: input.latestUserMessage,
         taskPlan: stateAfterSkill.taskPlan,
         scopedTools: stateAfterSkill.scopedTools,
         observationBuckets: planObservationBucketsFromState(stateAfterSkill),
-        smalltalkHints: loadSmallTalkHints(),
         skillConfig: stateAfterSkill.activeSkillConfig,
         resumeFromWriteConfirm: input.resumeFromWriteConfirm,
         llmService: this.llmService,
@@ -2887,15 +2959,18 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
             : summarizeObservation != null
               ? this.stringifyForPrompt(summarizeObservation.output)
               : undefined;
-        const summarized = await this.summarizeWriteConfirmResume(
+        const summarized = await this.summarizeWriteConfirmResume({
           payload,
+          mergedToolOutput: summarizeObservation?.output,
           toolResultsText,
-          input.promptMessages,
-          input.sessionId,
-          input.runId,
-          promptScope,
-          state.taskPlan,
-        );
+          confirmedPreviewSerialized: state.confirmedPreviewSerialized ?? null,
+          promptMessages: input.promptMessages,
+          sessionId: input.sessionId,
+          runId: input.runId,
+          turnId: input.turnId,
+          scope: promptScope,
+          taskPlan: state.taskPlan,
+        });
         const resolved = this.resolveAssistantOutputFromArtifact(
           input.sessionId,
           input.runId,
@@ -2999,9 +3074,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
       const draftBeforeWrite =
         mergedPlanObservation != null &&
         isPlanDraftSummarizeBeforeWrite(state.taskPlan);
-      let draftPendingWrite: (PlanDraftSummarizePendingWrite & {
-        serialized: string;
-      }) | null = null;
+      let draftPendingWrite: PlanPresentSummarizeResult | null = null;
       let summarized: string;
       if (draftBeforeWrite) {
         draftPendingWrite = await this.summarizePlanPresentWithPendingWrite(
@@ -3017,44 +3090,6 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
           state.taskPlan,
           state.scopedTools,
         );
-        if (
-          draftPendingWrite.pendingWriteToolCall == null &&
-          state.taskPlan
-        ) {
-          const enriched = tryPlanPresentComposeGateFallback({
-            pending: draftPendingWrite,
-            observations: allToolObservations(state),
-            taskPlan: finalizePlanAfterSummarize(state.taskPlan),
-            scopedTools: state.scopedTools,
-          });
-          if (enriched) {
-            let serialized = draftPendingWrite.serialized;
-            const enrichedWriteTool = state.scopedTools.find(
-              (tool) => tool.name === enriched.pendingWriteToolCall?.name,
-            );
-            if (
-              isUsablePlanMutationPreviewDraft(
-                enriched.draftReply,
-                enrichedWriteTool,
-              )
-            ) {
-              const turnId =
-                this.assistantArtifact.peekTurnId(input.sessionId, input.runId) ??
-                undefined;
-              const blocks = this.sse.publishAssistantBlocks(
-                input.sessionId,
-                input.runId,
-                [textBlock(enriched.draftReply, 'markdown')],
-                { turnId, phase: 'draft' },
-              );
-              serialized = serializeMessageBlocksForStorage(blocks);
-            }
-            draftPendingWrite = { ...enriched, serialized };
-            this.logger.warn(
-              `present gate missed; reuse plan_compose_write for pending write runId=${input.runId}`,
-            );
-          }
-        }
         summarized = draftPendingWrite.serialized;
       } else if (pendingObservation.name === CLARIFICATION_REQUEST_OBSERVATION_NAME) {
         summarized = await this.summarizeClarificationRequest(
@@ -3218,25 +3253,105 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
         nextSteps,
         continuePlan ? AgentRunStatus.running : AgentRunStatus.success,
       );
-      const draftObservation =
-        continuePlan &&
+      let observationsWithMachineLayer = state.toolObservations;
+      if (draftBeforeWrite && draftPendingWrite?.machineLayerDirty) {
+        const patchResult = patchLatestPlanComposeWriteObservation(
+          state.toolObservations,
+          draftPendingWrite.machineLayer!,
+        );
+        observationsWithMachineLayer = patchResult.observations;
+        if (!patchResult.patched) {
+          this.logger.warn(
+            `plan_compose_write patch missed: observation not found runId=${input.runId} tool=${draftPendingWrite.machineLayer?.tool ?? 'unknown'}`,
+          );
+        }
+      }
+      const pendingWriteForGate =
+        draftBeforeWrite && taskPlanAfterSummarize
+          ? resolveComposedWriteGateCall({
+              observations: observationsWithMachineLayer,
+              taskPlan: taskPlanAfterSummarize,
+              scopedTools: state.scopedTools,
+              pageContext: state.pageContext ?? null,
+            })
+          : null;
+      if (draftBeforeWrite && taskPlanAfterSummarize && !pendingWriteForGate) {
+        this.logger.warn(
+          `compose gate unresolved after present runId=${input.runId} tool=${draftPendingWrite?.machineLayer?.tool ?? 'unknown'}`,
+        );
+      }
+      if (
+        draftBeforeWrite &&
+        pendingWriteForGate &&
         draftPendingWrite &&
-        isUsablePlanMutationPreviewDraft(draftPendingWrite.draftReply) &&
-        draftPendingWrite.pendingWriteToolCall != null
-          ? buildPlanDraftReplyObservation({
-              draftReply: draftPendingWrite.draftReply.trim(),
+        taskPlanAfterSummarize &&
+        !isUsablePlanMutationPreviewDraft(
+          draftPendingWrite.draftReply,
+          state.scopedTools.find((tool) => tool.name === pendingWriteForGate.name),
+          draftPendingWrite.submitText,
+        )
+      ) {
+        const enriched = enrichPlanPresentDisplayForGate({
+          pending: draftPendingWrite,
+          gateCall: pendingWriteForGate,
+          observations: observationsWithMachineLayer,
+          taskPlan: taskPlanAfterSummarize,
+          scopedTools: state.scopedTools,
+        });
+        let serialized = draftPendingWrite.serialized;
+        const enrichedWriteTool = state.scopedTools.find(
+          (tool) => tool.name === pendingWriteForGate.name,
+        );
+        if (
+          isUsablePlanMutationPreviewDraft(
+            enriched.draftReply,
+            enrichedWriteTool,
+            enriched.submitText,
+          )
+        ) {
+          const turnId =
+            this.assistantArtifact.peekTurnId(input.sessionId, input.runId) ??
+            undefined;
+          const blocks = this.sse.publishAssistantBlocks(
+            input.sessionId,
+            input.runId,
+            [textBlock(enriched.draftReply, 'markdown')],
+            { turnId, phase: 'draft' },
+          );
+          serialized = serializeMessageBlocksForStorage(blocks);
+        }
+        draftPendingWrite = {
+          ...draftPendingWrite,
+          ...enriched,
+          serialized,
+        };
+      }
+      const draftWriteTool = pendingWriteForGate
+        ? state.scopedTools.find((tool) => tool.name === pendingWriteForGate.name)
+        : undefined;
+      const draftReplyContent =
+        continuePlan && draftPendingWrite && pendingWriteForGate
+          ? resolvePlanDraftReplyContentForGateObservation({
+              draftReply: draftPendingWrite.draftReply,
               submitText: draftPendingWrite.submitText,
+              gateCall: pendingWriteForGate,
+              writeTool: draftWriteTool,
+            })
+          : null;
+      const draftObservation =
+        draftReplyContent != null
+          ? buildPlanDraftReplyObservation({
+              draftReply: draftReplyContent.draftReply,
+              submitText: draftReplyContent.submitText,
               planStepId: getPendingPlanStep(state.taskPlan)?.id ?? null,
-              pendingWriteToolCall: draftPendingWrite.pendingWriteToolCall,
+              pendingWriteToolCall: pendingWriteForGate,
             })
           : null;
       const observationsAfterDraft = draftObservation
-        ? [...state.toolObservations, draftObservation]
-        : state.toolObservations;
+        ? [...observationsWithMachineLayer, draftObservation]
+        : observationsWithMachineLayer;
       const pendingToolCallsFromDraft =
-        draftPendingWrite?.pendingWriteToolCall != null
-          ? [draftPendingWrite.pendingWriteToolCall]
-          : [];
+        pendingWriteForGate != null ? [pendingWriteForGate] : [];
       if (pendingToolCallsFromDraft.length > 0) {
         this.sse.emitThink(
           input.sessionId,
@@ -3272,6 +3387,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
     };
     // 图路由：
     // START -> intent -> plan -> readiness -> llm | summarize
+    // START -> plan（用户指定 skillId，跳过 intent）
     // llm -> resultCheck -> tools | summarize | llm
     // tools -> resultCheck -> llm | summarize | expand->llm
     const graph = new StateGraph(State)
@@ -3291,6 +3407,9 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
         }
         if (input.resumeFromLlm) {
           return 'llm';
+        }
+        if (requestedSkillCtx) {
+          return 'plan';
         }
         return 'intent';
       })
@@ -3380,10 +3499,14 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
       finalOutput: '',
       status: AgentRunStatus.running,
       finished: false,
-      scopedTools: input.tools,
-      scopedLangChainTools: input.langChainTools.tools,
-      scopedToolBundle: input.langChainTools,
-      scopedAllowedToolIds: input.allowedToolIds,
+      scopedTools: requestedSkillCtx?.scoped.scopedTools ?? input.tools,
+      scopedLangChainTools:
+        requestedSkillCtx?.scoped.scopedLangChainTools ??
+        input.langChainTools.tools,
+      scopedToolBundle:
+        requestedSkillCtx?.scoped.scopedToolBundle ?? input.langChainTools,
+      scopedAllowedToolIds:
+        requestedSkillCtx?.scoped.scopedAllowedToolIds ?? input.allowedToolIds,
       toolProfilesByName: input.toolProfilesByName,
       hasExpandedOnce: false,
       skillApplied: false,
@@ -3401,6 +3524,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
         resumeFromWriteConfirm: input.resumeFromWriteConfirm,
         graphInitialState: input.graphInitialState,
       }),
+      pageContext: input.pageContext ?? null,
     };
     const graphOverride = input.graphInitialState ?? {};
     const priorObservations: ToolObservation[] = sessionPriorObservations.map(
@@ -3537,32 +3661,72 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
     ];
   }
 
-  private async summarizeWriteConfirmResume(
-    payload: WriteConfirmResumeSummaryPayload,
-    mergedToolOutput: unknown,
-    promptMessages: LlmChatMessage[],
-    sessionId: string,
-    runId: number,
-    scope: { appClientId: number; agentId: number },
-    taskPlan?: TaskPlanSnapshot | null,
-  ): Promise<string> {
+  private async summarizeWriteConfirmResume(input: {
+    payload: WriteConfirmResumeSummaryPayload;
+    mergedToolOutput: unknown;
+    toolResultsText?: string;
+    confirmedPreviewSerialized: string | null;
+    promptMessages: LlmChatMessage[];
+    sessionId: string;
+    runId: number;
+    turnId: number;
+    scope: { appClientId: number; agentId: number };
+    taskPlan?: TaskPlanSnapshot | null;
+  }): Promise<string> {
+    const {
+      payload,
+      mergedToolOutput,
+      toolResultsText,
+      confirmedPreviewSerialized,
+      promptMessages,
+      sessionId,
+      runId,
+      turnId,
+      scope,
+      taskPlan,
+    } = input;
     const fallbackPlain = this.buildWriteConfirmResumeFallbackPlainText(payload);
     const fallbackBlocks = this.buildWriteConfirmResumeFallbackBlocks(payload);
-    if (payload.outcome === 'failed') {
-      const blocks = this.sse.publishRuleBlocksOnly(
+    const turnIdResolved =
+      this.assistantArtifact.peekTurnId(sessionId, runId) ?? turnId;
+
+    const publishFinalBlocks = (blocks: MessageBlock[]): string => {
+      const sanitized = this.sse.publishAssistantBlocks(
         sessionId,
         runId,
-        fallbackBlocks,
+        blocks,
+        { turnId: turnIdResolved, phase: 'final' },
       );
-      return serializeMessageBlocksForStorage(blocks);
+      return serializeMessageBlocksForStorage(
+        sanitized.length > 0 ? sanitized : blocks,
+      );
+    };
+
+    if (payload.outcome === 'failed') {
+      return publishFinalBlocks(fallbackBlocks);
+    }
+
+    const confirmedPreview = parseConfirmedPreviewBlocks(
+      confirmedPreviewSerialized,
+    );
+    if (confirmedPreview.length > 0) {
+      const observationStructured = buildRuleBasedMessageBlocks({
+        output: mergedToolOutput,
+        userMessage: payload.userMessage,
+        fieldLabels: {},
+      }).filter(isStructuredMessageBlock);
+      const merged = mergeConfirmedPreviewWithExecutionStatus({
+        confirmedPreview,
+        executionStatusBlocks: fallbackBlocks,
+        observationStructuredBlocks: observationStructured,
+      });
+      return publishFinalBlocks(merged);
     }
 
     const agentPrompts = promptMessages.filter(
       (message) =>
         message.role === 'system' && message.content.includes('<agent_prompt>'),
     );
-    const toolResultsJson =
-      mergedToolOutput != null ? this.stringifyForPrompt(mergedToolOutput) : undefined;
     const summarizeMessages: LlmChatMessage[] = [
       ...agentPrompts,
       {
@@ -3584,7 +3748,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
         content: formatWriteConfirmResumeSummarizeUserMessage({
           payload,
           taskPlan,
-          toolResultsJson,
+          toolResultsJson: toolResultsText,
         }),
       },
     ];
@@ -4124,7 +4288,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
     scope: { appClientId: number; agentId: number },
     taskPlan: TaskPlanSnapshot | null | undefined,
     scopedTools: AgentEngineTool[],
-  ): Promise<PlanDraftSummarizePendingWrite & { serialized: string }> {
+  ): Promise<PlanPresentSummarizeResult> {
     const planContext = formatPlanContextForSummarize(taskPlan);
     const taskPlanAfterFinalize = taskPlan
       ? finalizePlanAfterSummarize(taskPlan)
@@ -4184,14 +4348,18 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
     const publishUserDraftBlocks = (
       draftMarkdown: string,
       previewWriteTool?: AgentEngineTool,
+      machineSubmitText?: string | null,
     ) => {
-      const normalizedDraft = extractLlmUserFacingText(draftMarkdown).trim();
-      const displayDraft = isUsablePlanMutationPreviewDraft(
-        normalizedDraft,
-        previewWriteTool,
-      )
-        ? normalizedDraft
-        : '';
+      const normalizedDraft = draftMarkdown.trim();
+      const displayDraft =
+        normalizedDraft &&
+        isUsablePlanMutationPreviewDraft(
+          normalizedDraft,
+          previewWriteTool,
+          machineSubmitText,
+        )
+          ? normalizedDraft
+          : '';
       const llmBlocks = displayDraft
         ? [textBlock(displayDraft, 'markdown')]
         : [];
@@ -4204,12 +4372,15 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
 
     const emptyDraftResult = (
       draftReply: string,
-    ): PlanDraftSummarizePendingWrite & { serialized: string } => {
+      machineLayer: PlanComposeWriteObservationOutput | null = null,
+    ): PlanPresentSummarizeResult => {
       const blocks = publishUserDraftBlocks(draftReply);
       return {
         draftReply: draftReply.trim(),
         submitText: '',
         pendingWriteToolCall: null,
+        machineLayer,
+        machineLayerDirty: false,
         serialized: serializeMessageBlocksForStorage(blocks),
       };
     };
@@ -4223,7 +4394,7 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
       return emptyDraftResult('');
     }
 
-    const userContext = buildPlanDraftSummarizeUserContent({
+    const userContextBase = {
       userMessage,
       planContext: planContext || null,
       toolSchemaJson,
@@ -4234,7 +4405,52 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
       fieldLabelText: fieldLabelText || undefined,
       splitObservationsText,
       serializedOutput,
-      composedWritePayload: composed,
+    };
+
+    let composedArgs = { ...composed.arguments };
+    let machineLayerDirty = false;
+    const writeToolDef = writeTools.find((tool) => tool.name === composed.tool);
+    const argsNeedProse =
+      writeToolDef != null &&
+      !writeToolArgsContainSubmitText(composedArgs, writeToolDef);
+    if (argsNeedProse) {
+      logDraftWarn(
+        'plan present: composed args lack submit text; prose supplement',
+      );
+      const supplemented = await invokePlanDraftProseSupplement({
+        llmService: this.llmService,
+        agentPrompts,
+        promptRegistry: this.promptRegistry,
+        scope,
+        userContext: buildPlanDraftSummarizeUserContent({
+          ...userContextBase,
+          composedWritePayload: composed,
+        }),
+        logWarn: logDraftWarn,
+      });
+      if (supplemented && writeToolDef) {
+        const proseSubmit =
+          extractSubmitTextFromDraftReply(supplemented) || supplemented;
+        composedArgs = injectDraftIntoWriteToolArguments(
+          composedArgs,
+          proseSubmit,
+          writeToolDef,
+        );
+        if (writeToolArgsContainSubmitText(composedArgs, writeToolDef)) {
+          machineLayerDirty = true;
+        }
+      }
+    }
+
+    const machineLayer: PlanComposeWriteObservationOutput = {
+      tool: composed.tool,
+      arguments: composedArgs,
+      planStepId: composed.planStepId ?? null,
+    };
+
+    const userContext = buildPlanDraftSummarizeUserContent({
+      ...userContextBase,
+      composedWritePayload: machineLayer,
     });
     const presentSystemPrompt = await renderPlanPresentFromComposeSystemPrompt({
       promptRegistry: this.promptRegistry,
@@ -4261,56 +4477,47 @@ NEVER emit tool_calls to plan_compose_write, plan_draft_reply, or any observatio
     }
     this.sse.emitThink(sessionId, runId, '正在整理写操作草稿…\n', 'delta');
 
-    let composedArgs = { ...composed.arguments };
-    const writeToolDef = writeTools.find((tool) => tool.name === composed.tool);
-    let draftReply = await invokePlanPresentFromCompose({
+    const draftReply = await invokePlanPresentFromCompose({
       llmService: this.llmService,
       agentPrompts,
       promptRegistry: this.promptRegistry,
       scope,
       userContext,
       logWarn: logDraftWarn,
+      onExplainDelta: (delta) => {
+        if (!delta) {
+          return;
+        }
+        this.sse.emitMessageBlocks(sessionId, runId, [textBlock(delta, 'markdown')], {
+          mode: 'delta',
+          action: 'stream',
+          turnId,
+        });
+      },
     });
 
-    const argsNeedProse =
-      writeToolDef != null &&
-      !writeToolArgsContainSubmitText(composedArgs, writeToolDef);
-    if (argsNeedProse) {
-      logDraftWarn(
-        'plan present: composed args lack submit text; prose supplement',
-      );
-      const supplemented = await invokePlanDraftProseSupplement({
-        llmService: this.llmService,
-        agentPrompts,
-        promptRegistry: this.promptRegistry,
-        scope,
-        userContext,
-        logWarn: logDraftWarn,
-      });
-      if (supplemented && writeToolDef) {
-        const proseSubmit =
-          extractSubmitTextFromDraftReply(supplemented) || supplemented;
-        composedArgs = injectDraftIntoWriteToolArguments(
-          composedArgs,
-          proseSubmit,
-          writeToolDef,
-        );
-        if (!isUsablePlanDraftUserFacingDraft(draftReply)) {
-          draftReply = supplemented;
-        }
-      }
-    }
-
-    const pending = buildPlanPresentFromComposed({
-      composed: { ...composed, arguments: composedArgs },
+    const userLayer = buildPlanPresentUserLayer({
+      composed: machineLayer,
       draftReply,
       taskPlanBeforeFinalize: taskPlan,
       scopedTools,
-      logWarn: logDraftWarn,
     });
-    const blocks = publishUserDraftBlocks(pending.draftReply, writeToolDef);
+    const machineSubmit = writeToolDef
+      ? extractSubmitTextFromWriteArguments(machineLayer.arguments, writeToolDef)
+      : null;
+    const blocks = publishUserDraftBlocks(
+      userLayer.draftReply,
+      writeToolDef,
+      machineSubmit,
+    );
     const serialized = serializeMessageBlocksForStorage(blocks);
-    return { ...pending, serialized };
+    return {
+      ...userLayer,
+      pendingWriteToolCall: null,
+      machineLayer,
+      machineLayerDirty,
+      serialized,
+    };
   }
 
   private resolveSummarizePromptKey(input: {

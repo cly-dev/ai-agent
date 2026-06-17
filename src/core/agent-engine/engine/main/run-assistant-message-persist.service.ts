@@ -10,6 +10,11 @@ import {
   tryParseStoredMessageBlocks,
 } from '../message/message-blocks.util';
 import { RunAssistantArtifactStore } from './run-assistant-artifact.store';
+import {
+  emitAgentMessagePersistDebug,
+  logPersistContentMismatch,
+  serializedSourceSnapshot,
+} from '../message/message-blocks-debug.util';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -63,6 +68,14 @@ export class RunAssistantMessagePersistService {
       const message = await tx.message.findUnique({
         where: { id: existingRun.outputMessageId },
       });
+      logPersistContentMismatch({
+        sessionId: input.sessionId,
+        runId: input.runId,
+        turnId: input.turnId,
+        tag: 'PERSIST_RUN_ALREADY_LINKED',
+        artifactSerialized: artifact.serialized,
+        priorDbContent: message?.content ?? '',
+      });
       return { message, replacedTurnOutput: false };
     }
 
@@ -87,9 +100,32 @@ export class RunAssistantMessagePersistService {
     }
 
     if (turn.outputMessageId != null) {
+      const existing = await tx.message.findUnique({
+        where: { id: turn.outputMessageId },
+      });
+      logPersistContentMismatch({
+        sessionId: input.sessionId,
+        runId: input.runId,
+        turnId: input.turnId,
+        tag: 'PERSIST_TURN_UPDATE',
+        artifactSerialized: artifact.serialized,
+        priorDbContent: existing?.content ?? '',
+      });
       const message = await tx.message.update({
         where: { id: turn.outputMessageId },
         data: { content: artifact.serialized },
+      });
+      emitAgentMessagePersistDebug({
+        tag: 'PERSIST_UPDATE',
+        sessionId: input.sessionId,
+        runId: input.runId,
+        turnId: input.turnId,
+        messageId: message.id,
+        dbContent: message.content,
+        source: serializedSourceSnapshot(artifact.serialized, {
+          label: 'artifact',
+          blocks: artifact.blocks,
+        }),
       });
       await tx.agentRun.update({
         where: { id: input.runId },
@@ -104,6 +140,19 @@ export class RunAssistantMessagePersistService {
         role: 'assistant',
         content: artifact.serialized,
       },
+    });
+
+    emitAgentMessagePersistDebug({
+      tag: 'PERSIST_CREATE',
+      sessionId: input.sessionId,
+      runId: input.runId,
+      turnId: input.turnId,
+      messageId: message.id,
+      dbContent: message.content,
+      source: serializedSourceSnapshot(artifact.serialized, {
+        label: 'artifact',
+        blocks: artifact.blocks,
+      }),
     });
 
     await tx.agentRun.update({
@@ -175,6 +224,19 @@ export class RunAssistantMessagePersistService {
         data: { content: serialized },
       });
       replacedTurnOutput = true;
+      emitAgentMessagePersistDebug({
+        tag: 'PERSIST_APPEND_NOTICE',
+        sessionId: input.sessionId,
+        runId: 0,
+        turnId: input.turnId,
+        messageId: message.id,
+        dbContent: message.content,
+        source: {
+          priorContent: existing.content,
+          noticeMarkdown: trimmed,
+          mergedBlocks: merged,
+        },
+      });
     } else {
       const serialized = serializeMessageBlocksForStorage([noticeBlock]);
       message = await this.prisma.message.create({
@@ -187,6 +249,15 @@ export class RunAssistantMessagePersistService {
       await this.prisma.messageTurn.update({
         where: { id: turn.id },
         data: { outputMessageId: message.id, finalOutput: serialized },
+      });
+      emitAgentMessagePersistDebug({
+        tag: 'PERSIST_CREATE_NOTICE',
+        sessionId: input.sessionId,
+        runId: 0,
+        turnId: input.turnId,
+        messageId: message.id,
+        dbContent: message.content,
+        source: { noticeMarkdown: trimmed },
       });
     }
 

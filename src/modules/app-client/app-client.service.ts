@@ -3,35 +3,24 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { RequestAppClient } from '../../auth/request-app-client';
-import {
-  UserService,
-  type ExternalAccountProfile,
-} from '../user/user.service';
+import { UserService } from '../user/user.service';
 import { CreateAppClientDto } from './dto/create-app-client.dto';
 import { UpdateAppClientDto } from './dto/update-app-client.dto';
-
-type ExternalAccountApiResponse = {
-  id?: number;
-  email?: string;
-  nickName?: string;
-  cnName?: string;
-  employeeId?: string;
-  phoneNum?: string;
-  active?: boolean;
-};
+import { AppClientAuthService } from './auth/app-client-auth.service';
+import { parseAppClientAuthConfig } from './auth/app-client-auth.config.util';
 
 @Injectable()
 export class AppClientService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
+    private readonly appClientAuthService: AppClientAuthService,
   ) {}
 
   async create(dto: CreateAppClientDto) {
@@ -66,15 +55,23 @@ export class AppClientService {
 
   async update(id: number, dto: UpdateAppClientDto) {
     await this.findOne(id);
+    const data: Prisma.AppClientUpdateInput = {
+      name: dto.name?.trim(),
+      description:
+        dto.description === undefined ? undefined : dto.description.trim(),
+      isActive: dto.isActive,
+    };
+    if (dto.authConfig !== undefined) {
+      if (dto.authConfig === null) {
+        data.authConfig = Prisma.DbNull;
+      } else {
+        data.authConfig = parseAppClientAuthConfig(dto.authConfig);
+      }
+    }
     try {
       return await this.prisma.appClient.update({
         where: { id },
-        data: {
-          name: dto.name?.trim(),
-          description:
-            dto.description === undefined ? undefined : dto.description.trim(),
-          isActive: dto.isActive,
-        },
+        data,
       });
     } catch (error) {
       if (
@@ -187,15 +184,26 @@ export class AppClientService {
       throw new UnauthorizedException('x-account-token is required');
     }
 
-    const profile = await this.fetchExternalAccountProfile(token);
+    const profile = await this.appClientAuthService.verifyAccountToken(
+      appClientId,
+      token,
+    );
     if (!profile.active) {
       throw new UnauthorizedException('external account is inactive');
     }
 
+    const authConfig =
+      await this.appClientAuthService.loadResolvedAuthConfig(appClientId);
     const user = await this.userService.findOrCreateByExternalAccount(profile);
     this.userService.assertUserIsActive(user.status);
-    const userAppCreated = await this.ensureUserAppBinding(user.id, appClientId);
-    await this.bindUserIntegrations(user.id, appClientId, token);
+    const userAppCreated = await this.ensureUserAppBinding(
+      user.id,
+      appClientId,
+      authConfig.autoBindRoleName ?? 'operator',
+    );
+    if (authConfig.propagateTokenToIntegrations !== false) {
+      await this.bindUserIntegrations(user.id, appClientId, token);
+    }
 
     const accessToken = await this.userService.signUserAccessToken({
       id: user.id,
@@ -213,73 +221,16 @@ export class AppClientService {
     };
   }
 
-  private async fetchExternalAccountProfile(
-    accountToken: string,
-  ): Promise<ExternalAccountProfile> {
-    const appClientHost = process.env.APP_CLIENT_HOST?.trim();
-    if (!appClientHost) {
-      throw new BadRequestException('APP_CLIENT_HOST is not configured');
-    }
-
-    const accountUrl = new URL(
-      '/account/seller/account/current',
-      appClientHost.endsWith('/') ? appClientHost : `${appClientHost}/`,
-    );
-    let accountResponse: Response;
-    try {
-      accountResponse = await fetch(accountUrl, {
-        method: 'GET',
-        headers: this.buildBrowserLikeHeaders(accountUrl.origin, {
-          Authorization: `Bearer ${accountToken}`,
-        }),
-      });
-    } catch (error) {
-      const detail = this.formatFetchError(error);
-      throw new ServiceUnavailableException(
-        `无法连接外部账号服务 ${accountUrl.origin}：${detail}。请检查 APP_CLIENT_HOST、VPN/内网连通性及 x-account-token 是否有效。`,
-      );
-    }
-    const account = await this.parseFetchBody(accountResponse);
-    if (!accountResponse.ok) {
-      throw new UnauthorizedException(
-        `external account verification failed: ${accountResponse.status}`,
-      );
-    }
-
-    return this.parseExternalAccountProfile(account);
+  async testAuth(appClientId: number, accountToken: string) {
+    await this.findOne(appClientId);
+    return this.appClientAuthService.testAccountToken(appClientId, accountToken);
   }
 
-  private parseExternalAccountProfile(
-    account: unknown,
-  ): ExternalAccountProfile {
-    if (!account || typeof account !== 'object' || Array.isArray(account)) {
-      throw new UnauthorizedException('invalid external account response');
-    }
-    const row = account as ExternalAccountApiResponse;
-    const employeeId = row.employeeId?.trim();
-    const email = row.email?.trim();
-    if (!employeeId) {
-      throw new UnauthorizedException(
-        'external account missing employeeId',
-      );
-    }
-    if (!email) {
-      throw new UnauthorizedException('external account missing email');
-    }
-    return {
-      employeeId,
-      email,
-      username: row.nickName?.trim() || row.cnName?.trim() || employeeId,
-      nickName: row.nickName?.trim(),
-      cnName: row.cnName?.trim(),
-      active: row.active !== false,
-    };
-  }
-
-  /** 外部鉴权通过后确保 UserApp 存在；缺失时按默认角色自动绑定。 */
+  /** 外部鉴权通过后确保 UserApp 存在；缺失时按配置角色自动绑定。 */
   private async ensureUserAppBinding(
     userId: number,
     appClientId: number,
+    autoBindRoleName: string,
   ): Promise<boolean> {
     const existing = await this.prisma.userApp.findUnique({
       where: {
@@ -293,7 +244,7 @@ export class AppClientService {
     if (existing) {
       return false;
     }
-    const roleId = await this.resolveAutoBindRoleId();
+    const roleId = await this.resolveAutoBindRoleId(autoBindRoleName);
     try {
       await this.prisma.userApp.create({
         data: {
@@ -315,17 +266,15 @@ export class AppClientService {
     }
   }
 
-  private async resolveAutoBindRoleId(): Promise<number> {
-    const roleName =
-      process.env.APP_CLIENT_AUTO_BIND_ROLE?.trim().toLowerCase() ||
-      'operator';
+  private async resolveAutoBindRoleId(roleName: string): Promise<number> {
+    const normalized = roleName.trim().toLowerCase() || 'operator';
     const role = await this.prisma.role.findUnique({
-      where: { name: roleName },
+      where: { name: normalized },
       select: { id: true },
     });
     if (!role) {
       throw new BadRequestException(
-        `default auth role "${roleName}" not found; run db:seed or set APP_CLIENT_AUTO_BIND_ROLE`,
+        `default auth role "${normalized}" not found; run db:seed or configure autoBindRoleName`,
       );
     }
     return role.id;
@@ -365,58 +314,6 @@ export class AppClientService {
         }),
       ),
     );
-  }
-
-  /** 将 fetch Response 的 body 解析为 JSON 或文本（body 只能读一次）。 */
-  private async parseFetchBody(response: Response): Promise<unknown> {
-    const text = await response.text();
-    if (!text) {
-      return null;
-    }
-    const contentType = response.headers.get('content-type') ?? '';
-    if (contentType.includes('application/json')) {
-      try {
-        return JSON.parse(text) as unknown;
-      } catch {
-        return text;
-      }
-    }
-    try {
-      return JSON.parse(text) as unknown;
-    } catch {
-      return text;
-    }
-  }
-
-  /** 将 fetch 网络层错误转为可读信息（TLS/ECONNRESET 等）。 */
-  private formatFetchError(error: unknown): string {
-    if (!(error instanceof Error)) {
-      return String(error);
-    }
-    const cause = (error as Error & { cause?: unknown }).cause;
-    if (cause instanceof Error) {
-      const code =
-        'code' in cause && typeof cause.code === 'string' ? cause.code : '';
-      return code ? `${cause.message} (${code})` : cause.message;
-    }
-    return error.message;
-  }
-
-  /** 模拟浏览器常见请求头，降低网关/WAF 拦截概率。 */
-  private buildBrowserLikeHeaders(
-    origin: string,
-    extra: Record<string, string> = {},
-  ): Record<string, string> {
-    const host = new URL(origin).host;
-    return {
-      Host: host,
-      Connection: 'keep-alive',
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      Accept: 'application/json, text/plain, */*',
-      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-      ...extra,
-    };
   }
 
   private createRandomDsn(): string {
