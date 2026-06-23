@@ -16,15 +16,15 @@ import {
 } from './plan-paged-gather.util';
 import { classifyPaginationParam } from '../../../tool-engine/tool-pagination-params.util';
 import { formatObservationForLlm } from '../observation-format.util';
-import type { ExecuteToolCallsRoundResult } from '../main/agent-tool-runtime.util';
+import type { ExecuteToolCallsRoundResult } from '../main/runtime/agent-tool-runtime.util';
 import type {
   AgentEngineTool,
   AgentRunStep,
   GraphToolCall,
   ToolObservation,
-} from '../main/agent-engine.types';
-import type { TaskPlanSnapshot } from '../main/task-plan.types';
-import type { PlanScopedTool } from '../main/task-plan.util';
+} from '../main/types/agent-engine.types';
+import type { TaskPlanSnapshot } from '../main/plan/task-plan.types';
+import type { PlanScopedTool } from '../main/plan/task-plan.util';
 import type {
   ListMapReduceState,
   ListPageSummary,

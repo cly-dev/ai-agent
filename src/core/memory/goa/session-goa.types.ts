@@ -100,6 +100,8 @@ export type StoredTaskPlan = {
   currentStepId: string | null;
   frames?: StoredPlanFrame[];
   activeFrameIndex?: number;
+  outerSkillSelectMethod?: string;
+  autoSelectedSkillId?: number | null;
 };
 
 /**

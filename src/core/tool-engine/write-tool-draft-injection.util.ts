@@ -844,11 +844,86 @@ export function enrichWriteArgumentsFromSelf(
   return next;
 }
 
+function isIntegerLikeParamType(type: string | undefined): boolean {
+  if (!type) {
+    return false;
+  }
+  const normalized = type.trim().toLowerCase();
+  return (
+    normalized === 'integer' ||
+    normalized === 'int' ||
+    normalized.startsWith('integer(') ||
+    normalized.includes('int64') ||
+    normalized.includes('int32')
+  );
+}
+
+function isArrayLikeParamRow(row: ToolParamCompact): boolean {
+  const type = row.type?.trim().toLowerCase() ?? '';
+  return type.startsWith('array') || row.name.includes('[]');
+}
+
+/** pageContext 值是否与 write tool schema 参数类型兼容（通用，无业务字段硬编码）。 */
+function isPageContextValueCompatibleWithParam(
+  value: unknown,
+  row: ToolParamCompact,
+): boolean {
+  if (!isPresent(value)) {
+    return false;
+  }
+  if (isArrayLikeParamRow(row)) {
+    return Array.isArray(value);
+  }
+  if (isIntegerLikeParamType(row.type)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Number.isInteger(value);
+    }
+    if (typeof value === 'string') {
+      return /^\d+$/.test(value.trim());
+    }
+    return false;
+  }
+  return true;
+}
+
+function collectReadIdentifierValuesByLeaf(
+  observations: Array<{ name: string; output: unknown }>,
+  isReadToolObservation: (toolName: string) => boolean,
+  identifierLeaves: Set<string>,
+  businessFields: Set<string>,
+): Map<string, unknown> {
+  const out = new Map<string, unknown>();
+  const readRecords = collectReadObservationRecords(
+    observations,
+    isReadToolObservation,
+  );
+  for (const record of readRecords) {
+    for (const leaf of identifierLeaves) {
+      if (out.has(leaf)) {
+        continue;
+      }
+      const direct = record[leaf];
+      if (isPresent(direct)) {
+        out.set(leaf, direct);
+        continue;
+      }
+      if (businessFields.has(leaf) && isPresent(record.id)) {
+        out.set(leaf, record.id);
+      }
+    }
+  }
+  return out;
+}
+
 /** 从 pageContext.entity 按 write tool schema + businessFields 补齐参数（无字段名硬编码）。 */
 export function enrichWriteArgumentsFromPageContext(
   args: Record<string, unknown>,
   writeTool: WriteToolDef,
   pageContext: AgentChatPageContext | null | undefined,
+  input?: {
+    observations?: Array<{ name: string; output: unknown }>;
+    isReadToolObservation?: (toolName: string) => boolean;
+  },
 ): Record<string, unknown> {
   const entity = pageContext?.entity;
   if (!entity || typeof entity !== 'object') {
@@ -866,6 +941,18 @@ export function enrichWriteArgumentsFromPageContext(
       lastPathSegment(row.name.replace(/\[\]/g, '')),
     ]),
   );
+  const businessFields = new Set(
+    parseAgentMetadata(writeTool.agentMetadata)?.businessFields ?? [],
+  );
+  const readIdentifierByLeaf =
+    input?.observations && input.isReadToolObservation
+      ? collectReadIdentifierValuesByLeaf(
+          input.observations,
+          input.isReadToolObservation,
+          paths.identifierLeaves,
+          businessFields,
+        )
+      : new Map<string, unknown>();
 
   for (const row of compactParams) {
     const leaf = paramLeafByPath.get(row.name) ?? '';
@@ -873,14 +960,13 @@ export function enrichWriteArgumentsFromPageContext(
     if (!isPresent(value) || isPresentAtWriteToolParamPath(next, row.name)) {
       continue;
     }
+    if (!isPageContextValueCompatibleWithParam(value, row)) {
+      continue;
+    }
     setValueAtParamPath(next, row.name, value, paths.bodyRoot);
   }
 
   const entityId = typeof entity.id === 'string' ? entity.id.trim() : '';
-  if (!entityId) {
-    return next;
-  }
-
   const missingIdentifierRequired = compactParams.filter((row) => {
     if (!row.required) {
       return false;
@@ -891,20 +977,37 @@ export function enrichWriteArgumentsFromPageContext(
     }
     return !isPresentAtWriteToolParamPath(next, row.name);
   });
-  if (missingIdentifierRequired.length === 1) {
-    setValueAtParamPath(
-      next,
-      missingIdentifierRequired[0]!.name,
-      entityId,
-      paths.bodyRoot,
-    );
+
+  for (const row of missingIdentifierRequired) {
+    const leaf = paramLeafByPath.get(row.name) ?? '';
+    const fromRead = readIdentifierByLeaf.get(leaf);
+    if (
+      isPresent(fromRead) &&
+      isPageContextValueCompatibleWithParam(fromRead, row)
+    ) {
+      setValueAtParamPath(next, row.name, fromRead, paths.bodyRoot);
+    }
+  }
+
+  if (!entityId) {
+    return next;
+  }
+
+  const stillMissingIdentifierRequired = missingIdentifierRequired.filter(
+    (row) => !isPresentAtWriteToolParamPath(next, row.name),
+  );
+  if (stillMissingIdentifierRequired.length === 1) {
+    const row = stillMissingIdentifierRequired[0]!;
+    if (isPageContextValueCompatibleWithParam(entityId, row)) {
+      setValueAtParamPath(next, row.name, entityId, paths.bodyRoot);
+    }
   }
 
   return next;
 }
 
 /**
- * compose / gate 共用：LLM 产参 → read 补齐 → pageContext → 自身嵌套提升 → 待校验参数。
+ * compose / gate 共用：LLM 产参 → read 补齐 → 自身嵌套提升 → pageContext（末位，避免污染已解析标识符）。
  */
 export function normalizeWriteToolArguments(
   args: Record<string, unknown>,
@@ -921,12 +1024,16 @@ export function normalizeWriteToolArguments(
     observations,
     input,
   );
-  const fromPage = enrichWriteArgumentsFromPageContext(
-    fromRead,
+  const fromSelf = enrichWriteArgumentsFromSelf(fromRead, writeTool);
+  return enrichWriteArgumentsFromPageContext(
+    fromSelf,
     writeTool,
     input.pageContext,
+    {
+      observations,
+      isReadToolObservation: input.isReadToolObservation,
+    },
   );
-  return enrichWriteArgumentsFromSelf(fromPage, writeTool);
 }
 
 /** 返回首个未满足的 required 参数路径，无缺失时返回 null。 */

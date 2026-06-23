@@ -24,6 +24,8 @@ export function parseConfirmedPreviewBlocks(
   return stripWriteConfirmationPromptBlocks(
     blocks,
     buildWriteConfirmationUserMessage(),
+  ).filter(
+    (block) => !(block.type === 'text' && block.content.trim().length === 0),
   );
 }
 

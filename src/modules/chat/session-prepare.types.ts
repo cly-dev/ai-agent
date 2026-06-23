@@ -1,25 +1,19 @@
 import type { AgentService } from '../agent/agent.service';
+import type {
+  RuntimeRevision,
+  SessionHostToolsPageEntry,
+  SessionPrepareSkillRow,
+  SessionRuntimeSnapshot,
+} from '../../core/runtime-cache/runtime-cache.types';
 
 export type SessionAllowedToolsRow = Awaited<
   ReturnType<AgentService['getAllowedTools']>
 >[number];
 
-export type SessionPrepareSkillRow = {
-  id: number;
-  name: string;
-};
+export type { SessionPrepareSkillRow, SessionRuntimeSnapshot, RuntimeRevision, SessionHostToolsPageEntry };
+export type { LegacySessionPrepareSnapshot } from '../../core/runtime-cache/runtime-cache.types';
 
-export type SessionPrepareSnapshot = {
-  sessionId: string;
-  userId: number;
-  appClientId: number;
-  agentId: number;
-  toolIdsFingerprint: string;
-  skillIdsFingerprint: string;
-  tools: SessionAllowedToolsRow[];
-  skills: SessionPrepareSkillRow[];
-  warmedAt: string;
-};
+export type SessionPrepareSnapshot = SessionRuntimeSnapshot;
 
 export type SessionPrepareResult = {
   sessionId: string;
@@ -27,7 +21,22 @@ export type SessionPrepareResult = {
   agentReady: boolean;
   toolsCount: number;
   skillsCount: number;
+  hostToolsCount: number;
+  pageScope: string | null;
   sessionContextWarmed: boolean;
   warmedAt: string;
   fromCache: boolean;
+  revision?: RuntimeRevision;
+};
+
+export type SessionRuntimeWriteInput = {
+  sessionId: string;
+  userId: number;
+  appClientId: number;
+  agentId: number;
+  revision: RuntimeRevision;
+  tools: SessionAllowedToolsRow[];
+  skills: SessionPrepareSkillRow[];
+  hostToolsByPage?: Record<string, SessionHostToolsPageEntry>;
+  lastPreparedPage?: string;
 };

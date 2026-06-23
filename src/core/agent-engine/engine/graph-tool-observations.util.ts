@@ -1,5 +1,5 @@
-import type { AgentGraphState } from './main/agent-engine.types';
-import type { ToolObservation } from './main/agent-engine.types';
+import type { AgentGraphState } from './main/types/agent-engine.types';
+import type { ToolObservation } from './main/types/agent-engine.types';
 import {
   formatSplitObservationsPromptBlock,
   toolObservationsToPayloads,

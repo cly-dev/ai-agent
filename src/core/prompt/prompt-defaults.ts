@@ -27,12 +27,12 @@ const AGENT_SUMMARIZE_WRITE_PREVIEW_PROSE_ZH = `
 - 末尾一句提示确认后将提交；勿写已成功提交。
 - 禁止输出：tool 名、JSON、observation 原文、API 字段名/键名。`;
 
-/** 流式正文之后的可选结构化 blocks。 */
-const AGENT_SUMMARIZE_BLOCKS_APPEND_ZH = `
-【结构化补充 — 可选，写在正文之后】
-- 若 Suggested rule-based blocks 已含 table/chart，正文侧重分析/说明，勿重复出表。
-- 若仍需 chart/metric/alert 等，正文全部写完后另起一行输出 {"blocks":[...]}，只含这些结构化 block（勿含 type=text）。
-- JSON 须合法并遵循 platform.message_blocks_spec。`;
+/** 非流式 blocks_invoke 专用：整段 JSON 一次返回。 */
+const AGENT_SUMMARIZE_BLOCKS_INVOKE_ZH = `
+【输出协议 — 硬性】
+- 仅输出一个合法 JSON 对象：{"blocks":[...]}，遵循 platform.message_blocks_spec。
+- 不要输出 Markdown 正文、不要代码围栏、不要在 JSON 前后加说明文字。
+- 不要流式分段；text block 的 content 只能是用户可读文案，禁止在 content 内再嵌套 JSON。`;
 
 /** 非写预览类 summarize 的通用作答规则。 */
 const AGENT_SUMMARIZE_CONTEXT_AND_OUTCOME_ZH = `
@@ -40,7 +40,7 @@ const AGENT_SUMMARIZE_CONTEXT_AND_OUTCOME_ZH = `
 - user 含 <current_run_observations> 与 <working_memory_observations> 时，以 current_run 为作答依据。
 - user 含 <plan_context> 时，以 Current step objective 为主指令。
 - 写操作已执行后的 outcome：按实际结果汇报，勿再要求确认。
-- 失败或风险：正文说明，或在尾部 blocks 中加 alert。`;
+- 失败或风险：用 Markdown 正文说明原因与建议，勿输出 JSON 或 blocks 协议。`;
 
 const AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN = `
 Message Blocks / table guardrails (when Suggested rule-based blocks may be present):
@@ -129,9 +129,10 @@ Output strict JSON matching the schema:
     {
       "id": string,
       "phase": "gather" | "analyze" | "answer" | "mutate",
-      "kind": "skill" | "tool" | "summarize" | "reason",
+      "kind": "skill" | "tool" | "host_tool" | "summarize" | "reason",
       "skillId": number | null,
       "toolRole": string | null,
+      "hostToolNames": string[] | null,
       "objective": string,
       "stopWhen": "observation_non_empty" | "observation_fetch_complete" | "observation_has_fields" | "always" | null
     }
@@ -188,6 +189,15 @@ mutation draft-only (preview, no submit): gather read → answer summarize only;
 
 analysis then reply in one request: prefer outer kind=skill (analyze skill → reply skill). Inner mutation uses the fixed template above.
 
+## Host tools (browser UI actions)
+
+When user payload includes availableHostTools (non-empty), you MAY plan kind=host_tool steps for browser-side actions (refresh UI, open panel, navigate within SPA, etc.) that must NOT go through HTTP tools.
+
+- kind=host_tool: hostToolNames MUST be a subset of availableHostTools[].name (omit hostToolNames to allow any scoped host tool at runtime).
+- Do NOT use host_tool for server mutations — use kind=tool with write roles instead.
+- host_tool steps run in the user's browser via SSE host_action; plan them after gather when UI sync is needed, or after mutation when the runtime will also emit completion host tools.
+- If availableHostTools is empty or missing, do NOT emit kind=host_tool steps.
+
 ## Write-confirm runtime (planning implication)
 
 Write tools pause for user confirmation AFTER present surfaces preview. compose_write runs before present; HTTP write runs after gate approval.
@@ -238,11 +248,38 @@ satisfiedToolRoles means the runtime may preload observations for those roles �
 
 ## General rules
 - kind=tool: toolRole must match a role in scopedTools (never invent tools).
+- kind=host_tool: hostToolNames must match availableHostTools when provided; never invent host tool names.
 - kind=skill (outer only): skillId MUST be in availableSkills[].id.
 - objective: short English for the ReAct/summarize module — what to do and what NOT to repeat.
 - Do not copy the full skill prompt; execution order only.
 - Multiple summarize steps are allowed (e.g. analyze, draft, outcome) — label each objective clearly.
 - If intent is unclear, prefer deliverable=answer with a single summarize step.`,
+
+  [PROMPT_KEYS.AGENT_TURN_ROUTE]: `You are a turn router for an agent runtime (route_plan node). Decide how to handle the user's latest message BEFORE task planning.
+
+Output strict JSON only:
+{
+  "route": "direct_answer" | "on_page_task" | "orchestrated_task",
+  "reason": string,
+  "suggestedSkillId": number | null
+}
+
+## Routes
+
+| route | When |
+|-------|------|
+| direct_answer | Chit-chat, general knowledge, or topics unrelated to current page skills/host tools. Being on a business page does NOT make every message a page task. |
+| on_page_task | User clearly wants an action on the current page using available host tools or the pageHostSkillCandidate (fill draft, sync UI, page-specific workflow). |
+| orchestrated_task | Needs HTTP tools, data fetch/list/analysis, mutation, multi-step orchestration, or skill choice is ambiguous. |
+
+## Rules
+- Read userMessage first. intentRecallMatches only narrow HTTP tools — they do NOT prove the user wants a page workflow.
+- pageHostSkillCandidate means ONE skill matches page host tools — use on_page_task ONLY when user intent aligns with that skill's purpose.
+- When unsure between on_page_task and orchestrated_task, prefer orchestrated_task.
+- When message is clearly off-domain (e.g. unrelated smalltalk), use direct_answer — even if requestedSkill is set.
+- requestedSkill: user explicitly chose a skill in UI. Still classify route from userMessage; use requestedSkill.id for suggestedSkillId when route=on_page_task.
+- suggestedSkillId: requestedSkill.id, pageHostSkillCandidate.id, or availableSkills[].id when route=on_page_task; otherwise null.
+- reason: short English (<=120 chars) for observability.`,
 
   [PROMPT_KEYS.AGENT_TASK_RESUME_FOLLOWUP]: `You decide whether the user's latest message continues an in-progress agent task, or starts a new unrelated request.
 
@@ -264,24 +301,25 @@ Do not output raw JSON. Reply in the same language as the user request.
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN}`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_READ]: `You are summarizing a READ-ONLY tool result for the user.
-Output {"blocks":[...]} per platform.message_blocks_spec (not plain prose only).
+${AGENT_SUMMARIZE_BLOCKS_INVOKE_ZH}
 When Tool observations include <current_run_observations> and <working_memory_observations>, answer from current_run first; working_memory is session context only.
 When <plan_context> is present, treat its current step objective as the primary instruction.
 Infer from User request what blocks are needed — text explanation, table for rows, metric for totals, alert for risks.
 When Suggested rule-based blocks already include table/chart, keep those for facts and add non-duplicative blocks for remaining goals.
 Focus on: what was found, key field values, evidence from the tool result (cite field labels when helpful).
 Do not propose new operations or call new tools.
-Do not output raw JSON. Reply in the same language as the user request.
 If the tool result is empty or insufficient, state what is missing and what the user can try next.
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN}`,
 
-  [PROMPT_KEYS.AGENT_SUMMARIZE_ACTION]: `WRITE/ACTION tool summarize → {"blocks":[...]} per platform.message_blocks_spec. User's language.
+  [PROMPT_KEYS.AGENT_SUMMARIZE_ACTION]: `WRITE/ACTION tool summarize. User's language.
+${AGENT_SUMMARIZE_BLOCKS_INVOKE_ZH}
 
 Success (no Tool error summary): alert(success) + text — tool name, key args (Executed arguments + Field labels), changes confirmed by Tool result.
 Failure: alert(error) from Tool error summary / Downstream response (status, type, message, errorKey, code) + text with impact and next steps — not empty-query wording.
-Evidence from input only; no raw JSON, no invented values, no new tool calls.`,
+Evidence from input only; no invented values, no new tool calls.`,
 
-  [PROMPT_KEYS.AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME]: `User confirmed WRITE tool(s) — already executed; no new calls or confirmation. User's language. {"blocks":[...]} per platform.message_blocks_spec.
+  [PROMPT_KEYS.AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME]: `User confirmed WRITE tool(s) — already executed; no new calls or confirmation. User's language.
+${AGENT_SUMMARIZE_BLOCKS_INVOKE_ZH}
 
 <write_confirm_resume> has outcome and per-operation status. State confirmed/succeeded/failed counts when totalCount >= 1.
 Success: alert(success) + text per operation (tool, params, outcome) from merged tool results.
@@ -289,7 +327,7 @@ Failure: alert(error) + error hints/responseSource + next steps.
 Evidence only; no fabricated fields.`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK]: `This is small talk. Reply naturally and concisely in the same language as the user.
-Prefer plain markdown prose (streamed to the user). Alternatively output {"blocks":[{"type":"text","content":"..."}]} with a single text block.
+Stream plain markdown prose only — do not output {"blocks":[...]} or any JSON wrapper.
 Do not call tools. Do not ask for business parameters.`,
 
   [PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC]: `<message_blocks_spec>
@@ -321,7 +359,7 @@ loading: { type, id, hint? }（SSE 占位；后续 action=patch 按 replaceId �
   [PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS]: `你是助手回复编排器。用户可见内容经 SSE 流式展示。
 ${AGENT_SUMMARIZE_STREAMING_OUTPUT_ZH}
 ${AGENT_SUMMARIZE_WRITE_PREVIEW_PROSE_ZH}
-${AGENT_SUMMARIZE_BLOCKS_APPEND_ZH}
+【禁止】输出 {"blocks":[...]} 或任何 JSON 协议；结构化 table/chart/alert 由服务端 Suggested rule-based blocks 注入，你只写 Markdown 正文。
 ${AGENT_SUMMARIZE_CONTEXT_AND_OUTCOME_ZH}
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
@@ -345,11 +383,6 @@ ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
-  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_PRESENT_CONTEXT_RETRY]: `上一次输出缺少操作说明（仅含拟提交正文）。请重写整段展示：
-- 先自然说明本次将代表用户对哪条/哪个对象执行什么操作（依据 observations 与 pending arguments，勿列字段名）。
-- 再将 arguments 中的提交正文逐字放入 fenced code block。
-- 不要只输出正文；不要罗列参数键值。`,
-
   [PROMPT_KEYS.AGENT_READINESS_SLOT_CHECK]: `You are the turn readiness slot checker for a business agent.
 Given the user message, plan objective, required business field names, and optional session observation summary, decide whether the agent can proceed to tool execution WITHOUT guessing parameter values.
 
@@ -361,9 +394,9 @@ Rules:
 - Do NOT invent field values; do NOT guess IDs
 - missingFields may be empty when ready=true`,
 
-  [PROMPT_KEYS.AGENT_RESPOND_CLARIFICATION]: `Generate a concise clarification reply as Message Blocks when required business parameters are missing.
+  [PROMPT_KEYS.AGENT_RESPOND_CLARIFICATION]: `Generate a concise clarification reply when required business parameters are missing.
+${AGENT_SUMMARIZE_BLOCKS_INVOKE_ZH}
 Rules:
-- Output structured blocks per platform.message_blocks_spec
 - Briefly acknowledge the user goal, then ask ONLY for the missing fields listed in Missing fields
 - Use hints provided; you may add a generic example format if param hints exist
 - Do not call tools; do not claim data was fetched

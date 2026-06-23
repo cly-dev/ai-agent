@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { IntegrationAuthMode, Prisma } from '../../../generated/prisma/client';
 import {
   type PaginatedResult,
@@ -32,7 +33,10 @@ const CONNECTION_PROBE_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class IntegrationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
+  ) {}
 
   async create(dto: CreateIntegrationDto): Promise<IntegrationResponse> {
     await this.assertAppClientExists(dto.appClientId);
@@ -132,6 +136,7 @@ export class IntegrationService {
         },
         include: INTEGRATION_DETAIL_INCLUDE,
       });
+      await this.runtimeCacheInvalidator.invalidateForIntegration(id);
       return toIntegrationResponse(row);
     } catch (error) {
       if (

@@ -2,9 +2,9 @@ import {
   extractToolErrorUserHint,
   isAgentToolErrorObservation,
 } from './agent-run-user-messages.util';
-import type { ToolObservation } from './main/agent-engine.types';
-import { PLAN_DRAFT_REPLY_OBSERVATION_NAME } from './main/plan-draft-reply.util';
-import { PLAN_COMPOSE_WRITE_OBSERVATION_NAME } from './main/plan-compose-write.util';
+import type { ToolObservation } from './main/types/agent-engine.types';
+import { PLAN_DRAFT_REPLY_OBSERVATION_NAME } from './main/plan-present/plan-draft-reply.util';
+import { PLAN_COMPOSE_WRITE_OBSERVATION_NAME } from './main/plan-present/plan-compose-write.util';
 import { isEmptyListToolObservation } from './tool/tool-observation.util';
 import { resolveDefaultListArrayLimit } from '../../tool-engine/tool-pagination-params.util';
 import {

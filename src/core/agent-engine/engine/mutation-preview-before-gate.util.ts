@@ -1,14 +1,16 @@
 import { messageBlocksToPlainText } from './message/message-blocks.util';
-import type { AgentEngineTool, ToolObservation } from './main/agent-engine.types';
+import type { AgentEngineTool, ToolObservation } from './main/types/agent-engine.types';
 import {
   resolveLatestPlanDraftReply,
-} from './main/plan-draft-reply.util';
+} from './main/plan-present/plan-draft-reply.util';
 import {
   isUsablePlanMutationPreviewDraft,
-} from './main/plan-draft-summarize.util';
-import type { RunAssistantArtifact } from './main/run-assistant-artifact.store';
+} from './main/plan-present/plan-draft-summarize.util';
+import {
+  buildWriteConfirmationDetailMarkdown,
+} from './main/plan-present/plan-draft-summarize.util';
+import type { RunAssistantArtifact } from './main/run/run-assistant-artifact.store';
 import type { WriteConfirmationToolCall } from './write-confirmation-gate.util';
-import { formatWriteToolArgumentsForUserPreview } from '../../tool-engine/write-tool-draft-injection.util';
 
 const MIN_PREVIEW_SUBSTANTIVE_CHARS = 12;
 
@@ -52,10 +54,9 @@ export function buildMutationPreviewMarkdownFromWriteCalls(
     if (!def) {
       continue;
     }
-    const body = formatWriteToolArgumentsForUserPreview(
-      call.arguments,
+    const body = buildWriteConfirmationDetailMarkdown(
+      { name: call.name, arguments: call.arguments },
       def,
-      def.description,
     );
     if (body.trim()) {
       sections.push(body.trim());

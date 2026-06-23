@@ -1,32 +1,28 @@
-import type { ToolObservation } from '../main/agent-engine.types';
+import type { ToolObservation } from '../main/types/agent-engine.types';
 import {
   getPendingPlanToolStep,
   isPendingPlanAnswerStep,
   isPlanToolStepSatisfiedByObservations,
   listBusinessFieldsForPlanGatherStep,
   type PlanScopedTool,
-} from '../main/task-plan.util';
+} from '../main/plan/task-plan.util';
 import {
   selectObservationsForPlanToolSatisfaction,
   type PlanObservationBuckets,
-} from '../main/plan-observation-scope.util';
-import type { TaskPlanSnapshot } from '../main/task-plan.types';
+} from '../main/plan/plan-observation-scope.util';
+import type { TaskPlanSnapshot } from '../main/plan/task-plan.types';
 import type { LlmService } from '../../../llm/llm.service';
 import type { PromptRegistryService } from '../../../prompt/prompt-registry.service';
+import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
+import { formatPageContextPromptBlock } from '../../../host-bridge/page-context.prompt.util';
 import {
   evaluateReadinessSlotsWithLlm,
-  isReadinessSlotLlmEnabled,
   normalizeMissingFieldsFromLlm,
 } from './turn-readiness-llm.util';
 import type {
   TurnReadinessResult,
   TurnRespondRequest,
 } from './turn-respond.types';
-
-export function isTurnReadinessEnabled(): boolean {
-  const raw = process.env.AGENT_TURN_READINESS?.trim();
-  return raw !== '0' && raw !== 'false';
-}
 
 export type EvaluateExecutionReadinessInput = {
   userMessage: string;
@@ -38,6 +34,7 @@ export type EvaluateExecutionReadinessInput = {
   promptRegistry?: PromptRegistryService;
   scope?: { appClientId: number; agentId: number };
   sessionObservationSummary?: string | null;
+  pageContext?: AgentChatPageContext | null;
   observationBuckets: PlanObservationBuckets;
 };
 
@@ -56,9 +53,6 @@ function respond(
 export async function evaluateExecutionReadiness(
   input: EvaluateExecutionReadinessInput,
 ): Promise<TurnReadinessResult> {
-  if (!isTurnReadinessEnabled()) {
-    return ready('disabled');
-  }
   if (input.resumeFromWriteConfirm) {
     return ready('write_confirm_resume');
   }
@@ -107,12 +101,11 @@ export async function evaluateExecutionReadiness(
   }
 
   if (
-    !isReadinessSlotLlmEnabled() ||
     !input.llmService ||
     !input.promptRegistry ||
     !input.scope
   ) {
-    return ready('slot_llm_disabled');
+    return ready('slot_llm_unavailable');
   }
 
   const slotResult = await evaluateReadinessSlotsWithLlm({
@@ -124,6 +117,7 @@ export async function evaluateExecutionReadiness(
     currentObjective: plan.currentObjective,
     requiredFields,
     sessionObservationSummary: input.sessionObservationSummary ?? null,
+    pageContext: input.pageContext ?? null,
   });
 
   if (slotResult.ready) {

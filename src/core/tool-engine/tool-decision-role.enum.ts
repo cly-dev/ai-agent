@@ -4,7 +4,8 @@
  * 使用位置：
  * - `tool-response-profile.types.ts` — ToolResponseProfile.decisionRole
  * - `tool-output-projection.util.ts` — parseResponseProfile 落库字段
- * - `tool-decision-role.util.ts` — resolveToolDecisionRole / summarizeToolsForDecisionPrompt
+ * - `tool-agent-metadata.util.ts` — resolveToolDecisionRole
+ * - `tool-schema-compact.util.ts` — summarizeToolsForLlmSchema
  * - `agent-engine.service.ts` — buildDecisionPrompt → compact tools + role guidance
  * - `swagger-tool-import.core.ts` — Swagger 导入时按 HTTP 动词写入
  * - `tool-schema-inference.util.ts` — debug 推断 schema 时补全

@@ -13,6 +13,7 @@ import {
 } from './bind-tools-tier.util';
 import { CategoryIntentRecallService } from './category-intent-recall.service';
 import { IntentRecallConfigService } from './intent-recall-config.service';
+import { ToolCategoryCacheService } from '../runtime-cache/tool-category-cache.service';
 import { detectIntentKind as classifyIntentKind } from '../agent-engine/intent-kind.util';
 import {
   buildIntentClarificationGuidance,
@@ -33,20 +34,13 @@ type ParsedIntentPayload = {
 @Injectable()
 export class IntentScopeService {
   private readonly logger = new Logger(IntentScopeService.name);
-  private readonly toolCategoryRowsCache = new Map<
-    string,
-    {
-      rows: Array<{ id: number; label: string; description: string | null }>;
-      expiresAt: number;
-    }
-  >();
-  private static readonly CATEGORY_CACHE_TTL_MS = 10 * 60 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly categoryIntentRecall: CategoryIntentRecallService,
     private readonly intentRecallConfig: IntentRecallConfigService,
     private readonly toolEngine: ToolEngineService,
+    private readonly toolCategoryCache: ToolCategoryCacheService,
   ) {}
 
   buildIntentClarificationGuidance(userMessage: string): string {
@@ -340,24 +334,6 @@ export class IntentScopeService {
   }
 
   private async fetchToolCategories(toolCategoryIds: number[]) {
-    const uniq = Array.from(new Set(toolCategoryIds)).sort((a, b) => a - b);
-    if (uniq.length === 0) {
-      return [];
-    }
-    const cacheKey = uniq.join(',');
-    const cached = this.toolCategoryRowsCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.rows;
-    }
-    const rows = await this.prisma.toolCategory.findMany({
-      where: { id: { in: uniq } },
-      orderBy: { sortOrder: 'asc' },
-      select: { id: true, label: true, description: true },
-    });
-    this.toolCategoryRowsCache.set(cacheKey, {
-      rows,
-      expiresAt: Date.now() + IntentScopeService.CATEGORY_CACHE_TTL_MS,
-    });
-    return rows;
+    return this.toolCategoryCache.fetchByIds(toolCategoryIds);
   }
 }

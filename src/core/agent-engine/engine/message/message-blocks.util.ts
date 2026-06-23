@@ -92,6 +92,10 @@ const SUMMARIZE_BLOCKS_JSON_TAIL_PATTERNS: RegExp[] = [
   /\n\s*\]\s*\}\s*$/,
 ];
 
+/** 流式未闭合的 `{"blocks` 协议前缀（模型正文后另起行补 JSON 时常见）。 */
+const INCOMPLETE_BLOCKS_JSON_TAIL_RE =
+  /(?:^|\n)\s*\{\s*["']?blocks["']?\s*$/i;
+
 /** 返回 message 正文中 blocks / pendingWriteToolCall 协议尾巴起始下标；-1 表示无。 */
 export function findSummarizeBlocksJsonTailStart(text: string): number {
   const xmlPending = /<pendingWriteToolCall>\s*/i.exec(text);
@@ -115,6 +119,10 @@ export function findSummarizeBlocksJsonTailStart(text: string): number {
   const blocksMatch = /\{\s*["']blocks["']\s*:/.exec(text);
   if (blocksMatch?.index != null && blocksMatch.index > 0) {
     return blocksMatch.index;
+  }
+  const incompleteBlocks = INCOMPLETE_BLOCKS_JSON_TAIL_RE.exec(text);
+  if (incompleteBlocks?.index != null && incompleteBlocks.index > 0) {
+    return incompleteBlocks.index;
   }
   return -1;
 }
@@ -220,6 +228,10 @@ export function findInlineSummarizeBlocksJsonStart(
   );
   if (inline >= 0) {
     return emittedProseLength + inline;
+  }
+  const incompleteBlocks = rest.search(INCOMPLETE_BLOCKS_JSON_TAIL_RE);
+  if (incompleteBlocks >= 0) {
+    return emittedProseLength + incompleteBlocks;
   }
   const loneBrace = /\{\s*$/.exec(messageText);
   if (
@@ -604,12 +616,17 @@ function emitSummarizeProseDelta(
   const tailInSuffix = findSummarizeBlocksJsonTailStart(
     messageText.slice(emittedProseLength),
   );
+  const newlineJsonOpen = messageText
+    .slice(emittedProseLength)
+    .search(/\n\s*\{\s*$/);
   const cutAt =
     inlineJsonStart >= 0
       ? inlineJsonStart
       : tailInSuffix >= 0
         ? emittedProseLength + tailInSuffix
-        : -1;
+        : newlineJsonOpen >= 0
+          ? emittedProseLength + newlineJsonOpen
+          : -1;
 
   if (cutAt >= 0) {
     const delta = messageText.slice(emittedProseLength, cutAt);

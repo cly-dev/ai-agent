@@ -10,6 +10,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { ChatEventsService } from '../../../modules/chat/chat-events.service';
 import { PendingWriteConfirmationStore } from '../../../modules/chat/pending-write-confirmation.store';
 import { AgentService } from '../../../modules/agent/agent.service';
+import { HostToolService } from '../../../modules/host-tool/host-tool.service';
 import {
   createRunMetricsAccumulator,
   recordMachineCodeUsage,
@@ -24,32 +25,36 @@ import type {
   AgentRunInput,
   AgentRunResult,
   ResumeAfterWriteConfirmInput,
-} from './main/agent-engine.types';
-import { AgentLangGraphRunner } from './main/agent-lang-graph.runner';
-import { AgentRunLifecycleService } from './main/agent-run-lifecycle.service';
+} from './main/types/agent-engine.types';
+import { AgentLangGraphRunner } from './main/runner/agent-lang-graph.runner';
+import { AgentRunLifecycleService } from './main/run/agent-run-lifecycle.service';
 import { SessionGoaService } from '../../memory/goa/session-goa.service';
 import {
   buildHostActionSyncPayload,
   coalescePageContext,
+  collectSuccessfulMutationIdentifierValues,
+  dispatchHostActionSse,
   hasSuccessfulMutationStep,
+  isPageContextAlignedWithSuccessfulMutations,
   type AgentChatPageContext,
 } from '../../host-bridge';
 import type { SessionMemoryUpdateContext } from '../../memory/goa/session-goa.types';
-import { AgentRunSseEmitter } from './main/agent-run-sse.emitter';
-import { RunAssistantArtifactStore } from './main/run-assistant-artifact.store';
-import { RunAssistantMessagePersistService } from './main/run-assistant-message-persist.service';
-import { AgentSessionScopeService } from './main/agent-session-scope.service';
-import { RequestedSkillRunService } from './main/requested-skill-run.service';
+import { AgentRunSseEmitter } from './main/run/agent-run-sse.emitter';
+import { RunAssistantArtifactStore } from './main/run/run-assistant-artifact.store';
+import { RunAssistantMessagePersistService } from './main/run/run-assistant-message-persist.service';
+import { AgentSessionScopeService } from './main/session/agent-session-scope.service';
+import { RequestedSkillRunService } from './main/skill/requested-skill-run.service';
 import {
   buildEngineToolsFromAllowed,
   executePendingWriteToolCalls,
-} from './main/agent-tool-runtime.util';
-import { maxRunStepNumber } from './main/agent-run-steps.util';
+} from './main/runtime/agent-tool-runtime.util';
+import { maxRunStepNumber } from './main/run/agent-run-steps.util';
+import { buildCompletionHostToolRunStep, buildHostToolRunStep } from './main/host-tool/host-tool-run-step.util';
 import { deserializePendingObservations } from './agent-write-confirmation.util';
-import { resolveTaskPlanAdvance } from './main/task-plan.util';
+import { resolveTaskPlanAdvance } from './main/plan/task-plan.util';
 import { buildWriteConfirmResumeSummaryObservation } from './write-confirm-resume-summary.util';
 import { pendingRespondFromObservation } from './turn/turn-respond.util';
-import type { ToolObservation } from './main/agent-engine.types';
+import type { ToolObservation } from './main/types/agent-engine.types';
 
 /**
  * Agent 运行编排：新消息走 run()，写确认续跑走 resumeAfterWriteConfirm()。
@@ -65,6 +70,7 @@ export class AgentEngineService {
     private readonly promptComposer: PromptComposerService,
     private readonly toolEngine: ToolEngineService,
     private readonly chatEvents: ChatEventsService,
+    private readonly hostToolService: HostToolService,
     private readonly agentService: AgentService,
     private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
     private readonly sse: AgentRunSseEmitter,
@@ -165,27 +171,83 @@ export class AgentEngineService {
     });
   }
 
-  private emitRunCompletion(
+  private async emitRunCompletion(
     sessionId: string,
     result: AgentRunResult,
     graphState: AgentGraphState,
     pageContext: AgentChatPageContext | null,
-  ): void {
-    if (
+    runtime: { appClientId: number; agentId: number },
+  ): Promise<void> {
+    const mutationSucceeded =
       result.status === AgentRunStatus.success &&
       !graphState.awaitingWriteConfirmation &&
       pageContext?.page?.trim() &&
-      hasSuccessfulMutationStep(graphState.steps, graphState.scopedTools)
-    ) {
-      this.chatEvents.emit(sessionId, {
-        event: 'host_action',
-        payload: buildHostActionSyncPayload({
-          pageContext,
-          runId: result.runId,
-          turnId: result.turnId,
-          skillConfig: graphState.activeSkillConfig,
-        }),
+      hasSuccessfulMutationStep(graphState.steps, graphState.scopedTools);
+
+    if (mutationSucceeded) {
+      const pageAligned = isPageContextAlignedWithSuccessfulMutations({
+        pageContext,
+        steps: graphState.steps,
+        scopedTools: graphState.scopedTools,
       });
+      if (!pageAligned) {
+        const mutationIds = [
+          ...collectSuccessfulMutationIdentifierValues({
+            steps: graphState.steps,
+            scopedTools: graphState.scopedTools,
+          }),
+        ];
+        this.logger.log(
+          `completion host_tool skipped: pageContext entity not aligned with mutation runId=${result.runId} page=${pageContext.page} entityId=${String(pageContext.entity?.id ?? '')} entityType=${String(pageContext.entity?.type ?? '')} mutationIds=${mutationIds.join(',') || 'none'}`,
+        );
+        const completionHostToolStep = buildHostToolRunStep({
+          existingSteps: graphState.steps,
+          status: 'completion_skipped',
+          reason: 'agent_mutation_success',
+          pageScope: pageContext.page,
+          skipReason: 'page_context_entity_not_aligned_with_mutation',
+          sseDispatched: false,
+        });
+        await this.lifecycle.updateRun(
+          result.runId,
+          [...graphState.steps, completionHostToolStep],
+          result.status,
+        );
+        this.emitAgentRunComplete(sessionId, result);
+        return;
+      }
+      const hostTools = await this.hostToolService.resolveCompletionHostTools({
+        appClientId: runtime.appClientId,
+        agentId: runtime.agentId,
+        skillId: graphState.activeSkillId,
+        pageContext,
+      });
+      const sseDispatched = hostTools.length > 0;
+      if (sseDispatched) {
+        dispatchHostActionSse(
+          (sid, envelope) => this.chatEvents.emit(sid, envelope),
+          sessionId,
+          buildHostActionSyncPayload({
+            pageContext,
+            runId: result.runId,
+            turnId: result.turnId,
+            skillConfig: graphState.activeSkillConfig,
+            hostTools,
+          }),
+        );
+      }
+      const completionHostToolStep = buildCompletionHostToolRunStep({
+        existingSteps: graphState.steps,
+        pageScope: pageContext.page,
+        hostTools,
+        sseDispatched,
+      });
+      const stepsWithHostTool = [...graphState.steps, completionHostToolStep];
+      await this.lifecycle.updateRun(
+        result.runId,
+        stepsWithHostTool,
+        result.status,
+      );
     }
     this.emitAgentRunComplete(sessionId, result);
   }
@@ -493,11 +555,15 @@ export class AgentEngineService {
         graphState,
         runMetrics,
       });
-      this.emitRunCompletion(
+      await this.emitRunCompletion(
         input.sessionId,
         result,
         graphState,
         resumePageContext,
+        {
+          appClientId: session.appClientId,
+          agentId: agent.id,
+        },
       );
       return result;
     } catch (error) {
@@ -661,11 +727,15 @@ export class AgentEngineService {
         graphState,
         runMetrics,
       });
-      this.emitRunCompletion(
+      await this.emitRunCompletion(
         input.sessionId,
         result,
         graphState,
         pageContext,
+        {
+          appClientId: session.appClientId,
+          agentId: agent.id,
+        },
       );
       return result;
     } catch (error) {

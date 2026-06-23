@@ -2,7 +2,7 @@ import {
   buildIntentClarificationGuidance,
   buildUnsupportedIntentGuidance,
 } from '../../../intent/intent-scope.util';
-import type { ToolObservation } from '../main/agent-engine.types';
+import type { ToolObservation } from '../main/types/agent-engine.types';
 import type {
   PendingRespond,
   TurnRespondKind,
@@ -69,6 +69,16 @@ export function turnRespondRequestToObservation(
     return {
       name: 'smalltalk',
       output: { userMessage: request.userMessage },
+      quality: 'medium',
+    };
+  }
+  if (request.kind === 'off_domain') {
+    return {
+      name: 'off_domain',
+      output: {
+        userMessage: request.userMessage,
+        routingReason: request.payload?.routingReason ?? null,
+      },
       quality: 'medium',
     };
   }

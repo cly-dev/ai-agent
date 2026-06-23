@@ -1,6 +1,7 @@
 # 页面上下文与宿主动作 · 前端对接指南
 
 > 版本：与 agent-server 当前实现同步（2026-06）  
+> **SDK 一站式对接（推荐入口）**：[host-bridge-sdk-frontend.md](./host-bridge-sdk-frontend.md)  
 > 适用：业务页内嵌 Chat（omnix-chat SDK 或自研 UI）  
 > 后端契约摘要：[host-bridge-frontend.md](./host-bridge-frontend.md)  
 > SDK 细节（含 `routeContext` / 勾选附带）：agent-chat `docs/host-page-context-and-actions.md`  
@@ -13,7 +14,7 @@
 | 方向 | 机制 | 谁负责 |
 |------|------|--------|
 | **页面 → Agent** | 用户发消息时附带 `pageContext` | 宿主页面 + Chat SDK |
-| **Agent → 页面** | SSE `host_action`（mutation 成功后，`status: completed`） | 宿主注册 handler，**自行决定** refetch / toast / 忽略 |
+| **Agent → 页面** | SSE `host_action`（`hostTools` 列表，`reason` 区分场景） | 宿主注册 handler，**自行决定** refetch / toast / 忽略 |
 
 ```mermaid
 sequenceDiagram
@@ -35,7 +36,7 @@ sequenceDiagram
   Chat->>API: POST messages confirmWrite:true
 
   API-->>SSE: message（续跑回复）
-  API-->>SSE: host_action（status=completed）
+  API-->>SSE: host_action（reason=plan_host_tool 或 agent_mutation_success）
   API-->>SSE: complete
   SSE->>Page: registerHostAction 回调
   Page->>Page: 页面自定 UI 反应（refetch / toast / 忽略）
@@ -134,7 +135,7 @@ type PageContext = {
 
 - **推荐**：嵌套 `pageContext` + 平铺兼容字段（与 omnix-chat SDK 一致）。
 - 服务端合并时 **嵌套优先**。
-- `POST /chat/{sessionId}/prepare` **不**带 pageContext（仅预热）。
+- **`POST /chat/{sessionId}/prepare`**：可选带 `pageContext`，用于 **Host Tool 按页预热**（见 [host-tool-prepare-frontend.md](./host-tool-prepare-frontend.md)）。
 
 ### 3.4 使用 omnix-chat SDK
 
@@ -154,11 +155,14 @@ function ReviewDetailPage({ reviewId }: { reviewId: string }) {
   }, [reviewId, instance]);
 
   useHostAction('review-detail', async (action) => {
-    if (action.status !== 'completed') return;
     if (action.entity?.id && action.entity.id !== reviewId) return;
-    // 操作完成后的 UI 由页面自定：示例为 refetch
-    await refetchReview(reviewId);
-    await refetchReplies(reviewId);
+    for (const tool of action.hostTools) {
+      await instance.runHostTool(action.scope!, tool.name, tool.args);
+    }
+    // completion 场景示例：refetch
+    if (action.reason === 'agent_mutation_success') {
+      await refetchReview(reviewId);
+    }
   });
 
   return <AgentChat skillId={REVIEW_REPLY_SKILL_ID} attachPageContext />;
@@ -182,24 +186,38 @@ SDK 能力对照：
 
 ---
 
-## 4. 出站：host_action（操作完成）
+## 4. 出站：host_action
 
 ### 4.1 语义
 
-`host_action` 表示：**本轮 run 中，用户意图相关的 mutation 已在业务 API 侧成功执行**。
+`host_action` 携带 **`hostTools[]`**，由浏览器 registry 执行。用 **`reason`** 区分：
 
-这不是刷新指令。服务端**不会**指定 `refresh` / `invalidate` / 刷新哪些区域；前端收到 `status: 'completed'` 后自行决定 refetch、invalidate、toast 或忽略。
+| `reason` | 含义 |
+|----------|------|
+| `plan_host_tool` | Plan `host_tool` 步 mid-run 推送（常带 `planStepId`） |
+| `agent_mutation_success` | HTTP mutation 成功后，按模板解析参数 |
+
+这不是刷新指令。服务端**不会**指定 `refresh` / `invalidate`；前端收到后自行决定 refetch、invalidate、toast 或忽略。
 
 ### 4.2 何时收到
 
-**同时满足**时，在 `complete` **之前**推送：
+在 `complete` **之前**推送（`hostTools` 非空）。分两条路径：
+
+**A — `plan_host_tool`（run 进行中）**
+
+| 条件 | 说明 |
+|------|------|
+| Plan pending 步为 `host_tool` | Decision LLM 产出 host tool calls |
+| 入站有效 `pageContext.page` | 无 page 不发 |
+
+**B — `agent_mutation_success`（run 成功结束前）**
 
 | 条件 | 说明 |
 |------|------|
 | 本轮 run `status=success` | 失败不发 |
-| 非写确认门闩暂停态 | 仅 `confirmation_required` 时尚未执行写 HTTP，**不发** |
-| 存在 mutation Tool 且 HTTP `SUCCESS` | 只分析、只读不发 |
-| 入站有效 `pageContext.page` | **无 page 不发**（无 `scope` 路由） |
+| 非写确认门闩暂停态 | `confirmation_required` 阶段不发 |
+| 存在 mutation Tool 且 HTTP `SUCCESS` | 只读不发 |
+| 入站有效 `pageContext.page` | 无 page 不发 |
 
 ### 4.3 SSE 格式
 
@@ -207,21 +225,41 @@ SDK 能力对照：
 
 ```text
 event: host_action
-data: {"action":"host_action","status":"completed","scope":"review-detail",...}
+data: {"action":"host_action","scope":"review-detail","hostTools":[...],"reason":"agent_mutation_success",...}
 ```
 
 也接受 `event: host-action`。SDK 亦支持在 `message` 事件内嵌相同 payload（见 SDK 文档）。
 
-**Payload 示例**
+**Payload 示例（completion）**
 
 ```json
 {
   "action": "host_action",
-  "status": "completed",
   "scope": "review-detail",
   "entity": { "type": "review", "id": "123" },
+  "hostTools": [
+    {
+      "name": "refreshEntity",
+      "args": { "entityType": "review", "entityId": "123" }
+    }
+  ],
   "metadata": { "tab": "content" },
-  "reason": "review_reply_submitted",
+  "reason": "agent_mutation_success",
+  "runId": 42,
+  "turnId": 7
+}
+```
+
+**Payload 示例（Plan mid-run）**
+
+```json
+{
+  "action": "host_action",
+  "scope": "review-detail",
+  "entity": { "type": "review", "id": "123" },
+  "hostTools": [{ "name": "fillReplyDraft", "args": { "text": "…" } }],
+  "planStepId": "ui_fill_draft",
+  "reason": "plan_host_tool",
   "runId": 42,
   "turnId": 7
 }
@@ -229,28 +267,31 @@ data: {"action":"host_action","status":"completed","scope":"review-detail",...}
 
 | 字段 | 说明 |
 |------|------|
-| `status` | 固定 `completed`，表示 mutation 已成功 |
+| `action` | 固定 `host_action` |
 | `scope` | 对应入站 `pageContext.page`，用于 handler 路由 |
 | `entity` | 镜像入站 `pageContext.entity`；handler 内可校验 `id` |
-| `metadata` | 镜像入站 `pageContext.metadata`（透传，服务端不解释） |
-| `reason` | 可选，日志/埋点；可被 Skill `hostBridge.reason` 覆盖 |
-| `runId` / `turnId` | 关联本轮 run，便于去重与对账 |
+| `hostTools` | **必填**；`name` + `args`，前端 `runHostTool` |
+| `planStepId` | 可选；Plan 步对账 |
+| `metadata` | 镜像入站 `pageContext.metadata`（透传） |
+| `reason` | `plan_host_tool` / `agent_mutation_success` / 自定义 |
+| `runId` / `turnId` | 关联本轮 run |
 
-> **已废弃（勿依赖）**：旧版可能带 `type: "refresh"`、`targets`。新实现不再推送；前端应以 `status === 'completed'` 为准。
+`agent_mutation_success` 的 `hostTools` 来源：DB `HostTool`（`ON_COMPLETE`）∩ 绑定 ∩ scope；`args` 由 `argsTemplate` + `$entity.*` 解析。
+
+> **已废弃（勿依赖）**：`status`、`type: "refresh"`、`targets`。
 
 ### 4.4 页面 handler 写法
 
 ```ts
-// 伪代码：不要用 location.reload()
 async function onHostAction(action: HostAction) {
-  if (action.status !== 'completed') return;
+  if (action.action !== 'host_action') return;
+  if (!action.hostTools?.length) return;
   if (action.scope !== 'review-detail') return;
   if (action.entity?.id && action.entity.id !== currentReviewId) return;
 
-  // 操作完成后的默认策略由页面定义（示例：invalidate 相关 query）
-  await queryClient.invalidateQueries({ queryKey: ['review', currentReviewId] });
-  await queryClient.invalidateQueries({ queryKey: ['review-replies', currentReviewId] });
-  // 或 toast('回复已提交')、或什么都不做（用户已离页）
+  for (const tool of action.hostTools) {
+    await runHostTool(action.scope!, tool.name, tool.args);
+  }
 }
 ```
 
@@ -266,7 +307,7 @@ async function onHostAction(action: HostAction) {
 3. SSE confirmation_required + complete   ← primary run 结束，尚未写 HTTP
 4. 用户点确认 → POST { confirmWrite: true }（可不带 content，可附带最新 pageContext）
 5. SSE message：续跑收尾文案
-6. SSE host_action（status=completed）       ← 写成功，通知操作完成
+6. SSE host_action（reason=agent_mutation_success）  ← 写成功
 7. SSE complete                             ← worker run 结束
 ```
 
@@ -296,7 +337,7 @@ async function onHostAction(action: HostAction) {
 }
 ```
 
-未来若引入前端工具库，可在 `hostBridge` 扩展 `onSuccess.hostTool`（工具名 + 参数）；当前阶段由页面在 `status === 'completed'` 时自行处理。示例 Skill：[skill-templates/review-reply-skill.example.md](./skill-templates/review-reply-skill.example.md)。
+未来若引入前端工具库，可在 `hostBridge` 扩展 `onSuccess.hostTool`（工具名 + 参数）；当前阶段由页面在收到 `host_action` 后执行 `hostTools`。示例 Skill：[skill-templates/review-reply-skill.example.md](./skill-templates/review-reply-skill.example.md)。
 
 ---
 
@@ -314,7 +355,7 @@ async function onHostAction(action: HostAction) {
 
 - [ ] SSE 已监听 `host_action`（或 SDK `useHostAction`）
 - [ ] 已按 `scope === page` 注册 handler
-- [ ] handler 校验 `status === 'completed'` 与 `entity.id`
+- [ ] handler 校验 `action === 'host_action'`、`hostTools.length > 0` 与 `entity.id`
 - [ ] 页面自定完成后的 UI（refetch / invalidate / toast），**不用** `location.reload()`
 - [ ] 理解 `host_action` 在 `complete` 之前到达
 
@@ -357,8 +398,11 @@ async function onHostAction(action: HostAction) {
 
 | 文档 | 内容 |
 |------|------|
+| [host-tool-stream-dsl-frontend.md](./host-tool-stream-dsl-frontend.md) | **v1** Host Tool 流式 DSL 协议 |
 | [host-bridge-frontend.md](./host-bridge-frontend.md) | 服务端行为摘要 |
 | [host-tool-data-model.md](./host-tool-data-model.md) | Host Tool 表结构与管理端建模 |
+| [host-tool-admin-frontend.md](./host-tool-admin-frontend.md) | B 端管理后台 API |
+| [host-tool-client-register-frontend.md](./host-tool-client-register-frontend.md) | C 端注册与 SDK |
 | [chat-sse-message-blocks-frontend.md](./chat-sse-message-blocks-frontend.md) | SSE 全事件 |
 | [write-confirmation-frontend.md](./write-confirmation-frontend.md) | 写确认 |
 | agent-chat `host-page-context-and-actions.md` | SDK 类型与 Registry |

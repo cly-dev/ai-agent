@@ -4,9 +4,9 @@ import {
   isAgentToolErrorObservation,
   type AgentToolErrorObservation,
 } from '../agent-run-user-messages.util';
-import type { ToolObservation } from '../main/agent-engine.types';
-import { getPendingPlanToolStep } from '../main/task-plan.util';
-import type { TaskPlanSnapshot } from '../main/task-plan.types';
+import type { ToolObservation } from '../main/types/agent-engine.types';
+import { getPendingPlanToolStep } from '../main/plan/task-plan.util';
+import type { TaskPlanSnapshot } from '../main/plan/task-plan.types';
 import {
   toolCallSignature,
   type ToolCallLike,

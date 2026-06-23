@@ -11,8 +11,6 @@ import {
   getSessionHistoryCompressMaxInputTokens,
   getSessionHistoryCompressMaxSummaryTokens,
   getSessionHistoryKeepRecentTurns,
-  isSessionHistoryCompressionEnabled,
-  isSessionHistoryTrimTurnsAfterCompressEnabled,
 } from '../shared/memory.constants';
 import { trimTurnsByCompressedWatermark } from './session-context-trim.util';
 import {
@@ -49,9 +47,6 @@ export class SessionHistoryCompressionService {
    * 在每轮 Agent 结束后调用（与 working memory 刷新并列）。
    */
   async maybeCompressAfterTurn(sessionId: string): Promise<void> {
-    if (!isSessionHistoryCompressionEnabled()) {
-      return;
-    }
     try {
       const raw = await this.sessionContextStore.get(sessionId);
       if (!raw || !isSessionContextPayload(raw)) {
@@ -96,9 +91,10 @@ export class SessionHistoryCompressionService {
         if (!isSessionContextPayload(current)) {
           return {};
         }
-        const trimmedTurns = isSessionHistoryTrimTurnsAfterCompressEnabled()
-          ? trimTurnsByCompressedWatermark(current.turns, upToMessageId)
-          : current.turns;
+        const trimmedTurns = trimTurnsByCompressedWatermark(
+          current.turns,
+          upToMessageId,
+        );
         return {
           compressedHistorySummary: summary,
           compressedUpToMessageId: upToMessageId,
@@ -107,7 +103,7 @@ export class SessionHistoryCompressionService {
         };
       });
       this.logger.debug(
-        `session history compressed sessionId=${sessionId} upToMessageId=${upToMessageId} oldTurns=${oldTurns.length} turnsBefore=${turnsBefore} trim=${isSessionHistoryTrimTurnsAfterCompressEnabled()}`,
+        `session history compressed sessionId=${sessionId} upToMessageId=${upToMessageId} oldTurns=${oldTurns.length} turnsBefore=${turnsBefore} trim=true`,
       );
     } catch (error) {
       this.logger.warn(

@@ -16,15 +16,18 @@ Role
 
 ## 管理 API
 
+> **B 端对接指南（API、config、Host Tool、UI 建议）**：[skill-admin-frontend.md](./skill-admin-frontend.md)
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/agent/:agentId/app-client/:appClientId/skills` | 创建 Skill |
 | GET | `/agent/:agentId/skills/client` | C 端：按 Agent + 用户角色返回可见 Skill 摘要（见 [agent-skill-client-api-frontend.md](./agent-skill-client-api-frontend.md)） |
 | GET | `/agent/:agentId/app-client/:appClientId/skills` | Agent 下分页列表 |
 | GET | `/skill/by-app-client/:appClientId?agentId=` | App 维度汇总列表 |
-| GET | `/skill/:skillId` | 详情 |
+| GET | `/skill/:skillId` | 详情（含 `skillTools`、`skillHostTools`、`hostToolCount`、`config`） |
 | PATCH | `/skill/:skillId` | 更新元数据 |
 | PUT | `/skill/:skillId/tools` | 全量替换 SkillTool |
+| PUT | `/admin/skill/:skillId/host-tools` | 全量替换 SkillHostTool（见 [skill-admin-frontend.md](./skill-admin-frontend.md)） |
 | DELETE | `/skill/:skillId` | 删除 |
 
 ## 风险等级与写操作确认
@@ -99,6 +102,7 @@ START → intent（收窄 scopedTools）
 |------|------|
 | 评论分析（列表 + content 解读） | [skill-templates/review-analyze-skill.example.md](./skill-templates/review-analyze-skill.example.md) |
 | 评论回复（与评论分析配对） | [skill-templates/review-reply-skill.example.md](./skill-templates/review-reply-skill.example.md) |
+| Campaign 文案填入输入框（Host Tool） | [skill-templates/campaign-fill-draft-skill.example.md](./skill-templates/campaign-fill-draft-skill.example.md) |
 
 ## 迁移
 

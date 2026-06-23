@@ -1,4 +1,4 @@
-import type { AgentGraphState } from '../main/agent-engine.types';
+import type { AgentGraphState } from '../main/types/agent-engine.types';
 import { hasPendingRespond } from './turn-respond.util';
 
 export function shouldRouteToRespond(

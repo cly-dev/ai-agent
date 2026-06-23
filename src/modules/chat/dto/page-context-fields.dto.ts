@@ -25,6 +25,14 @@ export class AgentChatPageContextDto {
   @MaxLength(2000)
   routePath?: string;
 
+  @ApiPropertyOptional({
+    description: '路由动态参数，如 { reviewId: "43689" }',
+    example: { reviewId: '43689' },
+  })
+  @IsOptional()
+  @IsObject()
+  routeParams?: Record<string, unknown>;
+
   @ApiPropertyOptional({ description: '流程 ID' })
   @IsOptional()
   @Type(() => Number)
@@ -72,6 +80,11 @@ export class PageContextMessageFieldsDto {
   @IsString()
   @MaxLength(2000)
   routePath?: string;
+
+  @ApiPropertyOptional({ description: '平铺：routeParams' })
+  @IsOptional()
+  @IsObject()
+  routeParams?: Record<string, unknown>;
 
   @ApiPropertyOptional({ description: '平铺：flowId' })
   @IsOptional()

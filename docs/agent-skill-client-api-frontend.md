@@ -155,8 +155,23 @@ Skill.agentId = :agentId
     Role 未配置 RoleSkill → 该 Agent 下全部 active Skill
     OR Skill ∈ RoleSkill 白名单
   )
+  AND 至少满足其一：
+    - Skill HTTP Tool ∩ 用户允许 Tool 非空
+    - SkillHostTool ∩ AgentHostTool 非空（HostTool.isActive）
   AND 可选 name / capabilityKey / keyword 客户端筛选
 ```
+
+**Plan 自动选 Skill（intent 收窄 + 当前页 host_tool）** 使用 `listResolvableSkillsForScopedTools` + `skillIsResolvableInScope`：
+
+| 输入 | 规则 |
+|------|------|
+| intent 收窄的 HTTP `scopedTools` | Skill 的 `skillToolIds` 与 intent 工具集有交集 → 可进 `availableSkillIds` |
+| 当前页 `scopedHostToolIds` | 纯 Host / both 型：Skill 的 `hostToolIds` 与 page scope 有交集 → 可进候选 |
+| 二者组合 | 开放对话未指定 `skillId` 时 **同时**消费上述两路（见 `skill.service.ts` 三路 DB 查询） |
+
+**外层 Plan 自动选中**（`resolveAutoOuterPlanSkill`）：当前页 host 与 **唯一** 一个 Skill 绑定对应时，跳过外层 Plan LLM，直接 `kind=skill`（`outerSkillSelectMethod=page_host_unique`）。适用于纯 Host 与 both。
+
+用户显式 `skillId` 走 `skillIsResolvableForRequested`（`outerSkillSelectMethod=requested`）。
 
 - 用户未绑定 `UserApp` → `[]`
 - `agentId` 不属于当前 DSN 对应 App → **404**
@@ -189,7 +204,8 @@ Skill.agentId = :agentId
     "capabilityKey": "review.reply",
     "riskLevel": "L2",
     "requiresWriteConfirmation": true,
-    "toolIds": [45, 46]
+    "toolIds": [45, 46],
+    "hostToolIds": [12]
   }
 ]
 ```
@@ -202,9 +218,10 @@ Skill.agentId = :agentId
 | `capabilityKey` | string \| null | 能力键，便于与业务场景映射 |
 | `riskLevel` | `L1` \| `L2` \| `L3` | 与 Tool 同枚举 |
 | `requiresWriteConfirmation` | boolean | `L2`/`L3` 时为 true；UI 可提示「可能触发写确认」 |
-| `toolIds` | number[] | 该 Skill 绑定的 Tool ID（均已与用户允许 Tool 有交集） |
+| `toolIds` | number[] | 该 Skill 绑定的 HTTP Tool ID（与用户允许 Tool 有交集时非空） |
+| `hostToolIds` | number[] | 该 Skill 绑定且落在 Agent Host Tool 白名单内的 Host Tool ID |
 
-> **过滤规则**：与 `POST .../messages` 的 `skillId` 校验一致 — 角色可见 **且** Skill Tool ∩ 用户允许 Tool 非空。列表中的 Skill 均可直接预选发送。
+> **过滤规则**：与 `POST .../messages` 的 `skillId` 校验一致 — 角色可见 **且** 至少有一个可运行能力（HTTP Tool 交集 **或** Agent 白名单内的 SkillHostTool）。纯 Host Tool Skill（`toolIds: []`、`hostToolIds` 非空）会正常返回。
 
 ---
 
@@ -241,7 +258,7 @@ Skill.agentId = :agentId
 
 | | 未传 `skillId` | 传了 `skillId` |
 |---|----------------|----------------|
-| 发消息前校验 | — | 角色可见 + **Skill Tool ∩ 用户允许 Tool**（不合法直接 400） |
+| 发消息前校验 | — | 角色可见 + **HTTP Tool 交集或 Agent 白名单内 SkillHostTool**（不合法直接 400） |
 | 图入口 | `intent` → `plan` | **跳过 intent**，`START` → `plan` |
 | scopedTools | intent 类目收窄 + bind | **仅 Skill 绑定 Tool**（不做 intent/bind） |
 | 外层 Plan | LLM 选 Skill 或模板 | 固定单步 `kind=skill` |
@@ -299,7 +316,7 @@ Skill.agentId = :agentId
 | 接口 | 建议 |
 |------|------|
 | `client/available` 为空 | 先调 `client/list`：若 list 非空而 available 为空 → **权限问题**；若 list 也为空 → **未配置 Agent** |
-| `skills/client` 为空 | Agent 可能未配置 Skill、RoleSkill 白名单未包含、或 Skill 与用户允许 Tool 无交集 → 仍可进入对话（不传 skillId） |
+| `skills/client` 为空 | Agent 可能未配置 Skill、RoleSkill 白名单未包含、或 Skill 既无 HTTP Tool 交集也无 Agent 白名单内 SkillHostTool → 仍可进入对话（不传 skillId） |
 
 ---
 
@@ -322,6 +339,7 @@ export type SkillClientListItem = {
   riskLevel: ToolLevel;
   requiresWriteConfirmation: boolean;
   toolIds: number[];
+  hostToolIds: number[];
 };
 
 /** GET /agent/:agentId/skills/client query */
@@ -363,4 +381,7 @@ export type SaveMessageBody = {
 | Agent available | `src/modules/agent/agent.controller.ts` → `findClientAvailableAgentsForUser` |
 | 角色 Tool 权限 | `src/modules/agent/util/agent-client-access.util.ts` |
 | Skill client 列表 | `src/modules/skill/skill.controller.ts` → `findClientListByAgentForUser` |
-| 运行时 Skill 预热（同逻辑） | `src/core/skill/skill.service.ts` → `listAgentSkillsForUser` |
+| 运行时 Skill 解析 | `src/core/skill/skill.service.ts` → `listResolvableSkillsForScopedTools` / `resolveSkillsForOuterPlan` / `getRunnableSkillDetailById` |
+| 可运行判定 | `src/core/skill/skill-runnable.util.ts` → `skillIsRunnableForUser` / `skillIsResolvableInScope` / `skillMatchesPageHostTools` |
+| 外层自动选 Skill | `src/core/agent-engine/engine/main/outer-plan-skill-resolve.util.ts` → `resolveAutoOuterPlanSkill` |
+| Plan 候选查询 | `src/core/skill/skill.service.ts` → `listResolvableSkillsForScopedTools` |

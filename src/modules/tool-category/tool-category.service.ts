@@ -6,6 +6,7 @@ import {
   resolveSortOrder,
   toPaginatedResult,
 } from '../../common/pagination';
+import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateToolCategoryDto } from './dto/create-tool-category.dto';
 import {
@@ -24,7 +25,10 @@ import {
 
 @Injectable()
 export class ToolCategoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
+  ) {}
 
   async create(dto: CreateToolCategoryDto): Promise<ToolCategoryResponse> {
     const label = dto.label.trim();
@@ -100,6 +104,7 @@ export class ToolCategoryService {
       },
       include: TOOL_CATEGORY_DETAIL_INCLUDE,
     });
+    this.runtimeCacheInvalidator.invalidateToolCategories();
     return toToolCategoryResponse(row);
   }
 
@@ -111,6 +116,7 @@ export class ToolCategoryService {
       );
     }
     await this.prisma.toolCategory.delete({ where: { id } });
+    this.runtimeCacheInvalidator.invalidateToolCategories();
     return row;
   }
 

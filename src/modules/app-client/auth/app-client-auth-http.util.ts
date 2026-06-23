@@ -38,19 +38,38 @@ function asTrimmedString(value: unknown): string | undefined {
   return trimmed || undefined;
 }
 
-export function mapHttpProfileResponse(
+/** 定位 profile JSON 根节点；未配置 responseRoot 时从响应顶层读取。 */
+export function resolveProfilePayloadRoot(
   payload: unknown,
-  mapping: AppClientProfileFieldMapping,
-): ExternalAccountProfile {
+  responseRoot?: string,
+): Record<string, unknown> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new UnauthorizedException('invalid external account response');
   }
   const row = payload as Record<string, unknown>;
-  const employeeId = asTrimmedString(pickMappedField(row, mapping.employeeId));
-  const email = asTrimmedString(pickMappedField(row, mapping.email));
-  if (!employeeId) {
-    throw new UnauthorizedException('external account missing employeeId');
+  const rootPath = responseRoot?.trim();
+  if (!rootPath) {
+    return row;
   }
+  const nested = pickMappedField(row, rootPath);
+  if (!nested || typeof nested !== 'object' || Array.isArray(nested)) {
+    throw new UnauthorizedException(
+      `external account response root "${rootPath}" not found`,
+    );
+  }
+  return nested as Record<string, unknown>;
+}
+
+export function mapHttpProfileResponse(
+  payload: unknown,
+  mapping: AppClientProfileFieldMapping,
+  responseRoot?: string,
+): ExternalAccountProfile {
+  const row = resolveProfilePayloadRoot(payload, responseRoot);
+  const employeeId = mapping.employeeId
+    ? asTrimmedString(pickMappedField(row, mapping.employeeId))
+    : undefined;
+  const email = asTrimmedString(pickMappedField(row, mapping.email));
   if (!email) {
     throw new UnauthorizedException('external account missing email');
   }
@@ -67,9 +86,10 @@ export function mapHttpProfileResponse(
     ? pickMappedField(row, mapping.active)
     : undefined;
   return {
-    employeeId,
+    ...(employeeId ? { employeeId } : {}),
     email,
-    username: usernameFromMapping || nickName || cnName || employeeId,
+    username:
+      usernameFromMapping || nickName || cnName || employeeId || email,
     nickName,
     cnName,
     active: activeRaw !== false,
@@ -146,16 +166,17 @@ function applyTokenPlacement(
   }
 }
 
+function joinProfileUrl(baseUrl: string, profilePath: string): URL {
+  const base = baseUrl.replace(/\/+$/, '');
+  const path = profilePath.startsWith('/') ? profilePath : `/${profilePath}`;
+  return new URL(`${base}${path}`);
+}
+
 export async function fetchHttpProfileAccount(
   http: AppClientHttpAuthConfig,
   accountToken: string,
 ): Promise<ExternalAccountProfile> {
-  const accountUrl = new URL(
-    http.profilePath.startsWith('/')
-      ? http.profilePath
-      : `/${http.profilePath}`,
-    http.baseUrl.endsWith('/') ? http.baseUrl : `${http.baseUrl}/`,
-  );
+  const accountUrl = joinProfileUrl(http.baseUrl, http.profilePath);
   const headers = buildBrowserLikeHeaders(
     accountUrl.origin,
     http.extraHeaders ?? {},
@@ -186,5 +207,5 @@ export async function fetchHttpProfileAccount(
       `external account verification failed: ${accountResponse.status}`,
     );
   }
-  return mapHttpProfileResponse(account, http.mapping);
+  return mapHttpProfileResponse(account, http.mapping, http.responseRoot);
 }

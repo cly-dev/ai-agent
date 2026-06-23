@@ -78,7 +78,7 @@ LLM 续跑：  START → llm
 - Plan **每 turn 只执行一次**（`state.taskPlan` 已存在则跳过；session resume 从 GOA 恢复 `frames`）。
 - 外层 Plan 默认调 `agent.plan` LLM；**mutation 且步序不合规**时强制替换为确定性模板（`mutation_template_forced`）；LLM 失败则 `buildTaskPlan` 规则兜底；`PLAN_LLM=0` 时仅规则。**不调 Tool**。
 
-实现位置：`src/core/agent-engine/engine/main/agent-lang-graph.runner.ts`（`plan` 节点 + 条件边）。
+实现位置：`src/core/agent-engine/engine/main/agent-graph/nodes/plan.node.ts`（`plan` 节点 + 条件边见 `build-agent-graph.ts`）。
 
 ---
 
@@ -458,16 +458,38 @@ Skill prompt 仍由 `buildDecisionPrompt()` 注入 `<active_skill>`，与 Plan �
 {
   "method": "llm | workflow | template | minimal",
   "llmFallbackReason": "mutation_template_forced | llm_plan_failed | outer_plan_llm_failed | null",
+  "outerSkillSelectMethod": "page_host_unique | requested | outer_plan_llm | template | minimal",
+  "autoSelectedSkillId": 12,
   "source": "llm | workflow | template | minimal",
-  "deliverable": "analysis",
+  "deliverable": "answer",
   "goal": "…",
-  "stepIds": ["fetch", "analyze"],
-  "pendingStepIds": ["fetch", "analyze"],
-  "currentStepId": "fetch",
+  "stepIds": ["requested-skill"],
+  "pendingStepIds": ["requested-skill"],
+  "currentStepId": "requested-skill",
   "currentObjective": "…",
-  "taskPhase": "gather"
+  "taskPhase": "answer",
+  "availableSkillIds": [12, 15],
+  "availableHostToolNames": ["fillReplyDraft"],
+  "hostToolRunStatus": "planned",
+  "plannedHostToolStepIds": ["fill_draft"]
 }
 ```
+
+#### 外层 Skill 选型（开放对话）
+
+```text
+intent HTTP scopedTools  +  page scopedHostTools
+        ↓
+resolveSkillsForOuterPlan → availableSkillIds
+        ↓
+resolveAutoOuterPlanSkill（页 host 唯一绑定 → page_host_unique，跳过外层 Plan LLM）
+        ↓ 否则
+resolveOuterPlan（外层 Plan LLM 或 mutation 模板）
+        ↓
+applySkillFrameContext（内层 workflow + enrichPlanStepsWithHostTools）
+```
+
+`page_host_unique` 时外层 `deliverable` 由 `resolveOuterSkillPlanDeliverable` 决定（workflow 步序优先，默认 `answer`，**不**因 intent 收窄出 write tool 而强行 `mutation`）。
 
 ### 7.2 Run step：`type: result_check`
 
@@ -540,7 +562,7 @@ Skill prompt 仍由 `buildDecisionPrompt()` 注入 `<active_skill>`，与 Plan �
 | 类型 | `src/core/agent-engine/engine/main/task-plan.types.ts` |
 | 建 plan / advance / user frame | `src/core/agent-engine/engine/main/task-plan.util.ts` |
 | **LLM Plan** | `src/core/agent-engine/engine/main/task-plan-llm.util.ts` |
-| Plan 节点、graph 边、resultCheck 集成 | `src/core/agent-engine/engine/main/agent-lang-graph.runner.ts` |
+| Plan 节点、graph 边、resultCheck 集成 | `agent-graph/nodes/plan.node.ts`、`agent-graph/build-agent-graph.ts`、`agent-graph/nodes/result-check.node.ts` |
 | Plan prompt | `agent.plan` → `prompt-defaults.ts` |
 | Graph state | `src/core/agent-engine/engine/main/agent-engine.types.ts` |
 | 写确认续跑 | `src/modules/chat/pending-write-confirmation.types.ts` |

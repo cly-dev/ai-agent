@@ -1,7 +1,7 @@
 import { HttpException, NotFoundException } from '@nestjs/common';
 import { ToolHttpResponseError } from '../../tool-engine/tool-response-source.util';
-import { isRequestedSkillRunError } from './main/requested-skill-run.error';
-import { requestedSkillUserMessage } from './main/requested-skill-run.service';
+import { isRequestedSkillRunError } from './main/skill/requested-skill-run.error';
+import { requestedSkillUserMessage } from './main/skill/requested-skill-run.service';
 
 export type AgentMachineCode =
   | 'INTENT_RECALL_FAILED'

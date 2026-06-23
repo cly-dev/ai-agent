@@ -8,7 +8,8 @@ export type AgentRunStepType =
   | 'tool'
   | 'gather'
   | 'result_check'
-  | 'summarize';
+  | 'summarize'
+  | 'host_tool';
 export type AgentRunStatus = 'running' | 'success' | 'failed';
 export type AgentRunRole = 'primary' | 'router' | 'worker' | 'reviewer';
 

@@ -1,5 +1,5 @@
 import type { ToolLevel } from '../../../generated/prisma/client';
-import type { AgentEngineTool } from '../agent-engine/engine/main/agent-engine.types';
+import type { AgentEngineTool } from '../agent-engine/engine/main/types/agent-engine.types';
 import type { BuiltLangChainTools } from '../tool-engine/tool-engine.service';
 
 export type ActiveSkillSnapshot = {
@@ -15,6 +15,8 @@ export type ActiveSkillSnapshot = {
 /** 由 scopedTools 交集推导出的可用 Skill（外层 Plan 候选）。 */
 export type AvailableSkillRow = ActiveSkillSnapshot & {
   skillToolIds: number[];
+  hostToolIds: number[];
+  runnableKind: 'http' | 'host' | 'both';
 };
 
 export type ListAvailableSkillsInput = {
@@ -22,6 +24,24 @@ export type ListAvailableSkillsInput = {
   userId: number;
   appClientId: number;
   scopedTools: AgentEngineTool[];
+  /** 当前页 scope 下可用的 Host Tool id（与 intent HTTP scoped 一并用于解析 Skill）。 */
+  scopedHostToolIds?: number[];
+};
+
+/** 外层 Plan：在 scopedTools 上解析 Skill，可选保证 requestedSkillId 入列。 */
+export type ResolveSkillsForOuterPlanInput = ListAvailableSkillsInput & {
+  requestedSkillId?: number | null;
+};
+
+export type GetRunnableSkillDetailInput = {
+  agentId: number;
+  userId: number;
+  appClientId: number;
+  skillId: number;
+  scopedTools: AgentEngineTool[];
+  scopedHostToolIds?: number[];
+  /** 用户显式 skillId：放宽 scoped 限制，仅校验角色可见与绑定能力。 */
+  forRequestedSkill?: boolean;
 };
 
 export type ListAgentSkillsInput = {
@@ -38,6 +58,8 @@ export type AgentSkillWarmupRow = {
   capabilityKey: string | null;
   riskLevel: ToolLevel;
   toolIds: number[];
+  /** SkillHostTool ∩ AgentHostTool 且 HostTool.isActive */
+  hostToolIds: number[];
 };
 
 export type SkillBindResult = {

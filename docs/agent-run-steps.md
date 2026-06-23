@@ -123,7 +123,7 @@ turnExecutionTimeline:
 |------|------|
 | `agent-run-steps.util.ts` | `maxRunStepNumber`、`nextRunStepNumber`、`mergeTurnExecutionSteps` |
 | `agent-run-lifecycle.service.ts` | `updateRun`、`finishAgentRun` 写 `currentStep` |
-| `agent-lang-graph.runner.ts` | 各节点 append step |
+| `agent-graph/nodes/*.node.ts` | 各节点 append step |
 | `agent-tool-runtime.util.ts` | tool round 内 step 编号 |
 | `tool-result-check.util.ts` | duplicate skip steps |
 | `agent-run.service.ts` | `findOne` 组装 `turnExecutionTimeline` |
@@ -139,3 +139,53 @@ turnExecutionTimeline:
 | `currentStep` 与 max(steps) 不一致 | 是否绕过 `updateRun` 直接写库 |
 | worker 步骤从很大数字开始 | worker 应 `priorSteps: []`；勿继承 primary steps 编号 |
 | gate 后无 worker step | 用户是否 confirm；pending 是否过期 |
+| Plan 有 Host Tool 但页面未执行 | `plan.hostToolRunStatus`；`outerSkillSelectMethod` 是否为 `page_host_unique`；是否有 `host_tool` step；`sseDispatched` |
+
+---
+
+## 8. `host_tool` step
+
+Plan 步或 mutation 完成时，run 轨迹追加 `type: host_tool`（与 SSE `host_action` 对应，供 B 端 / 排错）。
+
+```json
+{
+  "step": 5,
+  "type": "host_tool",
+  "name": "plan:fill_draft",
+  "output": {
+    "status": "dispatched",
+    "reason": "plan_host_tool",
+    "planStepId": "fill_draft",
+    "pageScope": "campaign-detail",
+    "hostTools": [{ "name": "fillNoteDraft", "args": { "text": "…" } }],
+    "skipReason": null,
+    "sseDispatched": true,
+    "hostToolCount": 1
+  }
+}
+```
+
+| `output.status` | 含义 |
+|-----------------|------|
+| `dispatched` | Plan `host_tool` 步已推送 `host_action`（`reason=plan_host_tool`） |
+| `skipped` | Plan 步跳过（见 `skipReason`） |
+| `required_missed` | `isRequired` 工具未 dispatch，plan 未推进 |
+| `completion_dispatched` | mutation 成功后推送 `agent_mutation_success` |
+| `completion_skipped` | mutation 成功但解析结果为空，未推送 |
+
+**Plan step 补充字段**（`type: plan`）：
+
+| 字段 | 含义 |
+|------|------|
+| `hostToolRunStatus` | `none` / `available_not_planned` / `planned` |
+| `plannedHostToolStepIds` | Plan 内 `kind=host_tool` 的步 id |
+| `availableHostToolCount` | 当前 scope 可用 Host Tool 数 |
+| `outerSkillSelectMethod` | 外层如何选中 Skill：`page_host_unique` / `requested` / `outer_plan_llm` / … |
+| `autoSelectedSkillId` | `page_host_unique` 时自动选中的 skill id |
+| `availableSkillIds` | intent HTTP + page host 解析后的 Plan 候选 skill id 列表 |
+
+`available_not_planned`（**外层 Plan 步**快照）：记录时往往尚未展开 skill 内层 workflow，**不代表**内层没有 `host_tool` 步。以内层帧展开后的 `plannedHostToolStepIds` 与 `steps[].type === 'host_tool'` 为准。
+
+workflow 内 `reason`/`summarize` 中间步完成后，续跑与否由 `resolvePlanStepExecutionRoute` 统一判定：下一步为 `tool` / `host_tool` / `skill` → 回 `llm`，不可 `finished=true`。
+
+详见 [host-action-sdk-migration-frontend.md §附录 A](./host-action-sdk-migration-frontend.md#附录-ahost_tool_invoke-observation)。

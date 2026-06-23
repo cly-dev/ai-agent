@@ -25,6 +25,40 @@ function pickNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function normalizeRouteParams(
+  value: unknown,
+): AgentChatPageContext['routeParams'] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    const trimmedKey = key.trim();
+    if (!trimmedKey) {
+      continue;
+    }
+    if (
+      nested === null ||
+      typeof nested === 'string' ||
+      typeof nested === 'number' ||
+      typeof nested === 'boolean'
+    ) {
+      if (typeof nested === 'string') {
+        const trimmed = nested.trim();
+        if (trimmed) {
+          out[trimmedKey] = trimmed;
+        }
+        continue;
+      }
+      if (nested !== null) {
+        out[trimmedKey] = nested;
+      }
+      continue;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function normalizeEntity(value: unknown): AgentChatPageContext['entity'] | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -51,16 +85,26 @@ function normalizePageContextObject(value: unknown): AgentChatPageContext | null
   }
   const page = pickString(value.page);
   const routePath = pickString(value.routePath);
+  const routeParams = normalizeRouteParams(value.routeParams);
   const flowId = pickNumber(value.flowId);
   const programName = pickString(value.programName);
   const entity = normalizeEntity(value.entity);
   const metadata = isRecord(value.metadata) ? value.metadata : undefined;
-  if (!page && !routePath && flowId == null && !programName && !entity && !metadata) {
+  if (
+    !page &&
+    !routePath &&
+    !routeParams &&
+    flowId == null &&
+    !programName &&
+    !entity &&
+    !metadata
+  ) {
     return null;
   }
   return {
     ...(page ? { page } : {}),
     ...(routePath ? { routePath } : {}),
+    ...(routeParams ? { routeParams } : {}),
     ...(flowId != null ? { flowId } : {}),
     ...(programName ? { programName } : {}),
     ...(entity ? { entity } : {}),
@@ -91,9 +135,16 @@ function mergePageContexts(
       ...(primary?.metadata ?? {}),
     };
   }
+  if (primary?.routeParams || fallback?.routeParams) {
+    merged.routeParams = {
+      ...(fallback?.routeParams ?? {}),
+      ...(primary?.routeParams ?? {}),
+    };
+  }
   if (
     !merged.page &&
     !merged.routePath &&
+    !merged.routeParams &&
     merged.flowId == null &&
     !merged.programName &&
     !merged.entity &&
@@ -109,6 +160,7 @@ export function parsePageContextFromMessageFields(input: {
   pageContext?: unknown;
   page?: unknown;
   routePath?: unknown;
+  routeParams?: unknown;
   flowId?: unknown;
   programName?: unknown;
   entity?: unknown;
@@ -118,6 +170,7 @@ export function parsePageContextFromMessageFields(input: {
   const flat = normalizePageContextObject({
     page: input.page,
     routePath: input.routePath,
+    routeParams: input.routeParams,
     flowId: input.flowId,
     programName: input.programName,
     entity: input.entity,

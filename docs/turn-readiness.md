@@ -75,13 +75,17 @@ type PendingRespond =
 
 - `requiredFields` 来自 `listBusinessFieldsForPlanGatherStep`（plan 步 `toolRole` + 工具 `agentMetadata.businessFields`）。
 - 会话上下文：`summarizeSessionObservationsForReadiness(allToolObservations(state))`，与 `isPlanToolStepSatisfiedByObservations` 使用同一 observation 集合。
+- **页面上下文**：`formatPageContextPromptBlock(pageContext)` 注入 CP5 LLM user 消息（`<page_context>` JSON），用于从详情页 entity/routeParams 解析 productId、reviewId 等，与「识别上下文」类请求对齐。
 - LLM 解析失败 → 视为 ready（不阻塞执行，避免误杀）。
 - `AGENT_READINESS_SLOT_LLM=0` → 跳过 CP5，直接 ready（由后续 llm/工具环处理缺参）。
 
 ## 典型路径示例
 
 ```text
-# 缺 productId（外层 skill 已展开为内层 gather）
+# 详情页填框（page host 唯一 skill 自动选中）
+intent → plan(page_host_unique) → skill 帧 workflow → readiness(ready) → …
+
+# 缺 productId（外层仍为 mutation 模板、未带 pageContext）
 intent → plan → readiness(CP5) → summarize(clarification)
 
 # Intent 类目未匹配（intent 早期退出）
@@ -176,4 +180,4 @@ readiness 只返回 `reason: observation_satisfied`；**`llm` 入口** L1 `syncT
 | `engine/turn/turn-graph.util.ts` | `shouldRouteToRespond` |
 | `engine/main/skill-frame-expand.util.ts` | skill 帧展开 |
 | `engine/main/plan-stack.util.ts` | Plan 帧栈 push/pop |
-| `engine/main/agent-lang-graph.runner.ts` | 图节点与边 |
+| `engine/main/agent-graph/` | 图节点与边（`build-agent-graph.ts` + `nodes/`） |

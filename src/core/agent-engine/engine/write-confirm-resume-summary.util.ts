@@ -4,12 +4,12 @@ import {
   formatResponseSourceForDisplay,
   isAgentToolErrorObservation,
 } from './agent-run-user-messages.util';
-import type { ToolObservation } from './main/agent-engine.types';
-import type { TaskPlanSnapshot } from './main/task-plan.types';
+import type { ToolObservation } from './main/types/agent-engine.types';
+import type { TaskPlanSnapshot } from './main/plan/task-plan.types';
 import {
   formatPlanContextForSummarize,
   resolveSummarizeUserMessageForPlan,
-} from './main/task-plan.util';
+} from './main/plan/task-plan.util';
 import type { ToolRoundMeta } from './tool/tool-result-check.util';
 import type { ToolExecutionStatus } from './tool/tool-execution-status.util';
 

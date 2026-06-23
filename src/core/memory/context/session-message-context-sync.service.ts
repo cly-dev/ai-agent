@@ -1,9 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Message } from '../../../../generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import {
-  isSessionHistoryTrimTurnsAfterCompressEnabled,
-} from '../shared/memory.constants';
 import { trimTurnsByCompressedWatermark } from './session-context-trim.util';
 import { SessionContextStore } from './session-context.store';
 import {
@@ -121,10 +118,7 @@ export class SessionMessageContextSyncService {
         existing && isSessionContextPayload(existing) ? existing : undefined;
       let turns = rows.map((row) => this.messageToTurn(row));
       const compressedUpToMessageId = prevPayload?.compressedUpToMessageId;
-      if (
-        isSessionHistoryTrimTurnsAfterCompressEnabled() &&
-        compressedUpToMessageId != null
-      ) {
+      if (compressedUpToMessageId != null) {
         turns = trimTurnsByCompressedWatermark(turns, compressedUpToMessageId);
       }
       const updatedAt = new Date().toISOString();

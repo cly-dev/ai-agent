@@ -18,7 +18,7 @@ import { AGENT_RUN_DETAIL_INCLUDE, type AgentRunResponse } from './agent-run.typ
 import {
   mergeTurnExecutionSteps,
   parseAgentRunSteps,
-} from '../../core/agent-engine/engine/main/agent-run-steps.util';
+} from '../../core/agent-engine/engine/main/run/agent-run-steps.util';
 
 @Injectable()
 export class AgentRunService {

@@ -5,7 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { Prisma, UserStatus } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -13,7 +13,7 @@ import { LoginUserDto } from './dto/login-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
 export type ExternalAccountProfile = {
-  employeeId: string;
+  employeeId?: string;
   email: string;
   username: string;
   cnName?: string;
@@ -162,36 +162,53 @@ export class UserService {
     }
   }
 
+  private syntheticEmployeeIdFromEmail(email: string): string {
+    const digest = createHash('sha256')
+      .update(email.trim().toLowerCase())
+      .digest('hex')
+      .slice(0, 24);
+    return `ext_${digest}`;
+  }
+
   async findOrCreateByExternalAccount(profile: ExternalAccountProfile) {
-    const employeeId = profile.employeeId.trim();
-    if (!employeeId) {
-      throw new BadRequestException('employeeId is required');
-    }
     const email = profile.email?.trim();
+    if (!email) {
+      throw new BadRequestException('email is required from external account');
+    }
+    const employeeId = profile.employeeId?.trim();
     const username =
       profile.nickName?.trim() ||
       profile.cnName?.trim() ||
       profile.username?.trim() ||
-      employeeId;
-    if (!email) {
-      throw new BadRequestException('email is required from external account');
-    }
+      employeeId ||
+      email;
 
-    const existing = await this.prisma.user.findUnique({
-      where: { employeeId },
-    });
+    const existingByEmployeeId = employeeId
+      ? await this.prisma.user.findUnique({ where: { employeeId } })
+      : null;
+    const existing =
+      existingByEmployeeId ??
+      (await this.prisma.user.findFirst({ where: { email } }));
     if (existing) {
       this.assertUserIsActive(existing.status);
       const updated = await this.prisma.user.update({
         where: { id: existing.id },
-        data: { email, username },
+        data: {
+          email,
+          username,
+          ...(employeeId && existing.employeeId !== employeeId
+            ? { employeeId }
+            : {}),
+        },
       });
       return this.toSafeUser(updated);
     }
 
+    const resolvedEmployeeId =
+      employeeId || this.syntheticEmployeeIdFromEmail(email);
     const created = await this.prisma.user.create({
       data: {
-        employeeId,
+        employeeId: resolvedEmployeeId,
         email,
         username,
         password: this.hashPassword(this.generateInitialPassword()),

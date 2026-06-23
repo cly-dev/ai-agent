@@ -99,7 +99,7 @@ export class IntentRecallConfigService implements OnModuleInit {
       vectorTopK: this.readPositiveIntEnv('AGENT_INTENT_VECTOR_TOP_K', 10),
       vectorMinScore: this.readFloatEnv('AGENT_INTENT_VECTOR_MIN_SCORE', 0.25),
       bindToolsMax: this.readPositiveIntEnv('AGENT_BIND_TOOLS_MAX', 25),
-      fallbackToKeyword: process.env.AGENT_INTENT_FALLBACK_KEYWORD !== '0',
+      fallbackToKeyword: true,
       source: 'env',
     };
   }

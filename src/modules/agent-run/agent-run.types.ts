@@ -1,5 +1,5 @@
 import type { Prisma } from '../../../generated/prisma/client';
-import type { TurnExecutionStep } from '../../core/agent-engine/engine/main/agent-run-steps.util';
+import type { TurnExecutionStep } from '../../core/agent-engine/engine/main/run/agent-run-steps.util';
 
 export const AGENT_RUN_DETAIL_INCLUDE = {
   turn: {

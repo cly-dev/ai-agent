@@ -14,7 +14,7 @@ import {
   normalizeDefinitionKey,
   resolveToolDefinitionKeyForCreate,
 } from '../../common/tool/tool-definition-key.util';
-import { SessionToolPrepareCacheService } from '../../core/agent-engine/engine/main/session-tool-prepare-cache.service';
+import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { ToolEngineService } from '../../core/tool-engine/tool-engine.service';
 import type { ToolDebugResult } from '../../core/tool-engine/tool-engine.types';
 import { LlmService } from '../../core/llm/llm.service';
@@ -49,7 +49,7 @@ export class ToolService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly toolEngine: ToolEngineService,
-    private readonly sessionToolPrepareCache: SessionToolPrepareCacheService,
+    private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
     private readonly llmService: LlmService,
     private readonly promptRegistry: PromptRegistryService,
   ) {}
@@ -97,9 +97,11 @@ export class ToolService {
         'api-default-all',
       );
       if (!result.dryRun && result.toolIds.length > 0) {
-        await this.sessionToolPrepareCache.invalidateForTools(result.toolIds);
+        await this.runtimeCacheInvalidator.invalidateForTools(result.toolIds);
         if (result.agentId != null) {
-          await this.sessionToolPrepareCache.invalidateForAgent(result.agentId);
+          await this.runtimeCacheInvalidator.invalidateForAgent({
+            agentId: result.agentId,
+          });
         }
       }
       return result;
@@ -230,8 +232,6 @@ export class ToolService {
       fallbackSchema: nextSchema,
       inputSchemaTouched: dto.inputSchema !== undefined,
     });
-    const isActiveChanged =
-      dto.isActive !== undefined && dto.isActive !== existing.isActive;
 
     try {
       const row = await this.prisma.tool.update({
@@ -270,9 +270,7 @@ export class ToolService {
         },
         include: TOOL_DETAIL_INCLUDE,
       });
-      if (isActiveChanged) {
-        await this.sessionToolPrepareCache.invalidateForTools([id]);
-      }
+      await this.runtimeCacheInvalidator.invalidateForTools([id]);
       return toToolResponse(row);
     } catch (error) {
       if (
@@ -314,7 +312,7 @@ export class ToolService {
       orderBy: { id: 'asc' },
     });
 
-    await this.sessionToolPrepareCache.invalidateForTools([...existingIds]);
+    await this.runtimeCacheInvalidator.invalidateForTools([...existingIds]);
 
     return {
       isActive: dto.isActive,
@@ -496,7 +494,7 @@ export class ToolService {
         where: { id },
         include: TOOL_DETAIL_INCLUDE,
       });
-      await this.sessionToolPrepareCache.invalidateForTools([id]);
+      await this.runtimeCacheInvalidator.invalidateForTools([id]);
       return toToolResponse(row);
     } catch (error) {
       if (

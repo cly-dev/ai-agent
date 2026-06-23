@@ -4,6 +4,8 @@ import type { LlmChatMessage } from '../../../llm/llm.types';
 import type { PromptRegistryService } from '../../../prompt/prompt-registry.service';
 import { PROMPT_KEYS } from '../../../prompt/prompt-template.keys';
 import type { TurnRespondMissingField } from './turn-respond.types';
+import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
+import { formatPageContextPromptBlock } from '../../../host-bridge/page-context.prompt.util';
 
 const readinessSlotSchema = z.object({
   ready: z.boolean(),
@@ -20,18 +22,6 @@ const readinessSlotSchema = z.object({
 
 export type ReadinessSlotLlmResult = z.infer<typeof readinessSlotSchema>;
 
-export function isReadinessSlotLlmEnabled(): boolean {
-  const parent = process.env.AGENT_TURN_READINESS?.trim();
-  if (parent === '0' || parent === 'false') {
-    return false;
-  }
-  const raw = process.env.AGENT_READINESS_SLOT_LLM?.trim();
-  if (raw === '0' || raw === 'false') {
-    return false;
-  }
-  return true;
-}
-
 export async function evaluateReadinessSlotsWithLlm(input: {
   llmService: LlmService;
   promptRegistry: PromptRegistryService;
@@ -41,17 +31,20 @@ export async function evaluateReadinessSlotsWithLlm(input: {
   currentObjective?: string | null;
   requiredFields: string[];
   sessionObservationSummary?: string | null;
+  pageContext?: AgentChatPageContext | null;
 }): Promise<ReadinessSlotLlmResult> {
   const systemPrompt = await input.promptRegistry.render(
     PROMPT_KEYS.AGENT_READINESS_SLOT_CHECK,
     input.scope,
   );
+  const pageContextBlock = formatPageContextPromptBlock(input.pageContext);
   const messages: LlmChatMessage[] = [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
       content: [
         `User message: ${input.userMessage}`,
+        pageContextBlock,
         input.planGoal ? `Plan goal: ${input.planGoal}` : null,
         input.currentObjective
           ? `Current objective: ${input.currentObjective}`

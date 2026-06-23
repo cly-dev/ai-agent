@@ -20,6 +20,40 @@ export function sessionPrepareKey(sessionId: string): string {
   return `${REDIS_KEY_PREFIX}prepare:session:${sessionId}`;
 }
 
+/** L1 会话运行快照（统一后首选 key） */
+export function sessionRuntimeKey(sessionId: string): string {
+  return `${REDIS_KEY_PREFIX}runtime:session:${sessionId}`;
+}
+
+export function agentHostToolCatalogKey(
+  appClientId: number,
+  agentId: number,
+): string {
+  return `${REDIS_KEY_PREFIX}runtime:agent-host-tools:${appClientId}:${agentId}`;
+}
+
+export function agentToolCatalogKey(
+  appClientId: number,
+  agentId: number,
+): string {
+  return `${REDIS_KEY_PREFIX}runtime:agent-tools:${appClientId}:${agentId}`;
+}
+
+export function agentSkillCatalogKey(
+  appClientId: number,
+  agentId: number,
+  roleId: number,
+): string {
+  return `${REDIS_KEY_PREFIX}runtime:agent-skills:${appClientId}:${agentId}:${roleId}`;
+}
+
+export function agentSkillCatalogScanPattern(
+  appClientId: number,
+  agentId: number,
+): string {
+  return `${REDIS_KEY_PREFIX}runtime:agent-skills:${appClientId}:${agentId}:*`;
+}
+
 export function pendingWriteConfirmationKey(sessionId: string): string {
   return `${REDIS_KEY_PREFIX}pending-write:${sessionId}`;
 }

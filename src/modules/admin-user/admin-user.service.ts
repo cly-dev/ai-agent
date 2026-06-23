@@ -9,6 +9,7 @@ import { scryptSync, timingSafeEqual } from 'crypto';
 import type { AdminUser } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { LoginAdminUserDto } from './dto/login-admin-user.dto';
+import type { AdminUserProfileDto } from './dto/admin-user-profile.dto';
 
 @Injectable()
 export class AdminUserService {
@@ -34,6 +35,31 @@ export class AdminUserService {
   private sanitizeAdminUser(user: AdminUser) {
     const { password, ...rest } = user;
     return rest;
+  }
+
+  toExternalProfile(
+    user: Omit<AdminUser, 'password'>,
+  ): AdminUserProfileDto {
+    return {
+      id: user.id,
+      employeeId: String(user.id),
+      email: user.email,
+      username: user.username,
+      nickName: user.username,
+      role: user.role,
+      active: user.isActive,
+      mustChangePassword: user.mustChangePassword,
+    };
+  }
+
+  async getProfileByUserId(userId: number): Promise<AdminUserProfileDto> {
+    const admin = await this.prisma.adminUser.findFirst({
+      where: { id: userId, isActive: true },
+    });
+    if (!admin) {
+      throw new UnauthorizedException('admin user not found or inactive');
+    }
+    return this.toExternalProfile(this.sanitizeAdminUser(admin));
   }
 
   async login(data: LoginAdminUserDto) {

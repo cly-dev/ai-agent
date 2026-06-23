@@ -2,9 +2,9 @@ import type {
   AgentRunStep,
   GraphToolCall,
   ToolObservation,
-} from '../main/agent-engine.types';
-import { nextRunStepNumber } from '../main/agent-run-steps.util';
-import type { TaskPlanSnapshot } from '../main/task-plan.types';
+} from '../main/types/agent-engine.types';
+import { nextRunStepNumber } from '../main/run/agent-run-steps.util';
+import type { TaskPlanSnapshot } from '../main/plan/task-plan.types';
 import {
   countConsecutiveLlmRoundsWithoutToolCalls,
   getPendingPlanToolStep,
@@ -13,7 +13,7 @@ import {
   PLAN_TOOL_STEP_MAX_SKIPS_WITHOUT_CALLS,
   type PlanScopedTool,
   toolCallMatchesPendingPlanToolRole,
-} from '../main/task-plan.util';
+} from '../main/plan/task-plan.util';
 import {
   findIncompletePagedGatherTarget,
   resolvePagedGatherResumeKind,
@@ -24,7 +24,7 @@ import {
   selectObservationsForPagedGatherResume,
   selectObservationsForPlanToolSatisfaction,
   type PlanObservationBuckets,
-} from '../main/plan-observation-scope.util';
+} from '../main/plan/plan-observation-scope.util';
 import {
   areToolCallRoundsIdentical,
   getLastToolRoundFromSteps,

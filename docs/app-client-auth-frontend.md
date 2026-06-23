@@ -55,8 +55,10 @@ type AppClientAuthConfig = {
       | 'authorization_bearer'
       | 'header_x_account_token'
       | 'query_token';
+    /** 响应根路径（点路径）；mapping 字段相对此节点。本服务 `/admin/*` 用 `"data"`。 */
+    responseRoot?: string;
     mapping: {
-      employeeId: string;
+      employeeId?: string;
       email: string;
       username?: string;
       nickName?: string;
@@ -77,6 +79,8 @@ type AppClientAuthConfig = {
 
 ### 2.1 `http_profile` 示例
 
+**扁平响应（多数外部业务 API）**：
+
 ```json
 {
   "provider": "http_profile",
@@ -86,11 +90,9 @@ type AppClientAuthConfig = {
     "method": "GET",
     "tokenPlacement": "authorization_bearer",
     "mapping": {
-      "employeeId": "employeeId",
       "email": "email",
       "username": "nickName",
       "nickName": "nickName",
-      "cnName": "cnName",
       "active": "active"
     }
   },
@@ -99,9 +101,84 @@ type AppClientAuthConfig = {
 }
 ```
 
+**嵌套响应（方案 B · mapping 全路径，不配 `responseRoot`）**：
+
+```json
+{
+  "http": {
+    "mapping": {
+      "email": "data.email",
+      "username": "data.username"
+    }
+  }
+}
+```
+
+也可选方案 A：`responseRoot: "data"` + `"email": "email"`（等价于上例）。
+
 ### 2.2 `jwt_shared_secret`
 
 类型已预留，**当前后端未实现**；配置后测试/鉴权会返回 400。
+
+### 2.3 管理 B 端（appClientId=2 · 本服务 admin profile）
+
+运营助手等 **B 端管理台** 接入时，可将 `x-account-token` 设为管理员登录 JWT，由本服务校验：
+
+```text
+B 端管理台
+  POST /admin/admin-user/login  →  accessToken（管理员 JWT）
+        │
+        ▼
+  POST /app-client/auth
+    X-App-Dsn: <appClient 2 的 dsn>
+    x-account-token: <管理员 JWT>
+        │
+        ▼
+  authConfig.http_profile
+    GET {AGENT_SERVER_PUBLIC_URL}/admin/admin-user/me
+    Authorization: Bearer <管理员 JWT>
+        │
+        ▼
+  建档 User + UserApp → 返回 chat 用 accessToken
+```
+
+推荐 `authConfig`（与 `buildAgentServerAdminAuthConfig()` 一致）：
+
+```json
+{
+  "provider": "http_profile",
+  "http": {
+    "baseUrl": "http://localhost:3030/admin",
+    "profilePath": "/admin-user/me",
+    "method": "GET",
+    "tokenPlacement": "authorization_bearer",
+    "mapping": {
+      "employeeId": "data.employeeId",
+      "email": "data.email",
+      "username": "data.username",
+      "nickName": "data.nickName",
+      "active": "data.active"
+    }
+  },
+  "autoBindRoleName": "operator",
+  "propagateTokenToIntegrations": false
+}
+```
+
+| 项 | 说明 |
+|----|------|
+| `AGENT_SERVER_PUBLIC_URL` | 本服务对外 URL（默认 `http://localhost:3030`） |
+| `propagateTokenToIntegrations` | 建议 `false`（管理员 JWT 不写入 Integration） |
+| 写入 DB | `npm run db:configure-app-client-2-auth`（加 `--force` 覆盖已有配置） |
+
+管理员 profile 接口：
+
+```http
+GET /admin/admin-user/me
+Authorization: Bearer <管理员 JWT>
+```
+
+响应经 `ReqInterceptor` 包装为 `{ data: { ... }, status, message }`；mapping 使用 `data.*` 全路径（方案 B）。
 
 ---
 
@@ -148,6 +225,7 @@ x-account-token: <业务 token>
 | `APP_CLIENT_HOST` | 必填 |
 | `APP_CLIENT_AUTH_PROFILE_PATH` | `/account/seller/account/current` |
 | `APP_CLIENT_AUTO_BIND_ROLE` | `operator` |
+| `AGENT_SERVER_PUBLIC_URL` | 管理 B 端 authConfig 的 profile 根 URL（默认 `http://localhost:3030`） |
 
 ---
 

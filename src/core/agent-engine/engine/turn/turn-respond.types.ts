@@ -1,7 +1,8 @@
-import type { ToolObservation } from '../main/agent-engine.types';
+import type { ToolObservation } from '../main/types/agent-engine.types';
 
 export type TurnRespondKind =
   | 'smalltalk'
+  | 'off_domain'
   | 'message_unclear'
   | 'unsupported_scope'
   | 'intent_recall_failed'
@@ -21,6 +22,7 @@ export type TurnRespondRequest = {
     planStepId?: string;
     toolRole?: string;
     readinessReason?: string;
+    routingReason?: string;
   };
 };
 

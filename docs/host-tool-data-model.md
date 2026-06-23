@@ -2,6 +2,7 @@
 
 > Prisma：`HostPage` / `HostTool` / `AgentHostTool` / `SkillHostTool`  
 > 迁移：`20260617140000_host_tool_tables`  
+> **SDK 对接**：[host-bridge-sdk-frontend.md](./host-bridge-sdk-frontend.md)  
 > 相关：[host-page-context-host-action-frontend.md](./host-page-context-host-action-frontend.md)、[host-bridge-frontend.md](./host-bridge-frontend.md)
 
 ---
@@ -96,6 +97,15 @@ AppClient
 - **Agent**：白名单；通用工具绑一次，所有适用的页共享。
 - **Skill**：场景绑定 + `trigger`（`ON_MUTATION_SUCCESS` 等）。
 
+**C 端列表 / Plan 与运行时 fallback 的差异：**
+
+| 场景 | C 端 `skills/client` / Plan | 运行时 `resolvePreferredHostToolIds` |
+|------|----------------------------|-------------------------------------|
+| Agent 已绑 Host Tool，Skill **已** `PUT host-tools` | ✅ 可见 / 可解析 | ✅ |
+| 仅 Agent 白名单，Skill **未**绑 `SkillHostTool` | ❌ 不可见 | ⚠️ 可能 fallback 到 Agent 全量白名单（日志 warn） |
+
+B 端配置 Host Tool 场景时，**务必**在 Skill 上执行 `PUT /skill/:id/host-tools`，不要只绑 Agent。
+
 ---
 
 ## 4. 运行时：哪些工具对当前页可见
@@ -169,17 +179,44 @@ DB 中通用工具 `hostPageId=null`；页内工具挂在 `HostPage` 下。**执
 
 ---
 
-## 7. 实施顺序
+## 7. 管理端 API（`/admin` 前缀）
 
-1. ✅ 建表（`hostPageId` 可空）  
-2. 管理端：App 通用工具 + 按页工具分栏  
-3. Plan `hostEffect` + 可选 `hostTool` on completed  
-4. LLM 注入（仅 `LLM` / `BOTH` 且页内/通用工具在 effective 集合内）
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/host-page` | 创建页面登记 |
+| GET | `/host-page/by-app-client/:appClientId` | 分页列表 |
+| GET/PATCH/DELETE | `/host-page/:id` | 详情 / 更新 / 删除 |
+| POST | `/host-tool` | 创建工具（`hostPageId` 空 = 通用） |
+| GET | `/host-tool/by-app-client/:appClientId` | 分页列表（`?scope=` / `?genericOnly=true`） |
+| GET/PATCH/DELETE | `/host-tool/:id` | 详情 / 更新 / 删除 |
+| GET | `/agent/:agentId/app-client/:appClientId/host-tools` | Agent 可绑工具（含 `bound`） |
+| POST/DELETE | `/agent/.../host-tools` | 绑定 / 解绑 |
+| GET | `/skill/:skillId/host-tools` | Skill 关联列表 |
+| PUT | `/skill/:skillId/host-tools` | 全量替换 Skill 关联 |
+
+**Agent / Skill 详情内嵌**（前缀 `/admin`）：`GET /agent/:id` 返回 `hostTools` + `agentHostTools`；`GET /skill/:skillId` 返回 `hostTools` + `skillHostTools`。见 [host-tool-agent-skill-api-frontend.md](./host-tool-agent-skill-api-frontend.md)。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/host-tool/client/register` | 幂等注册元数据（首次入库） |
+| GET | `/host-tool/client/catalog` | 查询目录 |
+
+详见 [host-tool-client-register-frontend.md](./host-tool-client-register-frontend.md)、[host-tool-admin-frontend.md](./host-tool-admin-frontend.md)。
 
 ---
 
-## 8. 相关文档
+## 8. 实施顺序
+
+1. ✅ 建表 + 管理 API + `host_action.hostTools`  
+2. Plan `hostEffect`（从 SkillHostTool 种子化）  
+3. LLM 注入（`LLM` / `BOTH`）
+
+---
+
+## 9. 相关文档
 
 | 文档 | 内容 |
 |------|------|
+| [host-tool-admin-frontend.md](./host-tool-admin-frontend.md) | **B 端管理后台对接** |
+| [host-tool-client-register-frontend.md](./host-tool-client-register-frontend.md) | **C 端注册 + SDK** |
 | [host-page-context-host-action-frontend.md](./host-page-context-host-action-frontend.md) | pageContext、completed SSE |

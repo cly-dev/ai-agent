@@ -9,15 +9,18 @@ import {
   resolvePagination,
   toPaginatedResult,
 } from '../../common/pagination';
+import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
+import { AgentToolCatalogService } from '../../core/runtime-cache/agent-tool-catalog.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  toAgentListResponseList,
   toAgentToolBindingItemList,
   toAgentToolsBindingResponse,
   toAgentWithToolsResponse,
-  toAgentWithToolsResponseList,
 } from './mapper/agent.mapper';
 import {
   AGENT_LINKED_TOOL_SELECT,
+  AGENT_LIST_INCLUDE,
   AGENT_WITH_TOOLS_INCLUDE,
   type AgentToolsBindingResponse,
   type AgentToolsPageResponse,
@@ -35,7 +38,6 @@ import { SessionPrepareStore } from '../chat/session-prepare.store';
 import { AgentCacheStore } from './cache/agent-cache.store';
 import type { AgentRuntimeSnapshot } from './cache/agent-runtime.types';
 import {
-  allowedToolLevels,
   buildRoleAccessibleToolWhere,
   resolveMaxToolLevel,
   type UserRoleToolAccessContext,
@@ -48,6 +50,8 @@ export class AgentService {
     private readonly prisma: PrismaService,
     private readonly agentCacheStore: AgentCacheStore,
     private readonly sessionPrepareStore: SessionPrepareStore,
+    private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
+    private readonly agentToolCatalogService: AgentToolCatalogService,
   ) {}
 
   /**
@@ -124,9 +128,9 @@ export class AgentService {
   async findAll() {
     const rows = await this.prisma.agent.findMany({
       orderBy: { id: 'asc' },
-      include: AGENT_WITH_TOOLS_INCLUDE,
+      include: AGENT_LIST_INCLUDE,
     });
-    return toAgentWithToolsResponseList(rows);
+    return toAgentListResponseList(rows);
   }
 
   async findByAppClientId(appClientId: number) {
@@ -230,6 +234,10 @@ export class AgentService {
       ]);
     }
     await this.invalidateRuntimeCache(existing.appClientId, id);
+    await this.runtimeCacheInvalidator.invalidateForAgent({
+      agentId: id,
+      appClientId: existing.appClientId,
+    });
     if (
       dto.appClientId != null &&
       dto.appClientId !== existing.appClientId
@@ -241,6 +249,10 @@ export class AgentService {
 
   async remove(id: number) {
     const row = await this.findOneWithTools(id);
+    await this.runtimeCacheInvalidator.invalidateForAgent({
+      agentId: id,
+      appClientId: row.appClientId,
+    });
     await this.prisma.agent.delete({ where: { id } });
     await this.invalidateRuntimeCache(row.appClientId, id);
     return row;
@@ -305,7 +317,10 @@ export class AgentService {
       })),
       skipDuplicates: true,
     });
-    await this.sessionPrepareStore.invalidateSnapshotsForAgent(agentId);
+    await this.runtimeCacheInvalidator.invalidateForAgent({
+      agentId,
+      appClientId,
+    });
     const bindings = await this.findAgentToolBindings(agentId, appClientId);
     return toAgentToolsBindingResponse(agentId, appClientId, bindings);
   }
@@ -333,7 +348,10 @@ export class AgentService {
         },
       }),
     ]);
-    await this.sessionPrepareStore.invalidateSnapshotsForAgent(agentId);
+    await this.runtimeCacheInvalidator.invalidateForAgent({
+      agentId,
+      appClientId,
+    });
     const bindings = await this.findAgentToolBindings(agentId, appClientId);
     return toAgentToolsBindingResponse(agentId, appClientId, bindings);
   }
@@ -346,65 +364,11 @@ export class AgentService {
     this.logger.debug(
       `getAllowedTools start agentId=${agentId} userId=${userId} appClientId=${appClientId}`,
     );
-    const [agent, roleCtx] = await Promise.all([
-      this.prisma.agent.findFirst({
-        where: { id: agentId, appClientId },
-        select: { id: true },
-      }),
-      this.resolveUserRoleToolContext(userId, appClientId),
-    ]);
-
-    if (!agent) {
-      throw new NotFoundException(`agent ${agentId} not found`);
-    }
-    if (!roleCtx) {
-      this.logger.warn(
-        `getAllowedTools empty: no userApp binding userId=${userId} appClientId=${appClientId}`,
-      );
-      return [];
-    }
-
-    const roleToolIds = new Set(roleCtx.roleToolIds);
-    const agentTools = await this.prisma.agentTool.findMany({
-      where: { agentId: agent.id },
-      select: { toolId: true },
-    });
-    const effectiveToolIds = agentTools
-      .map((item) => item.toolId)
-      .filter((id) => roleToolIds.has(id));
-    this.logger.debug(
-      `getAllowedTools candidate counts agentTools=${agentTools.length} roleTools=${roleCtx.roleToolIds.length} intersection=${effectiveToolIds.length} roleId=${roleCtx.roleId} maxLevel=${roleCtx.maxLevel}`,
+    const filtered = await this.agentToolCatalogService.resolveAllowedTools(
+      agentId,
+      userId,
+      appClientId,
     );
-    if (effectiveToolIds.length === 0) {
-      this.logger.warn(
-        `getAllowedTools empty: no intersection agentId=${agentId} userId=${userId} appClientId=${appClientId}`,
-      );
-      return [];
-    }
-
-    const tools = await this.prisma.tool.findMany({
-      where: {
-        id: { in: effectiveToolIds },
-        appClientId,
-        isActive: true,
-        riskLevel: { in: allowedToolLevels(roleCtx.maxLevel) },
-      },
-      include: {
-        integration: {
-          select: {
-            id: true,
-            name: true,
-            baseUrl: true,
-            authMode: true,
-            apiKey: true,
-          },
-        },
-      },
-    });
-    const toolById = new Map(tools.map((tool) => [tool.id, tool]));
-    const filtered = effectiveToolIds
-      .map((id) => toolById.get(id))
-      .filter((tool) => tool !== undefined);
     this.logger.debug(
       `getAllowedTools list ${JSON.stringify(
         filtered.map((tool) => ({
@@ -417,7 +381,7 @@ export class AgentService {
       )}`,
     );
     this.logger.debug(
-      `getAllowedTools result allowed=${filtered.length} fetched=${tools.length} appClientId=${appClientId}`,
+      `getAllowedTools result allowed=${filtered.length} appClientId=${appClientId}`,
     );
     return filtered;
   }

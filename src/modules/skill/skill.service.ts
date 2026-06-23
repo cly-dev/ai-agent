@@ -10,8 +10,9 @@ import {
   toPaginatedResult,
 } from '../../common/pagination';
 import { skillRequiresWriteConfirmation } from '../../core/risk/risk-level.util';
-import { filterSkillsWithRunnableToolIds } from '../../core/skill/skill-runnable.util';
+import { filterRunnableSkills } from '../../core/skill/skill-runnable.util';
 import { SkillService as SkillRuntimeService } from '../../core/skill/skill.service';
+import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentService } from '../agent/agent.service';
 import { normalizeCapabilityKey } from './util/skill-capability-key.util';
@@ -21,7 +22,7 @@ import { QuerySkillDto } from './dto/query-skill.dto';
 import { ReplaceSkillToolsDto } from './dto/skill-tool-binding.dto';
 import type { SkillToolBindingItemDto } from './dto/skill-tool-binding.dto';
 import { UpdateSkillDto } from './dto/update-skill.dto';
-import { toSkillResponse, toSkillResponseList } from './mapper/skill.mapper';
+import { toSkillListResponseList, toSkillResponse } from './mapper/skill.mapper';
 import { resolveSkillRiskLevel } from './util/skill-risk.util';
 import {
   buildSkillFilterFields,
@@ -30,6 +31,7 @@ import {
 } from './util/skill-query.util';
 import {
   SKILL_DETAIL_INCLUDE,
+  SKILL_LIST_INCLUDE,
   type SkillClientListItem,
   type SkillResponse,
 } from './types/skill.types';
@@ -40,6 +42,7 @@ export class SkillService {
     private readonly prisma: PrismaService,
     private readonly skillRuntime: SkillRuntimeService,
     private readonly agentService: AgentService,
+    private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
   ) {}
 
   async create(
@@ -91,6 +94,7 @@ export class SkillService {
       },
       include: SKILL_DETAIL_INCLUDE,
     });
+    await this.invalidateAgentRuntimeCache(agentId, appClientId);
     return toSkillResponse(row);
   }
 
@@ -112,12 +116,12 @@ export class SkillService {
         orderBy,
         skip,
         take,
-        include: SKILL_DETAIL_INCLUDE,
+        include: SKILL_LIST_INCLUDE,
       }),
       this.prisma.skill.count({ where }),
     ]);
     return toPaginatedResult(
-      toSkillResponseList(rows),
+      toSkillListResponseList(rows),
       total,
       page,
       pageSize,
@@ -126,7 +130,8 @@ export class SkillService {
 
   /**
    * C 端：按 agentId 返回当前用户可选且可运行的 active Skill 摘要。
-   * 角色可见 + Skill Tool 与用户允许 Tool 有交集（与 POST messages skillId 校验一致）。
+   * 角色可见 + Skill 至少有一个可运行能力：HTTP Tool 与用户允许 Tool 有交集，
+   * 或 SkillHostTool 落在 Agent Host Tool 白名单内（与 POST messages skillId 校验一致）。
    */
   async findClientListByAgentForUser(
     agentId: number,
@@ -141,7 +146,7 @@ export class SkillService {
       appClientId,
     );
     const allowedToolIds = new Set(allowedTools.map((tool) => tool.id));
-    const rows = filterSkillsWithRunnableToolIds(
+    const rows = filterRunnableSkills(
       await this.skillRuntime.listAgentSkillsForUser({
         agentId,
         userId,
@@ -160,6 +165,7 @@ export class SkillService {
       riskLevel: row.riskLevel,
       requiresWriteConfirmation: skillRequiresWriteConfirmation(row.riskLevel),
       toolIds: row.toolIds,
+      hostToolIds: row.hostToolIds,
     }));
   }
 
@@ -187,12 +193,12 @@ export class SkillService {
         orderBy,
         skip,
         take,
-        include: SKILL_DETAIL_INCLUDE,
+        include: SKILL_LIST_INCLUDE,
       }),
       this.prisma.skill.count({ where }),
     ]);
     return toPaginatedResult(
-      toSkillResponseList(rows),
+      toSkillListResponseList(rows),
       total,
       page,
       pageSize,
@@ -236,6 +242,7 @@ export class SkillService {
       },
       include: SKILL_DETAIL_INCLUDE,
     });
+    await this.invalidateAgentRuntimeCache(row.agentId, row.agent.appClientId);
     return toSkillResponse(row);
   }
 
@@ -270,13 +277,25 @@ export class SkillService {
         include: SKILL_DETAIL_INCLUDE,
       });
     });
+    await this.invalidateAgentRuntimeCache(existing.agentId, existing.agent.appClientId);
     return toSkillResponse(row);
   }
 
   async remove(skillId: number): Promise<SkillResponse> {
     const row = await this.getSkillOrThrow(skillId);
     await this.prisma.skill.delete({ where: { id: skillId } });
+    await this.invalidateAgentRuntimeCache(row.agentId, row.agent.appClientId);
     return toSkillResponse(row);
+  }
+
+  private async invalidateAgentRuntimeCache(
+    agentId: number,
+    appClientId: number,
+  ): Promise<void> {
+    await this.runtimeCacheInvalidator.invalidateForSkillAgent(
+      agentId,
+      appClientId,
+    );
   }
 
   private matchesClientSkillQuery(

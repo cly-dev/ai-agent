@@ -1,10 +1,10 @@
 import { observationNeedsPagedFetch } from '../../../mcp-utils/pagination';
-import type { TaskPlanSnapshot } from '../main/task-plan.types';
+import type { TaskPlanSnapshot } from '../main/plan/task-plan.types';
 import {
   getPendingPlanToolStep,
   resolveScopedToolRoleForPlan,
   type PlanScopedTool,
-} from '../main/task-plan.util';
+} from '../main/plan/task-plan.util';
 
 /** Plan still has an analyze step ahead of the current gather. */
 export function planHasPendingAnalyzeStep(

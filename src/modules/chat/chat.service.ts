@@ -23,6 +23,7 @@ import { QueryChatListDto } from './dto/query-chat-list.dto';
 import { DeleteChatResponseDto } from './dto/delete-chat-response.dto';
 import { SessionPrepareService } from './session-prepare.service';
 import { SessionPrepareStore } from './session-prepare.store';
+import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 
 @Injectable()
 export class ChatService {
@@ -36,6 +37,7 @@ export class ChatService {
     private readonly sessionGoaStore: SessionGoaStore,
     private readonly sessionPrepareStore: SessionPrepareStore,
     private readonly sessionPrepareService: SessionPrepareService,
+    private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
     @Inject(forwardRef(() => MessageService))
     private readonly messageService: MessageService,
   ) {}
@@ -180,6 +182,7 @@ export class ChatService {
       this.prisma.session.delete({ where: { id: session.id } }),
     ]);
     await this.clearSessionContext(session.id);
+    this.runtimeCacheInvalidator.invalidateForSession(session.id);
     await this.sessionPrepareStore.delete(session.id);
     this.chatEvents.emit(session.id, {
       event: 'complete',

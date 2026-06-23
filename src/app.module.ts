@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LlmModule } from './core/llm/llm.module';
 import { MemoryModule } from './core/memory/memory.module';
+import { RuntimeCacheModule } from './core/runtime-cache/runtime-cache.module';
 import { PromptModule } from './core/prompt/prompt.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AdminUserModule } from './modules/admin-user/admin-user.module';
@@ -27,11 +28,13 @@ import { ToolCategoryModule } from './modules/tool-category/tool-category.module
 import { LlmModelConfigModule } from './modules/llm-model-config/llm-model-config.module';
 import { PromptTemplateModule } from './modules/prompt-template/prompt-template.module';
 import { RoleModule } from './modules/role/role.module';
+import { HostToolModule } from './modules/host-tool/host-tool.module';
 
 @Module({
   imports: [
     LlmModule,
     MemoryModule,
+    RuntimeCacheModule,
     PromptModule,
     PrismaModule,
     AuthModule,
@@ -44,6 +47,7 @@ import { RoleModule } from './modules/role/role.module';
     LlmModelConfigModule,
     PromptTemplateModule,
     RoleModule,
+    HostToolModule,
     AgentModule,
     ChatModule,
     MessageModule,

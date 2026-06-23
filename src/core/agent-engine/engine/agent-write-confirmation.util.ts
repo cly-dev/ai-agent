@@ -1,5 +1,5 @@
 import type { PendingToolObservation } from '../../../modules/chat/pending-write-confirmation.types';
-import type { ToolObservation } from './main/agent-engine.types';
+import type { ToolObservation } from './main/types/agent-engine.types';
 
 export function serializeObservationsForPending(
   observations: ToolObservation[],

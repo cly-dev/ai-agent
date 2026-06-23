@@ -1,16 +1,25 @@
 import { Injectable } from '@nestjs/common';
+import { AgentSkillCatalogService } from '../runtime-cache/agent-skill-catalog.service';
 import { ToolEngineService } from '../tool-engine/tool-engine.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { AgentEngineTool } from '../agent-engine/engine/main/agent-engine.types';
+import type { AgentEngineTool } from '../agent-engine/engine/main/types/agent-engine.types';
 import type {
   ActiveSkillSnapshot,
   AgentSkillWarmupRow,
   AvailableSkillRow,
+  GetRunnableSkillDetailInput,
   ListAgentSkillsInput,
   ListAvailableSkillsInput,
+  ResolveSkillsForOuterPlanInput,
   SkillBindResult,
 } from './skill.types';
 import type { ToolBuildContext } from '../tool-engine/tool-engine.service';
+import {
+  deriveSkillRunnableKind,
+  filterRunnableSkills,
+  skillIsResolvableForRequested,
+  skillIsResolvableInScope,
+} from './skill-runnable.util';
 
 type SkillDbRow = {
   id: number;
@@ -21,6 +30,7 @@ type SkillDbRow = {
   riskLevel: AvailableSkillRow['riskLevel'];
   capabilityKey: string | null;
   skillTools: Array<{ toolId: number }>;
+  skillHostTools: Array<{ hostToolId: number }>;
 };
 
 @Injectable()
@@ -28,9 +38,47 @@ export class SkillService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly toolEngine: ToolEngineService,
+    private readonly agentSkillCatalogService: AgentSkillCatalogService,
   ) {}
 
-  /** intent 收窄后的 scopedTools 上推导可用 Skill（SkillTool 交集 + RoleSkill）。 */
+  /** 在当前 scopedTools 上下文内解析单个 Skill。 */
+  async getRunnableSkillDetailById(
+    input: GetRunnableSkillDetailInput,
+  ): Promise<AvailableSkillRow | null> {
+    const roleContext = await this.resolveRoleContext(
+      input.userId,
+      input.appClientId,
+    );
+    if (!roleContext) {
+      return null;
+    }
+    const [rows, runnableHostToolIds] = await Promise.all([
+      this.queryAgentSkills({
+        agentId: input.agentId,
+        roleId: roleContext.roleId,
+        roleSkillFiltered: roleContext.roleSkillFiltered,
+        skillId: input.skillId,
+      }),
+      this.loadAgentRunnableHostToolIds(input.agentId),
+    ]);
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+    const scopedHostToolIdSet = this.toScopedHostToolIdSet(
+      input.scopedHostToolIds,
+      runnableHostToolIds,
+    );
+    return this.toAvailableSkillRowIfResolvable(
+      row,
+      runnableHostToolIds,
+      new Set(input.scopedTools.map((tool) => tool.id)),
+      scopedHostToolIdSet,
+      input.forRequestedSkill === true,
+    );
+  }
+
+  /** @deprecated 使用 getRunnableSkillDetailById */
   async getAvailableSkillById(input: {
     agentId: number;
     userId: number;
@@ -38,62 +86,121 @@ export class SkillService {
     skillId: number;
     scopedTools: AgentEngineTool[];
   }): Promise<AvailableSkillRow | null> {
-    const available = await this.listAvailableSkillsForScopedTools({
+    return this.getRunnableSkillDetailById(input);
+  }
+
+  /**
+   * 外层 Plan：在 scopedTools 上列出可解析 Skill；requestedSkillId 不在列表时用显式解析兜底。
+   */
+  async resolveSkillsForOuterPlan(
+    input: ResolveSkillsForOuterPlanInput,
+  ): Promise<AvailableSkillRow[]> {
+    const skills = await this.listResolvableSkillsForScopedTools(input);
+    const requestedSkillId = input.requestedSkillId;
+    if (
+      requestedSkillId == null ||
+      skills.some((skill) => skill.id === requestedSkillId)
+    ) {
+      return skills;
+    }
+    const requested = await this.getRunnableSkillDetailById({
       agentId: input.agentId,
       userId: input.userId,
       appClientId: input.appClientId,
+      skillId: requestedSkillId,
       scopedTools: input.scopedTools,
+      scopedHostToolIds: input.scopedHostToolIds,
+      forRequestedSkill: true,
     });
-    return available.find((skill) => skill.id === input.skillId) ?? null;
+    if (!requested) {
+      return skills;
+    }
+    return [...skills, requested];
   }
 
+  /**
+   * Plan / 展开：intent HTTP scoped ∩ Skill 绑定；当前页 Host Tool scoped ∩ Skill 绑定（含纯 Host Skill）。
+   */
+  async listResolvableSkillsForScopedTools(
+    input: ListAvailableSkillsInput,
+  ): Promise<AvailableSkillRow[]> {
+    const roleContext = await this.resolveRoleContext(
+      input.userId,
+      input.appClientId,
+    );
+    if (!roleContext) {
+      return [];
+    }
+    const scopedToolIds = new Set(input.scopedTools.map((tool) => tool.id));
+    const runnableHostToolIds = await this.loadAgentRunnableHostToolIds(
+      input.agentId,
+    );
+    const scopedHostToolIdSet = this.toScopedHostToolIdSet(
+      input.scopedHostToolIds,
+      runnableHostToolIds,
+    );
+    const queryBase = {
+      agentId: input.agentId,
+      roleId: roleContext.roleId,
+      roleSkillFiltered: roleContext.roleSkillFiltered,
+    };
+    const httpRows =
+      scopedToolIds.size > 0
+        ? await this.queryAgentSkills({
+            ...queryBase,
+            toolIdFilter: [...scopedToolIds],
+          })
+        : [];
+    const hostRows =
+      scopedHostToolIdSet.size > 0
+        ? await this.queryPureHostSkills({
+            ...queryBase,
+            hostToolIdFilter: [...scopedHostToolIdSet],
+          })
+        : [];
+    const hostBoundRows =
+      scopedHostToolIdSet.size > 0
+        ? await this.queryHostBoundSkills({
+            ...queryBase,
+            hostToolIdFilter: [...scopedHostToolIdSet],
+          })
+        : [];
+    const rows = this.mergeSkillDbRows(httpRows, hostRows, hostBoundRows);
+    return rows
+      .map((row) =>
+        this.toAvailableSkillRowIfResolvable(
+          row,
+          runnableHostToolIds,
+          scopedToolIds,
+          scopedHostToolIdSet,
+          false,
+        ),
+      )
+      .filter((row): row is AvailableSkillRow => row != null)
+      .map((row) => this.narrowHostToolIdsToPageScope(row, scopedHostToolIdSet));
+  }
+
+  /** @deprecated 使用 listResolvableSkillsForScopedTools */
   async listAvailableSkillsForScopedTools(
     input: ListAvailableSkillsInput,
   ): Promise<AvailableSkillRow[]> {
-    if (input.scopedTools.length === 0) {
-      return [];
-    }
-    const roleContext = await this.resolveRoleContext(
-      input.userId,
-      input.appClientId,
-    );
-    if (!roleContext) {
-      return [];
-    }
-    const scopedToolIds = input.scopedTools.map((tool) => tool.id);
-    const rows = await this.queryAgentSkills({
-      agentId: input.agentId,
-      roleId: roleContext.roleId,
-      roleSkillFiltered: roleContext.roleSkillFiltered,
-      toolIdFilter: scopedToolIds,
-    });
-    return rows.map((row) => this.toAvailableSkillRow(row));
+    return this.listResolvableSkillsForScopedTools(input);
   }
 
-  /** 预热：加载 Agent 下用户角色可见的全部 active Skill（不按工具过滤）。 */
+  /** 预热：角色可见的全部 active Skill（不按 runnable 过滤）。 */
   async listAgentSkillsForUser(
     input: ListAgentSkillsInput,
   ): Promise<AgentSkillWarmupRow[]> {
-    const roleContext = await this.resolveRoleContext(
-      input.userId,
-      input.appClientId,
-    );
-    if (!roleContext) {
-      return [];
-    }
-    const rows = await this.queryAgentSkills({
-      agentId: input.agentId,
-      roleId: roleContext.roleId,
-      roleSkillFiltered: roleContext.roleSkillFiltered,
-    });
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      capabilityKey: row.capabilityKey,
-      riskLevel: row.riskLevel,
-      toolIds: row.skillTools.map((skillTool) => skillTool.toolId),
-    }));
+    return this.agentSkillCatalogService.listAgentSkillsForUser(input);
+  }
+
+  /** C 端 / 会话预热：角色可见且用户可运行的 Skill 摘要。 */
+  async listRunnableAgentSkillsForUser(
+    input: ListAgentSkillsInput,
+    allowedToolIds: ReadonlySet<number>,
+  ): Promise<AgentSkillWarmupRow[]> {
+    const rows = await this.listAgentSkillsForUser(input);
+    return filterRunnableSkills(rows, allowedToolIds);
   }
 
   bindSkillToScopedTools(
@@ -117,6 +224,133 @@ export class SkillService {
       scopedAllowedToolIds,
       scopedToolBundle,
     };
+  }
+
+  private async queryHostBoundSkills(input: {
+    agentId: number;
+    roleId: number;
+    roleSkillFiltered: boolean;
+    hostToolIdFilter: number[];
+  }): Promise<SkillDbRow[]> {
+    if (input.hostToolIdFilter.length === 0) {
+      return [];
+    }
+    return this.queryAgentSkills({
+      agentId: input.agentId,
+      roleId: input.roleId,
+      roleSkillFiltered: input.roleSkillFiltered,
+      hostToolIdFilter: input.hostToolIdFilter,
+      hostBoundWithHttp: true,
+    });
+  }
+
+  private narrowHostToolIdsToPageScope(
+    row: AvailableSkillRow,
+    scopedHostToolIds: ReadonlySet<number>,
+  ): AvailableSkillRow {
+    if (scopedHostToolIds.size === 0) {
+      return row;
+    }
+    const hostToolIds = row.hostToolIds.filter((hostToolId) =>
+      scopedHostToolIds.has(hostToolId),
+    );
+    return {
+      ...row,
+      hostToolIds,
+      runnableKind: deriveSkillRunnableKind({
+        skillToolIds: row.skillToolIds,
+        hostToolIds,
+      }),
+    };
+  }
+
+  private async queryPureHostSkills(input: {
+    agentId: number;
+    roleId: number;
+    roleSkillFiltered: boolean;
+    hostToolIdFilter: number[];
+  }): Promise<SkillDbRow[]> {
+    if (input.hostToolIdFilter.length === 0) {
+      return [];
+    }
+    return this.queryAgentSkills({
+      agentId: input.agentId,
+      roleId: input.roleId,
+      roleSkillFiltered: input.roleSkillFiltered,
+      pureHostOnly: true,
+      hostToolIdFilter: input.hostToolIdFilter,
+    });
+  }
+
+  private toScopedHostToolIdSet(
+    scopedHostToolIds: number[] | undefined,
+    runnableHostToolIds: ReadonlySet<number>,
+  ): ReadonlySet<number> {
+    if (!scopedHostToolIds?.length) {
+      return new Set();
+    }
+    return new Set(
+      scopedHostToolIds.filter((hostToolId) =>
+        runnableHostToolIds.has(hostToolId),
+      ),
+    );
+  }
+
+  private mergeSkillDbRows(...groups: SkillDbRow[][]): SkillDbRow[] {
+    const byId = new Map<number, SkillDbRow>();
+    for (const rows of groups) {
+      for (const row of rows) {
+        byId.set(row.id, row);
+      }
+    }
+    return [...byId.values()];
+  }
+
+  private toAvailableSkillRowIfResolvable(
+    row: SkillDbRow,
+    runnableHostToolIds: ReadonlySet<number>,
+    scopedToolIds: ReadonlySet<number>,
+    scopedHostToolIds: ReadonlySet<number>,
+    forRequestedSkill: boolean,
+  ): AvailableSkillRow | null {
+    const skillToolIds = row.skillTools.map((skillTool) => skillTool.toolId);
+    const hostToolIds = this.resolveRunnableHostToolIds(
+      row,
+      runnableHostToolIds,
+    );
+    const caps = { skillToolIds, hostToolIds };
+    const resolvable = forRequestedSkill
+      ? skillIsResolvableForRequested(caps)
+      : skillIsResolvableInScope(caps, scopedToolIds, scopedHostToolIds);
+    if (!resolvable) {
+      return null;
+    }
+    return this.narrowHostToolIdsToPageScope(
+      this.toAvailableSkillRow(row, hostToolIds),
+      scopedHostToolIds,
+    );
+  }
+
+  private async loadAgentRunnableHostToolIds(
+    agentId: number,
+  ): Promise<ReadonlySet<number>> {
+    const bindings = await this.prisma.agentHostTool.findMany({
+      where: {
+        agentId,
+        hostTool: { isActive: true },
+      },
+      select: { hostToolId: true },
+    });
+    return new Set(bindings.map((binding) => binding.hostToolId));
+  }
+
+  private resolveRunnableHostToolIds(
+    row: Pick<SkillDbRow, 'skillHostTools'>,
+    runnableHostToolIds: ReadonlySet<number>,
+  ): number[] {
+    return row.skillHostTools
+      .map((binding) => binding.hostToolId)
+      .filter((hostToolId) => runnableHostToolIds.has(hostToolId));
   }
 
   private async resolveRoleContext(
@@ -144,18 +378,38 @@ export class SkillService {
     roleId: number;
     roleSkillFiltered: boolean;
     toolIdFilter?: number[];
+    skillId?: number;
+    pureHostOnly?: boolean;
+    hostBoundWithHttp?: boolean;
+    hostToolIdFilter?: number[];
   }): Promise<SkillDbRow[]> {
+    const hostToolIdFilter = input.hostToolIdFilter ?? [];
     return this.prisma.skill.findMany({
       where: {
         agentId: input.agentId,
         isActive: true,
-        ...(input.toolIdFilter && input.toolIdFilter.length > 0
+        ...(input.skillId != null ? { id: input.skillId } : {}),
+        ...(input.pureHostOnly
           ? {
-              skillTools: {
-                some: { toolId: { in: input.toolIdFilter } },
+              skillTools: { none: {} },
+              skillHostTools: {
+                some: { hostToolId: { in: hostToolIdFilter } },
               },
             }
-          : {}),
+          : input.hostBoundWithHttp && hostToolIdFilter.length > 0
+            ? {
+                skillTools: { some: {} },
+                skillHostTools: {
+                  some: { hostToolId: { in: hostToolIdFilter } },
+                },
+              }
+          : input.toolIdFilter && input.toolIdFilter.length > 0
+            ? {
+                skillTools: {
+                  some: { toolId: { in: input.toolIdFilter } },
+                },
+              }
+            : {}),
         ...(input.roleSkillFiltered
           ? { roleSkills: { some: { roleId: input.roleId } } }
           : {}),
@@ -169,6 +423,7 @@ export class SkillService {
         riskLevel: true,
         capabilityKey: true,
         skillTools: { select: { toolId: true } },
+        skillHostTools: { select: { hostToolId: true } },
       },
     });
   }
@@ -185,10 +440,16 @@ export class SkillService {
     };
   }
 
-  private toAvailableSkillRow(row: SkillDbRow): AvailableSkillRow {
+  private toAvailableSkillRow(
+    row: SkillDbRow,
+    hostToolIds: number[],
+  ): AvailableSkillRow {
+    const skillToolIds = row.skillTools.map((skillTool) => skillTool.toolId);
     return {
       ...this.toActiveSkillSnapshot(row),
-      skillToolIds: row.skillTools.map((skillTool) => skillTool.toolId),
+      skillToolIds,
+      hostToolIds,
+      runnableKind: deriveSkillRunnableKind({ skillToolIds, hostToolIds }),
     };
   }
 }

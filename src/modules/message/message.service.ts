@@ -19,8 +19,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { PaginatedResult } from '../../common/pagination';
 import { ChatEventsService } from '../chat/chat-events.service';
 import { ChatService } from '../chat/chat.service';
+import { PendingWriteConfirmationStore } from '../chat/pending-write-confirmation.store';
 import type { QueryChatListDto } from '../chat/dto/query-chat-list.dto';
 import { parsePageContextFromMessageFields } from '../../core/host-bridge';
+import { buildWriteConfirmActionMessagePersistence } from '../../core/agent-engine/engine/write-confirm-action-message.util';
 import { SaveMessageDto } from './dto/save-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 
@@ -35,6 +37,7 @@ export class MessageService {
     @Inject(forwardRef(() => ChatService))
     private readonly chatService: ChatService,
     private readonly chatEvents: ChatEventsService,
+    private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
     private readonly sessionMessageContext: SessionMessageContextSyncService,
     private readonly promptComposer: PromptComposerService,
     private readonly llmService: LlmService,
@@ -76,22 +79,37 @@ export class MessageService {
       }
     }
     const pageContext = parsePageContextFromMessageFields(dto);
+    let messageContent: string | null = isWriteConfirmAction
+      ? null
+      : this.normalizeMessageContentForStorage(dto.content);
+    let messageToolName: string | null = dto.toolName ?? null;
+    let messageToolInput = this.toJson(dto.toolInput);
+    let messagePageContext = pageContext;
+    if (isWriteConfirmAction) {
+      const pending = await this.pendingWriteConfirmationStore.get(
+        session.id,
+        userId,
+      );
+      const persisted = buildWriteConfirmActionMessagePersistence({
+        action: cancelWrite ? 'cancel_write' : 'confirm_write',
+        pending,
+        incomingPageContext: pageContext,
+      });
+      messageContent = persisted.content;
+      messageToolName = persisted.toolName;
+      messageToolInput = persisted.toolInput as Prisma.InputJsonValue;
+      messagePageContext = persisted.pageContext ?? pageContext;
+    }
     const message = await this.prisma.message.create({
       data: {
         sessionId: session.id,
         role: dto.role,
-        content: isWriteConfirmAction
-          ? null
-          : this.normalizeMessageContentForStorage(dto.content),
-        toolName: isWriteConfirmAction
-          ? cancelWrite
-            ? '__cancel_write__'
-            : '__confirm_write__'
-          : (dto.toolName ?? null),
-        toolInput: this.toJson(dto.toolInput),
+        content: messageContent,
+        toolName: messageToolName,
+        toolInput: messageToolInput,
         toolOutput: this.toJson(dto.toolOutput),
-        pageContextJson: pageContext
-          ? (pageContext as Prisma.InputJsonValue)
+        pageContextJson: messagePageContext
+          ? (messagePageContext as Prisma.InputJsonValue)
           : undefined,
       },
     });
@@ -114,7 +132,7 @@ export class MessageService {
           confirmWrite && !cancelWrite,
           cancelWrite,
           dto.skillId,
-          pageContext,
+          messagePageContext,
         ),
       );
     }

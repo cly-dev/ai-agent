@@ -245,7 +245,7 @@ Intent step 的 `output` 字段（持久化于 `AgentRun.steps`）示例：
 
 ## 主循环与 summarize 分流
 
-LangGraph 在 `agent-lang-graph.runner.ts` 中运行。**无论工具总数多少，均走 intent 节点**（skill 命中除外）。
+LangGraph 在 `agent-graph/` 中运行（`build-agent-graph.ts` + `nodes/intent.node.ts`）。**无论工具总数多少，均走 intent 节点**（skill 命中除外）。
 
 | 条件 | 路由 |
 |------|------|

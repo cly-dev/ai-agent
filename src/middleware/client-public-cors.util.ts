@@ -7,6 +7,8 @@ const MISROUTED_CLIENT_PATHS = new Set([
   '/admin/app-client/auth',
   '/admin/user/login',
   '/admin/user/password-reminder',
+  '/admin/host-tool/client/catalog',
+  '/admin/host-tool/client/register',
 ]);
 
 const DEFAULT_ALLOW_HEADERS = [
@@ -20,7 +22,10 @@ const DEFAULT_ALLOW_HEADERS = [
   'Last-Event-ID',
 ].join(', ');
 
-/** 非 `/admin` 前缀的路由视为 C 端对外 API（chat、user/login、app-client/auth、agent/client 等）。 */
+/**
+ * 非 `/admin` 前缀的路由视为 C 端对外 API
+ * （chat、app-client/auth、agent/client、host-tool/client 等；见 main.ts exclude）。
+ */
 export function isClientPublicApiPath(path: string): boolean {
   const normalized = path.replace(/\/+$/, '') || '/';
   return (

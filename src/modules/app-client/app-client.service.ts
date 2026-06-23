@@ -172,7 +172,7 @@ export class AppClientService {
 
   /**
    * 前台 SDK 认证：DSN + 业务 accountToken。
-   * 外部账号校验通过后：按 employeeId 自动建档/复用 User；若无 UserApp 则自动绑定当前 App（默认 operator 角色）。
+   * 外部账号校验通过后：按 employeeId 或 email 自动建档/复用 User；若无 UserApp 则自动绑定当前 App。
    */
   async authenticate(
     appClientId: number,

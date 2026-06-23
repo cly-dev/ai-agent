@@ -27,7 +27,7 @@ SSE complete ───────────► 本轮结束，可落库对齐
 SSE host_action ────────► 宿主页面同步（mutation 成功后，在 complete 之前）
 ```
 
-> 页面上下文与 `host_action` 对接指南：[host-page-context-host-action-frontend.md](./host-page-context-host-action-frontend.md)（服务端摘要：[host-bridge-frontend.md](./host-bridge-frontend.md)）。
+> **SDK 一站式对接**：[host-bridge-sdk-frontend.md](./host-bridge-sdk-frontend.md) · 页面上下文与 SSE 细节：[host-page-context-host-action-frontend.md](./host-page-context-host-action-frontend.md) · 服务端摘要：[host-bridge-frontend.md](./host-bridge-frontend.md)
 
 ---
 
@@ -93,21 +93,21 @@ es.addEventListener('error', (e) => onError(JSON.parse(e.data)));
 
 ### 3.3 `host_action`
 
-mutation 工具 HTTP 成功且 run 结束时，在 `complete` **之前**推送（需入站 `pageContext.page`）。语义为**操作完成**，非刷新指令：
+在 `complete` **之前**推送。v0 为批量 `hostTools[]`；**v1 流式 DSL** 见 [host-tool-stream-dsl-frontend.md](./host-tool-stream-dsl-frontend.md)（`stream.mode` + `dsl.op`，末尾 `full` 权威快照）。
 
 ```json
 {
   "action": "host_action",
-  "status": "completed",
   "scope": "review-detail",
   "entity": { "type": "review", "id": "123" },
+  "hostTools": [{ "name": "refreshEntity", "args": { "entityId": "123", "entityType": "review" } }],
+  "reason": "agent_mutation_success",
   "runId": 42,
-  "turnId": 7,
-  "reason": "agent_mutation_success"
+  "turnId": 7
 }
 ```
 
-宿主通过 `registerHostAction(scope, handler)` 处理；收到 `status: 'completed'` 后自行决定 UI 反应。详见 [host-page-context-host-action-frontend.md](./host-page-context-host-action-frontend.md)。
+宿主通过 `registerHostAction(scope, handler)` 处理；执行 `hostTools` 后自行决定 UI 反应。详见 [host-page-context-host-action-frontend.md](./host-page-context-host-action-frontend.md)。
 
 ---
 

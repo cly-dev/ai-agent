@@ -6,7 +6,8 @@ export type AppClientTokenPlacement =
   | 'query_token';
 
 export type AppClientProfileFieldMapping = {
-  employeeId: string;
+  /** 外部账号工号路径；未配置时不从响应读取，建档按 email 或合成 employeeId。 */
+  employeeId?: string;
   email: string;
   username?: string;
   nickName?: string;
@@ -19,6 +20,11 @@ export type AppClientHttpAuthConfig = {
   profilePath: string;
   method?: 'GET' | 'POST';
   tokenPlacement?: AppClientTokenPlacement;
+  /**
+   * 响应体根路径（点路径）。配置后 mapping 各字段相对此节点解析。
+   * 例：本服务 `/admin/*` 经 ReqInterceptor 包装为 `{ data: {...} }` → `"data"`。
+   */
+  responseRoot?: string;
   mapping: AppClientProfileFieldMapping;
   extraHeaders?: Record<string, string>;
 };
@@ -45,7 +51,7 @@ export type AppClientAuthTestResult = {
   ok: true;
   source: ResolvedAppClientAuthConfig['source'];
   profile: {
-    employeeId: string;
+    employeeId?: string;
     email: string;
     username: string;
     active: boolean;

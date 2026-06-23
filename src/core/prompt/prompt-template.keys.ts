@@ -11,6 +11,8 @@ export const PROMPT_KEYS = {
   /** respond 节点：槽位缺失时的反问 */
   AGENT_RESPOND_CLARIFICATION: 'agent.respond_clarification',
   AGENT_PLAN: 'agent.plan',
+  /** route_plan 节点：判断 direct_answer / on_page_task / orchestrated_task */
+  AGENT_TURN_ROUTE: 'agent.turn_route',
   /** gather 分页：单页列表 LLM map 摘要（通用业务字段） */
   AGENT_GATHER_PAGE_SUMMARY: 'agent.gather_page_summary',
   AGENT_SUMMARIZE_TOOL_FULL: 'agent.summarize_tool_full',
@@ -27,9 +29,6 @@ export const PROMPT_KEYS = {
   AGENT_SUMMARIZE_PLAN_DRAFT_PROSE_SUPPLEMENT: 'agent.summarize_plan_draft_prose_supplement',
   /** Plan present 步：基于 plan_compose_write 向用户展示草稿 */
   AGENT_SUMMARIZE_PLAN_PRESENT_FROM_COMPOSE: 'agent.summarize_plan_present_from_compose',
-  /** Plan present 步：输出仅含 submit 正文时触发重写 */
-  AGENT_SUMMARIZE_PLAN_PRESENT_CONTEXT_RETRY:
-    'agent.summarize_plan_present_context_retry',
   /** 写确认续跑后 summarize：汇报已确认写操作的成功/失败与条数 */
   AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME: 'agent.summarize_write_confirm_resume',
   MEMORY_HISTORY_COMPRESSION: 'memory.history_compression',

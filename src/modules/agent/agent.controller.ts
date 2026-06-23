@@ -61,7 +61,7 @@ export class AgentController {
   }
 
   @Get()
-  @ApiOperation({ summary: '查询 Agent 列表（含关联 tools）' })
+  @ApiOperation({ summary: '查询 Agent 列表（含 HTTP tools；Host Tool 仅 hostToolCount）' })
   findAll() {
     return this.service.findAll();
   }

@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import type { TurnExecutionContract } from '../../agent-engine/engine/turn/turn-execution-contract.types';
+import { storedPlanCompatibleWithContract } from '../../agent-engine/engine/turn/turn-execution-contract.util';
 import { detectIntentKind as classifyIntentKind } from '../../agent-engine/intent-kind.util';
 import { loadSmallTalkHints } from '../../intent/smalltalk-hints.util';
 import { SessionGoaService } from '../goa/session-goa.service';
@@ -32,9 +34,18 @@ export class SessionResumeGateService {
     agentId: number;
     latestUserMessage: string;
     goa: SessionGoaPayload;
+    contract: TurnExecutionContract;
   }): Promise<SessionResumeDecision> {
     const activeTask = input.goa.activeTask;
     if (isActiveTaskAwaitingWriteConfirmation(activeTask)) {
+      await this.goaService.abandonActiveTask(input.sessionId);
+      return { action: 'abandon_and_fresh' };
+    }
+
+    if (
+      activeTask?.status === 'in_progress' &&
+      !storedPlanCompatibleWithContract(input.contract, activeTask.plan)
+    ) {
       await this.goaService.abandonActiveTask(input.sessionId);
       return { action: 'abandon_and_fresh' };
     }

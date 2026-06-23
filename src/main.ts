@@ -57,6 +57,8 @@ async function bootstrap() {
       { path: 'app-client/auth', method: RequestMethod.POST },
       { path: 'agent/client/available', method: RequestMethod.GET },
       { path: 'agent/:agentId/skills/client', method: RequestMethod.GET},
+      { path: 'host-tool/client/catalog', method: RequestMethod.GET },
+      { path: 'host-tool/client/register', method: RequestMethod.POST },
     ],
   });
   const swaggerConfig = new DocumentBuilder()

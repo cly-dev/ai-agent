@@ -1,5 +1,7 @@
 import type { Prisma, ToolLevel } from '../../../../generated/prisma/client';
 import { AGENT_LINKED_TOOL_SELECT } from '../../agent/types/agent.types';
+import { HOST_TOOL_DETAIL_INCLUDE } from '../../host-tool/host-tool.types';
+import type { SkillHostToolBindingResponse, HostToolResponse } from '../../host-tool/host-tool.types';
 
 export const SKILL_APP_CLIENT_SELECT = {
   id: true,
@@ -24,16 +26,48 @@ export const SKILL_AGENT_SELECT = {
   },
 } satisfies Prisma.AgentSelect;
 
-export const SKILL_DETAIL_INCLUDE = {
-  agent: {
-    select: SKILL_AGENT_SELECT,
-  },
+export const SKILL_TOOLS_INCLUDE_FRAGMENT = {
   skillTools: {
     orderBy: { toolId: 'asc' as const },
     include: {
       tool: {
         select: AGENT_LINKED_TOOL_SELECT,
       },
+    },
+  },
+} satisfies Prisma.SkillInclude;
+
+const SKILL_AGENT_INCLUDE_FRAGMENT = {
+  agent: {
+    select: SKILL_AGENT_SELECT,
+  },
+} satisfies Prisma.SkillInclude;
+
+const SKILL_COUNTS_INCLUDE_FRAGMENT = {
+  _count: {
+    select: {
+      skillTools: true,
+      roleSkills: true,
+      skillHostTools: true,
+    },
+  },
+} satisfies Prisma.SkillInclude;
+
+/** 列表：HTTP 工具 + 计数，不含 Host Tool 详情。 */
+export const SKILL_LIST_INCLUDE = {
+  ...SKILL_AGENT_INCLUDE_FRAGMENT,
+  ...SKILL_TOOLS_INCLUDE_FRAGMENT,
+  ...SKILL_COUNTS_INCLUDE_FRAGMENT,
+} satisfies Prisma.SkillInclude;
+
+/** 详情：含完整 Host Tool 绑定。 */
+export const SKILL_DETAIL_INCLUDE = {
+  ...SKILL_AGENT_INCLUDE_FRAGMENT,
+  ...SKILL_TOOLS_INCLUDE_FRAGMENT,
+  skillHostTools: {
+    orderBy: [{ priority: 'asc' as const }, { id: 'asc' as const }],
+    include: {
+      hostTool: { include: HOST_TOOL_DETAIL_INCLUDE },
     },
   },
   _count: {
@@ -46,6 +80,10 @@ export const SKILL_DETAIL_INCLUDE = {
 
 export type SkillDetailRow = Prisma.SkillGetPayload<{
   include: typeof SKILL_DETAIL_INCLUDE;
+}>;
+
+export type SkillListRow = Prisma.SkillGetPayload<{
+  include: typeof SKILL_LIST_INCLUDE;
 }>;
 
 export type SkillToolBindingResponse = {
@@ -92,7 +130,13 @@ export type SkillResponse = {
   agent: SkillAgentSummary;
   appClient: SkillAppClientSummary;
   skillTools: SkillToolBindingResponse[];
+  /** 扁平 Host Tool 列表（详情接口；列表为空数组） */
+  hostTools: HostToolResponse[];
+  /** Host Tool 中间表（详情接口；列表为空数组） */
+  skillHostTools: SkillHostToolBindingResponse[];
   toolCount: number;
+  /** 已绑 Host Tool 数量 */
+  hostToolCount: number;
   roleSkillCount: number;
 };
 
@@ -105,4 +149,5 @@ export type SkillClientListItem = {
   riskLevel: ToolLevel;
   requiresWriteConfirmation: boolean;
   toolIds: number[];
+  hostToolIds: number[];
 };

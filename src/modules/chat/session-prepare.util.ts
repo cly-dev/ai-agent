@@ -1,36 +1,30 @@
 import type { SessionAllowedToolsRow } from './session-prepare.types';
+import {
+  buildSkillsRuntimeRevision,
+  buildToolsRuntimeRevision,
+  isRuntimeRevisionEqual,
+} from '../../core/runtime-cache/runtime-revision.util';
+import type { RuntimeRevision } from '../../core/runtime-cache/runtime-cache.types';
 
-export function buildToolIdsFingerprint(
-  tools: Array<{ id: number }>,
-): string {
-  return buildIdsFingerprint(tools);
+export function buildSessionRuntimeRevision(input: {
+  tools: SessionAllowedToolsRow[];
+  skills: Array<{ id: number; updatedAt?: Date | string }>;
+  hostToolsRevision?: string;
+}): RuntimeRevision {
+  const toolParts = buildToolsRuntimeRevision(input.tools);
+  return {
+    tools: toolParts.tools,
+    integrations: toolParts.integrations,
+    skills: buildSkillsRuntimeRevision(input.skills),
+    hostTools: input.hostToolsRevision ?? '',
+  };
 }
 
-export function buildSkillIdsFingerprint(
-  skills: Array<{ id: number }>,
-): string {
-  return buildIdsFingerprint(skills);
-}
-
-function buildIdsFingerprint(rows: Array<{ id: number }>): string {
-  return rows
-    .map((row) => row.id)
-    .sort((a, b) => a - b)
-    .join(',');
-}
-
-export function areToolIdSetsEqual(
-  left: Array<{ id: number }>,
-  right: Array<{ id: number }>,
+export function areSessionRuntimeRevisionsEqual(
+  cached: RuntimeRevision | null | undefined,
+  fresh: RuntimeRevision,
 ): boolean {
-  return buildToolIdsFingerprint(left) === buildToolIdsFingerprint(right);
-}
-
-export function areSkillIdSetsEqual(
-  left: Array<{ id: number }>,
-  right: Array<{ id: number }>,
-): boolean {
-  return buildSkillIdsFingerprint(left) === buildSkillIdsFingerprint(right);
+  return isRuntimeRevisionEqual(cached, fresh);
 }
 
 export function snapshotContainsAnyToolId(
@@ -41,13 +35,13 @@ export function snapshotContainsAnyToolId(
   return tools.some((tool) => idSet.has(tool.id));
 }
 
-export function isSessionPrepareSnapshotValid(
+export function isSessionRuntimeSnapshotValid(
   snapshot: {
     sessionId: string;
     userId: number;
     appClientId: number;
     agentId: number;
-    tools: SessionAllowedToolsRow[];
+    tools: unknown[];
   },
   expected: {
     sessionId: string;

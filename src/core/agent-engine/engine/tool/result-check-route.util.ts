@@ -1,10 +1,10 @@
-import type { GraphToolCall } from '../main/agent-engine.types';
-import type { TaskPlanAdvanceResult, TaskPlanSnapshot } from '../main/task-plan.types';
+import type { GraphToolCall } from '../main/types/agent-engine.types';
+import type { TaskPlanAdvanceResult, TaskPlanSnapshot } from '../main/plan/task-plan.types';
 import {
   getPendingPlanToolStep,
   toolCallMatchesPendingPlanToolRole,
   type PlanScopedTool,
-} from '../main/task-plan.util';
+} from '../main/plan/task-plan.util';
 import type { ResultCheckOutcome } from './tool-result-check.util';
 
 export type ResultCheckRouteAuthority = 'plan' | 'react' | 'safety_abort';

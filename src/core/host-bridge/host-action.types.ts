@@ -1,14 +1,7 @@
-export type HostActionStatus = 'completed';
-
-/** Flat SSE payload consumed by omnix-chat SDK. */
-export type HostActionSsePayload = {
-  action: 'host_action';
-  /** Mutation succeeded; UI reaction is entirely host-defined. */
-  status: HostActionStatus;
-  scope?: string;
-  entity?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-  reason?: string;
-  runId?: number;
-  turnId?: number;
-};
+/** v0 批量 + v1 DSL 流式联合类型（normative 定义在 host-tool-stream.types.ts）。 */
+export type {
+  HostActionHostToolInvocation,
+  HostActionBatchPayload,
+  HostActionStreamPayload,
+  HostActionSsePayload,
+} from './host-tool-stream.types';

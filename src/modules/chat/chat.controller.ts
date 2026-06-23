@@ -17,6 +17,7 @@ import { serializeChatSseData } from './chat-sse-payload.util';
 import { ChatService } from './chat.service';
 import { CreateChatDto } from './dto/create-chat.dto';
 import { DeleteChatResponseDto } from './dto/delete-chat-response.dto';
+import { PrepareChatDto } from './dto/prepare-chat.dto';
 import { PrepareChatResponseDto } from './dto/prepare-chat-response.dto';
 import { QueryChatListDto } from './dto/query-chat-list.dto';
 import { SessionPrepareService } from './session-prepare.service';
@@ -97,18 +98,21 @@ export class ChatController {
 
   @Post(':sessionId/prepare')
   @ApiOperation({
-    summary: '预热会话：Agent runtime、权限内 tools、会话 history（Redis 5 分钟）',
+    summary:
+      '预热会话：Agent runtime、权限内 tools/skills、按路由 page 预热 host_tool、会话 history',
   })
   @ApiParam({ name: 'sessionId', type: String, description: '会话 ID（32 位 hex）' })
   @ApiResponse({ status: 200, description: '预热完成', type: PrepareChatResponseDto })
   prepare(
     @Req() req: Request & { user?: { userId?: number } },
     @Param('sessionId') sessionId: string,
+    @Body() body: PrepareChatDto,
   ): Promise<PrepareChatResponseDto> {
     return this.sessionPrepareService.warm(
       this.normalizeSessionId(sessionId),
       this.userId(req),
       this.appClientId(req),
+      this.sessionPrepareService.resolvePageContextFromPrepareDto(body),
     );
   }
 

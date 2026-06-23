@@ -50,6 +50,12 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     description: 'Plan 节点：拆 deliverable 与 steps（LLM structured output）',
   },
   {
+    key: PROMPT_KEYS.AGENT_TURN_ROUTE,
+    category: 'agent_runtime',
+    title: 'Turn 任务路由',
+    description: 'route_plan 节点：判断本轮 direct_answer / on_page_task / orchestrated_task',
+  },
+  {
     key: PROMPT_KEYS.AGENT_GATHER_PAGE_SUMMARY,
     category: 'agent_runtime',
     title: 'Gather 单页 Map 摘要',
@@ -108,12 +114,6 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     category: 'agent_runtime',
     title: 'Plan present 步展示',
     description: '基于 plan_compose_write 机器层 payload 生成用户可见 Markdown',
-  },
-  {
-    key: PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_PRESENT_CONTEXT_RETRY,
-    category: 'agent_runtime',
-    title: 'Plan present 展示重写',
-    description: 'present 输出仅含 submit 正文时补充操作说明语境',
   },
   {
     key: PROMPT_KEYS.MEMORY_HISTORY_COMPRESSION,

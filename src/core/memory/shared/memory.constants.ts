@@ -39,15 +39,6 @@ function readPositiveInt(
   return Number.isFinite(n) && n > 0 ? n : defaultValue;
 }
 
-/** 是否启用多轮会话历史 LLM 压缩。`SESSION_HISTORY_COMPRESS=0` 关闭。 */
-export function isSessionHistoryCompressionEnabled(): boolean {
-  const raw = process.env.SESSION_HISTORY_COMPRESS?.trim().toLowerCase();
-  if (raw === '0' || raw === 'false' || raw === 'off') {
-    return false;
-  }
-  return true;
-}
-
 /** 超过该轮次数（turn 条数）时触发压缩，默认 24。 */
 export function getSessionHistoryCompressAfterTurns(): number {
   return readPositiveInt('SESSION_HISTORY_COMPRESS_AFTER_TURNS', 24);
@@ -66,13 +57,4 @@ export function getSessionHistoryCompressMaxSummaryTokens(): number {
 /** 送入压缩 LLM 的 transcript 估算 token 上限，默认 6000。 */
 export function getSessionHistoryCompressMaxInputTokens(): number {
   return readPositiveInt('SESSION_HISTORY_COMPRESS_MAX_INPUT_TOKENS', 6000);
-}
-
-/** 压缩成功后是否软裁剪 Redis turns（已摘要部分删除）。`0` 关闭。 */
-export function isSessionHistoryTrimTurnsAfterCompressEnabled(): boolean {
-  const raw = process.env.SESSION_HISTORY_TRIM_TURNS_AFTER_COMPRESS?.trim().toLowerCase();
-  if (raw === '0' || raw === 'false' || raw === 'off') {
-    return false;
-  }
-  return true;
 }

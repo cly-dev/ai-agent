@@ -1,5 +1,5 @@
-import { toStoredTaskPlan } from '../../agent-engine/engine/main/session-graph-resume.util';
-import type { AgentGraphState } from '../../agent-engine/engine/main/agent-engine.types';
+import { toStoredTaskPlan } from '../../agent-engine/engine/main/session/session-graph-resume.util';
+import type { AgentGraphState } from '../../agent-engine/engine/main/types/agent-engine.types';
 import type {
   ActiveTaskStatus,
   AgentRunGoaSnapshot,

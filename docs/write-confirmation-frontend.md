@@ -494,7 +494,7 @@ async function onCancelWrite(sessionId: string) {
 | Write body 注入 / 校验 | `src/core/tool-engine/write-tool-draft-injection.util.ts` |
 | plan_draft_reply observation | `src/core/agent-engine/engine/main/plan-draft-reply.util.ts` |
 | 写确认拦截 | `src/core/agent-engine/engine/write-confirmation-gate.util.ts` |
-| tools 节点暂停 | `src/core/agent-engine/engine/main/agent-lang-graph.runner.ts` |
+| tools 节点暂停 | `src/core/agent-engine/engine/main/agent-graph/nodes/tools.node.ts` |
 | step 编号 / timeline | `src/core/agent-engine/engine/main/agent-run-steps.util.ts` |
 | pending 存储 | `src/modules/chat/pending-write-confirmation.store.ts` |
 | 确认续跑 | `src/core/agent-engine/engine/agent-engine.service.ts` → `resumeAfterWriteConfirm` |

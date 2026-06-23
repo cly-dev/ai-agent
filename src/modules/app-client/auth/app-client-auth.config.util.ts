@@ -13,7 +13,7 @@ const tokenPlacementSchema = z.enum([
 
 const profileFieldMappingSchema = z
   .object({
-    employeeId: z.string().min(1),
+    employeeId: z.string().min(1).optional(),
     email: z.string().min(1),
     username: z.string().min(1).optional(),
     nickName: z.string().min(1).optional(),
@@ -28,6 +28,7 @@ const httpAuthConfigSchema = z
     profilePath: z.string().min(1),
     method: z.enum(['GET', 'POST']).optional(),
     tokenPlacement: tokenPlacementSchema.optional(),
+    responseRoot: z.string().min(1).optional(),
     mapping: profileFieldMappingSchema,
     extraHeaders: z.record(z.string(), z.string()).optional(),
   })
@@ -120,6 +121,53 @@ export function buildAuthConfigFromEnv(): AppClientAuthConfig | null {
       'operator',
     propagateTokenToIntegrations: true,
   };
+}
+
+/** 本服务对外可访问根 URL（无尾部斜杠），用于 AppClient 回调 profile。 */
+export function resolveAgentServerPublicUrl(): string {
+  const raw =
+    process.env.AGENT_SERVER_PUBLIC_URL?.trim() ||
+    process.env.APP_CLIENT_AGENT_SERVER_URL?.trim() ||
+    'http://localhost:3030';
+  return raw.replace(/\/+$/, '');
+}
+
+/**
+ * B 端管理台接入：用管理员 JWT 调 `GET /admin/admin-user/me` 校验账号。
+ * 适用于 appClientId=2 等「运营助手 / 管理 B 端」场景。
+ */
+export function buildAgentServerAdminAuthConfig(input?: {
+  publicBaseUrl?: string;
+  autoBindRoleName?: string;
+  propagateTokenToIntegrations?: boolean;
+}): AppClientAuthConfig {
+  const base = (input?.publicBaseUrl ?? resolveAgentServerPublicUrl()).replace(
+    /\/+$/,
+    '',
+  );
+  return {
+    provider: 'http_profile',
+    http: {
+      baseUrl: `${base}/admin`,
+      profilePath: '/admin-user/me',
+      method: 'GET',
+      tokenPlacement: 'authorization_bearer',
+      mapping: {
+        employeeId: 'data.employeeId',
+        email: 'data.email',
+        username: 'data.username',
+        nickName: 'data.nickName',
+        active: 'data.active',
+      },
+    },
+    autoBindRoleName: input?.autoBindRoleName?.trim().toLowerCase() || 'operator',
+    propagateTokenToIntegrations: input?.propagateTokenToIntegrations ?? false,
+  };
+}
+
+/** appClientId=2 默认使用的 authConfig（管理 B 端 · 本服务 admin profile）。 */
+export function buildAppClient2AdminAuthConfig(): AppClientAuthConfig {
+  return buildAgentServerAdminAuthConfig();
 }
 
 function envFallbackAuthConfig(): AppClientAuthConfig | null {

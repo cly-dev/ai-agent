@@ -6,7 +6,7 @@ Plan 是 **每 turn 一次** 的任务规划层：拆 `deliverable`、有序 `st
 
 **类型定义**：`src/core/agent-engine/engine/main/task-plan.types.ts`  
 **生成与推进**：`task-plan.util.ts`、`task-plan-llm.util.ts`  
-**Graph**：`agent-lang-graph.runner.ts`（`plan` 节点 + `resultCheck` advance）
+**Graph**：`agent-graph/`（`plan.node.ts` + `result-check.node.ts` advance）
 
 ---
 
@@ -377,7 +377,7 @@ gather 后若 hasMore → 分页 Gather（引擎）→ 满足 fetch_complete →
 | 生成 / advance / stopWhen | `task-plan.util.ts` |
 | LLM Plan | `task-plan-llm.util.ts` |
 | 分页 Gather 门控 | `gather/plan-paged-gather.util.ts` |
-| Plan 节点 | `agent-lang-graph.runner.ts` |
+| Plan 节点 | `agent-graph/nodes/plan.node.ts` |
 | Plan prompt | `prompt-defaults.ts` → `agent.plan` |
 | GOA 互转 | `session-graph-resume.util.ts` |
 

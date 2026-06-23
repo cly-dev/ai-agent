@@ -2,9 +2,34 @@ import {
   skillRequiresWriteConfirmation,
   toolRequiresWriteConfirmation,
 } from '../../../core/risk/risk-level.util';
-import type { SkillDetailRow, SkillResponse } from '../types/skill.types';
+import { toSkillHostToolBindingResponse } from '../../host-tool/host-tool.mapper';
+import type {
+  SkillDetailRow,
+  SkillListRow,
+  SkillResponse,
+} from '../types/skill.types';
 
-export function toSkillResponse(row: SkillDetailRow): SkillResponse {
+function mapSkillToolBindings(
+  skillTools: SkillDetailRow['skillTools'] | SkillListRow['skillTools'],
+) {
+  return skillTools.map((binding) => ({
+    id: binding.id,
+    toolId: binding.toolId,
+    isRequired: binding.isRequired,
+    requiresWriteConfirmation: toolRequiresWriteConfirmation({
+      riskLevel: binding.tool.riskLevel,
+      agentMetadata: binding.tool.agentMetadata,
+    }),
+    tool: binding.tool,
+  }));
+}
+
+function mapSkillCore(
+  row: SkillDetailRow | SkillListRow,
+): Omit<
+  SkillResponse,
+  'skillTools' | 'skillHostTools' | 'hostTools' | 'toolCount' | 'hostToolCount' | 'roleSkillCount'
+> {
   const { appClient, ...agent } = row.agent;
   return {
     id: row.id,
@@ -24,21 +49,40 @@ export function toSkillResponse(row: SkillDetailRow): SkillResponse {
     isActive: row.isActive,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    skillTools: row.skillTools.map((binding) => ({
-      id: binding.id,
-      toolId: binding.toolId,
-      isRequired: binding.isRequired,
-      requiresWriteConfirmation: toolRequiresWriteConfirmation({
-        riskLevel: binding.tool.riskLevel,
-        agentMetadata: binding.tool.agentMetadata,
-      }),
-      tool: binding.tool,
-    })),
+  };
+}
+
+export function toSkillResponse(row: SkillDetailRow): SkillResponse {
+  const skillHostTools = row.skillHostTools.map((binding) =>
+    toSkillHostToolBindingResponse(binding),
+  );
+  return {
+    ...mapSkillCore(row),
+    skillTools: mapSkillToolBindings(row.skillTools),
+    skillHostTools,
+    hostTools: skillHostTools.map((binding) => binding.hostTool),
     toolCount: row._count?.skillTools ?? row.skillTools.length,
+    hostToolCount: skillHostTools.length,
+    roleSkillCount: row._count?.roleSkills ?? 0,
+  };
+}
+
+export function toSkillListResponse(row: SkillListRow): SkillResponse {
+  return {
+    ...mapSkillCore(row),
+    skillTools: mapSkillToolBindings(row.skillTools),
+    skillHostTools: [],
+    hostTools: [],
+    toolCount: row._count?.skillTools ?? row.skillTools.length,
+    hostToolCount: row._count?.skillHostTools ?? 0,
     roleSkillCount: row._count?.roleSkills ?? 0,
   };
 }
 
 export function toSkillResponseList(rows: SkillDetailRow[]): SkillResponse[] {
   return rows.map((row) => toSkillResponse(row));
+}
+
+export function toSkillListResponseList(rows: SkillListRow[]): SkillResponse[] {
+  return rows.map((row) => toSkillListResponse(row));
 }

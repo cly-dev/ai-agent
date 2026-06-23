@@ -1,7 +1,41 @@
 # Agent LangGraph：图结构、节点与状态
 
 本文档描述 **单 turn 主运行图**（`AgentLangGraphRunner`）的节点、共享状态、条件边与 Plan/ReAct 分层。  
-实现入口：`src/core/agent-engine/engine/main/agent-lang-graph.runner.ts`。
+实现入口：`src/core/agent-engine/engine/main/agent-graph/build-agent-graph.ts`（由 `AgentLangGraphRunner` 委托）。
+
+### 模块结构
+
+```text
+agent-graph/
+├── build-agent-graph.ts       # 构图、条件边、invoke
+├── index.ts                   # 对外导出
+├── types/
+│   └── graph.types.ts         # Deps / RunContext / NodeBundle
+├── state/
+│   └── graph-state.annotation.ts
+├── runtime/                   # 跨节点共享运行时
+│   ├── run.helpers.ts
+│   ├── skill-frame.util.ts
+│   ├── host-tool.handle.ts
+│   └── decision.util.ts
+├── summarize/                 # 终局 / 中间汇总
+│   ├── summarize.helpers.ts   # facade + factory
+│   ├── observation.util.ts
+│   └── stream.util.ts
+└── nodes/                     # LangGraph 节点
+    ├── intent.node.ts
+    ├── turn-route.node.ts     # Turn 路由 + TurnExecutionContract
+    ├── plan.node.ts
+    ├── readiness.node.ts
+    ├── llm.node.ts
+    ├── tools.node.ts
+    ├── result-check.node.ts
+    └── summarize.node.ts
+```
+
+`agent-lang-graph.runner.ts` 仅保留 Nest 注入与 `run()` 委托。
+
+外层 Plan 与 Skill 解析（intent HTTP + page host）见 `outer-plan-skill-resolve.util.ts`、`skill.service.ts` → [plan-node.md §7.1](./plan-node.md#71-run-steptype-plan)。
 
 > 延伸阅读  
 > - Plan 原理与 LLM 提示：[plan-node.md](./plan-node.md)  
@@ -17,15 +51,16 @@
 
 ```text
 START
-  → intent          意图 + 工具收窄
-  → plan            外层任务计划（每 turn 一次）
+  → intent          意图分类 + 工具类目收窄（终局 off-topic 交给 turnRoute）
+  → turnRoute       Turn 路由 LLM + TurnExecutionContract
+  → plan            外层任务计划（每 turn 一次；只读契约）
   → readiness       执行就绪（gather 槽位 / observation；不做对话意图）
   → llm             ReAct · Reason（工具决策）
   → resultCheck     ReAct · 规则收拢 + Plan advance（L2/L3）
   → tools           ReAct · Act（HTTP / 分页 gather）
   → resultCheck     …
   → summarize       终局或中间汇总
-  → llm             中间 summarize 后若仍有 tool 步则续跑
+  → readiness       中间 summarize 后若仍有 tool 步则续跑（经 readiness 再进 llm）
   → END
 ```
 
@@ -33,19 +68,18 @@ START
 
 | `AgentLangGraphRunInput` | START 后第一跳 | 说明 |
 |--------------------------|----------------|------|
-| 默认 | `intent` | 完整冷启动 |
-| `requestedSkillId` | `plan` | 跳过 intent；scopedTools 仅 Skill 绑定 |
-| `resumeFromLlm` | `llm` | 跳过 intent/plan/readiness |
-| `resumeFromWriteConfirm` | `resultCheck` 或 `summarize` | 写确认通过后接续 Plan |
+| 默认 | `intent` | 完整冷启动（含 `requestedSkillId` 仍经 intent → turnRoute） |
+| `resumeFromLlm` | `llm` | 跳过 intent/turnRoute/plan/readiness；注入 legacy 宽松契约 |
+| `resumeFromWriteConfirm` | `resultCheck` 或 `summarize` | 写确认通过后接续 Plan；注入 legacy 宽松契约 |
 
 ### 1.3 全局短路：`pendingRespond`
 
 任意节点可将 `pendingRespond` 设为非空；条件边 `shouldRouteToRespond` 为真时 **直接进入 `summarize`**（不再经过 llm/tools）。
 
 ```text
-intent / plan / readiness / llm / resultCheck
+intent / turnRoute / plan / readiness / llm / resultCheck
          │
-         └── pendingRespond ──► summarize ──► END（或中间 summarize 后 ──► llm）
+         └── pendingRespond ──► summarize ──► END（或中间 summarize 后 ──► readiness ──► llm）
 ```
 
 ---
@@ -109,11 +143,15 @@ LangGraph 使用 **replace reducer**（每字段由节点返回值整体覆盖�
 | `planRunContext` | `fresh` \| `resume`：telemetry、plan 首步 summarize 放行；**不参与** pre_tools 观测选桶 | 图初始 state / session resume |
 | `planAborted` | Plan 因 EMPTY/duplicate/error 等中止 | `resultCheck` |
 
-### 2.5 路由
+### 2.5 路由与 Turn 契约
 
 | 字段 | 含义 | 主要写入方 |
 |------|------|------------|
-| `pendingRespond` | 待 `summarize` 消费的回合回复或观测 | intent / readiness / llm / resultCheck / plan 首步 summarize |
+| `pendingRespond` | 待 `summarize` 消费的回合回复或观测 | intent / turnRoute / readiness / llm / resultCheck / plan 首步 summarize |
+| `turnRoutingDecision` | `direct_answer` / `on_page_task` / `orchestrated_task` 及 method、reason | `turnRoute` |
+| `turnExecutionContract` | 本轮唯一执行策略：Plan 是否启用、skill 选择、host_tool 许可、session resume | `turnRoute`；resume 路径在图初始 state 注入 legacy 契约 |
+
+`TurnExecutionContract` 由 `turnRoute` 产出，plan / skill-frame / resume-gate / host_tool 只读消费，不再分散 gate 函数。实现：`turn-execution-contract.util.ts`、`turn-route.node.ts`。
 
 类型定义：`src/core/agent-engine/engine/main/agent-engine.types.ts` → `AgentGraphState`。
 
@@ -143,25 +181,39 @@ L1 推进可写入 run step：`type: plan_sync`（`site`: `llm` | `result_check`
 
 | 项 | 说明 |
 |----|------|
-| **职责** | 意图分类（task/smalltalk/unclear）；类目向量召回；`scopedTools` 收窄与 bind cap |
+| **职责** | 意图分类（task/smalltalk/unclear）；类目向量召回；`scopedTools` 收窄与 bind cap。**不**做页内/离题终局判断 |
 | **进入** | 全量 `input.tools`；`taskPlan` 通常为空 |
-| **离开** | `scopedTools*`、`intentKind`；未命中 → `pendingRespond` + `finished` |
+| **离开** | `scopedTools*`、`intentKind`；smalltalk/unclear/tools_disabled → `pendingRespond`；类目 0 命中 → `deferToTurnRoute` 并保留全量 scoped tools |
 | **steps** | `intent` |
-| **下一跳** | `finished` → END；`pendingRespond` → `summarize`；否则 → `plan` |
+| **下一跳** | `finished` → END；`pendingRespond` → `summarize`；否则 → `turnRoute` |
 
-### 4.2 `plan`
+### 4.2 `turnRoute`
 
 | 项 | 说明 |
 |----|------|
-| **职责** | 每 turn **一次**外层计划：`resolveOuterPlan`（skill 复合步 + tool + summarize）；session resume 从 GOA 恢复 |
-| **进入** | `state.taskPlan` 已存在则 **原样跳过** |
+| **职责** | Turn 路由 LLM（`agent.turn_route`）；产出 `turnRoutingDecision` + `turnExecutionContract`；加载 scoped host tools |
+| **进入** | intent 已收窄或 defer 的全量 tools；`pageContext` |
+| **离开** | `direct_answer` → `pendingRespond`（`off_domain`）；否则契约写入 state 后进 plan |
+| **steps** | `route_plan` |
+| **下一跳** | `finished` / `pendingRespond` → `summarize`；否则 → `plan` |
+
+LLM 失败时保守回退 `orchestrated_task`（`fallback_orchestrated`），不猜测 `on_page_task`。
+
+### 4.3 `plan`
+
+| 项 | 说明 |
+|----|------|
+| **职责** | 每 turn **一次**外层计划：`resolvePlanFromContract`（只读契约）；session resume 从 GOA 恢复 |
+| **进入** | `state.taskPlan` 已存在则 **原样跳过**；`contract.plan.enabled === false` → `off_domain` 短路 |
 | **离开** | `taskPlan`；首步为 summarize/reason → 可设 `pendingRespond`（`resolveTaskPlanInitialAdvance`） |
 | **steps** | `plan` |
 | **下一跳** | `finished` / `pendingRespond` → 短路；否则 → `readiness` |
 
+显式 `requestedSkillId` 仍经 intent/turnRoute；`requestedSkillCtx` 存在时 **跳过** session resume gate，直接按契约建 Plan。
+
 Skill **无独立节点**；外层 `kind=skill` 在 `expandPendingSkillStepIfNeeded` 中展开内层帧。
 
-### 4.3 `readiness`
+### 4.4 `readiness`
 
 | 项 | 说明 |
 |----|------|
@@ -173,7 +225,7 @@ Skill **无独立节点**；外层 `kind=skill` 在 `expandPendingSkillStepIfNee
 
 详见 [turn-readiness.md](./turn-readiness.md)。
 
-### 4.4 `llm`
+### 4.5 `llm`
 
 | 项 | 说明 |
 |----|------|
@@ -185,7 +237,7 @@ Skill **无独立节点**；外层 `kind=skill` 在 `expandPendingSkillStepIfNee
 
 工具绑定：`filterScopedToolsForPlanStep` 按当前 pending tool 步 `toolRole` 收窄。
 
-### 4.5 `tools`
+### 4.6 `tools`
 
 | 项 | 说明 |
 |----|------|
@@ -195,7 +247,7 @@ Skill **无独立节点**；外层 `kind=skill` 在 `expandPendingSkillStepIfNee
 | **steps** | `tool`、`gather`（分页）、`write_confirmation_gate` |
 | **下一跳** | 固定 → `resultCheck`（写确认暂停时 primary run 以 success 结束，图不再进 resultCheck） |
 
-### 4.6 `resultCheck`
+### 4.7 `resultCheck`
 
 | 项 | 说明 |
 |----|------|
@@ -224,7 +276,7 @@ Skill **无独立节点**；外层 `kind=skill` 在 `expandPendingSkillStepIfNee
 | `iteration >= maxSteps` | END |
 | 默认 | `llm` |
 
-### 4.7 `summarize`
+### 4.8 `summarize`
 
 | 项 | 说明 |
 |----|------|
@@ -232,7 +284,7 @@ Skill **无独立节点**；外层 `kind=skill` 在 `expandPendingSkillStepIfNee
 | **进入** | `resolveObservationForSummarize(pendingRespond)` |
 | **离开** | `finalOutput`；`finished=true` 或 **续跑**（`shouldContinuePlanAfterSummarize`） |
 | **steps** | `summarize` |
-| **下一跳** | `finished` 或写确认续跑 → END；中间 summarize 后仍有 tool 步 → `llm` |
+| **下一跳** | `finished` 或写确认续跑 → END；中间 summarize 后仍有 tool 步 → `readiness` |
 
 ---
 
@@ -255,7 +307,8 @@ Skill **无独立节点**；外层 `kind=skill` 在 `expandPendingSkillStepIfNee
 | resultCheck | `iteration >= maxSteps` | END |
 | resultCheck | 默认 | `llm` |
 | summarize | `finished` 或 `resumeFromWriteConfirm` | END |
-| summarize | 默认 | `llm` |
+| summarize | `pendingToolCalls.length > 0` | `tools` |
+| summarize | 默认 | `readiness` |
 
 ---
 
@@ -273,6 +326,7 @@ Skill **无独立节点**；外层 `kind=skill` 在 `expandPendingSkillStepIfNee
 | `gather` | tools（分页 map-reduce） |
 | `result_check` | resultCheck |
 | `summarize` | summarize |
+| `host_tool` | llm（Plan `host_tool` 步 dispatch/skip）、run 结束（mutation `agent_mutation_success`） |
 
 Turn 级合并视图（primary + worker）：[agent-run-steps.md §4](./agent-run-steps.md#4-turnexecutiontimelineapi)。
 

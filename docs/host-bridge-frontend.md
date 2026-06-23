@@ -2,8 +2,8 @@
 
 与 omnix-chat SDK 对齐的入站页面上下文与出站宿主动作 SSE。
 
-**前端对接（推荐从这里读）**：[host-page-context-host-action-frontend.md](./host-page-context-host-action-frontend.md)  
-SDK 类型与 Registry：agent-chat `docs/host-page-context-and-actions.md`
+**前端 / SDK 对接（推荐入口）**：[host-bridge-sdk-frontend.md](./host-bridge-sdk-frontend.md)  
+**协议细节**：[host-page-context-host-action-frontend.md](./host-page-context-host-action-frontend.md)
 
 ## 入站：pageContext
 
@@ -24,16 +24,20 @@ SDK 类型与 Registry：agent-chat `docs/host-page-context-and-actions.md`
 
 **会话回落**：新 `pageContext` 写入 `SessionGoaMemory.lastPageContext`；追问未带时自动回落（不写死 GOA `entities` 键名）。
 
-`POST /chat/{sessionId}/prepare` **不**携带 pageContext（设计如此）。
+`POST /chat/{sessionId}/prepare` 可选带 `pageContext.page` 做 **Host Tool 按页预热**，详见 [host-tool-prepare-frontend.md](./host-tool-prepare-frontend.md)。prepare 不替代发消息时的 pageContext。
 
 ## 出站：host_action SSE
 
-mutation 工具 **HTTP 成功** 且 run `status=success` 时，在 `complete` **之前**推送：
+mutation 工具 **HTTP 成功** 且 run `status=success` 时，在 `complete` **之前**推送（`hostTools` 非空）：
 
 ```
 event: host_action
-data: {"action":"host_action","status":"completed","scope":"review-detail","entity":{...},"runId":42,"turnId":7,"reason":"agent_mutation_success"}
+data: {"action":"host_action","scope":"review-detail","entity":{...},"hostTools":[{"name":"refreshEntity","args":{...}}],"reason":"agent_mutation_success","runId":42,"turnId":7}
 ```
+
+Plan `host_tool` 步 mid-run 也会推送，`reason` 为 `plan_host_tool`，常带 `planStepId`。
+
+**流式 DSL（v1，待实现）**：[host-tool-stream-dsl-frontend.md](./host-tool-stream-dsl-frontend.md)
 
 | 条件 | 是否推送 |
 |------|----------|
@@ -43,7 +47,7 @@ data: {"action":"host_action","status":"completed","scope":"review-detail","enti
 | run 失败 | 否 |
 | 无入站 `pageContext.page` | 否 |
 
-**语义**：`status: "completed"` 表示「本轮 mutation 已成功」，**不是**刷新指令。具体 UI 反应（refetch / toast / 忽略）由宿主 `registerHostAction(scope, handler)` 自行决定。
+**语义**：`host_action` 携带 `hostTools[]` 供浏览器执行；`reason: agent_mutation_success` 表示 mutation 已成功，**不是**刷新指令。具体 UI 由宿主 `registerHostAction(scope, handler)` 决定。
 
 | 字段 | 来源 |
 |------|------|
@@ -76,4 +80,4 @@ Skill 可选配置（仅埋点，不驱动 UI）：
 }
 ```
 
-写确认通过并成功后，SDK 应收到 `host_action`（`status: completed`），`scope` 为 `review-detail`。
+写确认通过并成功后，SDK 应收到 `host_action`（`reason: agent_mutation_success`），`scope` 为 `review-detail`。

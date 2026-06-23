@@ -1,5 +1,5 @@
 import type { ToolLevel } from '../../../generated/prisma/client';
-import type { TaskPlanSnapshot } from '../../core/agent-engine/engine/main/task-plan.types';
+import type { TaskPlanSnapshot } from '../../core/agent-engine/engine/main/plan/task-plan.types';
 import type { AgentChatPageContext } from '../../core/host-bridge/page-context.types';
 
 export type PendingWriteToolCall = {
