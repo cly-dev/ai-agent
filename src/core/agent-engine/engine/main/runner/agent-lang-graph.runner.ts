@@ -3,12 +3,13 @@ import { LlmService } from '../../../../llm/llm.service';
 import { ToolEngineService } from '../../../../tool-engine/tool-engine.service';
 import { PromptRegistryService } from '../../../../prompt/prompt-registry.service';
 import { PrismaService } from '../../../../../prisma/prisma.service';
-import { ChatEventsService } from '../../../../../modules/chat/chat-events.service';
 import { PendingWriteConfirmationStore } from '../../../../../modules/chat/pending-write-confirmation.store';
 import { SessionGoaService } from '../../../../memory/goa/session-goa.service';
 import { SessionResumeGateService } from '../../../../memory/resume/session-resume-gate.service';
 import { CategoryIntentRecallService } from '../../../../intent/category-intent-recall.service';
 import { AgentRunSseEmitter } from '../run/agent-run-sse.emitter';
+import { AgentRunSseGateway } from '../../../../session-run/agent-run-sse.gateway';
+import { SessionRunCoordinator } from '../../../../session-run/session-run-coordinator.service';
 import { RunAssistantArtifactStore } from '../run/run-assistant-artifact.store';
 import { AgentSessionScopeService } from '../session/agent-session-scope.service';
 import { SkillService } from '../../../../skill/skill.service';
@@ -34,12 +35,13 @@ export class AgentLangGraphRunner {
     private readonly promptRegistry: PromptRegistryService,
     private readonly toolEngine: ToolEngineService,
     private readonly sse: AgentRunSseEmitter,
+    private readonly sessionRunCoordinator: SessionRunCoordinator,
+    private readonly runSseGateway: AgentRunSseGateway,
     private readonly assistantArtifact: RunAssistantArtifactStore,
     private readonly goaService: SessionGoaService,
     private readonly resumeGate: SessionResumeGateService,
     private readonly categoryIntentRecall: CategoryIntentRecallService,
     private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
-    private readonly chatEvents: ChatEventsService,
     private readonly sessionScope: AgentSessionScopeService,
     private readonly skillService: SkillService,
     private readonly requestedSkillRun: RequestedSkillRunService,
@@ -54,12 +56,13 @@ export class AgentLangGraphRunner {
       promptRegistry: this.promptRegistry,
       toolEngine: this.toolEngine,
       sse: this.sse,
+      sessionRunCoordinator: this.sessionRunCoordinator,
+      runSseGateway: this.runSseGateway,
       assistantArtifact: this.assistantArtifact,
       goaService: this.goaService,
       resumeGate: this.resumeGate,
       categoryIntentRecall: this.categoryIntentRecall,
       pendingWriteConfirmationStore: this.pendingWriteConfirmationStore,
-      chatEvents: this.chatEvents,
       sessionScope: this.sessionScope,
       skillService: this.skillService,
       requestedSkillRun: this.requestedSkillRun,

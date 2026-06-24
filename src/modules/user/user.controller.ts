@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -15,6 +16,10 @@ import {
 } from '@nestjs/swagger';
 import { Request } from 'express';
 import { UserJwtAuthGuard } from '../../auth/user-jwt-auth.guard';
+import {
+  AUTH_THROTTLE_LIMIT,
+  AUTH_THROTTLE_TTL_SECONDS,
+} from '../../auth/auth-throttle.constants';
 import { UserService } from './user.service';
 import { LoginUserDto } from './dto/login-user.dto';
 
@@ -25,6 +30,7 @@ export class UserController {
   constructor(private readonly service: UserService) {}
 
   @Post('login')
+  @Throttle(AUTH_THROTTLE_LIMIT, AUTH_THROTTLE_TTL_SECONDS)
   @ApiOperation({ summary: '业务用户登录' })
   @ApiResponse({ status: 200, description: '登录成功并返回 JWT Token' })
   @ApiResponse({ status: 401, description: '邮箱或密码错误' })

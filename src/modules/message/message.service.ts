@@ -8,29 +8,21 @@ import {
 import type { Message } from '../../../generated/prisma/client';
 import type { Prisma } from '../../../generated/prisma/client';
 import { AgentEngineService } from '../../core/agent-engine/engine/agent-engine.service';
-import {
-  resolveAgentRunFailureCode,
-  resolveAgentRunFailureUserMessage,
-} from '../../core/agent-engine/engine/agent-run-user-messages.util';
-import { LlmService } from '../../core/llm/llm.service';
 import { SessionMessageContextSyncService } from '../../core/memory/context/session-message-context-sync.service';
-import { PromptComposerService } from '../../core/prompt/prompt-composer.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { PaginatedResult } from '../../common/pagination';
 import { ChatEventsService } from '../chat/chat-events.service';
 import { ChatService } from '../chat/chat.service';
 import { PendingWriteConfirmationStore } from '../chat/pending-write-confirmation.store';
 import type { QueryChatListDto } from '../chat/dto/query-chat-list.dto';
 import { parsePageContextFromMessageFields } from '../../core/host-bridge';
 import { buildWriteConfirmActionMessagePersistence } from '../../core/agent-engine/engine/write-confirm-action-message.util';
+import { SessionRunCoordinator } from '../../core/session-run/session-run-coordinator.service';
 import { SaveMessageDto } from './dto/save-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 
 @Injectable()
 export class MessageService {
   private readonly logger = new Logger(MessageService.name);
-  /** 同一会话串行执行 Agent，避免上一轮 assistant 未入库就开始下一轮 compose。 */
-  private readonly agentRunChains = new Map<string, Promise<void>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -39,9 +31,8 @@ export class MessageService {
     private readonly chatEvents: ChatEventsService,
     private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
     private readonly sessionMessageContext: SessionMessageContextSyncService,
-    private readonly promptComposer: PromptComposerService,
-    private readonly llmService: LlmService,
     private readonly agentEngine: AgentEngineService,
+    private readonly sessionRunCoordinator: SessionRunCoordinator,
   ) {}
 
   async create(
@@ -49,7 +40,7 @@ export class MessageService {
     sessionId: string,
     dto: SaveMessageDto,
     appClientId: number,
-  ): Promise<Message> {
+  ): Promise<Message & { runGeneration?: number }> {
     const session = await this.chatService.assertSessionOwnedByUser(
       sessionId,
       userId,
@@ -123,18 +114,27 @@ export class MessageService {
       );
     }
     if (message.role === 'user') {
-      this.scheduleAgentRun(boundSession.id, () =>
-        this.runAgentPipeline(
-          userId,
-          boundSession.id,
-          message.content ?? '',
-          message.id,
-          confirmWrite && !cancelWrite,
-          cancelWrite,
-          dto.skillId,
-          messagePageContext,
-        ),
+      const kind = cancelWrite
+        ? 'write_cancel'
+        : confirmWrite
+          ? 'write_confirm'
+          : 'chat_turn';
+      const policy = kind === 'chat_turn' ? 'supersede' : 'queue';
+      const job = this.sessionRunCoordinator.buildJob({
+        kind,
+        sessionId: boundSession.id,
+        userId,
+        appClientId,
+        userMessageId: message.id,
+        input: message.content ?? '',
+        requestedSkillId: dto.skillId,
+        pageContext: messagePageContext,
+      });
+      const runGeneration = await this.sessionRunCoordinator.enqueue(
+        job,
+        policy,
       );
+      return { ...message, runGeneration };
     }
     return message;
   }
@@ -144,7 +144,7 @@ export class MessageService {
     userId: number,
     appClientId: number,
     query: QueryChatListDto,
-  ): Promise<PaginatedResult<Message>> {
+  ) {
     const detail = await this.chatService.findOneForUser(
       sessionId,
       userId,
@@ -214,118 +214,6 @@ export class MessageService {
     await this.sessionMessageContext.rebuildFromDb(existing.sessionId);
   }
 
-  async composePromptAndChat(
-    userId: number,
-    sessionId: string,
-    latestUserMessage: string,
-    appClientId: number,
-  ) {
-    const session = await this.chatService.assertSessionOwnedByUser(
-      sessionId,
-      userId,
-      appClientId,
-    );
-    const prompt = await this.promptComposer.compose({
-      userId,
-      sessionId: session.id,
-      latestUserMessage,
-    });
-    return this.llmService.chat({
-      messages: prompt.messages,
-    });
-  }
-
-  private scheduleAgentRun(
-    sessionId: string,
-    task: () => Promise<void>,
-  ): void {
-    const previous = this.agentRunChains.get(sessionId) ?? Promise.resolve();
-    const current = previous
-      .catch(() => undefined)
-      .then(task)
-      .catch((error: unknown) => {
-        this.logger.warn(
-          `agent run chain failed for sessionId=${sessionId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      });
-    this.agentRunChains.set(sessionId, current);
-    void current.finally(() => {
-      if (this.agentRunChains.get(sessionId) === current) {
-        this.agentRunChains.delete(sessionId);
-      }
-    });
-  }
-
-  private async runAgentPipeline(
-    userId: number,
-    sessionId: string,
-    input: string,
-    userMessageId?: number,
-    confirmWrite?: boolean,
-    cancelWrite?: boolean,
-    requestedSkillId?: number,
-    pageContext?: ReturnType<typeof parsePageContextFromMessageFields>,
-  ): Promise<void> {
-    if (cancelWrite) {
-      await this.agentEngine.cancelPendingWriteConfirmation(userId, sessionId);
-      return;
-    }
-    const content = input.trim();
-    if (!content && !confirmWrite) {
-      return;
-    }
-    try {
-      const run = confirmWrite
-        ? await this.agentEngine.resumeAfterWriteConfirm({
-            userId,
-            sessionId,
-            userMessageId,
-            pageContext: pageContext ?? null,
-          })
-        : await this.agentEngine.run({
-            userId,
-            sessionId,
-            input: content,
-            userMessageId: userMessageId!,
-            requestedSkillId,
-            pageContext: pageContext ?? null,
-          });
-      if (!run) {
-        if (confirmWrite) {
-          return;
-        }
-        this.chatEvents.emit(sessionId, {
-          event: 'error',
-          payload: {
-            message:
-              '当前会话未绑定 Agent，无法执行智能回复。请确认 agentId=1 存在且属于当前 AppClient。',
-            code: 'NO_AGENT',
-          },
-        });
-        return;
-      }
-    } catch (error) {
-      const userMessage = resolveAgentRunFailureUserMessage(error);
-      if (userMessage == null) {
-        throw error;
-      }
-      this.logger.warn(
-        `agent run failed for sessionId=${sessionId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      this.chatEvents.emit(sessionId, {
-        event: 'error',
-        payload: {
-          message: userMessage,
-          code: resolveAgentRunFailureCode(error) ?? 'LLM_TIMEOUT',
-        },
-      });
-    }
-  }
-
   private async linkAssistantOutputToTurn(
     userId: number,
     sessionId: string,
@@ -383,5 +271,4 @@ export class MessageService {
       createdAt: row.createdAt,
     };
   }
-
 }

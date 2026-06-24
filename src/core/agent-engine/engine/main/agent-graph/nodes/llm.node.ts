@@ -333,6 +333,7 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
         langChainInvokeMessages,
         ctx.input.sessionId,
         ctx.input.runId,
+        ctx.input.abortSignal,
       );
       const responseMeta = aiMessage.response_metadata as
         | Record<string, unknown>

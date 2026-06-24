@@ -7,6 +7,7 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -14,6 +15,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
+import {
+  AUTH_THROTTLE_LIMIT,
+  AUTH_THROTTLE_TTL_SECONDS,
+} from '../../auth/auth-throttle.constants';
 import { AdminUserService } from './admin-user.service';
 import { AdminUserProfileDto } from './dto/admin-user-profile.dto';
 import { LoginAdminUserDto } from './dto/login-admin-user.dto';
@@ -24,6 +29,7 @@ export class AdminUserController {
   constructor(private readonly service: AdminUserService) {}
 
   @Post('login')
+  @Throttle(AUTH_THROTTLE_LIMIT, AUTH_THROTTLE_TTL_SECONDS)
   @ApiOperation({ summary: '管理员登录' })
   @ApiResponse({ status: 200, description: '登录成功并返回 JWT Token' })
   @ApiResponse({ status: 401, description: '邮箱或密码错误' })

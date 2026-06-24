@@ -277,6 +277,8 @@ export type ExecuteToolCallsRoundInput = {
   sessionId?: string;
   onThink?: (message: string) => void;
   onToolDebugLog?: (message: string) => void;
+  /** 每轮 tool 调用前检查；应抛出 AgentRunAbortedError 以协作式中止。 */
+  assertContinue?: () => void;
 };
 
 export type ExecuteToolCallsRoundResult = {
@@ -311,6 +313,8 @@ export async function executeToolCallsRound(
   }
 
   const toolCalls = input.toolCalls;
+
+  input.assertContinue?.();
 
   for (const toolCall of toolCalls) {
     input.onThink?.(`\n正在调用工具：${toolCall.name}\n`);
@@ -512,6 +516,7 @@ export async function executePendingWriteToolCalls(input: {
   runId?: number;
   sessionId?: string;
   onToolDebugLog?: (message: string) => void;
+  assertContinue?: () => void;
 }): Promise<{
   observations: ToolObservation[];
   steps: AgentRunStep[];
@@ -543,6 +548,7 @@ export async function executePendingWriteToolCalls(input: {
     runId: input.runId,
     sessionId: input.sessionId,
     onToolDebugLog: input.onToolDebugLog,
+    assertContinue: input.assertContinue,
   });
   const newObservations = round.toolObservations.slice(
     priorObservations.length,

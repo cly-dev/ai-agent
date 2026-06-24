@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AIMessage, AIMessageChunk } from '@langchain/core/messages';
-import { ChatEventsService } from '../../../../../modules/chat/chat-events.service';
+import { AgentRunSseGateway } from '../../../../session-run/agent-run-sse.gateway';
 import type { AgentMachineCode } from '../../agent-run-user-messages.util';
 import type { MessageBlock, MessageBlockPatch } from '../../message/message-blocks.types';
 import {
@@ -35,6 +35,10 @@ import type { PlanSummarizePublishMode } from '../plan/task-plan.types';
 import {
   emitAgentMessageSseDebug,
 } from '../../message/message-blocks-debug.util';
+import {
+  AgentRunAbortedError,
+  isAgentRunAbortedError,
+} from '../../../../session-run/run-aborted.error';
 
 /**
  * 用户可见 assistant 消息的唯一发布出口：
@@ -53,10 +57,17 @@ export class AgentRunSseEmitter {
   private readonly runAuthoritativeFullSerialized = new Map<string, string>();
 
   constructor(
-    private readonly chatEvents: ChatEventsService,
+    private readonly runSse: AgentRunSseGateway,
     private readonly llmService: LlmService,
     private readonly assistantArtifact: RunAssistantArtifactStore,
   ) {}
+
+  private shouldEmitForRun(sessionId: string, runId: number | undefined): boolean {
+    if (runId == null) {
+      return true;
+    }
+    return this.runSse.canPublishRun(sessionId, runId);
+  }
 
   thinkBufferKey(sessionId: string, runId: number): string {
     return `${sessionId}:${runId}`;
@@ -132,13 +143,7 @@ export class AgentRunSseEmitter {
     chunk: string,
     mode: 'delta' | 'replace' = 'delta',
   ): void {
-    if (!chunk) {
-      return;
-    }
-    this.chatEvents.emit(sessionId, {
-      event: 'think',
-      payload: { content: chunk, mode },
-    });
+    this.runSse.emitThink(sessionId, runId, { content: chunk, mode });
   }
 
   emitMessageBlocks(
@@ -155,6 +160,9 @@ export class AgentRunSseEmitter {
   ): void {
     const action = options?.action ?? 'stream';
     const mode = options?.mode ?? 'full';
+    if (runId != null && !this.shouldEmitForRun(sessionId, runId)) {
+      return;
+    }
     const normalized =
       mode === 'full'
         ? sanitizeMessageBlocks(blocks)
@@ -180,10 +188,7 @@ export class AgentRunSseEmitter {
       seq: nextSeq,
       mode,
     };
-    this.chatEvents.emit(sessionId, {
-      event: 'message',
-      payload,
-    });
+    this.runSse.emitAgentRunMessage(sessionId, runId, payload);
     if (runId != null) {
       const artifact = this.assistantArtifact.peek(sessionId, runId);
       emitAgentMessageSseDebug({
@@ -217,6 +222,9 @@ export class AgentRunSseEmitter {
     runId: number,
     patch: MessageBlockPatch,
   ): void {
+    if (!this.shouldEmitForRun(sessionId, runId)) {
+      return;
+    }
     const block = normalizeMessageBlocks([patch.block])[0];
     if (!block || block.type === 'loading') {
       return;
@@ -231,10 +239,7 @@ export class AgentRunSseEmitter {
       patches: [{ replaceId: patch.replaceId, block }],
       seq: nextSeq,
     };
-    this.chatEvents.emit(sessionId, {
-      event: 'message',
-      payload,
-    });
+    this.runSse.emitAgentRunMessage(sessionId, runId, payload);
     emitAgentMessageSseDebug({
       tag: 'emitBlockPatch',
       sessionId,
@@ -255,12 +260,21 @@ export class AgentRunSseEmitter {
     messages: Array<Record<string, string>>,
     sessionId: string,
     runId: number,
+    abortSignal?: AbortSignal,
   ): Promise<AIMessage> {
+    const signal =
+      abortSignal ?? this.runSse.getRunAbortSignal(sessionId, runId);
     let merged: AIMessageChunk | undefined;
     let streamedText = '';
     try {
+      if (signal?.aborted) {
+        this.throwRunAborted(sessionId, runId);
+      }
       const stream = await runnable.stream(messages);
       for await (const chunk of stream) {
+        if (signal?.aborted) {
+          this.throwRunAborted(sessionId, runId);
+        }
         const row = chunk as AIMessageChunk;
         const delta = this.extractAiMessageText(row as AIMessage);
         if (delta) {
@@ -270,6 +284,12 @@ export class AgentRunSseEmitter {
         merged = merged ? merged.concat(row) : row;
       }
     } catch (error) {
+      if (isAgentRunAbortedError(error)) {
+        throw error;
+      }
+      if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+        this.throwRunAborted(sessionId, runId);
+      }
       this.logger.warn(
         `llm stream fallback to invoke sessionId=${sessionId}: ${
           error instanceof Error ? error.message : String(error)
@@ -481,6 +501,7 @@ export class AgentRunSseEmitter {
     options?: {
       turnId?: number;
       beforeStream?: () => void;
+      abortSignal?: AbortSignal;
     },
   ): Promise<{
     userMarkdown: string;
@@ -494,8 +515,15 @@ export class AgentRunSseEmitter {
       options?.turnId ??
       this.assistantArtifact.peekTurnId(sessionId, runId) ??
       undefined;
+    const boundGeneration = this.runSse.getBoundRunGeneration(sessionId, runId);
+    if (boundGeneration != null) {
+      this.runSse.throwIfAborted(sessionId, runId, boundGeneration);
+    }
     const proseSession = createSummarizeProseStreamSession({
       onProseDelta: (delta) => {
+        if (!this.shouldEmitForRun(sessionId, runId)) {
+          return;
+        }
         this.emitMessageBlocks(sessionId, runId, [textBlock(delta)], {
           mode: 'delta',
           action: 'stream',
@@ -503,47 +531,70 @@ export class AgentRunSseEmitter {
         });
       },
       onThinkDelta: (think) => {
+        if (!this.shouldEmitForRun(sessionId, runId)) {
+          return;
+        }
         this.emitThink(sessionId, runId, think, 'delta');
       },
     });
     options?.beforeStream?.();
 
+    const abortSignal =
+      options?.abortSignal ?? this.runSse.getRunAbortSignal(sessionId, runId);
+
     let streamed = '';
-    const result = await this.llmService.streamChat(
-      { messages, tools: [] },
-      {
-        onDelta: (delta) => {
-          if (!delta.contentDelta) {
-            return;
-          }
-          streamed += delta.contentDelta;
-          proseSession.ingestLlmDelta(delta.contentDelta);
+    try {
+      const result = await this.llmService.streamChat(
+        { messages, tools: [], signal: abortSignal },
+        {
+          signal: abortSignal,
+          onDelta: (delta) => {
+            if (!this.shouldEmitForRun(sessionId, runId)) {
+              return;
+            }
+            if (!delta.contentDelta) {
+              return;
+            }
+            streamed += delta.contentDelta;
+            proseSession.ingestLlmDelta(delta.contentDelta);
+          },
         },
-      },
-    );
-    const rawStreamedText = streamed.trim();
-    const rawResultText = (result.content ?? '').trim();
-    const finalized = finalizeSummarizeProseStreamAfterLlm({
-      session: proseSession,
-      rawStreamedText,
-      rawResultText,
-      onReplay: (reason) => {
-        this.logger.warn(
-          `prose stream replay reason=${reason} runId=${runId} model=${result.model}`,
-        );
-      },
-    });
-    if (!rawStreamedText && rawResultText && !proseSession.messageDeltaEmitted) {
-      this.logger.warn(
-        `prose stream no delta runId=${runId} model=${result.model} emittedDeltaCount=${result.streamMeta?.emittedDeltaCount ?? 0}`,
       );
+      const rawStreamedText = streamed.trim();
+      const rawResultText = (result.content ?? '').trim();
+      const finalized = finalizeSummarizeProseStreamAfterLlm({
+        session: proseSession,
+        rawStreamedText,
+        rawResultText,
+        onReplay: (reason) => {
+          this.logger.warn(
+            `prose stream replay reason=${reason} runId=${runId} model=${result.model}`,
+          );
+        },
+      });
+      if (!rawStreamedText && rawResultText && !proseSession.messageDeltaEmitted) {
+        this.logger.warn(
+          `prose stream no delta runId=${runId} model=${result.model} emittedDeltaCount=${result.streamMeta?.emittedDeltaCount ?? 0}`,
+        );
+      }
+      return {
+        ...finalized,
+        proseSession,
+        model: result.model,
+        turnId,
+      };
+    } catch (error) {
+      if (isAgentRunAbortedError(error)) {
+        throw error;
+      }
+      if (
+        abortSignal?.aborted ||
+        (error instanceof DOMException && error.name === 'AbortError')
+      ) {
+        this.throwRunAborted(sessionId, runId);
+      }
+      throw error;
     }
-    return {
-      ...finalized,
-      proseSession,
-      model: result.model,
-      turnId,
-    };
   }
 
   private async streamSummarizeProseOnly(
@@ -651,6 +702,9 @@ export class AgentRunSseEmitter {
       commitArtifact?: boolean;
     },
   ): MessageBlock[] {
+    if (!this.shouldEmitForRun(sessionId, runId)) {
+      return [];
+    }
     const sanitized = sanitizeMessageBlocks(blocks);
     if (sanitized.length === 0) {
       return [];
@@ -671,6 +725,14 @@ export class AgentRunSseEmitter {
       replayProseIfNeeded: true,
       debugOrigin: 'publishAssistantBlocks',
     });
+  }
+
+  private throwRunAborted(sessionId: string, runId: number): never {
+    const bound = this.runSse.getBoundRunGeneration(sessionId, runId);
+    if (bound != null) {
+      this.runSse.throwIfAborted(sessionId, runId, bound);
+    }
+    throw new AgentRunAbortedError(sessionId, runId, 'superseded');
   }
 
   private extractAiMessageText(message: AIMessage): string {

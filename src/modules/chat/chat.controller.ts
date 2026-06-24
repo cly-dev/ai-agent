@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, MessageEvent, Param, Post, Query, Req, Sse, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -17,6 +18,11 @@ import { serializeChatSseData } from './chat-sse-payload.util';
 import { ChatService } from './chat.service';
 import { CreateChatDto } from './dto/create-chat.dto';
 import { DeleteChatResponseDto } from './dto/delete-chat-response.dto';
+import {
+  CancelAgentRunDto,
+  CancelAgentRunResponseDto,
+} from './dto/cancel-agent-run.dto';
+import { SessionRunStateResponseDto } from './dto/session-run-state.dto';
 import { PrepareChatDto } from './dto/prepare-chat.dto';
 import { PrepareChatResponseDto } from './dto/prepare-chat-response.dto';
 import { QueryChatListDto } from './dto/query-chat-list.dto';
@@ -151,6 +157,43 @@ export class ChatController {
     );
   }
 
+  @Get(':sessionId/run-state')
+  @ApiOperation({
+    summary: '获取 session run 状态（generation / active run，用于多 Tab 与 SSE 重连对齐）',
+  })
+  @ApiParam({ name: 'sessionId', type: String })
+  @ApiResponse({ status: 200, type: SessionRunStateResponseDto })
+  getRunState(
+    @Req() req: Request & { user?: { userId?: number } },
+    @Param('sessionId') sessionId: string,
+  ): Promise<SessionRunStateResponseDto> {
+    return this.chatService.getSessionRunState(
+      this.normalizeSessionId(sessionId),
+      this.userId(req),
+      this.appClientId(req),
+    );
+  }
+
+  @Post(':sessionId/cancel-run')
+  @ApiOperation({
+    summary: '停止当前 session 正在执行的 Agent Run（并清空排队任务）',
+  })
+  @ApiParam({ name: 'sessionId', type: String })
+  @ApiResponse({ status: 200, type: CancelAgentRunResponseDto })
+  cancelRun(
+    @Req() req: Request & { user?: { userId?: number } },
+    @Param('sessionId') sessionId: string,
+    @Body() body: CancelAgentRunDto,
+  ): Promise<CancelAgentRunResponseDto> {
+    return this.chatService.cancelSessionRun(
+      this.normalizeSessionId(sessionId),
+      this.userId(req),
+      this.appClientId(req),
+      body.runId,
+    );
+  }
+
+  @SkipThrottle()
   @Sse(':sessionId/stream')
   @ApiOperation({
     summary:

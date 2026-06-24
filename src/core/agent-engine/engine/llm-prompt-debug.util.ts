@@ -2,6 +2,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { LlmChatMessage } from '../../llm/llm.types';
 import {
+  isAgentEngineDebugEnabled,
+  isFileDebugLogEnabled,
+} from '../../security/file-debug-log.util';
+import {
   estimateMessageTokens,
   estimateMessagesTokens,
 } from '../../llm/message-token-budget.util';
@@ -32,16 +36,9 @@ export type LlmPromptDebugRecord = {
   }>;
 };
 
-/** 非 production 默认开启；production 需 AGENT_ENGINE_DEBUG=1；AGENT_ENGINE_DEBUG=0 可关闭。 */
+/** 非 production 默认开启控制台调试；production 默认关闭。 */
 export function isLlmPromptDebugEnabled(): boolean {
-  const value = process.env.AGENT_ENGINE_DEBUG?.trim().toLowerCase();
-  if (value === '0' || value === 'false' || value === 'off') {
-    return false;
-  }
-  if (value === '1' || value === 'true' || value === 'on') {
-    return true;
-  }
-  return process.env.NODE_ENV !== 'production';
+  return isAgentEngineDebugEnabled();
 }
 
 function buildLlmPromptDebugRecord(input: {
@@ -122,6 +119,10 @@ export function emitLlmPromptDebug(
 
   const record = buildLlmPromptDebugRecord(input);
   log(formatLlmPromptDebugForConsole(record));
+
+  if (!isFileDebugLogEnabled()) {
+    return null;
+  }
 
   try {
     const dir = path.join(process.cwd(), 'logs', 'agent-engine', 'prompt');

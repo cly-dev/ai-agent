@@ -12,7 +12,7 @@ export type IntegrationDetailRow = Prisma.IntegrationGetPayload<{
   include: typeof INTEGRATION_DETAIL_INCLUDE;
 }>;
 
-export type IntegrationResponse = IntegrationDetailRow & {
+export type IntegrationResponse = Omit<IntegrationDetailRow, 'apiKey'> & {
   systemConfigured: boolean;
   toolCount: number;
 };

@@ -3,10 +3,11 @@ import type { IntegrationDetailRow, IntegrationResponse } from './integration.ty
 export function toIntegrationResponse(
   row: IntegrationDetailRow,
 ): IntegrationResponse {
+  const { apiKey, ...safe } = row;
   return {
-    ...row,
+    ...safe,
     toolCount: row._count?.tools ?? 0,
-    systemConfigured: Boolean(row.apiKey?.trim()),
+    systemConfigured: Boolean(apiKey?.trim()),
   };
 }
 

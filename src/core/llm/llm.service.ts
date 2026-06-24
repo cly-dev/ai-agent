@@ -395,7 +395,12 @@ export class LlmService implements OnModuleInit {
         lcMessages,
         model.model,
         handlers,
+        input.signal,
       );
+    }
+
+    if (input.signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
     }
 
     const response = (await runnable.invoke(lcMessages)) as AIMessage;
@@ -421,13 +426,20 @@ export class LlmService implements OnModuleInit {
     messages: unknown[],
     modelFallback: string,
     handlers: LlmStreamHandlers,
+    signal?: AbortSignal,
   ): Promise<LlmChatResult> {
     let merged: AIMessageChunk | undefined;
     let content = '';
     let emittedDeltaCount = 0;
     try {
+      if (signal?.aborted) {
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      }
       const stream = await runnable.stream(messages);
       for await (const chunk of stream) {
+        if (signal?.aborted) {
+          throw new DOMException('The operation was aborted.', 'AbortError');
+        }
         const row = chunk as AIMessageChunk;
         const delta = this.extractAiMessageContent(row.content);
         if (delta) {
@@ -447,6 +459,9 @@ export class LlmService implements OnModuleInit {
         merged = merged ? merged.concat(row) : row;
       }
     } catch (error) {
+      if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+        throw error;
+      }
       this.logger.warn(
         `llm stream failed, fallback invoke: ${
           error instanceof Error ? error.message : String(error)

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ToolHttpRequestLayout } from '../../../tool-engine/tool-http-request-layout.util';
+import { isFileDebugLogEnabled } from '../../../security/file-debug-log.util';
 import { isLlmPromptDebugEnabled } from '../llm-prompt-debug.util';
 
 export type ToolExecutionDebugRecord = {
@@ -116,6 +117,10 @@ export function emitToolExecutionDebug(
     writtenAt: new Date().toISOString(),
   };
   log(formatToolExecutionDebugForConsole(record));
+
+  if (!isFileDebugLogEnabled()) {
+    return null;
+  }
 
   try {
     const dir = path.join(process.cwd(), 'logs', 'agent-engine', 'tool');

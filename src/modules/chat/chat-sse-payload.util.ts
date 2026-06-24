@@ -7,6 +7,12 @@ export function serializeChatSseData(evt: ChatSseEvent): string {
     if (evt.payload.mode) {
       body.mode = evt.payload.mode;
     }
+    if (evt.payload.runId != null) {
+      body.runId = evt.payload.runId;
+    }
+    if (evt.payload.generation != null) {
+      body.generation = evt.payload.generation;
+    }
     return JSON.stringify(body);
   }
   if (evt.event === 'host_action') {
@@ -23,6 +29,9 @@ export function serializeChatSseData(evt: ChatSseEvent): string {
       turnId: evt.payload.turnId,
       message: evt.payload.message,
       code: 'WRITE_CONFIRMATION_REQUIRED',
+      ...(evt.payload.generation != null
+        ? { generation: evt.payload.generation }
+        : {}),
     });
   }
   if (
@@ -36,6 +45,9 @@ export function serializeChatSseData(evt: ChatSseEvent): string {
       turnId: evt.payload.turnId,
       message: evt.payload.message,
       code: 'WRITE_CONFIRMATION_CANCELLED',
+      ...(evt.payload.generation != null
+        ? { generation: evt.payload.generation }
+        : {}),
     });
   }
   if (
@@ -66,6 +78,9 @@ export function serializeChatSseData(evt: ChatSseEvent): string {
     }
     if (p.code) {
       body.code = p.code;
+    }
+    if (p.generation != null) {
+      body.generation = p.generation;
     }
     if (p.seq != null) {
       if (p.mode === 'delta') {

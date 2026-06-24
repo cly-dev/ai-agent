@@ -12,6 +12,7 @@ import {
   toPaginatedResult,
 } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertOutboundUrlAllowed } from '../../core/security/outbound-url-guard.util';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
 import {
   QueryIntegrationDto,
@@ -294,15 +295,7 @@ export class IntegrationService {
     baseUrl: string,
     apiKey: string | null,
   ): Promise<IntegrationConnectionTestResult> {
-    let url: URL;
-    try {
-      url = new URL(baseUrl);
-    } catch {
-      throw new BadRequestException('baseUrl must be a valid URL');
-    }
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      throw new BadRequestException('baseUrl must use http or https');
-    }
+    const url = assertOutboundUrlAllowed(baseUrl);
 
     const headers: Record<string, string> = {
       Accept: 'application/json, text/plain, */*',

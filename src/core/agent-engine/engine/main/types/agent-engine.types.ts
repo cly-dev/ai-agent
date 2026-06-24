@@ -229,4 +229,8 @@ export type AgentLangGraphRunInput = {
   requestedSkillId?: number;
   /** 宿主页面上下文（omnix-chat pageContext）。 */
   pageContext?: AgentChatPageContext | null;
+  /** Session 调度世代；与 SessionRunCoordinator 对齐，用于取消 / SSE 过滤。 */
+  runGeneration?: number;
+  /** 协作式取消：与 SessionRunCoordinator 下发的 token 同源。 */
+  abortSignal?: AbortSignal;
 };

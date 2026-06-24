@@ -23,6 +23,24 @@
         margin: 0 0 16px;
         font-size: 22px;
       }
+      .config {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      .config input {
+        width: 100%;
+        border: 1px solid #334155;
+        background: #111827;
+        color: #f8fafc;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+      }
+      .config label {
+        font-size: 12px;
+        color: #94a3b8;
+      }
       .toolbar {
         display: flex;
         gap: 8px;
@@ -36,13 +54,17 @@
         border-radius: 8px;
         padding: 10px 12px;
       }
-      #send {
+      #send,
+      #saveConfig {
         border: 0;
         border-radius: 8px;
         padding: 10px 16px;
         cursor: pointer;
         color: #fff;
         background: linear-gradient(135deg, #2563eb, #4f46e5);
+      }
+      #saveConfig {
+        justify-self: start;
       }
       #events {
         border: 1px solid #334155;
@@ -92,6 +114,18 @@
   <body>
     <div class="container">
       <h1>Agent SSE Console</h1>
+      <p style="font-size: 13px; color: #94a3b8; margin: 0 0 12px">
+        本地开发调试页。凭证仅存于浏览器 localStorage，请勿提交到仓库。
+      </p>
+      <div class="config">
+        <label for="tokenInput">Bearer Token</label>
+        <input type="password" id="tokenInput" placeholder="用户 JWT" autocomplete="off" />
+        <label for="dsnInput">X-App-Dsn</label>
+        <input type="text" id="dsnInput" placeholder="AppClient DSN" autocomplete="off" />
+        <label for="sessionInput">Session ID</label>
+        <input type="text" id="sessionInput" placeholder="32 位 hex sessionId" autocomplete="off" />
+        <button id="saveConfig" type="button">保存配置并连接 SSE</button>
+      </div>
       <div class="toolbar">
         <input type="text" id="input" placeholder="输入消息并发送..." />
         <button id="send">发送</button>
@@ -101,16 +135,50 @@
   </body>
   <script>
     window.onload = function () {
+      const STORAGE_KEY = 'agent-sse-console-config';
       const input = document.getElementById('input');
       const send = document.getElementById('send');
+      const saveConfig = document.getElementById('saveConfig');
+      const tokenInput = document.getElementById('tokenInput');
+      const dsnInput = document.getElementById('dsnInput');
+      const sessionInput = document.getElementById('sessionInput');
       const events = document.getElementById('events');
-      const token =
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImVtYWlsIjoiMjY2MzExODA0NkBxcS5jb20iLCJ1c2VybmFtZSI6IuWwj-eJm-mprCIsInVzZXJUeXBlIjoiQ19FTkQiLCJ1c2VyUm9sZSI6bnVsbCwiaWF0IjoxNzc4MTMzNzY0LCJleHAiOjE3Nzg3Mzg1NjR9.UTZ1fZrKUL5f8elbPPx9YNdxcDLLSnXxzmkFxrpxtr4';
-      const sessionId = '2a71b14e45d83484d5658add08a6a9d9';
-      const appDsn = 'cbc800dfdfa9684e0b1c706e7c59f3e0';
       const decoder = new TextDecoder();
       let finalItem = null;
-      let thinkItem = null;
+      let streamAbort = null;
+      let token = '';
+      let sessionId = '';
+      let appDsn = '';
+
+      function loadConfig() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (typeof parsed.token === 'string') tokenInput.value = parsed.token;
+          if (typeof parsed.appDsn === 'string') dsnInput.value = parsed.appDsn;
+          if (typeof parsed.sessionId === 'string') sessionInput.value = parsed.sessionId;
+        } catch {
+          /* ignore */
+        }
+      }
+
+      function readConfigFromInputs() {
+        token = tokenInput.value.trim();
+        appDsn = dsnInput.value.trim();
+        sessionId = sessionInput.value.trim().toLowerCase();
+        if (!token || !appDsn || !sessionId) {
+          appendEvent('请先填写 Token、DSN 与 Session ID', 'error');
+          return false;
+        }
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ token, appDsn, sessionId }),
+        );
+        return true;
+      }
+
+      loadConfig();
 
       function appendEvent(text, type) {
         const item = document.createElement('div');
@@ -224,6 +292,13 @@
       }
 
       async function stream() {
+        if (!readConfigFromInputs()) {
+          return;
+        }
+        if (streamAbort) {
+          streamAbort.abort();
+        }
+        streamAbort = new AbortController();
         const doc = await fetch('/chat/' + sessionId + '/stream', {
           method: 'GET',
           headers: {
@@ -231,6 +306,7 @@
             Authorization: 'Bearer ' + token,
             'X-App-Dsn': appDsn,
           },
+          signal: streamAbort.signal,
         });
         if (!doc.ok || !doc.body) {
           appendEvent('stream connect failed: ' + doc.status, 'error');
@@ -263,9 +339,14 @@
         }
       }
 
-      void stream();
+      saveConfig.addEventListener('click', () => {
+        void stream();
+      });
 
       send.addEventListener('click', () => {
+        if (!readConfigFromInputs()) {
+          return;
+        }
         const value = input.value;
         if (!value.trim()) {
           appendEvent('输入不能为空', 'error');

@@ -24,6 +24,8 @@ import { DeleteChatResponseDto } from './dto/delete-chat-response.dto';
 import { SessionPrepareService } from './session-prepare.service';
 import { SessionPrepareStore } from './session-prepare.store';
 import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
+import { SessionRunCoordinator } from '../../core/session-run/session-run-coordinator.service';
+import type { CancelSessionRunResult } from '../../core/session-run/session-run.types';
 
 @Injectable()
 export class ChatService {
@@ -40,7 +42,27 @@ export class ChatService {
     private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
     @Inject(forwardRef(() => MessageService))
     private readonly messageService: MessageService,
+    private readonly sessionRunCoordinator: SessionRunCoordinator,
   ) {}
+
+  async cancelSessionRun(
+    sessionId: string,
+    userId: number,
+    appClientId: number,
+    runId?: number,
+  ): Promise<CancelSessionRunResult> {
+    await this.assertSessionOwnedByUser(sessionId, userId, appClientId);
+    return this.sessionRunCoordinator.cancelRun(sessionId, userId, runId);
+  }
+
+  async getSessionRunState(
+    sessionId: string,
+    userId: number,
+    appClientId: number,
+  ) {
+    await this.assertSessionOwnedByUser(sessionId, userId, appClientId);
+    return this.sessionRunCoordinator.getRunState(sessionId);
+  }
 
   async create(
     userId: number,
@@ -182,6 +204,7 @@ export class ChatService {
       this.prisma.session.delete({ where: { id: session.id } }),
     ]);
     await this.clearSessionContext(session.id);
+    await this.sessionRunCoordinator.evictSession(session.id);
     this.runtimeCacheInvalidator.invalidateForSession(session.id);
     await this.sessionPrepareStore.delete(session.id);
     this.chatEvents.emit(session.id, {

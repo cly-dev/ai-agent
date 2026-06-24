@@ -1,0 +1,35 @@
+# Dependencies & build output (rebuilt in image)
+node_modules
+dist
+coverage
+
+# VCS & IDE
+.git
+.gitignore
+.idea
+.vscode
+.cursor
+
+# Local env & secrets
+.env
+.env.*
+!.env.example
+
+# Docs & dev assets (not needed at runtime)
+docs
+www
+openspec
+
+# Debug logs
+logs
+*.log
+
+# Tests
+test
+**/*.spec.ts
+**/*.e2e-spec.ts
+
+# Misc
+README.md
+docker-compose.yml
+.DS_Store

@@ -28,6 +28,7 @@ import {
   UpsertMessageFeedbackDto,
 } from './dto/message-feedback.dto';
 import { SaveMessageDto } from './dto/save-message.dto';
+import { SaveMessageResponseDto } from './dto/save-message-response.dto';
 import { MessageFeedbackService } from './message-feedback.service';
 import { MessageService } from './message.service';
 
@@ -61,7 +62,7 @@ export class MessageController {
   @Post()
   @ApiOperation({ summary: '保存会话消息' })
   @ApiParam({ name: 'sessionId', type: String })
-  @ApiResponse({ status: 201, description: '创建成功' })
+  @ApiResponse({ status: 201, description: '创建成功', type: SaveMessageResponseDto })
   create(
     @Req() req: Request & { user?: { userId?: number } },
     @Param('sessionId') sessionId: string,

@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import './core/env/load-env';
 import { AdminPrefixJwtGuard } from './auth/admin-prefix-jwt.guard';
+import { AdminRoleGuard } from './auth/admin-role.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LlmModule } from './core/llm/llm.module';
@@ -32,6 +34,10 @@ import { HostToolModule } from './modules/host-tool/host-tool.module';
 
 @Module({
   imports: [
+    ThrottlerModule.forRoot({
+      ttl: 60,
+      limit: 120,
+    }),
     LlmModule,
     MemoryModule,
     RuntimeCacheModule,
@@ -61,7 +67,9 @@ import { HostToolModule } from './modules/host-tool/host-tool.module';
   controllers: [AppController],
   providers: [
     AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AdminPrefixJwtGuard },
+    { provide: APP_GUARD, useClass: AdminRoleGuard },
   ],
 })
 export class AppModule {}

@@ -6,11 +6,12 @@ import {
   ToolEngineService,
 } from '../../../../../tool-engine/tool-engine.service';
 import { PrismaService } from '../../../../../../prisma/prisma.service';
-import { ChatEventsService } from '../../../../../../modules/chat/chat-events.service';
 import { PendingWriteConfirmationStore } from '../../../../../../modules/chat/pending-write-confirmation.store';
 import { SessionGoaService } from '../../../../../memory/goa/session-goa.service';
 import { SessionResumeGateService } from '../../../../../memory/resume/session-resume-gate.service';
 import { CategoryIntentRecallService } from '../../../../../intent/category-intent-recall.service';
+import { SessionRunCoordinator } from '../../../../../session-run/session-run-coordinator.service';
+import { AgentRunSseGateway } from '../../../../../session-run/agent-run-sse.gateway';
 import { AgentRunSseEmitter } from '../../run/agent-run-sse.emitter';
 import { RunAssistantArtifactStore } from '../../run/run-assistant-artifact.store';
 import { AgentSessionScopeService } from '../../session/agent-session-scope.service';
@@ -37,12 +38,13 @@ export interface AgentGraphDeps {
   promptRegistry: PromptRegistryService;
   toolEngine: ToolEngineService;
   sse: AgentRunSseEmitter;
+  sessionRunCoordinator: SessionRunCoordinator;
+  runSseGateway: AgentRunSseGateway;
   assistantArtifact: RunAssistantArtifactStore;
   goaService: SessionGoaService;
   resumeGate: SessionResumeGateService;
   categoryIntentRecall: CategoryIntentRecallService;
   pendingWriteConfirmationStore: PendingWriteConfirmationStore;
-  chatEvents: ChatEventsService;
   sessionScope: AgentSessionScopeService;
   skillService: SkillService;
   requestedSkillRun: RequestedSkillRunService;

@@ -1,6 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { isLlmPromptDebugEnabled } from '../agent-engine/engine/llm-prompt-debug.util';
+import {
+  isAgentEngineDebugEnabled,
+  isFileDebugLogEnabled,
+} from '../security/file-debug-log.util';
 
 export type HostToolResolveDebugRecord = {
   component: 'host_tool_resolve';
@@ -8,9 +11,9 @@ export type HostToolResolveDebugRecord = {
   writtenAt: string;
 } & Record<string, unknown>;
 
-/** 与 `AGENT_ENGINE_DEBUG` / 非 production 默认开启策略一致。 */
+/** 与 `AGENT_ENGINE_DEBUG` / 非 production 默认开启策略一致（仅控制台）。 */
 export function isHostToolResolveDebugEnabled(): boolean {
-  return isLlmPromptDebugEnabled();
+  return isAgentEngineDebugEnabled();
 }
 
 function resolveHostToolResolveLogFile(payload: Record<string, unknown>): string {
@@ -77,6 +80,9 @@ export function logHostToolResolve(
   payload: Record<string, unknown>,
 ): string | null {
   if (!isHostToolResolveDebugEnabled()) {
+    return null;
+  }
+  if (!isFileDebugLogEnabled()) {
     return null;
   }
 

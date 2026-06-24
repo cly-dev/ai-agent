@@ -12,6 +12,8 @@ import {
   IntegrationAuthMode,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertOutboundUrlAllowed } from '../security/outbound-url-guard.util';
+import { isToolEngineFileDebugEnabled } from '../security/file-debug-log.util';
 import {
   applyToolParameterDefaults,
   collectOpenApiParameterSpecs,
@@ -148,6 +150,7 @@ export class ToolEngineService {
       input,
       specs,
     );
+    assertOutboundUrlAllowed(url);
     const bodyPayload = this.buildJsonBody(
       tool.method,
       input,
@@ -326,6 +329,7 @@ export class ToolEngineService {
         input,
         specs,
       );
+      assertOutboundUrlAllowed(url);
       const bodyPayload = this.buildJsonBody(
         def.method,
         input,
@@ -638,20 +642,8 @@ export class ToolEngineService {
     return rounded;
   }
 
-  /** 非 production 默认写文件；production 仅当 TOOL_ENGINE_DEBUG=1/true；任一环境 TOOL_ENGINE_DEBUG=0/false 可关闭。 */
-  private isToolDebugFileEnabled(): boolean {
-    const v = process.env.TOOL_ENGINE_DEBUG?.trim().toLowerCase();
-    if (v === '0' || v === 'false' || v === 'off') {
-      return false;
-    }
-    if (v === '1' || v === 'true' || v === 'on') {
-      return true;
-    }
-    return process.env.NODE_ENV !== 'production';
-  }
-
   private writeToolDebugSnapshot(record: Record<string, unknown>): void {
-    if (!this.isToolDebugFileEnabled()) {
+    if (!isToolEngineFileDebugEnabled()) {
       return;
     }
     const toolName = String(

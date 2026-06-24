@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
+import { assertJwtSecretConfigured } from '../security/assert-jwt-secret.util';
 
 function resolveEnvName(nodeEnv: string | undefined): string | null {
   if (!nodeEnv) {
@@ -34,3 +35,4 @@ export function loadEnv(): void {
 }
 
 loadEnv();
+assertJwtSecretConfigured();

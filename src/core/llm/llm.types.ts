@@ -28,6 +28,7 @@ export type LlmChatInput = {
   stream?: boolean;
   maxTokens?: number;
   temperature?: number;
+  signal?: AbortSignal;
 };
 
 export type LlmChatRequest = LlmChatInput & {
@@ -61,4 +62,5 @@ export type LlmStreamDelta = {
 
 export type LlmStreamHandlers = {
   onDelta?: (delta: LlmStreamDelta) => void;
+  signal?: AbortSignal;
 };

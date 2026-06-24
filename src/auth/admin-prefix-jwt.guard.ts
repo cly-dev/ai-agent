@@ -7,6 +7,10 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { Observable } from 'rxjs';
 import type { AdminRole } from '../../generated/prisma/client';
+import {
+  isPublicAdminAuthRoute,
+  isUnderAdminUrlPath,
+} from './admin-url-path.util';
 
 type JwtUser = {
   userId?: number;
@@ -14,21 +18,6 @@ type JwtUser = {
   username?: string;
   adminRole?: AdminRole;
 };
-
-const ADMIN_PREFIX = '/admin';
-
-function isUnderAdminUrlPath(req: Request): boolean {
-  const path = req.path;
-  return path === ADMIN_PREFIX || path.startsWith(`${ADMIN_PREFIX}/`);
-}
-
-function isPublicAdminAuthRoute(req: Request): boolean {
-  if (req.method !== 'POST') {
-    return false;
-  }
-  const path = req.path.replace(/\/+$/, '') || '/';
-  return path === `${ADMIN_PREFIX}/admin-user/login`;
-}
 
 /**
  * 仅对 URL 路径在 `/admin` 下的请求校验 JWT，且要求 payload 含 {@link AdminRole}（管理员签发）。

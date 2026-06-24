@@ -107,6 +107,8 @@ export type HostActionBatchPayload = {
   reason?: string;
   runId?: number;
   turnId?: number;
+  /** run 入队时的 session generation，供前端过滤过期 host_action */
+  generation?: number;
 };
 
 /** 流式 DSL 帧（v1）。 */
@@ -124,6 +126,7 @@ export type HostActionStreamPayload = {
   reason?: string;
   runId?: number;
   turnId?: number;
+  generation?: number;
 };
 
 export type HostActionSsePayload = HostActionBatchPayload | HostActionStreamPayload;

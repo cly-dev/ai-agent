@@ -66,6 +66,7 @@ export interface AgentGraphHostToolHandleHelpers {
       nextIteration: number;
       httpCalls: GraphToolCall[];
       sessionId: string;
+      runId: number;
       warnMessage?: string;
     },
     withPlanSyncStep: AgentGraphSkillFrameHelpers['withPlanSyncStep'],
@@ -95,6 +96,7 @@ export function applyHostToolPlanStepHandle(
     nextIteration: number;
     httpCalls: GraphToolCall[];
     sessionId: string;
+    runId: number;
     warnMessage?: string;
   },
   withPlanSyncStep: AgentGraphSkillFrameHelpers['withPlanSyncStep'],
@@ -104,7 +106,12 @@ export function applyHostToolPlanStepHandle(
   }
   if (input.handle.ssePayload) {
     dispatchHostActionSse(
-      (sessionId, envelope) => deps.chatEvents.emit(sessionId, envelope),
+      (sessionId, envelope) =>
+        deps.runSseGateway.emitHostAction(
+          sessionId,
+          input.runId,
+          envelope.payload,
+        ),
       input.sessionId,
       input.handle.ssePayload,
     );
@@ -238,6 +245,7 @@ export function tryDispatchHostToolFromPlanDraft(
       nextIteration,
       httpCalls,
       sessionId: ctx.input.sessionId,
+      runId: ctx.input.runId,
     },
     skillFrame.withPlanSyncStep,
   );
@@ -320,6 +328,7 @@ export function handleHostToolPreLlmSkip(
         nextIteration,
         httpCalls: [],
         sessionId: ctx.input.sessionId,
+        runId: ctx.input.runId,
         warnMessage: `host_tool blocked by turn contract runId=${ctx.input.runId} planStep=${pendingHostStep.id}`,
       },
       skillFrame.withPlanSyncStep,
@@ -394,6 +403,7 @@ export function handleHostToolPreLlmSkip(
       nextIteration,
       httpCalls: [],
       sessionId: ctx.input.sessionId,
+      runId: ctx.input.runId,
       warnMessage: `host_tool plan step skipped before llm runId=${ctx.input.runId} planStep=${pendingHostStep.id} reason=${preLlmSkipReason}`,
     },
     skillFrame.withPlanSyncStep,
@@ -513,6 +523,7 @@ export function processHostToolAfterLlmDecision(
       nextIteration,
       httpCalls,
       sessionId: ctx.input.sessionId,
+      runId: ctx.input.runId,
       warnMessage:
         postLlmOutcome.action === 'skip'
           ? hostToolPostLlmWarnMessage({

@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isFileDebugLogEnabled } from '../../../security/file-debug-log.util';
 import { isLlmPromptDebugEnabled } from '../llm-prompt-debug.util';
 import { serializeMessageBlocksForStorage } from './message-blocks.util';
 import type { MessageBlock } from './message-blocks.types';
@@ -87,6 +88,9 @@ export function emitAgentMessageSseDebug(input: {
   if (!isMessageBlocksDebugEnabled()) {
     return null;
   }
+  if (!isFileDebugLogEnabled()) {
+    return null;
+  }
   const record: AgentMessageSseDebugRecord = {
     writtenAt: new Date().toISOString(),
     tag: input.tag,
@@ -132,6 +136,9 @@ export function emitAgentMessagePersistDebug(input: {
   source: Record<string, unknown>;
 }): string | null {
   if (!isMessageBlocksDebugEnabled()) {
+    return null;
+  }
+  if (!isFileDebugLogEnabled()) {
     return null;
   }
   try {

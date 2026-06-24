@@ -12,6 +12,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiHeader,
@@ -24,6 +25,10 @@ import {
 import { Request } from 'express';
 import { AppClientDsnGuard } from '../../auth/app-client-dsn.guard';
 import { APP_CLIENT_DSN_HEADER } from '../../auth/app-client-dsn.constants';
+import {
+  AUTH_THROTTLE_LIMIT,
+  AUTH_THROTTLE_TTL_SECONDS,
+} from '../../auth/auth-throttle.constants';
 import { AppClientService } from './app-client.service';
 import { CreateAppClientDto } from './dto/create-app-client.dto';
 import { UpdateAppClientDto } from './dto/update-app-client.dto';
@@ -44,6 +49,7 @@ export class AppClientController {
   }
 
   @Post('auth')
+  @Throttle(AUTH_THROTTLE_LIMIT, AUTH_THROTTLE_TTL_SECONDS)
   @UseGuards(AppClientDsnGuard)
   @ApiOperation({ summary: '前台 DSN 认证' })
   @ApiSecurity('app-dsn')

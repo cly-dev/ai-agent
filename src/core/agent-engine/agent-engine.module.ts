@@ -6,8 +6,10 @@ import { SkillModule } from '../skill/skill.module';
 import { PromptModule } from '../prompt/prompt.module';
 import { ToolEngineModule } from '../tool-engine/tool-engine.module';
 import { ChatModule } from '../../modules/chat/chat.module';
+import { ChatEventsModule } from '../../modules/chat/chat-events.module';
 import { AgentModule } from '../../modules/agent/agent.module';
 import { HostToolModule } from '../../modules/host-tool/host-tool.module';
+import { SessionRunModule } from '../session-run/session-run.module';
 import { AgentEngineService } from './engine/agent-engine.service';
 import { AgentLangGraphRunner } from './engine/main/runner/agent-lang-graph.runner';
 import { AgentRunLifecycleService } from './engine/main/run/agent-run-lifecycle.service';
@@ -27,6 +29,8 @@ import { RequestedSkillRunService } from './engine/main/skill/requested-skill-ru
     ToolEngineModule,
     forwardRef(() => AgentModule),
     forwardRef(() => ChatModule),
+    ChatEventsModule,
+    forwardRef(() => SessionRunModule),
     HostToolModule,
   ],
   providers: [

@@ -395,24 +395,39 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
               turnId: ctx.input.turnId,
               message,
             };
-            deps.chatEvents.emit(ctx.input.sessionId, {
-              event: 'message',
-              payload: confirmationPayload,
-            });
-            emitAgentMessageSseDebug({
-              tag: 'confirmation_required',
-              sessionId: ctx.input.sessionId,
-              runId: ctx.input.runId,
-              turnId: ctx.input.turnId,
-              ssePayload: confirmationPayload,
-              source: {
-                confirmedPreviewSerialized,
-                artifactBlocks: deps.assistantArtifact.peekBlocks(
-                  ctx.input.sessionId,
-                  ctx.input.runId,
-                ),
+            const published = deps.runSseGateway.emitConfirmationRequired(
+              ctx.input.sessionId,
+              {
+                runId: ctx.input.runId,
+                turnId: ctx.input.turnId,
+                message,
               },
-            });
+            );
+            if (!published) {
+              emitAgentMessageSseDebug({
+                tag: 'confirmation_required_suppressed',
+                sessionId: ctx.input.sessionId,
+                runId: ctx.input.runId,
+                turnId: ctx.input.turnId,
+                ssePayload: confirmationPayload,
+                source: { reason: 'run_not_publishable' },
+              });
+            } else {
+              emitAgentMessageSseDebug({
+                tag: 'confirmation_required',
+                sessionId: ctx.input.sessionId,
+                runId: ctx.input.runId,
+                turnId: ctx.input.turnId,
+                ssePayload: confirmationPayload,
+                source: {
+                  confirmedPreviewSerialized,
+                  artifactBlocks: deps.assistantArtifact.peekBlocks(
+                    ctx.input.sessionId,
+                    ctx.input.runId,
+                  ),
+                },
+              });
+            }
             const gateStep: AgentRunStep = {
               step: nextRunStepNumber(nextSteps),
               type: 'write_confirmation_gate',

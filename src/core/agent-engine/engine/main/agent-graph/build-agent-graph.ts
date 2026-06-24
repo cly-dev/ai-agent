@@ -24,6 +24,7 @@ import {
   createAgentGraphHostToolHandleHelpers,
 } from './runtime';
 import { createAgentGraphSummarizeHelpers } from './summarize';
+import type { AgentGraphNodeFn } from './types/graph.types';
 import { createPlanNode } from './nodes/plan.node';
 import { createIntentNode } from './nodes/intent.node';
 import { createTurnRouteNode } from './nodes/turn-route.node';
@@ -33,6 +34,28 @@ import { createToolsNode } from './nodes/tools.node';
 import { createResultCheckNode } from './nodes/result-check.node';
 import { createSummarizeNode } from './nodes/summarize.node';
 import type { RequestedSkillRunContext } from '../skill/requested-skill-run.service';
+
+function withRunCancellation(
+  deps: AgentGraphDeps,
+  input: AgentLangGraphRunInput,
+  node: AgentGraphNodeFn,
+): AgentGraphNodeFn {
+  const generation = input.runGeneration;
+  if (generation == null) {
+    deps.logger.warn(
+      `runGeneration missing for runId=${input.runId}; graph nodes run without cancellation guard`,
+    );
+    return node;
+  }
+  return async (state) => {
+    deps.sessionRunCoordinator.throwIfAborted(
+      input.sessionId,
+      input.runId,
+      generation,
+    );
+    return node(state);
+  };
+}
 
 export async function buildAndRunAgentGraph(
   deps: AgentGraphDeps,
@@ -98,15 +121,16 @@ export async function buildAndRunAgentGraph(
   };
 
   const State = createAgentGraphStateAnnotation();
+  const wrap = (node: AgentGraphNodeFn) => withRunCancellation(deps, input, node);
   const graph = new StateGraph(State)
-    .addNode('intent', createIntentNode(bundle))
-    .addNode('turnRoute', createTurnRouteNode(bundle))
-    .addNode('plan', createPlanNode(bundle))
-    .addNode('readiness', createReadinessNode(bundle))
-    .addNode('llm', createLlmNode(bundle))
-    .addNode('tools', createToolsNode(bundle))
-    .addNode('resultCheck', createResultCheckNode(bundle))
-    .addNode('summarize', createSummarizeNode(bundle))
+    .addNode('intent', wrap(createIntentNode(bundle)))
+    .addNode('turnRoute', wrap(createTurnRouteNode(bundle)))
+    .addNode('plan', wrap(createPlanNode(bundle)))
+    .addNode('readiness', wrap(createReadinessNode(bundle)))
+    .addNode('llm', wrap(createLlmNode(bundle)))
+    .addNode('tools', wrap(createToolsNode(bundle)))
+    .addNode('resultCheck', wrap(createResultCheckNode(bundle)))
+    .addNode('summarize', wrap(createSummarizeNode(bundle)))
     .addConditionalEdges(START, (s: AgentGraphState) => {
       if (input.resumeFromWriteConfirm) {
         if (shouldRouteToRespond(s)) {

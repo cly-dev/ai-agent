@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { resolveAllowedClientCorsOrigin } from './client-cors-origins.util';
 
 const ADMIN_PREFIX = '/admin';
 
@@ -44,12 +45,15 @@ export function shouldApplyClientPublicCors(req: Request): boolean {
  */
 export function applyClientPublicCors(req: Request, res: Response): void {
   const origin = req.headers.origin;
-  if (typeof origin === 'string' && origin.length > 0) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
+  const allowedOrigin = resolveAllowedClientCorsOrigin(
+    typeof origin === 'string' ? origin : undefined,
+  );
+  if (allowedOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else {
-    // credentials:true 与 Allow-Origin:* 不可同时使用（浏览器会直接判跨域失败）
+  } else if (typeof origin !== 'string' || origin.length === 0) {
+    // 无 Origin（非浏览器 / same-origin）时不强制 * + credentials
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
 

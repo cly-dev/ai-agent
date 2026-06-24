@@ -12,6 +12,7 @@ import { SessionGoaReplayService } from './goa/session-goa-replay.service';
 import { SessionGoaService } from './goa/session-goa.service';
 import { SessionResumeGateService } from './resume/session-resume-gate.service';
 import { SessionTaskResumeFollowUpService } from './resume/session-task-resume-followup.service';
+import { SessionRunStateStore } from './session-run/session-run-state.store';
 
 /**
  * Redis 用户记忆与会话上下文（`src/core/memory`）。
@@ -35,6 +36,7 @@ import { SessionTaskResumeFollowUpService } from './resume/session-task-resume-f
     SessionTaskResumeFollowUpService,
     SessionHistoryCompressionService,
     SessionMessageContextSyncService,
+    SessionRunStateStore,
   ],
   exports: [
     RedisConnectionService,
@@ -47,6 +49,7 @@ import { SessionTaskResumeFollowUpService } from './resume/session-task-resume-f
     SessionTaskResumeFollowUpService,
     SessionHistoryCompressionService,
     SessionMessageContextSyncService,
+    SessionRunStateStore,
   ],
 })
 export class MemoryModule {}

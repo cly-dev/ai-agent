@@ -10,6 +10,10 @@ import { ReqInterceptor } from './interceptor/req.interceptor';
 import { HttpExceptionFilter } from './exception/http.exception';
 import { PrismaService } from './prisma/prisma.service';
 import {
+  isDevStaticAssetsEnabled,
+  isSwaggerEnabled,
+} from './core/security/runtime-env.util';
+import {
   applyClientPublicCors,
   handleClientPublicCorsPreflight,
   shouldApplyClientPublicCors,
@@ -38,7 +42,10 @@ async function bootstrap() {
     );
     throw error;
   }
-  app.useStaticAssets(join(process.cwd(), 'www'));
+  if (isDevStaticAssetsEnabled()) {
+    app.useStaticAssets(join(process.cwd(), 'www'));
+    Logger.log('Dev static assets enabled at /index.html (www/)');
+  }
   app.useGlobalInterceptors(new ReqInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalPipes(
@@ -61,27 +68,29 @@ async function bootstrap() {
       { path: 'host-tool/client/register', method: RequestMethod.POST },
     ],
   });
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Agent Server API')
-    .setDescription('API docs for Agent Server')
-    .setVersion('1.0.0')
-    .addBearerAuth()
-    .addApiKey(
-      {
-        type: 'apiKey',
-        in: 'header',
-        name: 'X-App-Dsn',
-        description:
-          'AppClient DSN，用于解析接入方（须与库中 AppClient.dsn 一致）',
-      },
-      'app-dsn',
-    )
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, document);
+  if (isSwaggerEnabled()) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Agent Server API')
+      .setDescription('API docs for Agent Server')
+      .setVersion('1.0.0')
+      .addBearerAuth()
+      .addApiKey(
+        {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-App-Dsn',
+          description:
+            'AppClient DSN，用于解析接入方（须与库中 AppClient.dsn 一致）',
+        },
+        'app-dsn',
+      )
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, document);
+    Logger.log('Swagger docs available at http://localhost:3030/docs');
+  }
 
   await app.listen(3030);
-  Logger.log('Swagger docs available at http://localhost:3030/docs');
 }
 
 function registerProcessErrorHandlers(): void {

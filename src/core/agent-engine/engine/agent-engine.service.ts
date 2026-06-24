@@ -7,7 +7,6 @@ import { LlmService } from '../../llm/llm.service';
 import { PromptComposerService } from '../../prompt/prompt-composer.service';
 import { ToolEngineService } from '../../tool-engine/tool-engine.service';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { ChatEventsService } from '../../../modules/chat/chat-events.service';
 import { PendingWriteConfirmationStore } from '../../../modules/chat/pending-write-confirmation.store';
 import { AgentService } from '../../../modules/agent/agent.service';
 import { HostToolService } from '../../../modules/host-tool/host-tool.service';
@@ -54,6 +53,12 @@ import { deserializePendingObservations } from './agent-write-confirmation.util'
 import { resolveTaskPlanAdvance } from './main/plan/task-plan.util';
 import { buildWriteConfirmResumeSummaryObservation } from './write-confirm-resume-summary.util';
 import { pendingRespondFromObservation } from './turn/turn-respond.util';
+import {
+  AgentRunAbortedError,
+  isAgentRunAbortedError,
+} from '../../session-run/run-aborted.error';
+import { AgentRunSseGateway } from '../../session-run/agent-run-sse.gateway';
+import type { RunExecutionScope } from '../../session-run/run-execution.scope';
 import type { ToolObservation } from './main/types/agent-engine.types';
 
 /**
@@ -69,7 +74,6 @@ export class AgentEngineService {
     private readonly llmService: LlmService,
     private readonly promptComposer: PromptComposerService,
     private readonly toolEngine: ToolEngineService,
-    private readonly chatEvents: ChatEventsService,
     private readonly hostToolService: HostToolService,
     private readonly agentService: AgentService,
     private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
@@ -81,6 +85,7 @@ export class AgentEngineService {
     private readonly sessionScope: AgentSessionScopeService,
     private readonly goaService: SessionGoaService,
     private readonly requestedSkillRun: RequestedSkillRunService,
+    private readonly runSse: AgentRunSseGateway,
   ) {}
 
   /**
@@ -125,17 +130,12 @@ export class AgentEngineService {
     if (!pending) {
       return;
     }
-    this.chatEvents.purgeWriteConfirmationGate(sessionId, pending.runId);
+    this.runSse.purgeWriteConfirmationGate(sessionId, pending.runId);
     const message = '已取消操作。';
-    this.chatEvents.emit(sessionId, {
-      event: 'message',
-      payload: {
-        source: 'agent-run',
-        action: 'write_confirmation_cancelled',
-        runId: pending.runId,
-        turnId: pending.turnId,
-        message,
-      },
+    this.runSse.emitWriteConfirmationCancelled(sessionId, {
+      runId: pending.runId,
+      turnId: pending.turnId,
+      message,
     });
     if (pending.turnId != null) {
       await this.messagePersist.appendNoticeToTurnOutput({
@@ -145,29 +145,16 @@ export class AgentEngineService {
         noticeMarkdown: message,
       });
     }
-    this.chatEvents.emit(sessionId, {
-      event: 'complete',
-      payload: {
-        source: 'agent-run',
-        runId: pending.runId,
-        turnId: pending.turnId,
-        status: 'success',
-      },
-    });
   }
 
   private emitAgentRunComplete(
     sessionId: string,
     result: AgentRunResult,
   ): void {
-    this.chatEvents.emit(sessionId, {
-      event: 'complete',
-      payload: {
-        source: 'agent-run',
-        runId: result.runId,
-        turnId: result.turnId,
-        status: result.status,
-      },
+    this.runSse.emitRunComplete(sessionId, {
+      runId: result.runId,
+      turnId: result.turnId,
+      status: result.status,
     });
   }
 
@@ -225,7 +212,8 @@ export class AgentEngineService {
       const sseDispatched = hostTools.length > 0;
       if (sseDispatched) {
         dispatchHostActionSse(
-          (sid, envelope) => this.chatEvents.emit(sid, envelope),
+          (sid, envelope) =>
+            this.runSse.emitHostAction(sid, result.runId, envelope.payload),
           sessionId,
           buildHostActionSyncPayload({
             pageContext,
@@ -253,17 +241,12 @@ export class AgentEngineService {
   }
 
   private emitWriteConfirmationExpired(sessionId: string): void {
-    this.chatEvents.emit(sessionId, {
-      event: 'error',
-      payload: {
-        message: '写操作确认已过期或不存在，请重新发起请求。',
-        code: 'WRITE_CONFIRMATION_EXPIRED',
-      },
-    });
+    this.runSse.emitWriteConfirmationExpired(sessionId);
   }
 
   async resumeAfterWriteConfirm(
     input: ResumeAfterWriteConfirmInput,
+    scope: RunExecutionScope,
   ): Promise<AgentRunResult | null> {
     const session = await this.prisma.session.findFirst({
       where: { id: input.sessionId, userId: input.userId },
@@ -272,6 +255,8 @@ export class AgentEngineService {
     if (!session?.agentId) {
       return null;
     }
+
+    scope.assertActive();
 
     const pending = await this.pendingWriteConfirmationStore.get(
       input.sessionId,
@@ -312,7 +297,7 @@ export class AgentEngineService {
       this.emitWriteConfirmationExpired(input.sessionId);
       return null;
     }
-    this.chatEvents.purgeWriteConfirmationGate(
+    this.runSse.purgeWriteConfirmationGate(
       input.sessionId,
       pending.runId,
     );
@@ -388,6 +373,7 @@ export class AgentEngineService {
         }));
     }
     const startedAt = new Date();
+    scope.assertActive();
     const resumeRun = await this.prisma.agentRun.create({
       data: {
         turnId: primaryRun.turnId,
@@ -405,6 +391,9 @@ export class AgentEngineService {
         startedAt,
       },
     });
+
+    scope.startRun(resumeRun.id, primaryRun.turnId);
+    scope.assertActive(resumeRun.id);
 
     const {
       observations: writeObservations,
@@ -426,6 +415,7 @@ export class AgentEngineService {
       runId: resumeRun.id,
       sessionId: input.sessionId,
       onToolDebugLog: (message) => this.logger.log(message),
+      assertContinue: () => scope.assertActive(resumeRun.id),
     });
 
     if (writeObservations.length === 0) {
@@ -447,6 +437,7 @@ export class AgentEngineService {
       primaryRun.turnId,
     );
     this.sse.clearThinkBuffer(input.sessionId, resumeRun.id);
+    scope.assertActive(resumeRun.id);
 
     const iterationAfterWrites = maxRunStepNumber(writeSteps);
     const allObservations: ToolObservation[] = [
@@ -521,6 +512,7 @@ export class AgentEngineService {
     };
 
     try {
+      scope.assertActive(resumeRun.id);
       const graphState = await this.langGraphRunner.run({
         promptMessages: prompt.messages,
         latestUserMessage: consumed.latestUserMessage,
@@ -543,6 +535,8 @@ export class AgentEngineService {
         graphInitialState,
         approvedWriteToolNames,
         pageContext: resumePageContext,
+        runGeneration: scope.generation,
+        abortSignal: scope.abortSignal,
       });
 
       const result = await this.lifecycle.completeAgentRunFromGraph({
@@ -567,6 +561,22 @@ export class AgentEngineService {
       );
       return result;
     } catch (error) {
+      if (isAgentRunAbortedError(error)) {
+        const partial = await this.prisma.agentRun.findUnique({
+          where: { id: resumeRun.id },
+          select: { steps: true },
+        });
+        await this.handleRunAborted({
+          error,
+          sessionId: input.sessionId,
+          turnId: primaryRun.turnId,
+          runId: resumeRun.id,
+          runMetrics,
+          scopedToolCount: tools.length,
+          steps: this.lifecycle.parseStepsFromRun(partial?.steps),
+        });
+        throw error;
+      }
       const partial = await this.prisma.agentRun.findUnique({
         where: { id: resumeRun.id },
         select: { steps: true },
@@ -593,12 +603,16 @@ export class AgentEngineService {
       }
       return result;
     } finally {
+      scope.endRun(resumeRun.id);
       this.sse.clearThinkBuffer(input.sessionId, resumeRun.id);
       this.assistantArtifact.clear(input.sessionId, resumeRun.id);
     }
   }
 
-  async run(input: AgentRunInput): Promise<AgentRunResult | null> {
+  async run(
+    input: AgentRunInput,
+    scope: RunExecutionScope,
+  ): Promise<AgentRunResult | null> {
     const session = await this.prisma.session.findFirst({
       where: { id: input.sessionId, userId: input.userId },
       select: { id: true, agentId: true, appClientId: true },
@@ -610,7 +624,7 @@ export class AgentEngineService {
       return null;
     }
 
-    await this.pendingWriteConfirmationStore.clear(input.sessionId);
+    scope.assertActive();
 
     const startedAt = new Date();
     const [agent, messageTokenBudget] = await Promise.all([
@@ -625,6 +639,7 @@ export class AgentEngineService {
       input.sessionId,
       input.pageContext ?? null,
     );
+    scope.assertActive();
 
     const prompt = await this.promptComposer.compose({
       userId: input.userId,
@@ -637,6 +652,7 @@ export class AgentEngineService {
       },
       pageContext,
     });
+    scope.assertActive();
 
     const [allowedTools, turn] = await Promise.all([
       this.sessionScope.getSessionAllowedTools(
@@ -672,6 +688,7 @@ export class AgentEngineService {
       this.toolEngine,
     );
 
+    scope.assertActive();
     const run = await this.prisma.agentRun.create({
       data: {
         turnId: turn.id,
@@ -693,8 +710,10 @@ export class AgentEngineService {
     const runMetrics = createRunMetricsAccumulator();
     this.assistantArtifact.reset(input.sessionId, run.id, turn.id);
     this.sse.clearThinkBuffer(input.sessionId, run.id);
+    scope.startRun(run.id, turn.id);
 
     try {
+      scope.assertActive(run.id);
       const graphState = await this.langGraphRunner.run({
         promptMessages: prompt.messages,
         latestUserMessage: input.input,
@@ -715,6 +734,8 @@ export class AgentEngineService {
         turnId: turn.id,
         requestedSkillId: input.requestedSkillId,
         pageContext,
+        runGeneration: scope.generation,
+        abortSignal: scope.abortSignal,
       });
 
       const result = await this.lifecycle.completeAgentRunFromGraph({
@@ -739,6 +760,22 @@ export class AgentEngineService {
       );
       return result;
     } catch (error) {
+      if (isAgentRunAbortedError(error)) {
+        const partial = await this.prisma.agentRun.findUnique({
+          where: { id: run.id },
+          select: { steps: true },
+        });
+        await this.handleRunAborted({
+          error,
+          sessionId: input.sessionId,
+          turnId: turn.id,
+          runId: run.id,
+          runMetrics,
+          scopedToolCount: tools.length,
+          steps: this.lifecycle.parseStepsFromRun(partial?.steps),
+        });
+        throw error;
+      }
       const partial = await this.prisma.agentRun.findUnique({
         where: { id: run.id },
         select: { steps: true },
@@ -765,9 +802,39 @@ export class AgentEngineService {
       }
       return result;
     } finally {
+      scope.endRun(run.id);
       this.sse.clearThinkBuffer(input.sessionId, run.id);
       this.assistantArtifact.clear(input.sessionId, run.id);
     }
+  }
+
+  private async handleRunAborted(input: {
+    error: AgentRunAbortedError;
+    sessionId: string;
+    turnId: number;
+    runId: number;
+    runMetrics: ReturnType<typeof createRunMetricsAccumulator>;
+    scopedToolCount: number;
+    steps: AgentGraphState['steps'];
+  }): Promise<void> {
+    const finishReason =
+      input.error.reason === 'superseded' ? 'superseded' : 'user_cancelled';
+    await this.lifecycle.finalizeRunAndTurn({
+      turnId: input.turnId,
+      runId: input.runId,
+      runMetrics: input.runMetrics,
+      finalOutput: '',
+      status: AgentRunStatus.failed,
+      finishReason,
+      error: input.error.message,
+      scopedToolCount: input.scopedToolCount,
+      steps: input.steps,
+      currentStep: maxRunStepNumber(input.steps),
+    });
+    await this.prisma.messageTurn.update({
+      where: { id: input.turnId },
+      data: { status: AgentRunStatus.failed },
+    });
   }
 
   private async handleRunFailure(input: {
