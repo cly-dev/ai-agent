@@ -395,6 +395,11 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
           autoSelectedSkillId,
           turnRoute: contract.routing.route,
           turnSkillSelect: contract.plan.skillSelect,
+          pageContextPlan: contract.plan.pageContextPlan,
+          pageContextApplies: contract.plan.pageContextUsage.applies,
+          pageContextTaskKind: contract.routing.pageContextTaskKind,
+          pageContextDataSufficiency:
+            contract.plan.pageContextUsage.dataSufficiency,
         }),
       ),
     };

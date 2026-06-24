@@ -25,6 +25,12 @@ import type {
   TaskStepPhase,
   PlanSummarizePublishMode,
 } from './task-plan.types';
+import type { PageContextUsage } from '../../../../host-bridge/page-context-usage.types';
+import { planInitialSummarizeReadyOnFresh } from '../../../../host-bridge/page-context-execution-policy.util';
+import {
+  isPageContextSourcedObservation,
+  pageContextObservationMatchesEntity,
+} from '../../../../host-bridge/page-context-usage.util';
 import type { OuterPlanSkillSelectMethod } from './outer-plan-skill-resolve.util';
 import {
   resolvePlanGoal,
@@ -589,6 +595,85 @@ export function resolveOuterSkillPlanDeliverable(input: {
   );
 }
 
+/** Turn 契约：页上已有内联正文，直接 summarize（不 gather）。 */
+export function buildPageContextInlinePlanResult(input: {
+  userMessage: string;
+  pageContextUsage: PageContextUsage;
+}): ResolveTaskPlanResult {
+  const userMessage = input.userMessage.trim();
+  const goal =
+    userMessage ||
+    `Analyze current ${input.pageContextUsage.entityType ?? 'page'} context`;
+  const plan = buildPlanSnapshot({
+    source: 'page_context',
+    userMessage,
+    goal,
+    deliverable: 'analysis',
+    steps: [
+      {
+        id: 'summarize_page_context',
+        phase: 'analyze',
+        kind: 'summarize',
+        objective:
+          'Analyze the entity content from page_context / working_memory_observations. Do not call read-list or read-detail unless the user explicitly requests a server refresh.',
+        stopWhen: 'always',
+      },
+    ],
+    constraints: ['page_context_inline'],
+  });
+  return { plan, method: 'page_context' };
+}
+
+/** Turn 契约：页上仅有实体 id，read-detail → summarize。 */
+export function buildPageContextEntityReadPlanResult(input: {
+  userMessage: string;
+  scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'];
+  pageContextUsage: PageContextUsage;
+}): ResolveTaskPlanResult {
+  const userMessage = input.userMessage.trim();
+  const entityId = input.pageContextUsage.entityId ?? 'unknown';
+  const entityType = input.pageContextUsage.entityType ?? 'entity';
+  const goal =
+    userMessage || `Answer using current page ${entityType} ${entityId}`;
+  const { hasReadDetail } = summarizeScopedRoles(input.scopedToolSummaries);
+  const steps: TaskPlanStep[] = [];
+  if (hasReadDetail) {
+    steps.push({
+      id: 'read_page_entity',
+      phase: 'gather',
+      kind: 'tool',
+      toolRole: 'read-detail',
+      objective: `Call read-detail once for ${entityType} id ${entityId} from page_context. Do not call read-list.`,
+      stopWhen: 'observation_non_empty',
+    });
+  } else {
+    steps.push({
+      id: 'list_page_entity',
+      phase: 'gather',
+      kind: 'tool',
+      toolRole: 'read-list',
+      objective: `Call read-list once filtered to ${entityType} id ${entityId} from page_context. Do not use unfiltered pagination.`,
+      stopWhen: 'observation_non_empty',
+    });
+  }
+  steps.push({
+    id: 'summarize_page_entity',
+    phase: 'analyze',
+    kind: 'summarize',
+    objective: 'Answer the user from observations.',
+    stopWhen: 'always',
+  });
+  const plan = buildPlanSnapshot({
+    source: 'page_context',
+    userMessage,
+    goal,
+    deliverable: 'analysis',
+    steps,
+    constraints: ['page_context_entity'],
+  });
+  return { plan, method: 'page_context' };
+}
+
 /** C 端指定 Skill 时的外层 Plan：单步 kind=skill，跳过外层 Plan LLM。 */
 export function buildRequestedSkillOuterPlanResult(input: {
   userMessage: string;
@@ -857,6 +942,7 @@ function observationsForPlanToolStep(input: {
   step: TaskPlanStep;
   observations: ToolObservation[];
   scopedTools?: PlanScopedTool[];
+  pageContextEntityId?: string | null;
 }): ToolObservation[] {
   const matchingToolNames = matchingToolNamesForPlanStep(
     input.step,
@@ -865,7 +951,21 @@ function observationsForPlanToolStep(input: {
   if (!matchingToolNames) {
     return input.observations;
   }
-  return input.observations.filter((row) => matchingToolNames.has(row.name));
+  return input.observations.filter((row) => {
+    if (matchingToolNames.has(row.name)) {
+      return true;
+    }
+    if (!isPageContextSourcedObservation(row)) {
+      return false;
+    }
+    if (input.step.toolRole !== 'read-detail') {
+      return false;
+    }
+    return pageContextObservationMatchesEntity({
+      observation: row,
+      entityId: input.pageContextEntityId,
+    });
+  });
 }
 
 function observationsSatisfyPlanToolStepStopWhen(
@@ -930,6 +1030,7 @@ export function isPlanToolStepSatisfiedByObservations(input: {
   taskPlan?: TaskPlanSnapshot | null;
   skillConfig?: unknown;
   purpose?: PlanToolStepSatisfactionPurpose;
+  pageContextEntityId?: string | null;
 }): boolean {
   const purpose = input.purpose ?? 'pre_tools_advance';
   if (input.step.kind !== 'tool' || !input.step.toolRole) {
@@ -941,7 +1042,12 @@ export function isPlanToolStepSatisfiedByObservations(input: {
   ) {
     return false;
   }
-  const relevant = observationsForPlanToolStep(input);
+  const relevant = observationsForPlanToolStep({
+    step: input.step,
+    observations: input.observations,
+    scopedTools: input.scopedTools,
+    pageContextEntityId: input.pageContextEntityId,
+  });
   return observationsSatisfyPlanToolStepStopWhen(input.step, relevant, {
     taskPlan: input.taskPlan,
     skillConfig: input.skillConfig,
@@ -1504,6 +1610,7 @@ export function resolveTaskPlanAdvanceWhenStepSatisfied(input: {
   scopedTools?: PlanScopedTool[];
   skillConfig?: unknown;
   purpose?: PlanToolStepSatisfactionPurpose;
+  pageContextEntityId?: string | null;
 }): TaskPlanAdvanceResult | null {
   const currentStepId =
     input.plan.pendingStepIds[0] ?? input.plan.currentStepId;
@@ -1519,6 +1626,7 @@ export function resolveTaskPlanAdvanceWhenStepSatisfied(input: {
       taskPlan: input.plan,
       skillConfig: input.skillConfig,
       purpose: input.purpose ?? 'pre_tools_advance',
+      pageContextEntityId: input.pageContextEntityId,
     })
   ) {
     return null;
@@ -1597,7 +1705,7 @@ export function resolveTaskPlanInitialAdvance(input: {
   allObservations: ToolObservation[];
   runOwnedObservations: ToolObservation[];
   userMessage: string;
-  /** resume 续跑允许仅凭 GOA 预载进入 summarize；fresh 须本 run 已有观测。 */
+  /** resume 续跑允许仅凭 GOA 预载进入 summarize；fresh 允许 page_context 物化观测。 */
   planRunContext?: 'fresh' | 'resume';
   buildMergedObservation: (
     observations: ToolObservation[],
@@ -1611,8 +1719,13 @@ export function resolveTaskPlanInitialAdvance(input: {
 
   const planRunContext = input.planRunContext ?? 'fresh';
   if (
-    input.runOwnedObservations.length === 0 &&
-    planRunContext !== 'resume'
+    planRunContext !== 'resume' &&
+    !planInitialSummarizeReadyOnFresh({
+      planSource: input.plan.source,
+      planConstraints: input.plan.constraints,
+      runOwnedObservations: input.runOwnedObservations,
+      allObservations: input.allObservations,
+    })
   ) {
     return null;
   }

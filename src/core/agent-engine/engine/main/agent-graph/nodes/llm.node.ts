@@ -63,6 +63,7 @@ import {
   isPlanToolStepSatisfiedByObservations,
   isPlanWriteFallbackStep,
 } from '../../plan/task-plan.util';
+import { pageContextEntityIdFromGraphState } from '../../../turn/turn-execution-contract.util';
 import type { AgentGraphState } from '../../types/agent-engine.types';
 
 export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
@@ -409,6 +410,8 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
       }
       const httpToolCalls = httpCalls;
       const pendingToolStep = getPendingPlanToolStep(graphStateForLlm.taskPlan);
+      const pageContextEntityId =
+        pageContextEntityIdFromGraphState(graphStateForLlm);
       if (httpToolCalls.length === 0 && hostCalls.length === 0) {
         const planRequiresToolCall =
           pendingToolStep?.kind === 'tool' &&
@@ -419,6 +422,7 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
             taskPlan: graphStateForLlm.taskPlan,
             skillConfig: graphStateForLlm.activeSkillConfig,
             purpose: 'pre_tools_advance',
+            pageContextEntityId,
           });
         if (planRequiresToolCall) {
           if (!llmText) {
@@ -444,6 +448,7 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
             taskPlan: graphStateForLlm.taskPlan,
             skillConfig: graphStateForLlm.activeSkillConfig,
             purpose: 'pre_tools_advance',
+            pageContextEntityId,
           })
         ) {
           return {

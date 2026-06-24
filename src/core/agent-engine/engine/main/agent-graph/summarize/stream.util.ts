@@ -146,13 +146,6 @@ export async function summarizeWriteConfirmResume(deps: AgentGraphDeps, input: {
       {
         role: 'system',
         content: await deps.promptRegistry.render(
-          PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC,
-          scope,
-        ),
-      },
-      {
-        role: 'system',
-        content: await deps.promptRegistry.render(
           PROMPT_KEYS.AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME,
           scope,
         ),
@@ -275,13 +268,6 @@ export async function summarizeClarificationRequest(deps: AgentGraphDeps,
     summarizeMessages.push({
       role: 'system',
       content: await deps.promptRegistry.render(
-        PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC,
-        scope,
-      ),
-    });
-    summarizeMessages.push({
-      role: 'system',
-      content: await deps.promptRegistry.render(
         PROMPT_KEYS.AGENT_RESPOND_CLARIFICATION,
         scope,
       ),
@@ -318,7 +304,12 @@ export async function summarizeClarificationRequest(deps: AgentGraphDeps,
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return serializeMessageBlocksForStorage([textBlock(fallback)]);
+      const published = deps.sse.publishAssistantBlocks(sessionId, runId, [
+        textBlock(fallback),
+      ]);
+      return serializeMessageBlocksForStorage(
+        published.length > 0 ? published : [textBlock(fallback)],
+      );
     }
   }
 
@@ -344,15 +335,6 @@ export async function summarizeDirectUserMessage(deps: AgentGraphDeps,
         message.role === 'system' && message.content.includes('<agent_prompt>'),
     );
     const summarizeMessages: LlmChatMessage[] = [...agentPrompts];
-    if (resolveSummarizeLlmDelivery(summarizePromptKey) === 'blocks_invoke') {
-      summarizeMessages.push({
-        role: 'system',
-        content: await deps.promptRegistry.render(
-          PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC,
-          scope,
-        ),
-      });
-    }
     summarizeMessages.push({
       role: 'system',
       content: await deps.promptRegistry.render(summarizePromptKey, scope),
@@ -488,15 +470,6 @@ export async function summarizeToolOutputForUser(deps: AgentGraphDeps,
       summarizeScenario,
     });
     const summarizeMessages: LlmChatMessage[] = [...agentPrompts];
-    if (resolveSummarizeLlmDelivery(summarizePromptKey) === 'blocks_invoke') {
-      summarizeMessages.push({
-        role: 'system',
-        content: await deps.promptRegistry.render(
-          PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC,
-          scope,
-        ),
-      });
-    }
     summarizeMessages.push({
       role: 'system',
       content: await deps.promptRegistry.render(summarizePromptKey, scope),
@@ -569,7 +542,7 @@ export async function summarizeToolOutputForUser(deps: AgentGraphDeps,
       fallbackPlainText,
     );
     if (publishMode?.emitAuthoritativeFull === false) {
-      deps.assistantArtifact.commit(
+      deps.sse.commitAssistantArtifact(
         sessionId,
         runId,
         fallbackBlocks,

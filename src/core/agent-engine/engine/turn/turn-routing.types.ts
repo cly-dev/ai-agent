@@ -1,3 +1,5 @@
+import type { PageContextTaskKind } from '../../../host-bridge/page-context-usage.types';
+
 /** Turn 级路由：本轮是否走页内 Skill / 编排 Plan / 直接作答。 */
 export type TurnRouteKind =
   | 'direct_answer'
@@ -13,6 +15,10 @@ export type TurnRoutingDecision = {
   method: TurnRoutingMethod;
   reason: string;
   suggestedSkillId: number | null;
+  /** 用户是否在消费当前页 / 当前实体上下文（route LLM + 结构化兜底）。 */
+  pageContextApplies: boolean;
+  /** 用户想如何用页上内联数据；pageContextApplies=false 时应为 none。 */
+  pageContextTaskKind: PageContextTaskKind;
 };
 
 export type TurnRouteLlmInput = {

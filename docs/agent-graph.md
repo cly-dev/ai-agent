@@ -41,7 +41,8 @@ agent-graph/
 > - Plan 原理与 LLM 提示：[plan-node.md](./plan-node.md)  
 > - Plan 字段、advance、排错：[plan-rules-and-state.md](./plan-rules-and-state.md)  
 > - Readiness 检查点：[turn-readiness.md](./turn-readiness.md)  
-> - 分页 gather：[paged-list-gather.md](./paged-list-gather.md)
+> - 分页 gather：[paged-list-gather.md](./paged-list-gather.md)  
+> - **Assistant SSE / Artifact / 落库排查**：[assistant-message-publish-flow.md](./assistant-message-publish-flow.md)
 
 ---
 

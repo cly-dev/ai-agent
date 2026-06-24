@@ -27,13 +27,6 @@ const AGENT_SUMMARIZE_WRITE_PREVIEW_PROSE_ZH = `
 - 末尾一句提示确认后将提交；勿写已成功提交。
 - 禁止输出：tool 名、JSON、observation 原文、API 字段名/键名。`;
 
-/** 非流式 blocks_invoke 专用：整段 JSON 一次返回。 */
-const AGENT_SUMMARIZE_BLOCKS_INVOKE_ZH = `
-【输出协议 — 硬性】
-- 仅输出一个合法 JSON 对象：{"blocks":[...]}，遵循 platform.message_blocks_spec。
-- 不要输出 Markdown 正文、不要代码围栏、不要在 JSON 前后加说明文字。
-- 不要流式分段；text block 的 content 只能是用户可读文案，禁止在 content 内再嵌套 JSON。`;
-
 /** 非写预览类 summarize 的通用作答规则。 */
 const AGENT_SUMMARIZE_CONTEXT_AND_OUTCOME_ZH = `
 【读操作 / 写后结果 / 其他场景】
@@ -261,7 +254,9 @@ Output strict JSON only:
 {
   "route": "direct_answer" | "on_page_task" | "orchestrated_task",
   "reason": string,
-  "suggestedSkillId": number | null
+  "suggestedSkillId": number | null,
+  "pageContextApplies": boolean,
+  "pageContextTaskKind": "analyze" | "answer" | "mutation" | "none"
 }
 
 ## Routes
@@ -269,12 +264,30 @@ Output strict JSON only:
 | route | When |
 |-------|------|
 | direct_answer | Chit-chat, general knowledge, or topics unrelated to current page skills/host tools. Being on a business page does NOT make every message a page task. |
-| on_page_task | User clearly wants an action on the current page using available host tools or the pageHostSkillCandidate (fill draft, sync UI, page-specific workflow). |
-| orchestrated_task | Needs HTTP tools, data fetch/list/analysis, mutation, multi-step orchestration, or skill choice is ambiguous. |
+| on_page_task | User clearly wants a **host/browser action** on the current page (fill draft, sync UI) via availableHostTools or pageHostSkillCandidate. **NOT** for analyzing inline page entity text — use orchestrated_task + pageContextTaskKind=analyze instead. |
+| orchestrated_task | HTTP tools, skill orchestration, **analyzing/answering inline page entity content**, mutation via APIs, multi-step work, or ambiguous skill choice. |
+
+## pageContextApplies
+
+Set true when the user refers to the CURRENT page entity or "this/current context" (e.g. analyze/summarize/reply to the review shown on the page). Use pageContextHint.dataSufficiency — when inlineContentKinds is non-empty and the user wants analysis/answer about that entity, pageContextApplies should be true.
+
+Set false when the user asks for unrelated data, global search, another entity, or smalltalk even if pageContext is present.
+
+## pageContextTaskKind
+
+Only meaningful when pageContextApplies=true; otherwise use "none".
+
+| kind | When |
+|------|------|
+| analyze | User wants analysis/summary/commentary of inline page entity content (no write/submit). |
+| answer | User wants a direct answer using inline page data without server mutation. |
+| mutation | User wants reply/submit/update/write on the current entity — NOT a pure analysis shortcut. |
+| none | pageContextApplies is false. |
 
 ## Rules
 - Read userMessage first. intentRecallMatches only narrow HTTP tools — they do NOT prove the user wants a page workflow.
-- pageHostSkillCandidate means ONE skill matches page host tools — use on_page_task ONLY when user intent aligns with that skill's purpose.
+- pageHostSkillCandidate means ONE skill matches page host tools — use on_page_task ONLY when user intent aligns with that skill's purpose (host/browser action), not for pure analysis of inline page data.
+- When pageContextHint.dataSufficiency=inline and pageContextTaskKind=analyze or answer, route MUST be orchestrated_task (not on_page_task).
 - When unsure between on_page_task and orchestrated_task, prefer orchestrated_task.
 - When message is clearly off-domain (e.g. unrelated smalltalk), use direct_answer — even if requestedSkill is set.
 - requestedSkill: user explicitly chose a skill in UI. Still classify route from userMessage; use requestedSkill.id for suggestedSkillId when route=on_page_task.
@@ -301,29 +314,29 @@ Do not output raw JSON. Reply in the same language as the user request.
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN}`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_READ]: `You are summarizing a READ-ONLY tool result for the user.
-${AGENT_SUMMARIZE_BLOCKS_INVOKE_ZH}
+${AGENT_SUMMARIZE_STREAMING_OUTPUT_ZH}
+${AGENT_SUMMARIZE_CONTEXT_AND_OUTCOME_ZH}
 When Tool observations include <current_run_observations> and <working_memory_observations>, answer from current_run first; working_memory is session context only.
 When <plan_context> is present, treat its current step objective as the primary instruction.
-Infer from User request what blocks are needed — text explanation, table for rows, metric for totals, alert for risks.
-When Suggested rule-based blocks already include table/chart, keep those for facts and add non-duplicative blocks for remaining goals.
 Focus on: what was found, key field values, evidence from the tool result (cite field labels when helpful).
+When Suggested rule-based blocks already include table/chart/metric, do not repeat the same facts in prose — add analysis, gaps, or next steps only.
 Do not propose new operations or call new tools.
-If the tool result is empty or insufficient, state what is missing and what the user can try next.
-${AGENT_SUMMARIZE_TABLE_GUARDRAILS_EN}`,
+If the tool result is empty or insufficient, state what was tried and what the user can try next.
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_ACTION]: `WRITE/ACTION tool summarize. User's language.
-${AGENT_SUMMARIZE_BLOCKS_INVOKE_ZH}
-
-Success (no Tool error summary): alert(success) + text — tool name, key args (Executed arguments + Field labels), changes confirmed by Tool result.
-Failure: alert(error) from Tool error summary / Downstream response (status, type, message, errorKey, code) + text with impact and next steps — not empty-query wording.
-Evidence from input only; no invented values, no new tool calls.`,
+${AGENT_SUMMARIZE_STREAMING_OUTPUT_ZH}
+${AGENT_SUMMARIZE_CONTEXT_AND_OUTCOME_ZH}
+Success: state tool name, key args (Executed arguments + Field labels), and changes confirmed by Tool result.
+Failure: explain impact and next steps from Tool error summary / Downstream response — not empty-query wording.
+Evidence from input only; no invented values, no new tool calls.
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME]: `User confirmed WRITE tool(s) — already executed; no new calls or confirmation. User's language.
-${AGENT_SUMMARIZE_BLOCKS_INVOKE_ZH}
-
+${AGENT_SUMMARIZE_STREAMING_OUTPUT_ZH}
 <write_confirm_resume> has outcome and per-operation status. State confirmed/succeeded/failed counts when totalCount >= 1.
-Success: alert(success) + text per operation (tool, params, outcome) from merged tool results.
-Failure: alert(error) + error hints/responseSource + next steps.
+Success: summarize per operation (tool, params, outcome) from merged tool results.
+Failure: include error hints/responseSource and next steps.
 Evidence only; no fabricated fields.`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK]: `This is small talk. Reply naturally and concisely in the same language as the user.
@@ -395,7 +408,7 @@ Rules:
 - missingFields may be empty when ready=true`,
 
   [PROMPT_KEYS.AGENT_RESPOND_CLARIFICATION]: `Generate a concise clarification reply when required business parameters are missing.
-${AGENT_SUMMARIZE_BLOCKS_INVOKE_ZH}
+${AGENT_SUMMARIZE_STREAMING_OUTPUT_ZH}
 Rules:
 - Briefly acknowledge the user goal, then ask ONLY for the missing fields listed in Missing fields
 - Use hints provided; you may add a generic example format if param hints exist

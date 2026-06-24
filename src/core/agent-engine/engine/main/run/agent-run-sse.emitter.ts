@@ -4,9 +4,9 @@ import { ChatEventsService } from '../../../../../modules/chat/chat-events.servi
 import type { AgentMachineCode } from '../../agent-run-user-messages.util';
 import type { MessageBlock, MessageBlockPatch } from '../../message/message-blocks.types';
 import {
+  extractStreamableProseFromBlocks,
   filterLlmBlocksAvoidDuplicatingRule,
   looksLikeBlocksJsonOutput,
-  mergeStreamedDeltaTextForStorage,
   mergeSummarizeBlocksForStorage,
   messageBlocksToPlainText,
   normalizeMessageBlocks,
@@ -19,7 +19,6 @@ import {
 } from '../../message/message-blocks.util';
 import type { LlmChatMessage } from '../../../../llm/llm.types';
 import { LlmService } from '../../../../llm/llm.service';
-import { extractRoutedMessageFromLlmText } from '../../llm-stream-router.util';
 import { emitLlmPromptDebug } from '../../llm-prompt-debug.util';
 import { sanitizeLlmFinalOutput } from '../../llm-output-sanitize.util';
 import {
@@ -34,15 +33,24 @@ import {
 } from './run-assistant-artifact.store';
 import type { PlanSummarizePublishMode } from '../plan/task-plan.types';
 import {
-  emitAgentMessagePersistDebug,
   emitAgentMessageSseDebug,
 } from '../../message/message-blocks-debug.util';
 
+/**
+ * 用户可见 assistant 消息的唯一发布出口：
+ * 1. commit RunAssistantArtifact（落库同源）
+ * 2. 无 LLM delta 时按 artifact 回放 prose delta
+ * 3. 推 authoritative stream.full（payload 必来自 artifact，与 DB 一致）
+ */
 @Injectable()
 export class AgentRunSseEmitter {
   private readonly logger = new Logger(AgentRunSseEmitter.name);
   /** SSE result 流式序号；key = sessionId:runId */
   private readonly streamSeq = new Map<string, number>();
+  /** 本轮是否已推过 prose delta。 */
+  private readonly runProseDeltaEmitted = new Map<string, boolean>();
+  /** 已推送的权威 full 序列化串（与 artifact.serialized 一致）；finish 去重。 */
+  private readonly runAuthoritativeFullSerialized = new Map<string, string>();
 
   constructor(
     private readonly chatEvents: ChatEventsService,
@@ -57,35 +65,34 @@ export class AgentRunSseEmitter {
   clearThinkBuffer(sessionId: string, runId: number): void {
     const key = this.thinkBufferKey(sessionId, runId);
     this.streamSeq.delete(key);
+    this.runProseDeltaEmitted.delete(key);
+    this.runAuthoritativeFullSerialized.delete(key);
   }
 
-  /** run 收尾前推送与 artifact / 落库一致的权威 full（`complete` 前必达）。 */
+  /**
+   * run 收尾：若 artifact 存在且权威 full 尚未推送，补推与落库完全一致的 full。
+   */
   emitRunMessageBlocksIfNeeded(
     sessionId: string,
     runId: number,
     turnId: number,
   ): void {
-    const toEmit = this.assistantArtifact.peekBlocks(sessionId, runId);
-    if (toEmit.length === 0) {
+    const artifact = this.assistantArtifact.peek(sessionId, runId);
+    if (!artifact?.blocks.length) {
       return;
     }
     const turnIdResolved =
       turnId ??
       this.assistantArtifact.peekTurnId(sessionId, runId) ??
       undefined;
-    this.emitMessageBlocks(sessionId, runId, toEmit, {
-      action: 'stream',
-      mode: 'full',
+    this.emitAuthoritativeFullFromArtifact(sessionId, runId, {
       turnId: turnIdResolved,
-      debugSource: {
-        origin: 'emitRunMessageBlocksIfNeeded',
-        artifactBlocks: toEmit,
-        artifactSerialized: serializeMessageBlocksForStorage(toEmit),
-      },
+      replayProseIfNeeded: true,
+      debugOrigin: 'emitRunMessageBlocksIfNeeded',
     });
   }
 
-  /** 仅规则化 blocks（alert/metric 等）：loading → patch → 权威 full，不调 LLM。 */
+  /** 仅规则化 blocks：loading → patch → 权威 full。 */
   publishRuleBlocksOnly(
     sessionId: string,
     runId: number,
@@ -159,6 +166,9 @@ export class AgentRunSseEmitter {
     const nextSeq = key ? (this.streamSeq.get(key) ?? 0) + 1 : undefined;
     if (key && nextSeq != null) {
       this.streamSeq.set(key, nextSeq);
+    }
+    if (key && mode === 'delta') {
+      this.runProseDeltaEmitted.set(key, true);
     }
     const payload = {
       source: 'agent-run' as const,
@@ -255,7 +265,6 @@ export class AgentRunSseEmitter {
         const delta = this.extractAiMessageText(row as AIMessage);
         if (delta) {
           streamedText += delta;
-          // 决策环：模型输出（含思考标签）仅走 think 增量，最终用户回复由 summarize 推送 message
           this.emitThink(sessionId, runId, delta, 'delta');
         }
         merged = merged ? merged.concat(row) : row;
@@ -292,28 +301,15 @@ export class AgentRunSseEmitter {
     return new AIMessage({ content: '' });
   }
 
-  /**
-   * summarize 统一入口：按 delivery 选择 prose 流式 或 blocks 非流式 invoke（互斥协议）。
-   */
   async summarizeMessageBlocks(
     messages: LlmChatMessage[],
     sessionId: string,
     runId: number,
     ruleBlocks: MessageBlock[],
     fallbackPlainText: string,
-    delivery: SummarizeLlmDelivery,
+    _delivery: SummarizeLlmDelivery,
     publishMode?: PlanSummarizePublishMode,
   ): Promise<{ blocks: MessageBlock[]; rawOutput: string }> {
-    if (delivery === 'blocks_invoke') {
-      return this.invokeSummarizeMessageBlocks(
-        messages,
-        sessionId,
-        runId,
-        ruleBlocks,
-        fallbackPlainText,
-        publishMode,
-      );
-    }
     return this.streamSummarizeProseOnly(
       messages,
       sessionId,
@@ -322,6 +318,46 @@ export class AgentRunSseEmitter {
       fallbackPlainText,
       publishMode,
     );
+  }
+
+  /**
+   * 仅写入 artifact（plan 中间步等）；SSE 权威 full 由 finish 或后续 publish 补推。
+   */
+  commitAssistantArtifact(
+    sessionId: string,
+    runId: number,
+    blocks: MessageBlock[],
+    phase: RunAssistantArtifactPhase = 'final',
+  ): MessageBlock[] {
+    const committed = this.assistantArtifact.commit(
+      sessionId,
+      runId,
+      blocks,
+      phase,
+    );
+    return committed?.blocks ?? [];
+  }
+
+  private replayStaticProseBeforeFull(
+    sessionId: string,
+    runId: number,
+    prose: string,
+    turnId?: number,
+  ): void {
+    const trimmed = prose.trim();
+    if (!trimmed) {
+      return;
+    }
+    const proseSession = createSummarizeProseStreamSession({
+      onProseDelta: (delta) => {
+        this.emitMessageBlocks(sessionId, runId, [textBlock(delta)], {
+          action: 'stream',
+          mode: 'delta',
+          turnId,
+        });
+      },
+    });
+    proseSession.replayRoutedMessage(trimmed);
   }
 
   private emitRuleBlockPlaceholders(
@@ -354,10 +390,6 @@ export class AgentRunSseEmitter {
     rawOutput: string,
     publishMode: PlanSummarizePublishMode | undefined,
     turnId: number | undefined,
-    reconcile?: {
-      streamedProse?: string;
-      proseStreamSuperseded?: boolean;
-    },
   ): { blocks: MessageBlock[]; rawOutput: string } {
     for (const patch of patches) {
       this.emitBlockPatch(sessionId, runId, patch);
@@ -370,7 +402,7 @@ export class AgentRunSseEmitter {
     const emitAuthoritativeFull = publishMode?.emitAuthoritativeFull !== false;
 
     if (!emitAuthoritativeFull) {
-      this.assistantArtifact.commit(
+      this.commitAssistantArtifact(
         sessionId,
         runId,
         sanitizedMerged,
@@ -383,66 +415,65 @@ export class AgentRunSseEmitter {
       turnId,
       phase: artifactPhase,
     });
-    if (reconcile) {
-      this.reconcileProseStreamWithFinalBlocks(
-        sessionId,
-        runId,
-        turnId,
-        reconcile,
-        blocks,
-      );
-    }
     return { blocks, rawOutput };
   }
 
-  /** 流式 delta 与定稿 blocks 不一致时，再推一次 authoritative full 覆盖前端累积态。 */
-  reconcileProseStreamWithFinalBlocks(
+  /**
+   * 从已 commit 的 artifact 推送权威 full；payload 与 artifact.serialized 严格一致。
+   */
+  private emitAuthoritativeFullFromArtifact(
     sessionId: string,
     runId: number,
-    turnId: number | undefined,
-    input: { streamedProse?: string; proseStreamSuperseded?: boolean },
-    blocks: MessageBlock[],
-  ): void {
-    const streamed = input.streamedProse?.trim() ?? '';
-    if (!streamed && !input.proseStreamSuperseded) {
-      return;
+    options: {
+      turnId?: number;
+      code?: AgentMachineCode;
+      replayProseIfNeeded?: boolean;
+      debugOrigin: string;
+    },
+  ): MessageBlock[] {
+    const artifact = this.assistantArtifact.peek(sessionId, runId);
+    if (!artifact?.blocks.length) {
+      return [];
     }
-    const publishedSerialized = serializeMessageBlocksForStorage(blocks);
-    const deltaOnlySerialized = streamed
-      ? serializeMessageBlocksForStorage([textBlock(streamed, 'markdown')])
-      : '';
-    const mismatch =
-      input.proseStreamSuperseded ||
-      (deltaOnlySerialized !== '' &&
-        deltaOnlySerialized !== publishedSerialized);
-    if (!mismatch) {
-      return;
+    const streamKey = this.thinkBufferKey(sessionId, runId);
+    if (
+      this.runAuthoritativeFullSerialized.get(streamKey) === artifact.serialized
+    ) {
+      return artifact.blocks;
     }
-    emitAgentMessagePersistDebug({
-      tag: 'SSE_PROSE_STREAM_RECONCILE',
-      sessionId,
-      runId,
-      turnId,
-      dbContent: publishedSerialized,
-      source: {
-        streamedDeltaProse: streamed,
-        proseStreamSuperseded: input.proseStreamSuperseded ?? false,
-        publishedBlocks: blocks,
-        publishedSerialized,
-        deltaOnlySerialized,
-      },
-    });
-    this.emitMessageBlocks(sessionId, runId, blocks, {
+
+    const turnId =
+      options.turnId ??
+      this.assistantArtifact.peekTurnId(sessionId, runId) ??
+      undefined;
+
+    if (options.replayProseIfNeeded) {
+      const hadProseDelta = this.runProseDeltaEmitted.get(streamKey) ?? false;
+      if (!hadProseDelta) {
+        this.replayStaticProseBeforeFull(
+          sessionId,
+          runId,
+          extractStreamableProseFromBlocks(artifact.blocks),
+          turnId,
+        );
+      }
+    }
+
+    this.emitMessageBlocks(sessionId, runId, artifact.blocks, {
       action: 'stream',
       mode: 'full',
       turnId,
-      debugSource: { origin: 'reconcileProseStreamWithFinalBlocks' },
+      code: options.code,
+      debugSource: {
+        origin: options.debugOrigin,
+        artifactSerialized: artifact.serialized,
+        artifactPhase: artifact.phase,
+      },
     });
+    this.runAuthoritativeFullSerialized.set(streamKey, artifact.serialized);
+    return artifact.blocks;
   }
 
-  /**
-   * 共用 prose 流式 LLM：summarize / plan present 等场景统一走此入口。
-   */
   async streamProseLlm(
     messages: LlmChatMessage[],
     sessionId: string,
@@ -515,80 +546,6 @@ export class AgentRunSseEmitter {
     };
   }
 
-  /** blocks_invoke：非流式整段 JSON → 解析 MessageBlock[]，不向用户推送 JSON token。 */
-  private async invokeSummarizeMessageBlocks(
-    messages: LlmChatMessage[],
-    sessionId: string,
-    runId: number,
-    ruleBlocks: MessageBlock[],
-    fallbackPlainText: string,
-    publishMode?: PlanSummarizePublishMode,
-  ): Promise<{ blocks: MessageBlock[]; rawOutput: string }> {
-    const turnId =
-      this.assistantArtifact.peekTurnId(sessionId, runId) ?? undefined;
-    const summarizeDebugFile = emitLlmPromptDebug(
-      (message) => this.logger.log(message),
-      {
-        runId,
-        sessionId,
-        phase: 'summarize',
-        messages,
-        meta: { ruleBlockCount: ruleBlocks.length, delivery: 'blocks_invoke' },
-      },
-    );
-    if (summarizeDebugFile) {
-      this.logger.log(
-        `LLM summarize invoke file runId=${runId} path=${summarizeDebugFile}`,
-      );
-    }
-    const patches = this.emitRuleBlockPlaceholders(
-      runId,
-      sessionId,
-      ruleBlocks,
-      turnId,
-    );
-
-    const result = await this.llmService.chat({ messages, tools: [] });
-    const rawLlmSource = (result.content ?? '').trim();
-    const routedMessage = rawLlmSource
-      ? extractRoutedMessageFromLlmText(rawLlmSource)
-      : '';
-    const parseSource = routedMessage || rawLlmSource;
-    const parsed = tryParseLlmBlocksFromSummarizeOutput(parseSource);
-    let llmBlocks: MessageBlock[] = [];
-    if (parsed?.length) {
-      llmBlocks = sanitizeMessageBlocks(
-        filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, parsed),
-      );
-    } else if (parseSource && !looksLikeBlocksJsonOutput(parseSource)) {
-      const prose = sanitizeSummarizeUserFacingProse(
-        sanitizeLlmFinalOutput(parseSource),
-      ).trim();
-      if (prose) {
-        llmBlocks = filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
-          textBlock(prose, 'markdown'),
-        ]);
-      }
-    } else if (parseSource && looksLikeBlocksJsonOutput(parseSource)) {
-      this.logger.warn(
-        `summarize blocks_invoke parse failed runId=${runId} model=${result.model}`,
-      );
-    }
-
-    return this.finishSummarizeBlocks(
-      sessionId,
-      runId,
-      ruleBlocks,
-      llmBlocks,
-      fallbackPlainText,
-      patches,
-      parseSource,
-      publishMode,
-      turnId,
-    );
-  }
-
-  /** prose_stream：仅流式 Markdown；最终由服务端 textBlock + ruleBlocks 组装，不解析流内 blocks JSON。 */
   private async streamSummarizeProseOnly(
     messages: LlmChatMessage[],
     sessionId: string,
@@ -624,8 +581,6 @@ export class AgentRunSseEmitter {
     const { routedMessage, rawLlmSource, userMarkdown, proseSession } =
       await this.streamProseLlm(messages, sessionId, runId, { turnId });
 
-    const streamedMessageText =
-      proseSession.sanitizedEmitted || userMarkdown;
     const rawSource = (routedMessage || rawLlmSource || '').trim();
     let llmBlocksForStorage: MessageBlock[] = [];
 
@@ -652,28 +607,19 @@ export class AgentRunSseEmitter {
         }
       }
     } else {
-      const proseSource = sanitizeSummarizeUserFacingProse(
+      const canonicalProse = sanitizeSummarizeUserFacingProse(
         sanitizeLlmFinalOutput(
-          streamedMessageText ||
-            routedMessage ||
-            rawLlmSource ||
-            fallbackPlainText,
+          userMarkdown || routedMessage || rawLlmSource || fallbackPlainText,
         ),
       ).trim();
-      if (proseSource) {
+      if (canonicalProse) {
         llmBlocksForStorage = filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
-          textBlock(proseSource, 'markdown'),
+          textBlock(canonicalProse, 'markdown'),
         ]);
       }
-      if (
-        streamedMessageText.trim() &&
-        !looksLikeBlocksJsonOutput(streamedMessageText) &&
-        !proseSession.proseStreamSuperseded
-      ) {
-        llmBlocksForStorage = mergeStreamedDeltaTextForStorage(
-          ruleBlocks,
-          llmBlocksForStorage,
-          streamedMessageText,
+      if (proseSession.proseStreamSuperseded) {
+        this.logger.warn(
+          `summarize prose stream superseded by blocks JSON runId=${runId}`,
         );
       }
     }
@@ -688,16 +634,11 @@ export class AgentRunSseEmitter {
       routedMessage || rawLlmSource,
       publishMode,
       turnId,
-      {
-        streamedProse: proseSession.sanitizedEmitted,
-        proseStreamSuperseded: proseSession.proseStreamSuperseded,
-      },
     );
   }
 
   /**
-   * 定稿交付：权威 full SSE（与 artifact / 落库一致）。
-   * 正文 delta 须在 LLM stream 回调中已推送；此处不再模拟切片。
+   * 用户可见 assistant 定稿唯一出口：先 commit artifact，再推与 artifact 一致的权威 full。
    */
   publishAssistantBlocks(
     sessionId: string,
@@ -714,23 +655,6 @@ export class AgentRunSseEmitter {
     if (sanitized.length === 0) {
       return [];
     }
-    const turnId =
-      options?.turnId ??
-      this.assistantArtifact.peekTurnId(sessionId, runId) ??
-      undefined;
-
-    this.emitMessageBlocks(sessionId, runId, sanitized, {
-      action: 'stream',
-      mode: 'full',
-      turnId,
-      code: options?.code,
-      debugSource: {
-        origin: 'publishAssistantBlocks',
-        phase: options?.phase ?? 'final',
-        commitArtifact: options?.commitArtifact !== false,
-        inputBlocks: blocks,
-      },
-    });
 
     if (options?.commitArtifact !== false) {
       this.assistantArtifact.commit(
@@ -740,7 +664,13 @@ export class AgentRunSseEmitter {
         options?.phase ?? 'final',
       );
     }
-    return sanitized;
+
+    return this.emitAuthoritativeFullFromArtifact(sessionId, runId, {
+      turnId: options?.turnId,
+      code: options?.code,
+      replayProseIfNeeded: true,
+      debugOrigin: 'publishAssistantBlocks',
+    });
   }
 
   private extractAiMessageText(message: AIMessage): string {
@@ -758,5 +688,4 @@ export class AgentRunSseEmitter {
     }
     return '';
   }
-
 }

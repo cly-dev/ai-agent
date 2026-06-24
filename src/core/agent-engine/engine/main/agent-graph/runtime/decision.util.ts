@@ -2,6 +2,7 @@ import { AIMessage } from '@langchain/core/messages';
 import type { LlmChatMessage } from '../../../../../llm/llm.types';
 import {
   extractAgentPromptMessages,
+  extractPageContextForDecision,
   extractSessionHistoryForDecision,
   extractSessionMemoryForDecision,
   joinAgentPromptText,
@@ -76,6 +77,10 @@ export function buildLlmInvokeMessages(
     const messages: LlmChatMessage[] = [];
 
     for (const item of extractAgentPromptMessages(promptMessages)) {
+      messages.push({ role: item.role, content: item.content });
+    }
+
+    for (const item of extractPageContextForDecision(promptMessages)) {
       messages.push({ role: item.role, content: item.content });
     }
 

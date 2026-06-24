@@ -150,4 +150,6 @@ export type SkillClientListItem = {
   requiresWriteConfirmation: boolean;
   toolIds: number[];
   hostToolIds: number[];
+  /** 仅当请求带 ?page= 时返回：该 Skill 的 Host Tool 是否命中当前页 scope */
+  pageMatched?: boolean;
 };

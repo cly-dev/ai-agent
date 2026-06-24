@@ -1067,6 +1067,19 @@ export function nextSanitizedSummarizeStreamDelta(
   return { delta: '', emitted: previouslyEmitted };
 }
 
+/** 从 blocks 提取可流式回放的正文（text + alert），与 SSE replay / 定稿比对同源。 */
+export function extractStreamableProseFromBlocks(blocks: MessageBlock[]): string {
+  const parts: string[] = [];
+  for (const block of blocks) {
+    if (block.type === 'text' && block.content.trim()) {
+      parts.push(block.content.trim());
+    } else if (block.type === 'alert' && block.message?.trim()) {
+      parts.push(block.message.trim());
+    }
+  }
+  return parts.join('\n\n').trim();
+}
+
 export function messageBlocksToPlainText(blocks: MessageBlock[]): string {
   const parts: string[] = [];
   for (const block of blocks) {

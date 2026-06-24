@@ -47,6 +47,24 @@ export function skillMatchesPageHostTools(
 }
 
 /**
+ * C 端 Skill 列表：带 page scope 时的可见性。
+ * - 纯 HTTP Skill：任意页可见（编排类能力）
+ * - 含 Host Tool 的 Skill：须与当前页 scoped host_tool 有交集
+ */
+export function skillIsVisibleOnClientPage(
+  skill: SkillRunnableCapabilities,
+  scopedHostToolIds: ReadonlySet<number>,
+): boolean {
+  if (skill.hostToolIds.length === 0) {
+    return skill.skillToolIds.length > 0;
+  }
+  if (scopedHostToolIds.size === 0) {
+    return false;
+  }
+  return skillMatchesPageHostTools(skill, scopedHostToolIds);
+}
+
+/**
  * Plan / 展开：intent 收窄的 HTTP tool + 当前页 scoped Host Tool 是否足以解析该 Skill。
  */
 export function skillIsResolvableInScope(

@@ -40,3 +40,33 @@ export {
   summarizeHostToolsForLlmSchema,
 } from './host-tool-langchain.util';
 export { formatPageContextPromptBlock } from './page-context.prompt.util';
+export type {
+  PageContextDataAssessment,
+  PageContextDataSufficiency,
+  PageContextPlanKind,
+  PageContextTaskKind,
+  PageContextUsage,
+} from './page-context-usage.types';
+export {
+  isHostPageWorkflowEnabled,
+  isPageContextOuterPlanActive,
+  hasPageContextMaterializedObservations,
+  planInitialSummarizeReadyOnFresh,
+  resolveCanonicalTurnRoute,
+  resolvePageContextExecutionPolicy,
+  shouldMaterializePageContextFromUsage,
+  type PageContextExecutionPolicy,
+  type TurnExecutionRoute,
+} from './page-context-execution-policy.util';
+export {
+  PAGE_CONTEXT_REVIEW_OBSERVATION_NAME,
+  assessPageContextData,
+  buildPageContextRouteHint,
+  isPageContextSourcedObservation,
+  materializePageContextObservations,
+  mergePageContextPreloadedObservations,
+  readEntityIdFromPageContextObservation,
+  pageContextObservationMatchesEntity,
+  resolvePageContextEntityIdForPlanSatisfaction,
+  resolveEffectivePageContextApplies,
+} from './page-context-usage.util';

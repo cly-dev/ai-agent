@@ -132,6 +132,7 @@ function resolvePlanToolStepPreToolsOutcome(input: {
   observations: ToolObservation[];
   scopedTools?: PlanScopedTool[];
   skillConfig?: unknown;
+  pageContextEntityId?: string | null;
 }): ResultCheckOutcome | null {
   const pendingToolStep = getPendingPlanToolStep(input.taskPlan);
   if (
@@ -144,6 +145,7 @@ function resolvePlanToolStepPreToolsOutcome(input: {
       taskPlan: input.taskPlan,
       skillConfig: input.skillConfig,
       purpose: 'pre_tools_advance',
+      pageContextEntityId: input.pageContextEntityId,
     })
   ) {
     return null;
@@ -186,6 +188,7 @@ export function resolvePreToolsResultCheck(input: {
   scopedTools?: PlanScopedTool[];
   observationBuckets: PlanObservationBuckets;
   skillConfig?: unknown;
+  pageContextEntityId?: string | null;
 }): ResultCheckOutcome {
   const base: Pick<ResultCheckOutcome, 'phase' | 'duplicateSkipCalls'> = {
     phase: 'pre_tools',
@@ -238,6 +241,7 @@ export function resolvePreToolsResultCheck(input: {
       observations: satisfactionObservations,
       scopedTools: input.scopedTools,
       skillConfig: input.skillConfig,
+      pageContextEntityId: input.pageContextEntityId,
     });
     if (planOutcome) {
       return planOutcome;

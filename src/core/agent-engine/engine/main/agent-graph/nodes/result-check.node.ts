@@ -22,6 +22,7 @@ import {
   type ResultCheckRouteAuthority,
 } from '../../../tool/result-check-route.util';
 import { pendingRespondFromObservation } from '../../../turn/turn-respond.util';
+import { pageContextEntityIdFromGraphState } from '../../../turn/turn-execution-contract.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import { summarizeAvailableSkillsForOuterPlan } from '../../plan/outer-plan-skills.util';
 import {
@@ -83,7 +84,8 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
               taskPlan: state.taskPlan,
               scopedTools: state.scopedTools,
               skillConfig: state.activeSkillConfig,
-              runOwnedObservations: state.toolObservations,
+              observationBuckets: planObservationBucketsFromState(state),
+              pageContextEntityId: pageContextEntityIdFromGraphState(state),
             });
             taskPlanForCheck = synced.taskPlan;
             planAdvanceFromSync = synced.planAdvance;
@@ -100,6 +102,7 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
               scopedTools: state.scopedTools,
               observationBuckets: planObservationBucketsFromState(state),
               skillConfig: state.activeSkillConfig,
+              pageContextEntityId: pageContextEntityIdFromGraphState(state),
             });
           } else if (savedRoundMeta) {
             const lastRoundIndex =

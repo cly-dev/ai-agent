@@ -2,9 +2,11 @@ import { expandPendingSkillStepIfNeeded } from '../../skill/skill-frame-expand.u
 import { resolveSkillContextFromPlan } from '../../plan/plan-stack.util';
 import { enrichPlanStepsWithHostTools } from '../../host-tool/host-tool-plan.util';
 import { skipPendingHostToolStepsByContract } from '../../host-tool/host-tool-llm.util';
+import { pageContextEntityIdFromGraphState } from '../../../turn/turn-execution-contract.util';
 import { resolveTurnExecutionContract } from '../../../turn/turn-execution-contract.util';
+import { isPageContextOuterPlanActive } from '../../../../../host-bridge/page-context-execution-policy.util';
 import { syncTaskPlanBeforeReAct, toPlanSyncAgentStep } from '../../plan/plan-sync.util';
-import { planRunContextFromState } from '../../plan/plan-observation-scope.util';
+import { planObservationBucketsFromState, planRunContextFromState } from '../../plan/plan-observation-scope.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import type { PlanSyncSite } from '../../plan/plan-sync.util';
 import type { TaskPlanAdvanceResult } from '../../plan/task-plan.types';
@@ -59,6 +61,14 @@ export function createAgentGraphSkillFrameHelpers(
       name: tool.name,
       description: tool.description,
     }));
+    const contract = resolveTurnExecutionContract(state, undefined, deps.logger);
+    if (isPageContextOuterPlanActive(contract.plan.pageContextPlan)) {
+      return {
+        ...state,
+        scopedHostTools: hostBundle.scopedHostTools,
+        scopedHostLangChainTools: hostBundle.scopedHostLangChainTools,
+      };
+    }
     const expanded = await expandPendingSkillStepIfNeeded({
       plan: state.taskPlan,
       scopedTools: state.scopedTools,
@@ -75,7 +85,6 @@ export function createAgentGraphSkillFrameHelpers(
       scopedHostToolIds: hostBundle.scopedHostTools.map((tool) => tool.id),
     });
     const skillCtx = resolveSkillContextFromPlan(expanded.plan);
-    const contract = resolveTurnExecutionContract(state, undefined, deps.logger);
     let taskPlan = expanded.plan;
     let contractSkippedObservations: Array<{
       name: string;
@@ -169,7 +178,8 @@ export function createAgentGraphSkillFrameHelpers(
       taskPlan: graphState.taskPlan,
       scopedTools: graphState.scopedTools,
       skillConfig: graphState.activeSkillConfig,
-      runOwnedObservations: graphState.toolObservations,
+      observationBuckets: planObservationBucketsFromState(graphState),
+      pageContextEntityId: pageContextEntityIdFromGraphState(graphState),
     });
     if (synced.taskPlan && synced.taskPlan !== graphState.taskPlan) {
       graphState = { ...graphState, taskPlan: synced.taskPlan };

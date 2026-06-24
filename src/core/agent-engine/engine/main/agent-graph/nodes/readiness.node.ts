@@ -83,6 +83,8 @@ export function createReadinessNode(
         allToolObservations(stateAfterSkill),
       ),
       pageContext,
+      pageContextUsage:
+        stateAfterSkill.turnExecutionContract?.plan.pageContextUsage ?? null,
     });
     const readinessStep: AgentRunStep = {
       step: stepNum,

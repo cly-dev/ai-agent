@@ -1,3 +1,8 @@
+import type {
+  PageContextPlanKind,
+  PageContextUsage,
+} from '../../../host-bridge/page-context-usage.types';
+import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
 import type { TurnRespondRequest } from './turn-respond.types';
 import type { TurnRoutingDecision } from './turn-routing.types';
 
@@ -16,6 +21,9 @@ export type TurnPlanExecutionPolicy = {
   allowSessionResume: boolean;
   /** 进入新 Plan 前是否放弃 activeTask（仅 fresh plan 路径）。 */
   abandonActiveTaskOnFreshPlan: boolean;
+  /** 本轮 pageContext 消费策略（route 判定 + 结构化评估）。 */
+  pageContextUsage: PageContextUsage;
+  pageContextPlan: PageContextPlanKind;
 };
 
 /**
@@ -34,4 +42,5 @@ export type BuildTurnExecutionContractInput = {
   requestedSkillId: number | null;
   requestedSkillIsHostOnly: boolean;
   pageHostCandidateId: number | null;
+  pageContext: AgentChatPageContext | null;
 };

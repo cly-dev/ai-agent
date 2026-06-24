@@ -60,6 +60,12 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 X-App-Dsn: your-app-dsn
 ```
 
+```http
+GET /agent/3/skills/client?page=comment-detail
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+X-App-Dsn: your-app-dsn
+```
+
 ### 2.2 fetch 封装示例
 
 ```ts
@@ -159,6 +165,17 @@ Skill.agentId = :agentId
     - Skill HTTP Tool ∩ 用户允许 Tool 非空
     - SkillHostTool ∩ AgentHostTool 非空（HostTool.isActive）
   AND 可选 name / capabilityKey / keyword 客户端筛选
+  AND 可选 page（页面 scope）按页过滤（见 §4.5）
+```
+
+**带 `page` 时的过滤（与运行时 `page_host_unique` 对齐）：**
+
+```text
+先按上文得到「用户可运行」Skill 全集
+  → 若 query.page 非空：
+      - 纯 HTTP Skill（hostToolIds 为空）→ 保留（全站编排类能力）
+      - 含 Host Tool 的 Skill → 仅当 Skill.hostToolIds ∩ 当前页 scoped host_tool ≠ ∅
+      - 响应每项附带 pageMatched（是否命中当前页 Host 绑定）
 ```
 
 **Plan 自动选 Skill（intent 收窄 + 当前页 host_tool）** 使用 `listResolvableSkillsForScopedTools` + `skillIsResolvableInScope`：
@@ -187,6 +204,7 @@ Skill.agentId = :agentId
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
+| `page` | string | **页面 scope**（与 `pageContext.page`、`HostPage.scope` 一致，kebab-case）。传入后按页过滤 Skill 列表；纯 HTTP Skill 仍返回 |
 | `name` | string | Skill 名称（模糊，忽略大小写） |
 | `capabilityKey` | string | 能力键（模糊） |
 | `keyword` | string | 匹配 name / description / capabilityKey |
@@ -205,7 +223,8 @@ Skill.agentId = :agentId
     "riskLevel": "L2",
     "requiresWriteConfirmation": true,
     "toolIds": [45, 46],
-    "hostToolIds": [12]
+    "hostToolIds": [12],
+    "pageMatched": true
   }
 ]
 ```
@@ -220,8 +239,46 @@ Skill.agentId = :agentId
 | `requiresWriteConfirmation` | boolean | `L2`/`L3` 时为 true；UI 可提示「可能触发写确认」 |
 | `toolIds` | number[] | 该 Skill 绑定的 HTTP Tool ID（与用户允许 Tool 有交集时非空） |
 | `hostToolIds` | number[] | 该 Skill 绑定且落在 Agent Host Tool 白名单内的 Host Tool ID |
+| `pageMatched` | boolean | **仅当请求带 `?page=` 时返回**：该 Skill 的 Host Tool 是否命中当前页 scope |
 
 > **过滤规则**：与 `POST .../messages` 的 `skillId` 校验一致 — 角色可见 **且** 至少有一个可运行能力（HTTP Tool 交集 **或** Agent 白名单内的 SkillHostTool）。纯 Host Tool Skill（`toolIds: []`、`hostToolIds` 非空）会正常返回。
+
+### 4.5 按页面过滤（`page`）
+
+> **前端迁移专文**：[skill-client-page-filter-frontend.md](./skill-client-page-filter-frontend.md)（变更摘要、迁移步骤、检查清单）
+
+**是否合理？** 推荐。业务页内嵌 Chat 时，用户应看到 **与当前页能力一致** 的 Skill；与发消息时的 `pageContext.page`、运行时 `resolveAutoOuterPlanSkill`（`page_host_unique`）使用同一套 `HostPage.scope`。
+
+| 场景 | 请求 | 结果 |
+|------|------|------|
+| 评论详情页 | `?page=comment-detail` | 返回评论页 Host Skill + 通用 HTTP Skill |
+| 首页 / 无页上下文 | 不传 `page` | 返回全部可运行 Skill |
+| 页内无 host_tool 配置 | `?page=unknown-page` | 仅返回纯 HTTP Skill；`pageMatched` 均为 false 或字段不出现 |
+
+**`page` 取值**：与 [页面上下文对接](./host-page-context-host-action-frontend.md) 中 `pageContext.page` **完全一致**（kebab-case，全站稳定）。
+
+```ts
+// 路由进入评论详情
+const page = 'comment-detail';
+chat.setPageContext({ page, entity: { type: 'comment', id: commentId } });
+
+// Skill 选择器与 pageContext 对齐
+const skills = await clientGet<SkillClientListItem[]>(
+  `/agent/${agentId}/skills/client`,
+  { page },
+);
+```
+
+**默认选中建议（前端启发式，非服务端强制）：**
+
+```ts
+const pageBound = skills.filter((s) => s.pageMatched);
+if (pageBound.length === 1) {
+  defaultSkillId = pageBound[0].id; // 对齐运行时 page_host_unique
+} else if (pageBound.length > 1) {
+  // 展示列表让用户选；或不传 skillId 交给 Plan/turnRoute
+}
+```
 
 ---
 
@@ -240,10 +297,14 @@ Skill.agentId = :agentId
 ### 5.2 Skill 选择 / 能力入口
 
 ```text
-1. GET /agent/{agentId}/skills/client
-2. 若 [] → 仍可进入对话（Agent 走通用 Tool 决策，不强制选 Skill）
-3. 若多项 → 展示能力卡片；requiresWriteConfirmation=true 可加角标
+1. 从当前路由解析 page scope（与 setPageContext 一致）
+2. GET /agent/{agentId}/skills/client?page={page}
+3. 若 [] → 仍可进入对话（不传 skillId，由 turnRoute/Plan 决策）
+4. 若 pageMatched=true 仅一项 → 可默认选中该 Skill
+5. 若多项 → 展示能力卡片；requiresWriteConfirmation=true 可加角标
 ```
+
+无固定业务页时（如全局浮层 Chat）可省略 `page`，拉全量列表。
 
 ### 5.3 创建会话与发送消息
 
@@ -259,12 +320,10 @@ Skill.agentId = :agentId
 | | 未传 `skillId` | 传了 `skillId` |
 |---|----------------|----------------|
 | 发消息前校验 | — | 角色可见 + **HTTP Tool 交集或 Agent 白名单内 SkillHostTool**（不合法直接 400） |
-| 图入口 | `intent` → `plan` | **跳过 intent**，`START` → `plan` |
-| scopedTools | intent 类目收窄 + bind | **仅 Skill 绑定 Tool**（不做 intent/bind） |
-| 外层 Plan | LLM 选 Skill 或模板 | 固定单步 `kind=skill` |
-| 内层 Plan | workflow / 模板 / LLM | 同左 |
-| session resume | 可续跑 | **不续跑**，强制新 Plan |
-| readiness | 对话意图 + gather 槽位 | **仅 gather 槽位**（不因寒暄拦截） |
+| 图入口 | `intent` → `turnRoute` → `plan` | 同左（仍经 intent/turnRoute；scopedTools 预绑 Skill） |
+| scopedTools | intent 类目收窄 + bind | 预加载 Skill 绑定 Tool |
+| 外层 Plan | 契约 + LLM / page_host | 显式 Skill 步 |
+| session resume | 可续跑（显式 skillId 时跳过 resume gate） | 不续跑 |
 
 ```json
 {
@@ -340,10 +399,13 @@ export type SkillClientListItem = {
   requiresWriteConfirmation: boolean;
   toolIds: number[];
   hostToolIds: number[];
+  /** 仅当 GET 带 ?page= 时存在 */
+  pageMatched?: boolean;
 };
 
 /** GET /agent/:agentId/skills/client query */
 export type QueryClientSkillByAgent = {
+  page?: string;
   name?: string;
   capabilityKey?: string;
   keyword?: string;
@@ -370,6 +432,8 @@ export type SaveMessageBody = {
 - [ ] `agentId` 来自 available 列表，避免 404
 - [ ] 空列表有空状态，不当作接口错误
 - [ ] `requiresWriteConfirmation` 仅作 UI 提示；实际写确认仍走 SSE `confirmation_required`
+- [ ] 业务页内 Skill 列表带 `?page=`，与 `pageContext.page` 一致
+- [ ] `pageMatched===true` 唯一时考虑默认 skillId
 - [ ] 不在 C 端展示 `prompt` / `config`（本接口不返回）
 
 ---
@@ -382,6 +446,6 @@ export type SaveMessageBody = {
 | 角色 Tool 权限 | `src/modules/agent/util/agent-client-access.util.ts` |
 | Skill client 列表 | `src/modules/skill/skill.controller.ts` → `findClientListByAgentForUser` |
 | 运行时 Skill 解析 | `src/core/skill/skill.service.ts` → `listResolvableSkillsForScopedTools` / `resolveSkillsForOuterPlan` / `getRunnableSkillDetailById` |
-| 可运行判定 | `src/core/skill/skill-runnable.util.ts` → `skillIsRunnableForUser` / `skillIsResolvableInScope` / `skillMatchesPageHostTools` |
+| 可运行判定 | `src/core/skill/skill-runnable.util.ts` → `skillIsRunnableForUser` / `skillIsVisibleOnClientPage` / `skillMatchesPageHostTools` |
 | 外层自动选 Skill | `src/core/agent-engine/engine/main/outer-plan-skill-resolve.util.ts` → `resolveAutoOuterPlanSkill` |
 | Plan 候选查询 | `src/core/skill/skill.service.ts` → `listResolvableSkillsForScopedTools` |

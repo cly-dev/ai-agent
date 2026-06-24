@@ -214,7 +214,7 @@ export function publishMutationGateBlockedDraft(
     { turnId: artifactTurnId, phase: 'draft' },
   );
   if (blocks.length === 0) {
-    deps.assistantArtifact.commit(
+    deps.sse.commitAssistantArtifact(
       sessionId,
       runId,
       [textBlock(trimmed, 'markdown')],

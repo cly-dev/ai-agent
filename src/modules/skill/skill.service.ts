@@ -10,9 +10,15 @@ import {
   toPaginatedResult,
 } from '../../common/pagination';
 import { skillRequiresWriteConfirmation } from '../../core/risk/risk-level.util';
-import { filterRunnableSkills } from '../../core/skill/skill-runnable.util';
+import {
+  filterRunnableSkills,
+  normalizeSkillRunnableCapabilities,
+  skillIsVisibleOnClientPage,
+  skillMatchesPageHostTools,
+} from '../../core/skill/skill-runnable.util';
 import { SkillService as SkillRuntimeService } from '../../core/skill/skill.service';
 import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
+import { AgentHostToolCatalogService } from '../../core/runtime-cache/agent-host-tool-catalog.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentService } from '../agent/agent.service';
 import { normalizeCapabilityKey } from './util/skill-capability-key.util';
@@ -43,6 +49,7 @@ export class SkillService {
     private readonly skillRuntime: SkillRuntimeService,
     private readonly agentService: AgentService,
     private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
+    private readonly hostToolCatalogService: AgentHostToolCatalogService,
   ) {}
 
   async create(
@@ -157,16 +164,57 @@ export class SkillService {
     const filtered = rows.filter((row) =>
       this.matchesClientSkillQuery(row, query),
     );
-    return filtered.map((row) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      capabilityKey: row.capabilityKey,
-      riskLevel: row.riskLevel,
-      requiresWriteConfirmation: skillRequiresWriteConfirmation(row.riskLevel),
-      toolIds: row.toolIds,
-      hostToolIds: row.hostToolIds,
-    }));
+    const pageScope = query.page?.trim() ?? '';
+    const pageHostToolIds =
+      pageScope.length > 0
+        ? await this.resolvePageScopedHostToolIds(
+            appClientId,
+            agentId,
+            pageScope,
+          )
+        : null;
+    const pageFiltered =
+      pageHostToolIds != null
+        ? filtered.filter((row) =>
+            skillIsVisibleOnClientPage(
+              normalizeSkillRunnableCapabilities(row),
+              pageHostToolIds,
+            ),
+          )
+        : filtered;
+    return pageFiltered.map((row) => {
+      const item: SkillClientListItem = {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        capabilityKey: row.capabilityKey,
+        riskLevel: row.riskLevel,
+        requiresWriteConfirmation: skillRequiresWriteConfirmation(row.riskLevel),
+        toolIds: row.toolIds,
+        hostToolIds: row.hostToolIds,
+      };
+      if (pageHostToolIds != null) {
+        item.pageMatched = skillMatchesPageHostTools(
+          normalizeSkillRunnableCapabilities(row),
+          pageHostToolIds,
+        );
+      }
+      return item;
+    });
+  }
+
+  private async resolvePageScopedHostToolIds(
+    appClientId: number,
+    agentId: number,
+    pageScope: string,
+  ): Promise<Set<number>> {
+    const { tools } = await this.hostToolCatalogService.resolveLlmHostTools({
+      appClientId,
+      agentId,
+      skillId: null,
+      pageScope,
+    });
+    return new Set(tools.map((tool) => tool.id));
   }
 
   async findPageByAppClient(

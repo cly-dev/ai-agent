@@ -2,6 +2,7 @@
 
 > 版本：与 agent-server 当前实现同步（2026-06）  
 > 适用接口：`GET /chat/:sessionId/stream`（`text/event-stream`）  
+> **后端发布 / 落库全流程排查**：[assistant-message-publish-flow.md](./assistant-message-publish-flow.md)  
 > 写操作确认（`confirmation_required` / `confirmWrite`）：见 [write-confirmation-frontend.md](./write-confirmation-frontend.md)  
 > Run 步骤与 Turn 时间线（调试 primary/worker）：见 [agent-run-steps.md](./agent-run-steps.md)
 
@@ -165,7 +166,7 @@ es.addEventListener('error', (e) => onError(JSON.parse(e.data)));
 
 **前端处理**：找到 `runId` 对应槽位，将 `blocks[0].content` **追加**到当前文本 block（或合并为一条 `text` block）。
 
-> **服务端约定（2026-06）**：当本轮含 `table` / `chart` 等结构化 block，或 LLM 输出 `{"blocks":[...]}` / 代码围栏时，**不会**把 JSON 片段当 `delta` 推送；顺序为 `loading`（full）→（可选）`patch` 替换 → 纯叙述 `text` 用 `full` 一次到位。
+> **服务端约定（2026-06）**：summarize 阶段 **统一 prose 流式**（`stream.mode: delta` + 定稿 `full`）。`table` / `chart` 等结构化 block 由服务端 ruleBlocks 注入（`loading` → `patch`），LLM 只流式 Markdown 正文；**不会**把 `{"blocks":[...]}` 或代码围栏碎片当 `delta` 推送。无 LLM 流式的兜底路径（错误 fallback、纯规则块）会先 **回放** 正文 delta，再推权威 `full`。
 
 ---
 
@@ -174,7 +175,7 @@ es.addEventListener('error', (e) => onError(JSON.parse(e.data)));
 **单条完整片段**（非累积全文），用于：
 
 - `loading` 占位；
-- 或未走 token 流式时的一次性 `text` 全文。
+- 或未走 LLM token 流式时，由服务端将定稿正文 **回放为 delta** 后再推 `full`（与 LLM 流式体验一致）。
 
 ```json
 {
@@ -235,12 +236,20 @@ for (const { replaceId, block } of patches) {
 }
 ```
 
-### 4.4 定稿 `stream` + `mode: full`（无 `final`）
+### 4.4 定稿 `stream` + `mode: full`（权威快照）
+
+**后端不变量**（2026-06）：用户可见 assistant 内容只经 `publishAssistantBlocks` 发布：
+
+1. 先 `RunAssistantArtifact.commit`（落库同源）
+2. 再从 artifact 推 **唯一权威** `stream.full`（`blocks` 与 `artifact.serialized` 字节级一致）
+3. `finishAgentRun` 仅在权威 full 尚未推送时补推同内容（去重）
+
+流式 `delta` 仅为过程预览；**落库与最后权威 full 始终以 artifact 为准**，不依赖前端 reconcile。
 
 每条用户可见回复在 `complete` 前都会经历：
 
-1. **若干 `stream.delta`**（LLM 实时 token；invoke 兜底时由服务端按同一状态机回放）
-2. **一条权威 `stream.full`**（与 artifact / 落库 blocks 完全一致，用于覆盖/对齐 delta）
+1. **若干 `stream.delta`**（LLM 实时 token；无 LLM 流时由服务端按 artifact 正文回放）
+2. **一条权威 `stream.full`**（payload 来自 artifact，与落库 `Message.content` 一致）
 3. 工具类回复可有 **`patch`** 替换 `loading` 占位
 
 仅当本轮从未推过任何 `message` 时，run 收尾可能 **补发** delta+full（与 artifact 一致）。  
@@ -263,23 +272,20 @@ complete
 
 → 只需维护 **一个** `text` block，按 `stream.mode: delta` 追加；若随后收到同 run 的 `stream.full`，用 full 覆盖 delta 拼接结果；然后等 `complete`。
 
-模型若直接流式 Markdown 正文，服务端在 **prose** 模式逐 token 推 **delta**。  
-若输出 `{"blocks":[{"type":"text","content":"..."}]}`，则从 `content` 字段增量解码推 **delta**。  
-定稿时的 `stream.full` 与入库内容相同，前端应以 full 为准对齐。
+所有 summarize 路径（闲聊、澄清、读/写工具结果、写确认恢复等）均为 **prose 流式**：服务端逐 token 推 **delta**，定稿时推权威 **full**（与落库一致）。前端应以 full 为准对齐。
 
 ### 5.2 工具结果 + 表格/图表
 
 ```text
 message stream full   seq=1   blocks=[loading id=blk-216-0]
-message stream delta  seq=2..n  text 片段（可选；blocks JSON 时不推围栏碎片）
+message stream delta  seq=2..n  Markdown 正文片段
 message patch         seq=n+1  patches=[{ replaceId: blk-216-0, block: table }]
-message stream full   seq=n+2..  LLM 解析出的 list/text 等（多 block JSON 时逐条追加）
-message stream full   seq=last  权威全文（与落库一致，覆盖 delta）
+message stream full   seq=last  权威全文（text + table 等，与落库一致，覆盖 delta）
 complete 前           seq=final  finishAgentRun 再推一条权威 full（与落库一致）
 complete
 ```
 
-→ `loading` 先占位，`patch` 替换；多 block JSON 时 LLM 块在 patch 后逐条 `full` 追加；**`complete` 前最后一条 `stream.full` 为权威快照**。
+→ `loading` 先占位，`patch` 替换为 table/chart；正文走 **delta** 流式；**`complete` 前最后一条 `stream.full` 为权威快照**。
 
 ### 5.3 处理顺序（伪代码）
 

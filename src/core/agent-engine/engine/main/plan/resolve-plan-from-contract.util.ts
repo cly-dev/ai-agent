@@ -7,7 +7,11 @@ import type {
   ResolveOuterPlanInput,
   ResolveTaskPlanResult,
 } from './task-plan.types';
-import { buildRequestedSkillOuterPlanResult } from './task-plan.util';
+import {
+  buildPageContextEntityReadPlanResult,
+  buildPageContextInlinePlanResult,
+  buildRequestedSkillOuterPlanResult,
+} from './task-plan.util';
 
 /**
  * Plan 唯一入口：只读 TurnExecutionContract，不再分散 gate。
@@ -23,6 +27,20 @@ export async function resolvePlanFromContract(input: {
   const { contract, planInput } = input;
   if (!contract.plan.enabled) {
     throw new Error('resolvePlanFromContract called while contract.plan.enabled is false');
+  }
+
+  if (contract.plan.pageContextPlan === 'inline_answer') {
+    return buildPageContextInlinePlanResult({
+      userMessage: planInput.userMessage,
+      pageContextUsage: contract.plan.pageContextUsage,
+    });
+  }
+  if (contract.plan.pageContextPlan === 'entity_read_detail') {
+    return buildPageContextEntityReadPlanResult({
+      userMessage: planInput.userMessage,
+      scopedToolSummaries: planInput.scopedToolSummaries,
+      pageContextUsage: contract.plan.pageContextUsage,
+    });
   }
 
   switch (contract.plan.skillSelect) {

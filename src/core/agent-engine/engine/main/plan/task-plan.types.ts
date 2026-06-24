@@ -13,7 +13,7 @@ export type TaskPlanSummaryObservation = {
   enumLabelsByPath?: Record<string, Record<string, string>>;
 };
 
-export type TaskPlanSource = 'workflow' | 'llm' | 'template' | 'minimal';
+export type TaskPlanSource = 'workflow' | 'llm' | 'template' | 'minimal' | 'page_context';
 
 export type TaskPlanResolveMethod = TaskPlanSource;
 

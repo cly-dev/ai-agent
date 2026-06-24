@@ -334,13 +334,7 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
                   ),
                   { turnId, phase: 'draft' },
                 );
-                deps.assistantArtifact.commit(
-                  ctx.input.sessionId,
-                  ctx.input.runId,
-                  blocks,
-                  'draft',
-                );
-                previewReady = true;
+                previewReady = blocks.length > 0;
               }
             }
             if (!previewReady) {

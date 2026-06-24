@@ -1,9 +1,19 @@
 import type { StoredTaskPlan } from '../../../memory/goa/session-goa.types';
+import {
+  assessPageContextData,
+  resolvePageContextEntityIdForPlanSatisfaction,
+} from '../../../host-bridge/page-context-usage.util';
+import {
+  isHostPageWorkflowEnabled,
+  resolvePageContextExecutionPolicy,
+} from '../../../host-bridge/page-context-execution-policy.util';
+import type { PageContextUsage } from '../../../host-bridge/page-context-usage.types';
 import type { AgentGraphState } from '../main/types/agent-engine.types';
 import type {
   BuildTurnExecutionContractInput,
   TurnExecutionContract,
   TurnPlanExecutionPolicy,
+  TurnPlanSkillSelect,
 } from './turn-execution-contract.types';
 import type { TurnRoutingDecision } from './turn-routing.types';
 
@@ -21,6 +31,10 @@ function pageHostMatchesRouting(
   return true;
 }
 
+function emptyPageContextUsage(): PageContextUsage {
+  return { ...assessPageContextData(null), applies: false };
+}
+
 function basePlanPolicy(
   overrides: Partial<TurnPlanExecutionPolicy> & Pick<TurnPlanExecutionPolicy, 'enabled'>,
 ): TurnPlanExecutionPolicy {
@@ -33,12 +47,14 @@ function basePlanPolicy(
     allowHostToolLlmDispatch: false,
     allowSessionResume: true,
     abandonActiveTaskOnFreshPlan: true,
+    pageContextUsage: emptyPageContextUsage(),
+    pageContextPlan: 'none',
     ...overrides,
   };
 }
 
 function resolvePlanSkillSelect(input: BuildTurnExecutionContractInput): {
-  skillSelect: TurnPlanExecutionPolicy['skillSelect'];
+  skillSelect: TurnPlanSkillSelect;
   explicitSkillId: number | null;
   pageHostSkillId: number | null;
 } {
@@ -64,6 +80,15 @@ function resolvePlanSkillSelect(input: BuildTurnExecutionContractInput): {
     };
   }
   return { skillSelect: 'llm', explicitSkillId: null, pageHostSkillId: null };
+}
+
+export function pageContextEntityIdFromGraphState(
+  state: Pick<AgentGraphState, 'turnExecutionContract' | 'pageContext'>,
+): string | null {
+  return resolvePageContextEntityIdForPlanSatisfaction({
+    pageContextUsage: state.turnExecutionContract?.plan.pageContextUsage,
+    pageContext: state.pageContext ?? null,
+  });
 }
 
 /** 由 turnRoute 节点产出：本轮唯一执行策略。 */
@@ -100,8 +125,18 @@ export function buildTurnExecutionContract(
     };
   }
 
-  const onPage = routing.route === 'on_page_task';
   const skillSelect = resolvePlanSkillSelect(input);
+  const pageContextPolicy = resolvePageContextExecutionPolicy({
+    route: routing.route,
+    pageContextApplies: routing.pageContextApplies,
+    pageContextTaskKind: routing.pageContextTaskKind,
+    pageContext: input.pageContext,
+  });
+  const pageContextPlan = pageContextPolicy.plan;
+  const hostWorkflow = isHostPageWorkflowEnabled({
+    route: routing.route,
+    pageContextPlan,
+  });
 
   return {
     routing,
@@ -109,11 +144,13 @@ export function buildTurnExecutionContract(
     plan: basePlanPolicy({
       enabled: true,
       ...skillSelect,
-      allowHostToolSteps: onPage,
-      allowHostToolAutoDispatch: onPage,
-      allowHostToolLlmDispatch: onPage,
+      allowHostToolSteps: hostWorkflow,
+      allowHostToolAutoDispatch: hostWorkflow,
+      allowHostToolLlmDispatch: hostWorkflow,
       allowSessionResume: true,
       abandonActiveTaskOnFreshPlan: true,
+      pageContextUsage: pageContextPolicy.usage,
+      pageContextPlan,
     }),
   };
 }
@@ -128,6 +165,8 @@ export function buildLegacyTurnExecutionContract(
       method: 'fallback_orchestrated',
       reason,
       suggestedSkillId: null,
+      pageContextApplies: false,
+      pageContextTaskKind: 'none',
     },
     terminalRespond: null,
     plan: basePlanPolicy({
@@ -151,6 +190,8 @@ export function buildRestrictiveTurnExecutionContract(
       method: 'fallback_orchestrated',
       reason,
       suggestedSkillId: null,
+      pageContextApplies: false,
+      pageContextTaskKind: 'none',
     },
     terminalRespond: null,
     plan: basePlanPolicy({

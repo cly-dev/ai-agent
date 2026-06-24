@@ -52,7 +52,6 @@ export type PlanPresentOrchestrateDeps = PlanPresentUserLayerPublishDeps & {
     | 'emitMessageBlocks'
     | 'publishAssistantBlocks'
     | 'streamProseLlm'
-    | 'reconcileProseStreamWithFinalBlocks'
   >;
   assistantArtifact: Pick<
     RunAssistantArtifactStore,
@@ -265,7 +264,7 @@ export async function runPlanPresentSummarize(
     { role: 'system', content: presentSystemPrompt },
     { role: 'user', content: userContext },
   ];
-  const { userMarkdown, proseSession } = await deps.sse.streamProseLlm(
+  const { userMarkdown } = await deps.sse.streamProseLlm(
     presentMessages,
     sessionId,
     runId,
@@ -281,17 +280,6 @@ export async function runPlanPresentSummarize(
     taskPlanBeforeFinalize: taskPlan,
     scopedTools,
   });
-
-  deps.sse.reconcileProseStreamWithFinalBlocks(
-    sessionId,
-    runId,
-    turnId,
-    {
-      streamedProse: proseSession.sanitizedEmitted,
-      proseStreamSuperseded: proseSession.proseStreamSuperseded,
-    },
-    published.blocks,
-  );
 
   return {
     ...published,

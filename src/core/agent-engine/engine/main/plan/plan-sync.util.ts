@@ -1,6 +1,8 @@
 import type { AgentRunStep, ToolObservation } from '../types/agent-engine.types';
 import {
   planObservationBucketsFromState,
+  selectObservationsForPlanToolSatisfaction,
+  type PlanObservationBuckets,
   type PlanRunContext,
 } from './plan-observation-scope.util';
 import type { TaskPlanAdvanceResult, TaskPlanSnapshot } from './task-plan.types';
@@ -24,12 +26,14 @@ export type SyncTaskPlanBeforeReActInput = {
   taskPlan: TaskPlanSnapshot | null | undefined;
   scopedTools?: PlanScopedTool[];
   skillConfig?: unknown;
-  runOwnedObservations: ToolObservation[];
+  runOwnedObservations?: ToolObservation[];
+  observationBuckets?: PlanObservationBuckets;
+  pageContextEntityId?: string | null;
 };
 
 /**
- * L1：ReAct 决策前将 Plan 与 **本 run** 观测对齐。
- * 当前 pending gather 步已被 runOwned 满足时推进，避免 LLM 在过期步上绑工具。
+ * L1：ReAct 决策前将 Plan 与观测对齐。
+ * 当前 pending gather 步已被 runOwned + 页内物化 observation 满足时推进。
  */
 export function syncTaskPlanBeforeReAct(
   input: SyncTaskPlanBeforeReActInput,
@@ -37,12 +41,16 @@ export function syncTaskPlanBeforeReAct(
   if (!input.taskPlan) {
     return { taskPlan: null, planAdvance: null };
   }
+  const observations = input.observationBuckets
+    ? selectObservationsForPlanToolSatisfaction(input.observationBuckets)
+    : (input.runOwnedObservations ?? []);
   const planAdvance = resolveTaskPlanAdvanceWhenStepSatisfied({
     plan: input.taskPlan,
-    observations: input.runOwnedObservations,
+    observations,
     scopedTools: input.scopedTools,
     skillConfig: input.skillConfig,
     purpose: 'pre_tools_advance',
+    pageContextEntityId: input.pageContextEntityId,
   });
   return {
     taskPlan: planAdvance?.updatedPlan ?? input.taskPlan,
@@ -69,6 +77,10 @@ export function buildPlanRunStepOutput(input: {
   autoSelectedSkillId?: number | null;
   turnRoute?: string | null;
   turnSkillSelect?: string | null;
+  pageContextPlan?: string | null;
+  pageContextApplies?: boolean;
+  pageContextTaskKind?: string | null;
+  pageContextDataSufficiency?: string | null;
 }): Record<string, unknown> {
   const planHostStatus = resolveHostToolPlanRunStatus({
     availableHostToolCount: input.availableHostToolCount,
@@ -103,6 +115,10 @@ export function buildPlanRunStepOutput(input: {
     autoSelectedSkillId: input.autoSelectedSkillId ?? null,
     turnRoute: input.turnRoute ?? null,
     turnSkillSelect: input.turnSkillSelect ?? null,
+    pageContextPlan: input.pageContextPlan ?? null,
+    pageContextApplies: input.pageContextApplies ?? false,
+    pageContextTaskKind: input.pageContextTaskKind ?? null,
+    pageContextDataSufficiency: input.pageContextDataSufficiency ?? null,
   };
 }
 

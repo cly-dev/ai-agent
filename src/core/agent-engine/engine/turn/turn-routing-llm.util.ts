@@ -14,6 +14,8 @@ const turnRouteSchema = z.object({
   route: z.enum(['direct_answer', 'on_page_task', 'orchestrated_task']),
   reason: z.string().min(1).max(500),
   suggestedSkillId: z.number().int().positive().nullable(),
+  pageContextApplies: z.boolean(),
+  pageContextTaskKind: z.enum(['analyze', 'answer', 'mutation', 'none']),
 });
 
 async function invokeTurnRouteLlm(input: {
@@ -91,5 +93,9 @@ export async function resolveTurnRoute(input: {
     method: 'llm',
     reason: llmRaw.reason.trim(),
     suggestedSkillId,
+    pageContextApplies: llmRaw.pageContextApplies,
+    pageContextTaskKind: llmRaw.pageContextApplies
+      ? llmRaw.pageContextTaskKind
+      : 'none',
   };
 }

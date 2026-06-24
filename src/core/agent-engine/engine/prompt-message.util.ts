@@ -7,7 +7,9 @@ export function isAgentPromptMessage(message: LlmChatMessage): boolean {
 }
 
 /** Excluded from tool-decision LLM context (summarize / platform rules). */
-export function isDecisionLoopExcludedMessage(message: LlmChatMessage): boolean {
+export function isDecisionLoopExcludedMessage(
+  message: LlmChatMessage,
+): boolean {
   if (message.role !== 'system') {
     return false;
   }
@@ -18,6 +20,19 @@ export function isDecisionLoopExcludedMessage(message: LlmChatMessage): boolean 
     content.includes('<user_memory>') ||
     content.includes('<session_history>')
   );
+}
+
+export function isPageContextBlockMessage(message: LlmChatMessage): boolean {
+  return (
+    message.role === 'system' && message.content.includes('<page_context>')
+  );
+}
+
+/** 决策环：注入当前页 pageContext（与 PromptComposer 同源）。 */
+export function extractPageContextForDecision(
+  messages: LlmChatMessage[],
+): LlmChatMessage[] {
+  return messages.filter(isPageContextBlockMessage);
 }
 
 export function extractAgentPromptMessages(
@@ -95,7 +110,10 @@ export function extractSessionHistoryForDecision(
   const out: LlmChatMessage[] = [];
 
   for (const message of messages) {
-    if (isSessionHistoryGuideMessage(message) || isSessionHistorySummaryMessage(message)) {
+    if (
+      isSessionHistoryGuideMessage(message) ||
+      isSessionHistorySummaryMessage(message)
+    ) {
       out.push(message);
     }
   }
@@ -104,11 +122,7 @@ export function extractSessionHistoryForDecision(
   for (let i = 0; i < turns.length; i += 1) {
     const turn = turns[i]!;
     const isLast = i === turns.length - 1;
-    if (
-      isLast &&
-      turn.role === 'user' &&
-      turn.content.trim() === latest
-    ) {
+    if (isLast && turn.role === 'user' && turn.content.trim() === latest) {
       continue;
     }
     out.push(turn);

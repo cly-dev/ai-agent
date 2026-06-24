@@ -67,7 +67,7 @@ export class SkillController {
   @ApiOperation({
     summary: 'C 端：按 Agent 查询当前用户可运行的 Skill 列表',
     description:
-      'UserApp.role → RoleSkill 白名单（若已配置）；仅 active Skill，且 Skill 至少有一个可运行 HTTP Tool 或 Agent 白名单内的 SkillHostTool（与发消息 skillId 校验一致）。不含 prompt/config。需用户 JWT + x-app-dsn。',
+      'UserApp.role → RoleSkill 白名单（若已配置）；仅 active Skill，且 Skill 至少有一个可运行 HTTP Tool 或 Agent 白名单内的 SkillHostTool（与发消息 skillId 校验一致）。可选 query.page 按页面 scope 过滤（与 pageContext.page 一致）。不含 prompt/config。需用户 JWT + x-app-dsn。',
   })
   @ApiResponse({ status: 200, description: '查询成功' })
   listForClientByAgent(

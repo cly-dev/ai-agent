@@ -14,7 +14,9 @@ import type { TaskPlanSnapshot } from '../main/plan/task-plan.types';
 import type { LlmService } from '../../../llm/llm.service';
 import type { PromptRegistryService } from '../../../prompt/prompt-registry.service';
 import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
+import type { PageContextUsage } from '../../../host-bridge/page-context-usage.types';
 import { formatPageContextPromptBlock } from '../../../host-bridge/page-context.prompt.util';
+import { resolvePageContextEntityIdForPlanSatisfaction } from '../../../host-bridge/page-context-usage.util';
 import {
   evaluateReadinessSlotsWithLlm,
   normalizeMissingFieldsFromLlm,
@@ -35,6 +37,7 @@ export type EvaluateExecutionReadinessInput = {
   scope?: { appClientId: number; agentId: number };
   sessionObservationSummary?: string | null;
   pageContext?: AgentChatPageContext | null;
+  pageContextUsage?: Pick<PageContextUsage, 'applies' | 'entityId'> | null;
   observationBuckets: PlanObservationBuckets;
 };
 
@@ -79,6 +82,10 @@ export async function evaluateExecutionReadiness(
   const satisfactionObservations = selectObservationsForPlanToolSatisfaction(
     input.observationBuckets,
   );
+  const pageContextEntityId = resolvePageContextEntityIdForPlanSatisfaction({
+    pageContextUsage: input.pageContextUsage,
+    pageContext: input.pageContext,
+  });
   if (
     isPlanToolStepSatisfiedByObservations({
       step: gatherStep,
@@ -87,6 +94,7 @@ export async function evaluateExecutionReadiness(
       taskPlan: plan,
       skillConfig: input.skillConfig,
       purpose: 'pre_tools_advance',
+      pageContextEntityId,
     })
   ) {
     return ready('observation_satisfied');

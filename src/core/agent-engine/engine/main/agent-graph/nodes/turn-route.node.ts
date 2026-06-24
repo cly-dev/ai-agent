@@ -9,6 +9,11 @@ import { resolveAutoOuterPlanSkill } from '../../plan/outer-plan-skill-resolve.u
 import { resolveTurnRoute } from '../../../turn/turn-routing-llm.util';
 import type { TurnRouteLlmInput } from '../../../turn/turn-routing.types';
 import { buildTurnExecutionContract } from '../../../turn/turn-execution-contract.util';
+import { finalizeTurnRoutingDecision } from '../../../turn/turn-routing.util';
+import {
+  mergePageContextPreloadedObservations,
+} from '../../../../../host-bridge/page-context-usage.util';
+import { shouldMaterializePageContextFromUsage } from '../../../../../host-bridge/page-context-execution-policy.util';
 import {
   normalizeSkillRunnableCapabilities,
   skillIsHostOnlySkill,
@@ -171,12 +176,24 @@ export function createTurnRouteNode(
         : null,
     };
 
-    const turnRoutingDecision = await resolveTurnRoute({
+    const llmRoutingDecision = await resolveTurnRoute({
       llmService: deps.llmService,
       promptRegistry: deps.promptRegistry,
       scope: ctx.promptScope,
       routeInput,
     });
+    const turnRoutingDecision = finalizeTurnRoutingDecision({
+      decision: llmRoutingDecision,
+      pageContext: pageContextForRoute,
+    });
+    const pageContextAppliesBoosted =
+      turnRoutingDecision.pageContextApplies &&
+      !llmRoutingDecision.pageContextApplies;
+    const pageContextRouteCorrected =
+      llmRoutingDecision.route !== turnRoutingDecision.route;
+    const pageContextTaskKindBoosted =
+      turnRoutingDecision.pageContextTaskKind !==
+      llmRoutingDecision.pageContextTaskKind;
 
     const requestedSkillIsHostOnly =
       requestedSkillRow != null
@@ -203,7 +220,18 @@ export function createTurnRouteNode(
       requestedSkillId,
       requestedSkillIsHostOnly,
       pageHostCandidateId: autoSkillCandidate?.skill.id ?? null,
+      pageContext: pageContextForRoute,
     });
+
+    const shouldMaterializePageContext = shouldMaterializePageContextFromUsage(
+      turnExecutionContract.plan.pageContextUsage,
+    );
+    const preloadedFromPageContext = shouldMaterializePageContext
+      ? mergePageContextPreloadedObservations(
+          state.preloadedToolObservations ?? [],
+          pageContextForRoute,
+        )
+      : state.preloadedToolObservations ?? [];
 
     logHostToolResolve('turn_route_decision', {
       runId: ctx.input.runId,
@@ -214,6 +242,12 @@ export function createTurnRouteNode(
       suggestedSkillId: turnRoutingDecision.suggestedSkillId,
       pageHostSkillCandidateId: autoSkillCandidate?.skill.id ?? null,
       hostToolNames: hostBundle.scopedHostTools.map((tool) => tool.name),
+      pageContextUsage: turnExecutionContract.plan.pageContextUsage,
+      pageContextPlan: turnExecutionContract.plan.pageContextPlan,
+      pageContextAppliesBoosted,
+      pageContextTaskKindBoosted,
+      pageContextRouteCorrected,
+      llmRoute: llmRoutingDecision.route,
     });
 
     const routeStep: AgentRunStep = {
@@ -233,6 +267,15 @@ export function createTurnRouteNode(
         availableHostToolNames: hostBundle.scopedHostTools.map(
           (tool) => tool.name,
         ),
+        pageContextUsage: turnExecutionContract.plan.pageContextUsage,
+        pageContextPlan: turnExecutionContract.plan.pageContextPlan,
+        pageContextTaskKind: turnRoutingDecision.pageContextTaskKind,
+        llmPageContextApplies: llmRoutingDecision.pageContextApplies,
+        llmPageContextTaskKind: llmRoutingDecision.pageContextTaskKind,
+        pageContextAppliesBoosted,
+        pageContextTaskKindBoosted,
+        pageContextRouteCorrected,
+        llmRoute: llmRoutingDecision.route,
       }),
     };
     const stepsWithRoute = [...state.steps, routeStep];
@@ -277,6 +320,7 @@ export function createTurnRouteNode(
       turnRoutingDecision,
       turnExecutionContract,
       pageContext: pageContextForRoute,
+      preloadedToolObservations: preloadedFromPageContext,
       scopedHostTools: hostBundle.scopedHostTools,
       scopedHostLangChainTools: hostBundle.scopedHostLangChainTools,
     };

@@ -5,7 +5,7 @@
 > 适用：业务页内嵌 Chat（omnix-chat SDK 或自研 UI）  
 > 后端契约摘要：[host-bridge-frontend.md](./host-bridge-frontend.md)  
 > SDK 细节（含 `routeContext` / 勾选附带）：agent-chat `docs/host-page-context-and-actions.md`  
-> 相关：[Chat SSE](./chat-sse-message-blocks-frontend.md)、[写确认](./write-confirmation-frontend.md)
+> 相关：[Chat SSE](./chat-sse-message-blocks-frontend.md)、[写确认](./write-confirmation-frontend.md)、[Skill 列表按页过滤](./skill-client-page-filter-frontend.md)
 
 ---
 
@@ -78,7 +78,7 @@ GET /chat/{sessionId}/stream
 | 时机 | 做法 |
 |------|------|
 | 进入业务页 | 设置 `page` + `entity`（详情页强烈建议带 `id`） |
-| 路由 / Tab 变化 | 再次 `setPageContext` |
+| 路由 / Tab 变化 | 再次 `setPageContext`；若展示 Skill 选择器，同步 `GET /agent/:id/skills/client?page=`（见 [Skill 按页过滤变更](./skill-client-page-filter-frontend.md)） |
 | 用户发消息 | SDK 自动并入 POST body（自研 UI 需手动带） |
 
 **不要**在 `pageContext` 里塞整页 API 响应；只传标识与小 metadata（Tab、筛选等）。

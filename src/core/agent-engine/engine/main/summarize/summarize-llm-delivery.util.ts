@@ -1,23 +1,13 @@
-import { PROMPT_KEYS, type PromptTemplateKey } from '../../../../prompt/prompt-template.keys';
+import type { PromptTemplateKey } from '../../../../prompt/prompt-template.keys';
 
 /**
- * summarize LLM 交付模式（互斥，不可在同一流里混用）：
- * - prose_stream：SSE 只推 Markdown 正文；blocks 由服务端 ruleBlocks + textBlock 组装
- * - blocks_invoke：非流式整段 JSON；解析为 MessageBlock[] 后一次性 publish（不向用户推 JSON token）
+ * summarize LLM 交付：统一 prose 流式（SSE delta + 定稿 full）。
+ * 结构化 table/chart/metric 仍由服务端 ruleBlocks + patch 注入。
  */
-export type SummarizeLlmDelivery = 'prose_stream' | 'blocks_invoke';
-
-const BLOCKS_INVOKE_PROMPT_KEYS = new Set<PromptTemplateKey>([
-  PROMPT_KEYS.AGENT_SUMMARIZE_READ,
-  PROMPT_KEYS.AGENT_SUMMARIZE_ACTION,
-  PROMPT_KEYS.AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME,
-  PROMPT_KEYS.AGENT_RESPOND_CLARIFICATION,
-]);
+export type SummarizeLlmDelivery = 'prose_stream';
 
 export function resolveSummarizeLlmDelivery(
-  promptKey: PromptTemplateKey,
+  _promptKey: PromptTemplateKey,
 ): SummarizeLlmDelivery {
-  return BLOCKS_INVOKE_PROMPT_KEYS.has(promptKey)
-    ? 'blocks_invoke'
-    : 'prose_stream';
+  return 'prose_stream';
 }
