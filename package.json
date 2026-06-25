@@ -10,6 +10,9 @@
   },
   "scripts": {
     "build": "nest build",
+    "build:dev": "prisma generate && nest build",
+    "build:test": "prisma generate && nest build",
+    "build:prod": "prisma generate && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -31,6 +34,8 @@
     "test:debug": "NODE_ENV=test node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "NODE_ENV=test jest --config ./test/jest-e2e.json",
     "memory:redis-smoke": "ts-node -r tsconfig-paths/register src/core/memory/redis/redis-smoke.ts",
+    "db:smoke": "ts-node -r tsconfig-paths/register src/core/env/db-smoke.ts",
+    "db:bootstrap-remote": "ts-node -r tsconfig-paths/register prisma/scripts/remote-db-bootstrap.ts",
     "db:seed": "ts-node prisma/seed.ts",
     "db:seed-sample-skill": "ts-node prisma/scripts/seed-sample-skill.ts",
     "db:seed-prompts": "ts-node prisma/scripts/seed-prompt-templates.ts",
