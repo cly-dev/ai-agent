@@ -3,7 +3,7 @@ module.exports = {
   apps: [
     {
       name: 'agent-server',
-      script: 'dist/main.js',
+      script: 'dist/src/main.js',
       cwd: __dirname,
       instances: process.env.PM2_INSTANCES
         ? Number.parseInt(process.env.PM2_INSTANCES, 10)

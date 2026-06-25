@@ -17,7 +17,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "NODE_ENV=prod node dist/main",
+    "start:prod": "NODE_ENV=prod node dist/src/main.js",
     "start:server:prod": "pm2-runtime start ecosystem.config.cjs",
     "start:pm2": "pm2-runtime start ecosystem.config.cjs",
     "start:pm2:daemon": "pm2 start ecosystem.config.cjs",
