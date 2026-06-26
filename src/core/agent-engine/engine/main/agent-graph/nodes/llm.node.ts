@@ -36,7 +36,7 @@ import {
   applyPlanDraftToWriteToolCalls,
   resolvePlanSubmitTextForWrite,
 } from '../../plan-present/plan-draft-reply.util';
-import { resolveReasonDraftForHostToolStep } from '../../host-tool/host-tool-fill-alignment.util';
+import { hasPlanHostFillForDispatch } from '../../plan-present/plan-host-fill.util';
 import { resolveTurnExecutionContract } from '../../../turn/turn-execution-contract.util';
 import {
   formatComposedWriteGateDiagnosticForLog,
@@ -204,25 +204,20 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
         hostToolsForPrompt.length > 0 &&
         graphStateForLlm.taskPlan
       ) {
-        const artifactBlocks =
-          deps.assistantArtifact.peekBlocks(
-            ctx.input.sessionId,
-            ctx.input.runId,
-          ) ?? null;
         const contract = resolveTurnExecutionContract(
           graphStateForLlm,
           undefined,
           deps.logger,
         );
-        const planDraftText =
-          contract.plan.allowHostToolAutoDispatch && graphStateForLlm.taskPlan
-            ? resolveReasonDraftForHostToolStep({
-                taskPlan: graphStateForLlm.taskPlan,
-                observations: observationsForLlm,
-                artifactBlocks,
-              })
-            : null;
-        if (planDraftText) {
+        const canAutoDispatch =
+          contract.plan.allowHostToolAutoDispatch &&
+          hasPlanHostFillForDispatch({
+            taskPlan: graphStateForLlm.taskPlan,
+            observations: observationsForLlm,
+            pendingHostStep,
+            hostToolsForPrompt,
+          });
+        if (canAutoDispatch) {
           const dispatched = hostToolHandle.tryDispatchHostToolFromPlanDraft({
             graphState: graphStateForLlm,
             pendingHostStep,

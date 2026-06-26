@@ -1,3 +1,4 @@
+import type { HostToolDecisionDefinition } from '../../../../../host-bridge/host-tool-decision.types';
 import type { LlmChatMessage } from '../../../../../llm/llm.types';
 import type { PlanSummarizePublishMode, TaskPlanSnapshot } from '../../plan/task-plan.types';
 import type { AgentGraphState, ToolObservation, AgentEngineTool } from '../../types/agent-engine.types';
@@ -19,6 +20,7 @@ import {
   summarizeDirectLlmReply,
   summarizeDirectUserMessage,
   summarizePlanPresentWithPendingWrite,
+  summarizePlanReasonForHostFill,
   summarizeToolOutputForUser,
   summarizeWriteConfirmResume,
 } from './stream.util';
@@ -94,6 +96,17 @@ export interface AgentGraphSummarizeHelpers {
     taskPlan?: TaskPlanSnapshot | null,
     scopedTools?: AgentEngineTool[],
   ) => ReturnType<typeof summarizePlanPresentWithPendingWrite>;
+  summarizePlanReasonForHostFill: (
+    userMessage: string,
+    mergedObservation: ToolObservation,
+    toolObservations: ToolObservation[],
+    promptMessages: LlmChatMessage[],
+    sessionId: string,
+    runId: number,
+    scope: { appClientId: number; agentId: number },
+    taskPlan: TaskPlanSnapshot,
+    scopedHostTools: HostToolDecisionDefinition[],
+  ) => ReturnType<typeof summarizePlanReasonForHostFill>;
   resolveSummarizeStepName: typeof resolveSummarizeStepName;
   resolveSummarizeStepMeta: typeof resolveSummarizeStepMeta;
 }
@@ -122,6 +135,7 @@ export function createAgentGraphSummarizeHelpers(deps: AgentGraphDeps): AgentGra
     summarizeClarificationRequest: summarizeClarificationRequest.bind(null, deps) as AgentGraphSummarizeHelpers['summarizeClarificationRequest'],
     summarizeDirectLlmReply: summarizeDirectLlmReply.bind(null, deps) as AgentGraphSummarizeHelpers['summarizeDirectLlmReply'],
     summarizePlanPresentWithPendingWrite: summarizePlanPresentWithPendingWrite.bind(null, deps) as AgentGraphSummarizeHelpers['summarizePlanPresentWithPendingWrite'],
+    summarizePlanReasonForHostFill: summarizePlanReasonForHostFill.bind(null, deps) as AgentGraphSummarizeHelpers['summarizePlanReasonForHostFill'],
     resolveSummarizeStepName,
     resolveSummarizeStepMeta,
   };

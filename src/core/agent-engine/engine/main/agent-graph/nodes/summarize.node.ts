@@ -32,7 +32,6 @@ import {
 } from '../../../write-confirm-resume-summary.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import { buildPlanDraftReplyObservation } from '../../plan-present/plan-draft-reply.util';
-import { resolveHostToolFillTextFromPlanDraft } from '../../plan-present/plan-draft-host-tool.util';
 import {
   syncPlanPresentSubmitTextForGate,
   isPlanDraftSummarizeBeforeWrite,
@@ -41,9 +40,13 @@ import {
   resolvePlanDraftReplyContentForGateObservation,
   type PlanPresentSummarizeResult,
 } from '../../plan-present/plan-draft-summarize.util';
+import { isPlanReasonBeforeHostTool } from '../../plan-present/plan-host-fill.util';
+import type { PlanReasonHostFillResult } from '../../plan-present/plan-reason-host-orchestrate.util';
+import { filterHostToolsForPlanStep } from '../../host-tool/host-tool-plan.util';
 import { patchLatestPlanComposeWriteObservation } from '../../plan-present/plan-compose-write.util';
 import {
   finalizePlanAfterSummarize,
+  getPendingPlanHostToolStep,
   getPendingPlanStep,
   isPendingPlanAnswerStep,
   resolvePlanSummarizePublishMode,
@@ -53,7 +56,7 @@ import {
 import type { AgentRunStep } from '../../types/agent-engine.types';
 
 export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
-  const { deps, ctx, runHelpers, decision, summarize } = bundle;
+  const { deps, ctx, runHelpers, decision, summarize, hostToolHandle } = bundle;
   return async (state) => {
 
           const pendingObservation = resolveObservationForSummarize(
@@ -180,6 +183,7 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               planAborted: state.planAborted,
             };
           }
+          const reasonBeforeHostTool = isPlanReasonBeforeHostTool(state.taskPlan);
           const planSummarizeUserMessage = resolveSummarizeUserMessageForPlan(
             ctx.input.latestUserMessage,
             state.taskPlan,
@@ -197,8 +201,22 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
             ? { artifactPhase: 'draft' as const, emitAuthoritativeFull: true }
             : resolvePlanSummarizePublishMode(state.taskPlan);
           let draftPendingWrite: PlanPresentSummarizeResult | null = null;
+          let reasonHostFillResult: PlanReasonHostFillResult | null = null;
           let summarized: string;
-          if (draftBeforeWrite) {
+          if (reasonBeforeHostTool && mergedPlanObservation) {
+            reasonHostFillResult = await summarize.summarizePlanReasonForHostFill(
+              planSummarizeUserMessage,
+              mergedPlanObservation,
+              allToolObservations(state),
+              ctx.input.promptMessages,
+              ctx.input.sessionId,
+              ctx.input.runId,
+              ctx.promptScope,
+              state.taskPlan!,
+              state.scopedHostTools ?? [],
+            );
+            summarized = reasonHostFillResult.serialized;
+          } else if (draftBeforeWrite) {
             draftPendingWrite = await summarize.summarizePlanPresentWithPendingWrite(
               effectiveToolName,
               toolDef?.description,
@@ -338,9 +356,11 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               ).stepPlain
             : null;
           const draftStepPlain =
-            draftPendingWrite?.draftReply.trim()
-              ? draftPendingWrite.draftReply.trim()
-              : null;
+            reasonHostFillResult?.draftReply.trim()
+              ? reasonHostFillResult.draftReply.trim()
+              : draftPendingWrite?.draftReply.trim()
+                ? draftPendingWrite.draftReply.trim()
+                : null;
           const stepPlain =
             draftStepPlain ??
             artifactPlain ??
@@ -358,7 +378,6 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
             meta: summarize.resolveSummarizeStepMeta(pendingObservation),
           };
           const nextSteps = [...state.steps, summaryStep];
-          const completingPlanStep = getPendingPlanStep(state.taskPlan);
           const terminalTurnRespond = isTerminalTurnRespondPending(
             state.pendingRespond,
           );
@@ -457,19 +476,11 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
           let observationsAfterDraft = draftObservation
             ? [...observationsWithMachineLayer, draftObservation]
             : [...observationsWithMachineLayer];
-          if (
-            continuePlan &&
-            completingPlanStep?.kind === 'reason' &&
-            stepPlain.trim()
-          ) {
-            const submitText = resolveHostToolFillTextFromPlanDraft(stepPlain);
+          if (continuePlan && reasonHostFillResult) {
             observationsAfterDraft = [
               ...observationsAfterDraft,
-              buildPlanDraftReplyObservation({
-                draftReply: stepPlain,
-                submitText,
-                planStepId: completingPlanStep.id,
-              }),
+              reasonHostFillResult.hostFillObservation,
+              reasonHostFillResult.draftReplyObservation,
             ];
           }
           const pendingToolCallsFromDraft =
@@ -481,15 +492,9 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               '正在准备写操作确认…\n',
               'delta',
             );
-          } else if (continuePlan) {
-            deps.sse.emitThink(
-              ctx.input.sessionId,
-              ctx.input.runId,
-              '中间结果已生成，继续执行后续任务步骤…\n',
-              'delta',
-            );
           }
-          return {
+
+          let resultState: typeof state = {
             ...state,
             steps: nextSteps,
             toolObservations: observationsAfterDraft,
@@ -506,6 +511,52 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
             finished: !continuePlan,
             planAborted: state.planAborted,
           };
+
+          const reasonHostFillDispatched =
+            continuePlan &&
+            reasonHostFillResult?.submitText.trim() &&
+            taskPlanAfterSummarize != null;
+          if (reasonHostFillDispatched) {
+            const pendingHostStep = getPendingPlanHostToolStep(taskPlanAfterSummarize);
+            const hostToolsForPrompt = filterHostToolsForPlanStep(
+              state.scopedHostTools ?? [],
+              taskPlanAfterSummarize,
+            );
+            if (pendingHostStep && hostToolsForPrompt.length > 0) {
+              const dispatched = hostToolHandle.tryDispatchHostToolFromPlanDraft({
+                graphState: resultState,
+                pendingHostStep,
+                hostToolsForPrompt,
+                observationsForLlm: observationsAfterDraft,
+                llmStepNumber: nextRunStepNumber(nextSteps),
+                nextIteration: state.iteration + 1,
+                steps: nextSteps,
+              });
+              if (dispatched) {
+                resultState = {
+                  ...dispatched,
+                  finished: resultState.finished,
+                  status: resultState.status,
+                  finalOutput: resultState.finalOutput,
+                };
+                await runHelpers.updateRun(
+                  ctx.input.runId,
+                  resultState.steps,
+                  resultState.status,
+                );
+                return resultState;
+              }
+            }
+          } else if (continuePlan && !reasonHostFillResult) {
+            deps.sse.emitThink(
+              ctx.input.sessionId,
+              ctx.input.runId,
+              '中间结果已生成，继续执行后续任务步骤…\n',
+              'delta',
+            );
+          }
+
+          return resultState;
     
   };
 }

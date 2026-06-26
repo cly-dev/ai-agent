@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# Jenkins: Kaniko --context . ，git clone 到 omnix/ ；COPY 路径带 omnix/ 前缀
-# sharp：package.json pnpm.neverBuiltDependencies 跳过安装脚本（本地 transformers 文本 embedding 不依赖）
+# 本地：podman build -t agent-server:local .
+# Jenkins 用 .dockerfile（omnix/ 前缀）
 
 FROM node:22-bookworm AS base
 
@@ -12,7 +12,7 @@ WORKDIR /app
 
 FROM base AS deps
 
-COPY omnix/package.json omnix/pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml ./
 
 RUN npm config set registry https://registry.npmmirror.com \
   && npm install -g pnpm@8 \
@@ -21,10 +21,10 @@ RUN npm config set registry https://registry.npmmirror.com \
 
 FROM deps AS build
 
-COPY omnix/prisma ./prisma
-COPY omnix/prisma.config.ts omnix/nest-cli.json omnix/tsconfig.json omnix/tsconfig.build.json ./
-COPY omnix/ecosystem.config.cjs ./
-COPY omnix/src ./src
+COPY prisma ./prisma
+COPY prisma.config.ts nest-cli.json tsconfig.json tsconfig.build.json ./
+COPY ecosystem.config.cjs ./
+COPY src ./src
 
 RUN pnpm exec prisma generate \
   && pnpm run build
@@ -36,7 +36,7 @@ ENV NODE_ENV=prod \
 
 WORKDIR /app
 
-COPY omnix/package.json omnix/pnpm-lock.yaml omnix/ecosystem.config.cjs ./
+COPY package.json pnpm-lock.yaml ecosystem.config.cjs ./
 
 RUN npm config set registry https://registry.npmmirror.com \
   && npm install -g pnpm@8 pm2 \
@@ -49,7 +49,7 @@ COPY --from=build /app/generated ./generated
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/prisma.config.ts ./prisma.config.ts
 COPY --from=build /app/src/core/intent/smalltalk-hints.json ./src/core/intent/smalltalk-hints.json
-COPY omnix/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 

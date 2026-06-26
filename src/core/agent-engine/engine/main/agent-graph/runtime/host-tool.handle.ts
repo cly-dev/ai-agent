@@ -20,9 +20,8 @@ import {
 } from '../../plan-present/plan-draft-reply.util';
 import {
   resolveHostToolCallsWithPlanDraft,
-  resolvePlanDraftTextForHostTool,
 } from '../../plan-present/plan-draft-host-tool.util';
-import { resolveReasonDraftForHostToolStep } from '../../host-tool/host-tool-fill-alignment.util';
+import { resolvePlanHostFillCalls } from '../../plan-present/plan-host-fill.util';
 import { resolveTurnExecutionContract } from '../../../turn/turn-execution-contract.util';
 import { allToolObservations } from '../../../graph-tool-observations.util';
 import type { PlanSyncSite } from '../../plan/plan-sync.util';
@@ -187,23 +186,15 @@ export function tryDispatchHostToolFromPlanDraft(
   if (!contract.plan.allowHostToolAutoDispatch) {
     return null;
   }
-  const artifactBlocks =
-    deps.assistantArtifact.peekBlocks(ctx.input.sessionId, ctx.input.runId) ?? null;
-  const planDraftText = resolveReasonDraftForHostToolStep({
+  const hostCalls = resolvePlanHostFillCalls({
     taskPlan: graphState.taskPlan,
     observations: observationsForLlm,
-    artifactBlocks,
-  });
-  if (!planDraftText) {
-    return null;
-  }
-  const hostCalls = resolveHostToolCallsWithPlanDraft({
     pendingHostStep,
     hostToolsForPrompt,
-    observations: observationsForLlm,
-    artifactBlocks,
-    llmHostCalls,
   });
+  if (hostCalls.length === 0) {
+    return null;
+  }
   const postLlmOutcome = evaluateHostToolPostLlm({
     pendingHostStep,
     taskPlan: graphState.taskPlan,
@@ -441,8 +432,9 @@ export function processHostToolAfterLlmDecision(
     toolCallsFromLlm,
   } = input;
   let hostCalls = initialHostCalls;
-  if (pendingHostStep && hostCalls.length > 0) {
+  if (pendingHostStep && graphState.taskPlan) {
     hostCalls = resolveHostToolCallsWithPlanDraft({
+      taskPlan: graphState.taskPlan,
       pendingHostStep,
       hostToolsForPrompt,
       observations: observationsForLlm,

@@ -116,6 +116,12 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     description: '基于 plan_compose_write 机器层 payload 生成用户可见 Markdown',
   },
   {
+    key: PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_REASON_HOST_FILL,
+    category: 'agent_runtime',
+    title: 'Plan reason Host Fill 机器层',
+    description: 'reason→host_tool：产出 plan_host_fill.fills JSON，供浏览器 Host Tool 执行',
+  },
+  {
     key: PROMPT_KEYS.MEMORY_HISTORY_COMPRESSION,
     category: 'memory',
     title: '会话历史压缩',

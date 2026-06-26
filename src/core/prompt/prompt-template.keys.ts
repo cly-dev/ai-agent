@@ -29,6 +29,8 @@ export const PROMPT_KEYS = {
   AGENT_SUMMARIZE_PLAN_DRAFT_PROSE_SUPPLEMENT: 'agent.summarize_plan_draft_prose_supplement',
   /** Plan present 步：基于 plan_compose_write 向用户展示草稿 */
   AGENT_SUMMARIZE_PLAN_PRESENT_FROM_COMPOSE: 'agent.summarize_plan_present_from_compose',
+  /** Plan reason 步：为后续 host_tool 生成机器层 fills JSON */
+  AGENT_SUMMARIZE_PLAN_REASON_HOST_FILL: 'agent.summarize_plan_reason_host_fill',
   /** 写确认续跑后 summarize：汇报已确认写操作的成功/失败与条数 */
   AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME: 'agent.summarize_write_confirm_resume',
   MEMORY_HISTORY_COMPRESSION: 'memory.history_compression',

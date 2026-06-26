@@ -1,10 +1,13 @@
+import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-tool-decision.types';
 import { extractSubmitTextFromDraftReply } from '../../../../tool-engine/write-tool-draft-injection.util';
 import type { GraphToolCall, ToolObservation } from '../types/agent-engine.types';
+import { findPrecedingReasonStepId } from '../host-tool/host-tool-fill-alignment.util';
 import { resolvePlanDraftReplyText } from './plan-draft-reply.util';
 import type { MessageBlock } from '../../message/message-blocks.types';
-import type { TaskPlanStep } from '../plan/task-plan.types';
+import type { TaskPlanSnapshot, TaskPlanStep } from '../plan/task-plan.types';
+import { resolvePlanHostFillCalls } from './plan-host-fill.util';
 
-/** 从 plan reason/summarize 草稿中提取应传入 Host Tool 的正文（去掉首尾说明性包裹）。 */
+/** @deprecated 仅用于非 reason→host_tool 遗留路径；新链路使用 plan_host_fill。 */
 export function resolveHostToolFillTextFromPlanDraft(draft: string): string {
   const trimmed = draft.trim();
   if (!trimmed) {
@@ -27,6 +30,7 @@ export function resolveHostToolFillTextFromPlanDraft(draft: string): string {
   return (metaStart >= 0 ? trimmed.slice(0, metaStart) : trimmed).trim();
 }
 
+/** @deprecated 仅用于非 reason→host_tool 遗留路径。 */
 export function resolvePlanDraftTextForHostTool(input: {
   observations: ToolObservation[];
   artifactBlocks?: MessageBlock[] | null;
@@ -55,7 +59,7 @@ export function buildDeterministicHostToolCallsFromDraft(input: {
   }));
 }
 
-/** host_tool 步：用 plan 草稿覆盖 LLM 产出中的正文参数。 */
+/** host_tool 步：用 plan 草稿覆盖 LLM 产出中的正文参数（遗留路径）。 */
 export function applyPlanDraftToHostToolCalls(
   hostCalls: GraphToolCall[],
   draftText: string | null | undefined,
@@ -80,14 +84,33 @@ export function applyPlanDraftToHostToolCalls(
   });
 }
 
-/** 有 plan 草稿时优先用草稿生成/覆盖 host_tool calls；无草稿则回退 LLM 产出。 */
+/**
+ * host_tool 步解析待执行 calls。
+ * reason→host_tool：仅 plan_host_fill 机器层；其它路径可回退 LLM + 草稿覆盖。
+ */
 export function resolveHostToolCallsWithPlanDraft(input: {
+  taskPlan?: TaskPlanSnapshot | null;
   pendingHostStep: TaskPlanStep;
-  hostToolsForPrompt: Array<{ name: string }>;
+  hostToolsForPrompt: HostToolDecisionDefinition[];
   observations: ToolObservation[];
   artifactBlocks?: MessageBlock[] | null;
   llmHostCalls?: GraphToolCall[];
 }): GraphToolCall[] {
+  if (input.taskPlan) {
+    const reasonStepId = findPrecedingReasonStepId(
+      input.taskPlan,
+      input.pendingHostStep.id,
+    );
+    if (reasonStepId) {
+      return resolvePlanHostFillCalls({
+        taskPlan: input.taskPlan,
+        observations: input.observations,
+        pendingHostStep: input.pendingHostStep,
+        hostToolsForPrompt: input.hostToolsForPrompt,
+      });
+    }
+  }
+
   const draftText = resolvePlanDraftTextForHostTool({
     observations: input.observations,
     artifactBlocks: input.artifactBlocks,

@@ -396,6 +396,19 @@ ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
+  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_REASON_HOST_FILL]: `你是 Plan reason 步的 Host Tool 机器层产参模块。根据 user 消息中的 observations、plan_context 与 host_tools，为后续浏览器 Host Tool 步产出参数。
+
+输出要求（硬性）：
+- 只输出一行合法 JSON，不要 Markdown，不要解释，不要代码围栏外的文字。
+- JSON 形状：{"fills":[{"tool":"<host_tool_name>","arguments":{...}}]}
+- fills[].tool 必须是 host_tools 列表中的 name。
+- fills[].arguments 必须满足对应工具的 argsSchema；只填业务所需字段，禁止多余键。
+- 正文类 Host Tool（如回复草稿）：arguments 中只放可直接写入表单/输入框的连续正文（通常 text 或 schema 规定的字符串字段）。
+- 禁止在 arguments 的任何字符串字段中包含：pipe 表格行、JSON 字符串化 observation、API 字段名清单、操作说明、确认提示、Markdown 标题。
+- 实体数据已在 observations / page_context 中：禁止把整行记录 echo 成 TSV；只生成目标工具需要的业务文案或参数。
+- 若 host_tools 含多个工具，仅为当前 plan 步需要的工具生成 fills（通常与 host_tools 列表一致）。
+- 使用与用户请求相同的语言书写正文类字段。`,
+
   [PROMPT_KEYS.AGENT_READINESS_SLOT_CHECK]: `You are the turn readiness slot checker for a business agent.
 Given the user message, plan objective, required business field names, and optional session observation summary, decide whether the agent can proceed to tool execution WITHOUT guessing parameter values.
 

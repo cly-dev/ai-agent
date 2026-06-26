@@ -4,9 +4,9 @@ import {
   type PlanDraftReplyObservationOutput,
 } from '../plan-present/plan-draft-reply.util';
 import {
-  resolveHostToolFillTextFromPlanDraft,
-  resolvePlanDraftTextForHostTool,
-} from '../plan-present/plan-draft-host-tool.util';
+  extractPrimaryFillTextFromHostFills,
+  resolveLatestPlanHostFill,
+} from '../plan-present/plan-host-fill.util';
 import type { MessageBlock } from '../../message/message-blocks.types';
 import type { TaskPlanSnapshot } from '../plan/task-plan.types';
 import {
@@ -80,7 +80,7 @@ export function extractHostToolDispatchedFillText(input: {
   return null;
 }
 
-/** host_tool 步优先使用紧邻 reason 步的 plan_draft_reply，避免误用陈旧 artifact。 */
+/** @deprecated 使用 plan_host_fill；保留供诊断与遗留读取。 */
 export function resolveReasonDraftForHostToolStep(input: {
   taskPlan: TaskPlanSnapshot;
   observations: ToolObservation[];
@@ -88,35 +88,32 @@ export function resolveReasonDraftForHostToolStep(input: {
 }): string | null {
   const hostStep = getPendingPlanHostToolStep(input.taskPlan);
   if (!hostStep) {
-    return resolvePlanDraftTextForHostTool({
-      observations: input.observations,
-      artifactBlocks: input.artifactBlocks,
-    });
+    return null;
   }
   const reasonStepId = findPrecedingReasonStepId(input.taskPlan, hostStep.id);
-  if (reasonStepId) {
-    for (let i = input.observations.length - 1; i >= 0; i -= 1) {
-      const row = input.observations[i];
-      if (row?.name !== PLAN_DRAFT_REPLY_OBSERVATION_NAME) {
-        continue;
-      }
-      const output = row.output as PlanDraftReplyObservationOutput;
-      if (output.planStepId && output.planStepId !== reasonStepId) {
-        continue;
-      }
-      const draft = output.draftReply?.trim();
-      if (draft) {
-        const fillText = resolveHostToolFillTextFromPlanDraft(draft);
-        if (fillText.trim().length > 0) {
-          return fillText;
-        }
-      }
+  const machineLayer = resolveLatestPlanHostFill(
+    input.observations,
+    reasonStepId ?? undefined,
+  );
+  if (machineLayer) {
+    const text = extractPrimaryFillTextFromHostFills(machineLayer.fills);
+    return text.length > 0 ? text : null;
+  }
+  for (let i = input.observations.length - 1; i >= 0; i -= 1) {
+    const row = input.observations[i];
+    if (row?.name !== PLAN_DRAFT_REPLY_OBSERVATION_NAME) {
+      continue;
+    }
+    const output = row.output as PlanDraftReplyObservationOutput;
+    if (reasonStepId && output.planStepId && output.planStepId !== reasonStepId) {
+      continue;
+    }
+    const submitText = output.submitText?.trim();
+    if (submitText) {
+      return submitText;
     }
   }
-  return resolvePlanDraftTextForHostTool({
-    observations: input.observations,
-    artifactBlocks: input.artifactBlocks,
-  });
+  return null;
 }
 
 export function buildPlanContextForSummarize(

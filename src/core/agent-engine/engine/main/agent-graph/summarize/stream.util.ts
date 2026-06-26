@@ -57,9 +57,14 @@ import { resolveSummarizeLlmDelivery } from '../../summarize/summarize-llm-deliv
 import type { PlanPresentSummarizeResult } from '../../plan-present/plan-draft-summarize.util';
 import { runPlanPresentSummarize } from '../../plan-present/plan-present-orchestrate.util';
 import {
+  runPlanReasonHostFill,
+  type PlanReasonHostFillResult,
+} from '../../plan-present/plan-reason-host-orchestrate.util';
+import {
   applySummarizeMemoryScope,
   resolveSummarizeMemoryScope,
 } from '../../summarize/summarize-memory-scope.util';
+import type { HostToolDecisionDefinition } from '../../../../../host-bridge/host-tool-decision.types';
 import type { AgentEngineTool, ToolObservation } from '../../types/agent-engine.types';
 import type { AgentGraphDeps } from '../types/graph.types';
 import { stringifyForPrompt } from '../runtime/decision.util';
@@ -378,6 +383,31 @@ export async function summarizeDirectUserMessage(deps: AgentGraphDeps,
       return serializeMessageBlocksForStorage(blocks);
     }
   }
+
+export async function summarizePlanReasonForHostFill(
+  deps: AgentGraphDeps,
+  userMessage: string,
+  mergedObservation: ToolObservation,
+  toolObservations: ToolObservation[],
+  promptMessages: LlmChatMessage[],
+  sessionId: string,
+  runId: number,
+  scope: { appClientId: number; agentId: number },
+  taskPlan: TaskPlanSnapshot,
+  scopedHostTools: HostToolDecisionDefinition[],
+): Promise<PlanReasonHostFillResult> {
+  return runPlanReasonHostFill(deps, {
+    userMessage,
+    mergedObservation,
+    toolObservations,
+    promptMessages,
+    sessionId,
+    runId,
+    scope,
+    taskPlan,
+    scopedHostTools,
+  });
+}
 
 export async function summarizePlanPresentWithPendingWrite(
   deps: AgentGraphDeps,
