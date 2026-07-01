@@ -41,6 +41,10 @@ export declare function resolveOuterSkillPlanDeliverable(input: {
     scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'];
     pageHostPrimary?: boolean;
 }): TaskDeliverable;
+export declare function planHasChitchatConstraint(plan: Pick<TaskPlanSnapshot, 'constraints'> | null | undefined): boolean;
+export declare function buildChitchatPlanResult(input: {
+    userMessage: string;
+}): ResolveTaskPlanResult;
 export declare function buildPageContextInlinePlanResult(input: {
     userMessage: string;
     pageContextUsage: PageContextUsage;

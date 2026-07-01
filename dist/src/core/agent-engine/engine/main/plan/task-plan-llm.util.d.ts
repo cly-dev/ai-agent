@@ -8,9 +8,9 @@ export declare function resolveRequestedSkillOuterPlan(planInput: ResolveOuterPl
 export declare const llmTaskPlanStepSchema: z.ZodObject<{
     id: z.ZodString;
     phase: z.ZodEnum<{
+        answer: "answer";
         gather: "gather";
         analyze: "analyze";
-        answer: "answer";
         mutate: "mutate";
     }>;
     kind: z.ZodEnum<{
@@ -32,9 +32,9 @@ export declare const llmTaskPlanStepSchema: z.ZodObject<{
 export declare const llmOuterPlanStepSchema: z.ZodObject<{
     id: z.ZodString;
     phase: z.ZodEnum<{
+        answer: "answer";
         gather: "gather";
         analyze: "analyze";
-        answer: "answer";
         mutate: "mutate";
     }>;
     kind: z.ZodEnum<{
@@ -57,19 +57,19 @@ export declare const llmOuterPlanStepSchema: z.ZodObject<{
 }, z.core.$strip>;
 export declare const llmOuterPlanSchema: z.ZodObject<{
     deliverable: z.ZodEnum<{
+        analysis: "analysis";
         list: "list";
         detail: "detail";
-        answer: "answer";
-        analysis: "analysis";
         mutation: "mutation";
+        answer: "answer";
     }>;
     goal: z.ZodString;
     steps: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         phase: z.ZodEnum<{
+            answer: "answer";
             gather: "gather";
             analyze: "analyze";
-            answer: "answer";
             mutate: "mutate";
         }>;
         kind: z.ZodEnum<{
@@ -93,19 +93,19 @@ export declare const llmOuterPlanSchema: z.ZodObject<{
 }, z.core.$strip>;
 export declare const llmTaskPlanSchema: z.ZodObject<{
     deliverable: z.ZodEnum<{
+        analysis: "analysis";
         list: "list";
         detail: "detail";
-        answer: "answer";
-        analysis: "analysis";
         mutation: "mutation";
+        answer: "answer";
     }>;
     goal: z.ZodString;
     steps: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         phase: z.ZodEnum<{
+            answer: "answer";
             gather: "gather";
             analyze: "analyze";
-            answer: "answer";
             mutate: "mutate";
         }>;
         kind: z.ZodEnum<{

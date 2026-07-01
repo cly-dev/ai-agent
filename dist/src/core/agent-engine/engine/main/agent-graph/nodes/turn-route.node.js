@@ -121,11 +121,47 @@ function intentRecallMatchesFromStep(intentOutput) {
 function createTurnRouteNode(bundle) {
     const { deps, ctx, runHelpers } = bundle;
     return async (state) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
         const stepNum = (0, agent_run_steps_util_1.nextRunStepNumber)(state.steps);
-        deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, '正在判断本轮任务类型…\n', 'replace');
         const requestedSkillId = (_a = ctx.input.requestedSkillId) !== null && _a !== void 0 ? _a : null;
         const pageContextForRoute = (_c = (_b = state.pageContext) !== null && _b !== void 0 ? _b : ctx.input.pageContext) !== null && _c !== void 0 ? _c : null;
+        if (state.intentKind === 'smalltalk') {
+            deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, '正在回复…\n', 'replace');
+            const turnRoutingDecision = (0, turn_routing_util_1.finalizeTurnRoutingDecision)({
+                decision: (0, turn_routing_util_1.buildChitchatRoutingDecision)({ reason: 'smalltalk_intent' }),
+                pageContext: pageContextForRoute,
+            });
+            const turnExecutionContract = (0, turn_execution_contract_util_1.buildTurnExecutionContract)({
+                routing: turnRoutingDecision,
+                userMessage: ctx.input.latestUserMessage,
+                toolsEnabled: true,
+                requestedSkillId: null,
+                requestedSkill: null,
+                effectiveWriteChannel: 'none',
+                pageHostCandidateId: null,
+                pageContext: pageContextForRoute,
+            });
+            const routeStep = {
+                step: stepNum,
+                type: 'route_plan',
+                output: runHelpers.normalizeJsonLike({
+                    route: turnRoutingDecision.route,
+                    method: turnRoutingDecision.method,
+                    reason: turnRoutingDecision.reason,
+                    routeFallback: true,
+                    smalltalkIntent: true,
+                    skillSelect: turnExecutionContract.plan.skillSelect,
+                    scopedToolsSource: turnExecutionContract.plan.scopedToolsSource,
+                    pageContextPlan: turnExecutionContract.plan.pageContextPlan,
+                    skillAlignment: turnExecutionContract.skillAlignment,
+                }),
+            };
+            const stepsWithRoute = [...state.steps, routeStep];
+            await runHelpers.updateRun(ctx.input.runId, stepsWithRoute, client_1.AgentRunStatus.running);
+            return Object.assign(Object.assign(Object.assign({}, state), { steps: stepsWithRoute, turnRoutingDecision,
+                turnExecutionContract, pageContext: pageContextForRoute, preloadedToolObservations: (_d = state.preloadedToolObservations) !== null && _d !== void 0 ? _d : [], scopedHostTools: [], scopedHostLangChainTools: [] }), (0, turn_scoped_tools_util_1.spreadScopedToolsBundle)((0, turn_scoped_tools_util_1.emptyScopedToolsBundle)()));
+        }
+        deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, '正在判断本轮任务类型…\n', 'replace');
         const hostBundle = await runHelpers.loadScopedHostTools(ctx.input, pageContextForRoute, requestedSkillId);
         const scopedHostToolIds = hostBundle.scopedHostTools.map((tool) => tool.id);
         const availableSkills = await deps.skillService.resolveSkillsForOuterPlan({
@@ -195,7 +231,7 @@ function createTurnRouteNode(bundle) {
             ? Object.assign(Object.assign({}, requestedSkillBase), { executionChannels }) : null;
         const { writeChannel: effectiveWriteChannel, routing: turnRoutingDecision, skillChannelAnchored, } = (0, finalize_turn_write_channel_util_1.finalizeTurnWriteChannel)({
             routing: turnRoutingDecisionRaw,
-            skillChannels: (_d = requestedSkillForContract === null || requestedSkillForContract === void 0 ? void 0 : requestedSkillForContract.executionChannels) !== null && _d !== void 0 ? _d : null,
+            skillChannels: (_e = requestedSkillForContract === null || requestedSkillForContract === void 0 ? void 0 : requestedSkillForContract.executionChannels) !== null && _e !== void 0 ? _e : null,
         });
         const pageContextAppliesBoosted = turnRoutingDecision.pageContextApplies &&
             !llmRoutingDecision.pageContextApplies;
@@ -212,13 +248,13 @@ function createTurnRouteNode(bundle) {
             requestedSkillId,
             requestedSkill: requestedSkillForContract,
             effectiveWriteChannel,
-            pageHostCandidateId: (_e = autoSkillCandidate === null || autoSkillCandidate === void 0 ? void 0 : autoSkillCandidate.skill.id) !== null && _e !== void 0 ? _e : null,
+            pageHostCandidateId: (_f = autoSkillCandidate === null || autoSkillCandidate === void 0 ? void 0 : autoSkillCandidate.skill.id) !== null && _f !== void 0 ? _f : null,
             pageContext: pageContextForRoute,
         });
         const shouldMaterializePageContext = (0, page_context_execution_policy_util_1.shouldMaterializePageContextFromUsage)(turnExecutionContract.plan.pageContextUsage);
         const preloadedFromPageContext = shouldMaterializePageContext
-            ? (0, page_context_usage_util_1.mergePageContextPreloadedObservations)((_f = state.preloadedToolObservations) !== null && _f !== void 0 ? _f : [], pageContextForRoute)
-            : (_g = state.preloadedToolObservations) !== null && _g !== void 0 ? _g : [];
+            ? (0, page_context_usage_util_1.mergePageContextPreloadedObservations)((_g = state.preloadedToolObservations) !== null && _g !== void 0 ? _g : [], pageContextForRoute)
+            : (_h = state.preloadedToolObservations) !== null && _h !== void 0 ? _h : [];
         (0, host_tool_resolve_debug_util_1.logHostToolResolve)('turn_route_decision', {
             runId: ctx.input.runId,
             sessionId: ctx.input.sessionId,
@@ -226,7 +262,7 @@ function createTurnRouteNode(bundle) {
             method: turnRoutingDecision.method,
             reason: turnRoutingDecision.reason,
             suggestedSkillId: turnRoutingDecision.suggestedSkillId,
-            pageHostSkillCandidateId: (_h = autoSkillCandidate === null || autoSkillCandidate === void 0 ? void 0 : autoSkillCandidate.skill.id) !== null && _h !== void 0 ? _h : null,
+            pageHostSkillCandidateId: (_j = autoSkillCandidate === null || autoSkillCandidate === void 0 ? void 0 : autoSkillCandidate.skill.id) !== null && _j !== void 0 ? _j : null,
             hostToolNames: hostBundle.scopedHostTools.map((tool) => tool.name),
             pageContextUsage: turnExecutionContract.plan.pageContextUsage,
             pageContextPlan: turnExecutionContract.plan.pageContextPlan,
@@ -248,7 +284,7 @@ function createTurnRouteNode(bundle) {
                 reason: turnRoutingDecision.reason,
                 routeFallback: turnRoutingDecision.method !== 'llm',
                 suggestedSkillId: turnRoutingDecision.suggestedSkillId,
-                pageHostSkillCandidateId: (_j = autoSkillCandidate === null || autoSkillCandidate === void 0 ? void 0 : autoSkillCandidate.skill.id) !== null && _j !== void 0 ? _j : null,
+                pageHostSkillCandidateId: (_k = autoSkillCandidate === null || autoSkillCandidate === void 0 ? void 0 : autoSkillCandidate.skill.id) !== null && _k !== void 0 ? _k : null,
                 requestedSkillId,
                 skillSelect: turnExecutionContract.plan.skillSelect,
                 scopedToolsSource: turnExecutionContract.plan.scopedToolsSource,
@@ -279,8 +315,8 @@ function createTurnRouteNode(bundle) {
         const stepsWithRoute = [...state.steps, routeStep];
         if (turnExecutionContract.terminalRespond) {
             const sessionGoa = ctx.getSessionGoa();
-            if (((_k = sessionGoa === null || sessionGoa === void 0 ? void 0 : sessionGoa.activeTask) === null || _k === void 0 ? void 0 : _k.status) === 'in_progress' ||
-                ((_l = sessionGoa === null || sessionGoa === void 0 ? void 0 : sessionGoa.activeTask) === null || _l === void 0 ? void 0 : _l.status) === 'awaiting_confirmation') {
+            if (((_l = sessionGoa === null || sessionGoa === void 0 ? void 0 : sessionGoa.activeTask) === null || _l === void 0 ? void 0 : _l.status) === 'in_progress' ||
+                ((_m = sessionGoa === null || sessionGoa === void 0 ? void 0 : sessionGoa.activeTask) === null || _m === void 0 ? void 0 : _m.status) === 'awaiting_confirmation') {
                 await deps.goaService.abandonActiveTask(ctx.input.sessionId);
                 ctx.setSessionGoa(await deps.goaService.getPayload(ctx.input.sessionId));
             }
@@ -289,18 +325,24 @@ function createTurnRouteNode(bundle) {
                 turnExecutionContract }), stepsWithRoute, Object.assign(Object.assign({}, turnExecutionContract.terminalRespond), { userMessage: ctx.input.latestUserMessage }));
         }
         await runHelpers.updateRun(ctx.input.runId, stepsWithRoute, client_1.AgentRunStatus.running);
-        const intentScopedTools = (_m = state.intentScopedToolsBundle) !== null && _m !== void 0 ? _m : (0, turn_scoped_tools_util_1.bundleFromAllowedRunInput)({
+        const intentScopedTools = (_o = state.intentScopedToolsBundle) !== null && _o !== void 0 ? _o : (0, turn_scoped_tools_util_1.bundleFromAllowedRunInput)({
             tools: ctx.input.tools,
             langChainTools: ctx.input.langChainTools,
             allowedToolIds: ctx.input.allowedToolIds,
         });
-        const activeScopedTools = (0, turn_scoped_tools_util_1.applyTurnScopedToolsFromContract)({
-            contract: turnExecutionContract,
-            intentScopedTools,
-            requestedSkillCtx: ctx.requestedSkillCtx,
-        });
+        const activeScopedTools = turnRoutingDecision.route === 'direct_answer'
+            ? (0, turn_scoped_tools_util_1.emptyScopedToolsBundle)()
+            : (0, turn_scoped_tools_util_1.applyTurnScopedToolsFromContract)({
+                contract: turnExecutionContract,
+                intentScopedTools,
+                requestedSkillCtx: ctx.requestedSkillCtx,
+            });
         const nextState = Object.assign(Object.assign(Object.assign({}, state), { steps: stepsWithRoute, turnRoutingDecision,
-            turnExecutionContract, pageContext: pageContextForRoute, preloadedToolObservations: preloadedFromPageContext, scopedHostTools: hostBundle.scopedHostTools, scopedHostLangChainTools: hostBundle.scopedHostLangChainTools }), (0, turn_scoped_tools_util_1.spreadScopedToolsBundle)(activeScopedTools));
+            turnExecutionContract, pageContext: pageContextForRoute, preloadedToolObservations: preloadedFromPageContext, scopedHostTools: turnRoutingDecision.route === 'direct_answer'
+                ? []
+                : hostBundle.scopedHostTools, scopedHostLangChainTools: turnRoutingDecision.route === 'direct_answer'
+                ? []
+                : hostBundle.scopedHostLangChainTools }), (0, turn_scoped_tools_util_1.spreadScopedToolsBundle)(activeScopedTools));
         return nextState;
     };
 }

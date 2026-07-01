@@ -19,9 +19,13 @@ import { loadSkillExecutionChannels } from '../../../../../workflow/load-skill-e
 import {
   applyTurnScopedToolsFromContract,
   bundleFromAllowedRunInput,
+  emptyScopedToolsBundle,
   spreadScopedToolsBundle,
 } from '../../../turn/turn-scoped-tools.util';
-import { finalizeTurnRoutingDecision } from '../../../turn/turn-routing.util';
+import {
+  buildChitchatRoutingDecision,
+  finalizeTurnRoutingDecision,
+} from '../../../turn/turn-routing.util';
 import {
   mergePageContextPreloadedObservations,
 } from '../../../../../host-bridge/page-context-usage.util';
@@ -167,6 +171,65 @@ export function createTurnRouteNode(
   return async (state) => {
     const stepNum = nextRunStepNumber(state.steps);
 
+    const requestedSkillId = ctx.input.requestedSkillId ?? null;
+    const pageContextForRoute =
+      state.pageContext ?? ctx.input.pageContext ?? null;
+
+    if (state.intentKind === 'smalltalk') {
+      deps.sse.emitThink(
+        ctx.input.sessionId,
+        ctx.input.runId,
+        '正在回复…\n',
+        'replace',
+      );
+      const turnRoutingDecision = finalizeTurnRoutingDecision({
+        decision: buildChitchatRoutingDecision({ reason: 'smalltalk_intent' }),
+        pageContext: pageContextForRoute,
+      });
+      const turnExecutionContract = buildTurnExecutionContract({
+        routing: turnRoutingDecision,
+        userMessage: ctx.input.latestUserMessage,
+        toolsEnabled: true,
+        requestedSkillId: null,
+        requestedSkill: null,
+        effectiveWriteChannel: 'none',
+        pageHostCandidateId: null,
+        pageContext: pageContextForRoute,
+      });
+      const routeStep: AgentRunStep = {
+        step: stepNum,
+        type: 'route_plan',
+        output: runHelpers.normalizeJsonLike({
+          route: turnRoutingDecision.route,
+          method: turnRoutingDecision.method,
+          reason: turnRoutingDecision.reason,
+          routeFallback: true,
+          smalltalkIntent: true,
+          skillSelect: turnExecutionContract.plan.skillSelect,
+          scopedToolsSource: turnExecutionContract.plan.scopedToolsSource,
+          pageContextPlan: turnExecutionContract.plan.pageContextPlan,
+          skillAlignment: turnExecutionContract.skillAlignment,
+        }),
+      };
+      const stepsWithRoute = [...state.steps, routeStep];
+      await runHelpers.updateRun(
+        ctx.input.runId,
+        stepsWithRoute,
+        AgentRunStatus.running,
+      );
+      return {
+        ...state,
+        steps: stepsWithRoute,
+        turnRoutingDecision,
+        turnExecutionContract,
+        pageContext: pageContextForRoute,
+        preloadedToolObservations: state.preloadedToolObservations ?? [],
+        scopedHostTools: [],
+        scopedHostLangChainTools: [],
+        ...spreadScopedToolsBundle(emptyScopedToolsBundle()),
+      };
+    }
+
     deps.sse.emitThink(
       ctx.input.sessionId,
       ctx.input.runId,
@@ -174,9 +237,6 @@ export function createTurnRouteNode(
       'replace',
     );
 
-    const requestedSkillId = ctx.input.requestedSkillId ?? null;
-    const pageContextForRoute =
-      state.pageContext ?? ctx.input.pageContext ?? null;
     const hostBundle = await runHelpers.loadScopedHostTools(
       ctx.input,
       pageContextForRoute,
@@ -403,11 +463,14 @@ export function createTurnRouteNode(
         langChainTools: ctx.input.langChainTools,
         allowedToolIds: ctx.input.allowedToolIds,
       });
-    const activeScopedTools = applyTurnScopedToolsFromContract({
-      contract: turnExecutionContract,
-      intentScopedTools,
-      requestedSkillCtx: ctx.requestedSkillCtx,
-    });
+    const activeScopedTools =
+      turnRoutingDecision.route === 'direct_answer'
+        ? emptyScopedToolsBundle()
+        : applyTurnScopedToolsFromContract({
+            contract: turnExecutionContract,
+            intentScopedTools,
+            requestedSkillCtx: ctx.requestedSkillCtx,
+          });
 
     const nextState: AgentGraphState = {
       ...state,
@@ -416,8 +479,14 @@ export function createTurnRouteNode(
       turnExecutionContract,
       pageContext: pageContextForRoute,
       preloadedToolObservations: preloadedFromPageContext,
-      scopedHostTools: hostBundle.scopedHostTools,
-      scopedHostLangChainTools: hostBundle.scopedHostLangChainTools,
+      scopedHostTools:
+        turnRoutingDecision.route === 'direct_answer'
+          ? []
+          : hostBundle.scopedHostTools,
+      scopedHostLangChainTools:
+        turnRoutingDecision.route === 'direct_answer'
+          ? []
+          : hostBundle.scopedHostLangChainTools,
       ...spreadScopedToolsBundle(activeScopedTools),
     };
     return nextState;

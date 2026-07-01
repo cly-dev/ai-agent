@@ -21,7 +21,6 @@ function createIntentNode(bundle) {
         const skipRecognition = !ctx.input.enableToolCall || ctx.input.tools.length === 0;
         const intentKind = (0, intent_kind_util_1.detectIntentKind)(ctx.input.latestUserMessage, (0, smalltalk_hints_util_1.loadSmallTalkHints)());
         if (intentKind === 'smalltalk') {
-            deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, '正在回复…\n', 'replace');
             const intentStep = {
                 step: stepNum,
                 type: 'intent',
@@ -31,14 +30,12 @@ function createIntentNode(bundle) {
                     matchedCategoryIds: [],
                     intentMatched: false,
                     smalltalk: true,
+                    deferToTurnRoute: true,
                     skipped: skipRecognition || undefined,
                 }),
             };
             await runHelpers.updateRun(ctx.input.runId, [...state.steps, intentStep], client_1.AgentRunStatus.running);
-            return Object.assign(Object.assign({}, runHelpers.buildTurnRespondState(state, [...state.steps, intentStep], {
-                kind: 'smalltalk',
-                userMessage: ctx.input.latestUserMessage,
-            })), { intentKind: 'smalltalk' });
+            return withIntentScopedTools(Object.assign(Object.assign({}, state), { steps: [...state.steps, intentStep], intentKind: 'smalltalk' }), (0, turn_scoped_tools_util_1.emptyScopedToolsBundle)());
         }
         if (skipRecognition) {
             deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, '正在处理你的请求…\n', 'replace');

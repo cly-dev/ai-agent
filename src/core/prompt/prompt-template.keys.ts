@@ -22,7 +22,6 @@ export const PROMPT_KEYS = {
   AGENT_SUMMARIZE_READ: 'agent.summarize_read',
   /** 写操作：执行结果 + 风险 + 回滚建议 */
   AGENT_SUMMARIZE_ACTION: 'agent.summarize_action',
-  AGENT_SUMMARIZE_SMALLTALK: 'agent.summarize_smalltalk',
   /** Message Blocks 类型与字段规范（全局） */
   PLATFORM_MESSAGE_BLOCKS_SPEC: 'platform.message_blocks_spec',
   /** summarize 节点：按 blocks 协议输出 */

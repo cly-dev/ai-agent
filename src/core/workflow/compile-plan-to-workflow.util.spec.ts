@@ -47,6 +47,23 @@ function samplePlan(
 }
 
 describe('compile-plan-to-workflow', () => {
+  it('maps chitchat reason step to fetch_data for workflow_react', () => {
+    const nodes = compileTaskPlanToWorkflowNodes(
+      [
+        {
+          id: 'chitchat_reply',
+          phase: 'answer',
+          kind: 'reason',
+          objective: 'Reply naturally.',
+          stopWhen: 'always',
+        },
+      ],
+      ['chitchat'],
+    );
+    expect(nodes.map((node) => node.action)).toEqual(['fetch_data']);
+    expect(nodes[0]?.id).toBe('chitchat_reply');
+  });
+
   it('maps gather tool + summarize to fetch_data + summarize', () => {
     const nodes = compileTaskPlanToWorkflowNodes(samplePlan().steps);
     expect(nodes.map((node) => node.action)).toEqual([

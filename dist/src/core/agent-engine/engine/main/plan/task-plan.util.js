@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildDeterministicMutationPlanResult = exports.shouldUseDeterministicMutationPlan = exports.buildDeterministicMutationPlanSnapshot = exports.buildMutationSteps = exports.advancePlanAfterStepComplete = exports.isCompliantMutationPlan = exports.isPlanPresentSummarizeStep = exports.isPlanWriteExecutionStepInMutationFlow = exports.isPlanWriteExecutionStep = exports.isPlanWriteFallbackStep = exports.isComposeMutationParameterStep = exports.isPlanComposeWriteStep = exports.PLAN_DRAFT_STEP_ID = exports.WORKFLOW_PRESENT_MUTATION_STEP_ID = exports.PLAN_WRITE_STEP_ID = exports.PLAN_PRESENT_STEP_ID = exports.PLAN_COMPOSE_WRITE_STEP_ID = exports.resolveMutationWriteToolsForPresent = exports.isPlanWriteToolStep = exports.isPlanWriteToolRole = exports.filterScopedToolsForPlanStep = exports.resolveScopedToolRoleForPlan = exports.countConsecutiveLlmRoundsWithoutToolCalls = exports.isPlanToolStepSatisfiedByObservations = exports.listBusinessFieldsForPlanGatherStep = exports.isPendingPlanAnswerStep = exports.getPendingPlanToolStep = exports.isPlanTextGenerationStep = exports.isPlanStepBlockingToolScope = exports.isPlanWorkflowGateStep = exports.isPlanAwaitUserConfirmStep = exports.resolvePlanStepExecutionRoute = exports.getPendingPlanHostToolStep = exports.resolveEffectivePlanStepId = exports.resolveEffectivePlanStep = exports.getPendingPlanStep = exports.resolvePlanExecutionStep = exports.workflowNodeActionForPlanStepId = exports.planExecutionContextFromState = exports.summarizeScopedToolsForPlan = exports.buildTaskPlan = exports.buildRequestedSkillOuterPlanResult = exports.buildPageContextEntityReadPlanResult = exports.buildPageContextInlinePlanResult = exports.resolveOuterSkillPlanDeliverable = exports.buildPlanSnapshot = exports.applyOuterPlanSelectMetadata = exports.alignDeliverableWithScopedTools = exports.PLAN_TOOL_STEP_MAX_SKIPS_WITHOUT_CALLS = exports.parseSkillPlanConfig = void 0;
-exports.buildDecisionUserFrame = exports.formatPlanContextForSummarize = exports.resolvePlanSummarizePublishMode = exports.isIntermediatePlanTextGenerationStep = exports.resolveSummarizeUserMessageForPlan = exports.buildPlanSummarizeObservation = exports.completedGatherStepsSatisfiedInObservations = exports.observationsForPlanSummarize = exports.filterObservationsForPlanSummarize = exports.resolveTaskPlanInitialAdvance = exports.shouldContinuePlanAfterSummarize = exports.finalizePlanAfterSummarize = exports.resolveTaskPlanAdvance = exports.resolveTaskPlanAdvanceWhenStepSatisfied = exports.resolveTaskPlanAfterTools = exports.isTerminalEmptyToolRound = exports.toolCallMatchesPendingPlanToolRole = exports.shouldReplacePlanWithMutationTemplate = exports.scopedToolsIncludeWrite = void 0;
+exports.buildDeterministicMutationPlanSnapshot = exports.buildMutationSteps = exports.advancePlanAfterStepComplete = exports.isCompliantMutationPlan = exports.isPlanPresentSummarizeStep = exports.isPlanWriteExecutionStepInMutationFlow = exports.isPlanWriteExecutionStep = exports.isPlanWriteFallbackStep = exports.isComposeMutationParameterStep = exports.isPlanComposeWriteStep = exports.PLAN_DRAFT_STEP_ID = exports.WORKFLOW_PRESENT_MUTATION_STEP_ID = exports.PLAN_WRITE_STEP_ID = exports.PLAN_PRESENT_STEP_ID = exports.PLAN_COMPOSE_WRITE_STEP_ID = exports.resolveMutationWriteToolsForPresent = exports.isPlanWriteToolStep = exports.isPlanWriteToolRole = exports.filterScopedToolsForPlanStep = exports.resolveScopedToolRoleForPlan = exports.countConsecutiveLlmRoundsWithoutToolCalls = exports.isPlanToolStepSatisfiedByObservations = exports.listBusinessFieldsForPlanGatherStep = exports.isPendingPlanAnswerStep = exports.getPendingPlanToolStep = exports.isPlanTextGenerationStep = exports.isPlanStepBlockingToolScope = exports.isPlanWorkflowGateStep = exports.isPlanAwaitUserConfirmStep = exports.resolvePlanStepExecutionRoute = exports.getPendingPlanHostToolStep = exports.resolveEffectivePlanStepId = exports.resolveEffectivePlanStep = exports.getPendingPlanStep = exports.resolvePlanExecutionStep = exports.workflowNodeActionForPlanStepId = exports.planExecutionContextFromState = exports.summarizeScopedToolsForPlan = exports.buildTaskPlan = exports.buildRequestedSkillOuterPlanResult = exports.buildPageContextEntityReadPlanResult = exports.buildPageContextInlinePlanResult = exports.buildChitchatPlanResult = exports.planHasChitchatConstraint = exports.resolveOuterSkillPlanDeliverable = exports.buildPlanSnapshot = exports.applyOuterPlanSelectMetadata = exports.alignDeliverableWithScopedTools = exports.PLAN_TOOL_STEP_MAX_SKIPS_WITHOUT_CALLS = exports.parseSkillPlanConfig = void 0;
+exports.buildDecisionUserFrame = exports.formatPlanContextForSummarize = exports.resolvePlanSummarizePublishMode = exports.isIntermediatePlanTextGenerationStep = exports.resolveSummarizeUserMessageForPlan = exports.buildPlanSummarizeObservation = exports.completedGatherStepsSatisfiedInObservations = exports.observationsForPlanSummarize = exports.filterObservationsForPlanSummarize = exports.resolveTaskPlanInitialAdvance = exports.shouldContinuePlanAfterSummarize = exports.finalizePlanAfterSummarize = exports.resolveTaskPlanAdvance = exports.resolveTaskPlanAdvanceWhenStepSatisfied = exports.resolveTaskPlanAfterTools = exports.isTerminalEmptyToolRound = exports.toolCallMatchesPendingPlanToolRole = exports.shouldReplacePlanWithMutationTemplate = exports.scopedToolsIncludeWrite = exports.buildDeterministicMutationPlanResult = exports.shouldUseDeterministicMutationPlan = void 0;
 const tool_agent_metadata_util_1 = require("../../../../tool-engine/tool-agent-metadata.util");
 const skill_runnable_util_1 = require("../../../../skill/skill-runnable.util");
 const tool_observation_util_1 = require("../../tool/tool-observation.util");
@@ -374,6 +374,32 @@ function resolveOuterSkillPlanDeliverable(input) {
     return inferDeliverableFromTools(input.scopedToolSummaries, undefined, true, input.skill.riskLevel, { hostOnlySkill: (0, skill_runnable_util_1.skillIsHostOnlySkill)(caps) });
 }
 exports.resolveOuterSkillPlanDeliverable = resolveOuterSkillPlanDeliverable;
+function planHasChitchatConstraint(plan) {
+    return (plan === null || plan === void 0 ? void 0 : plan.constraints.includes('chitchat')) === true;
+}
+exports.planHasChitchatConstraint = planHasChitchatConstraint;
+function buildChitchatPlanResult(input) {
+    const userMessage = input.userMessage.trim();
+    const goal = userMessage || 'Reply naturally to the user';
+    const plan = buildPlanSnapshot({
+        source: 'minimal',
+        userMessage,
+        goal,
+        deliverable: 'answer',
+        steps: [
+            {
+                id: 'chitchat_reply',
+                phase: 'answer',
+                kind: 'reason',
+                objective: 'Reply naturally and concisely in the same language as the user. Do not call tools.',
+                stopWhen: 'always',
+            },
+        ],
+        constraints: ['chitchat'],
+    });
+    return { plan, method: 'minimal' };
+}
+exports.buildChitchatPlanResult = buildChitchatPlanResult;
 function buildPageContextInlinePlanResult(input) {
     var _a;
     const userMessage = input.userMessage.trim();
@@ -1283,6 +1309,9 @@ function resolveTaskPlanInitialAdvance(input) {
     const firstStepId = (_a = input.plan.pendingStepIds[0]) !== null && _a !== void 0 ? _a : input.plan.currentStepId;
     const firstStep = getStepById(input.plan, firstStepId);
     if (!firstStep || !isPlanTextGenerationStep(firstStep)) {
+        return null;
+    }
+    if (input.plan.constraints.includes('chitchat')) {
         return null;
     }
     const planRunContext = (_b = input.planRunContext) !== null && _b !== void 0 ? _b : 'fresh';

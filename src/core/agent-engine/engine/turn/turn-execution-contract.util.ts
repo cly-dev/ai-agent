@@ -140,40 +140,20 @@ export function buildTurnExecutionContract(
   }
 
   if (routing.route === 'direct_answer') {
-    const directAlignment =
-      input.requestedSkillId != null
-        ? toSkillIntentAlignmentSnapshot(
-            resolveSkillIntentAlignment({
-              intent: {
-                route: 'direct_answer',
-                readPlanActive: false,
-                pageContextPlan: 'none',
-                writeChannel: 'none',
-                hostMutation: false,
-                httpOrchestrated: false,
-              },
-              routing,
-              userMessage: input.userMessage,
-              requestedSkillId: input.requestedSkillId,
-              skillProfile,
-              skillConfig: input.requestedSkill?.config,
-            }),
-            input.requestedSkillId,
-          )
-        : emptySkillIntentAlignment();
     return {
       routing,
-      terminalRespond: {
-        kind: 'off_domain',
-        userMessage: input.userMessage,
-        payload: { routingReason: routing.reason },
-      },
-      skillAlignment: directAlignment,
+      terminalRespond: null,
+      skillAlignment: emptySkillIntentAlignment(),
       plan: basePlanPolicy({
-        enabled: false,
+        enabled: true,
         scopedToolsSource: 'intent',
+        skillSelect: 'llm',
+        allowHostToolSteps: false,
+        allowHostToolAutoDispatch: false,
+        allowHostToolLlmDispatch: false,
         allowSessionResume: false,
-        abandonActiveTaskOnFreshPlan: false,
+        abandonActiveTaskOnFreshPlan: true,
+        pageContextPlan: 'none',
       }),
     };
   }

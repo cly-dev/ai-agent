@@ -35,7 +35,7 @@ export declare function createAgentGraphStateAnnotation(): import("@langchain/la
     }[]>, unknown>;
     pendingToolCalls: import("@langchain/langgraph/dist/channels/base").BaseChannel<GraphToolCall[], GraphToolCall[] | import("@langchain/langgraph/dist/constants").OverwriteValue<GraphToolCall[]>, unknown>;
     pendingRespond: import("@langchain/langgraph/dist/channels/base").BaseChannel<import("../../../turn/turn-respond.types").PendingRespond, import("../../../turn/turn-respond.types").PendingRespond | import("@langchain/langgraph/dist/constants").OverwriteValue<import("../../../turn/turn-respond.types").PendingRespond>, unknown>;
-    intentKind: import("@langchain/langgraph/dist/channels/base").BaseChannel<"smalltalk" | "task" | "unclear", "smalltalk" | "task" | "unclear" | import("@langchain/langgraph/dist/constants").OverwriteValue<"smalltalk" | "task" | "unclear">, unknown>;
+    intentKind: import("@langchain/langgraph/dist/channels/base").BaseChannel<"task" | "smalltalk" | "unclear", "task" | "smalltalk" | "unclear" | import("@langchain/langgraph/dist/constants").OverwriteValue<"task" | "smalltalk" | "unclear">, unknown>;
     finalOutput: import("@langchain/langgraph/dist/channels/base").BaseChannel<string, string | import("@langchain/langgraph/dist/constants").OverwriteValue<string>, unknown>;
     status: import("@langchain/langgraph/dist/channels/base").BaseChannel<AgentRunStatus, AgentRunStatus | import("@langchain/langgraph/dist/constants").OverwriteValue<AgentRunStatus>, unknown>;
     finished: import("@langchain/langgraph/dist/channels/base").BaseChannel<boolean, boolean | import("@langchain/langgraph/dist/constants").OverwriteValue<boolean>, unknown>;

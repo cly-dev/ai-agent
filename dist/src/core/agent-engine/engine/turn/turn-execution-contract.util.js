@@ -56,7 +56,7 @@ function pageContextEntityIdFromGraphState(state) {
 }
 exports.pageContextEntityIdFromGraphState = pageContextEntityIdFromGraphState;
 function buildTurnExecutionContract(input) {
-    var _a, _b;
+    var _a;
     const { routing } = input;
     const skillProfile = input.requestedSkill != null
         ? (0, skill_capability_profile_util_1.buildSkillCapabilityProfile)({
@@ -81,36 +81,20 @@ function buildTurnExecutionContract(input) {
         };
     }
     if (routing.route === 'direct_answer') {
-        const directAlignment = input.requestedSkillId != null
-            ? (0, skill_intent_alignment_util_1.toSkillIntentAlignmentSnapshot)((0, skill_intent_alignment_util_1.resolveSkillIntentAlignment)({
-                intent: {
-                    route: 'direct_answer',
-                    readPlanActive: false,
-                    pageContextPlan: 'none',
-                    writeChannel: 'none',
-                    hostMutation: false,
-                    httpOrchestrated: false,
-                },
-                routing,
-                userMessage: input.userMessage,
-                requestedSkillId: input.requestedSkillId,
-                skillProfile,
-                skillConfig: (_a = input.requestedSkill) === null || _a === void 0 ? void 0 : _a.config,
-            }), input.requestedSkillId)
-            : (0, skill_intent_alignment_util_1.emptySkillIntentAlignment)();
         return {
             routing,
-            terminalRespond: {
-                kind: 'off_domain',
-                userMessage: input.userMessage,
-                payload: { routingReason: routing.reason },
-            },
-            skillAlignment: directAlignment,
+            terminalRespond: null,
+            skillAlignment: (0, skill_intent_alignment_util_1.emptySkillIntentAlignment)(),
             plan: basePlanPolicy({
-                enabled: false,
+                enabled: true,
                 scopedToolsSource: 'intent',
+                skillSelect: 'llm',
+                allowHostToolSteps: false,
+                allowHostToolAutoDispatch: false,
+                allowHostToolLlmDispatch: false,
                 allowSessionResume: false,
-                abandonActiveTaskOnFreshPlan: false,
+                abandonActiveTaskOnFreshPlan: true,
+                pageContextPlan: 'none',
             }),
         };
     }
@@ -134,7 +118,7 @@ function buildTurnExecutionContract(input) {
         userMessage: input.userMessage,
         requestedSkillId: input.requestedSkillId,
         skillProfile,
-        skillConfig: (_b = input.requestedSkill) === null || _b === void 0 ? void 0 : _b.config,
+        skillConfig: (_a = input.requestedSkill) === null || _a === void 0 ? void 0 : _a.config,
     });
     const skillAlignment = (0, skill_intent_alignment_util_1.toSkillIntentAlignmentSnapshot)(alignment, input.requestedSkillId);
     if (alignment.status === 'clarify') {

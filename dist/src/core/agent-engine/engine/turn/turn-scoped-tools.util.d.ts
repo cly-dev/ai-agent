@@ -14,6 +14,7 @@ export declare function bundleFromAllowedRunInput(input: {
     langChainTools: BuiltLangChainTools;
     allowedToolIds: number[];
 }): TurnScopedToolsBundle;
+export declare function emptyScopedToolsBundle(): TurnScopedToolsBundle;
 export declare function bundleFromRequestedSkillCtx(ctx: RequestedSkillRunContext): TurnScopedToolsBundle;
 export declare function resolveScopedToolsSourceFromContract(contract: TurnExecutionContract): TurnScopedToolsSource;
 export declare function shouldUseExplicitSkillScopedTools(contract: TurnExecutionContract): boolean;

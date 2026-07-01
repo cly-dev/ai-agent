@@ -562,6 +562,39 @@ export function resolveOuterSkillPlanDeliverable(input: {
   );
 }
 
+/** chitchat / direct_answer 最小 plan（constraints 含 chitchat）。 */
+export function planHasChitchatConstraint(
+  plan: Pick<TaskPlanSnapshot, 'constraints'> | null | undefined,
+): boolean {
+  return plan?.constraints.includes('chitchat') === true;
+}
+
+/** Turn 契约：寒暄 / direct_answer → reason 步 + workflow_react（无工具，含会话历史）。 */
+export function buildChitchatPlanResult(input: {
+  userMessage: string;
+}): ResolveTaskPlanResult {
+  const userMessage = input.userMessage.trim();
+  const goal = userMessage || 'Reply naturally to the user';
+  const plan = buildPlanSnapshot({
+    source: 'minimal',
+    userMessage,
+    goal,
+    deliverable: 'answer',
+    steps: [
+      {
+        id: 'chitchat_reply',
+        phase: 'answer',
+        kind: 'reason',
+        objective:
+          'Reply naturally and concisely in the same language as the user. Do not call tools.',
+        stopWhen: 'always',
+      },
+    ],
+    constraints: ['chitchat'],
+  });
+  return { plan, method: 'minimal' };
+}
+
 /** Turn 契约：页上已有内联正文，直接 summarize（不 gather）。 */
 export function buildPageContextInlinePlanResult(input: {
   userMessage: string;
@@ -1914,6 +1947,10 @@ export function resolveTaskPlanInitialAdvance(input: {
   const firstStepId = input.plan.pendingStepIds[0] ?? input.plan.currentStepId;
   const firstStep = getStepById(input.plan, firstStepId);
   if (!firstStep || !isPlanTextGenerationStep(firstStep)) {
+    return null;
+  }
+
+  if (input.plan.constraints.includes('chitchat')) {
     return null;
   }
 

@@ -404,9 +404,7 @@ export async function summarizeDirectUserMessage(deps: AgentGraphDeps,
       workflowNodeDefs,
     );
     const fallback = guidanceHint || 'Hello! How can I help you?';
-    const summarizePromptKey = planAnswerStep || guidanceHint
-      ? PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS
-      : PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK;
+    const summarizePromptKey = PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS;
     const agentPrompts = promptMessages.filter(
       (message) =>
         message.role === 'system' && message.content.includes('<agent_prompt>'),

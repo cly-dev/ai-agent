@@ -8,6 +8,7 @@ import type {
   ResolveTaskPlanResult,
 } from './task-plan.types';
 import {
+  buildChitchatPlanResult,
   buildPageContextEntityReadPlanResult,
   buildPageContextInlinePlanResult,
   buildRequestedSkillOuterPlanResult,
@@ -27,6 +28,10 @@ export async function resolvePlanFromContract(input: {
   const { contract, planInput } = input;
   if (!contract.plan.enabled) {
     throw new Error('resolvePlanFromContract called while contract.plan.enabled is false');
+  }
+
+  if (contract.routing.route === 'direct_answer') {
+    return buildChitchatPlanResult({ userMessage: planInput.userMessage });
   }
 
   if (contract.routing.llmWriteChannel === 'none') {

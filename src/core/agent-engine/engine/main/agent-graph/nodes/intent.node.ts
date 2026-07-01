@@ -10,6 +10,7 @@ import { recordMachineCodeUsage } from '../../../run-metrics.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import {
   bundleFromAllowedRunInput,
+  emptyScopedToolsBundle,
   spreadScopedToolsBundle,
   type TurnScopedToolsBundle,
 } from '../../../turn/turn-scoped-tools.util';
@@ -50,12 +51,6 @@ export function createIntentNode(
     );
 
     if (intentKind === 'smalltalk') {
-      deps.sse.emitThink(
-        ctx.input.sessionId,
-        ctx.input.runId,
-        '正在回复…\n',
-        'replace',
-      );
       const intentStep: AgentRunStep = {
         step: stepNum,
         type: 'intent',
@@ -65,6 +60,7 @@ export function createIntentNode(
           matchedCategoryIds: [],
           intentMatched: false,
           smalltalk: true,
+          deferToTurnRoute: true,
           skipped: skipRecognition || undefined,
         }),
       };
@@ -73,17 +69,14 @@ export function createIntentNode(
         [...state.steps, intentStep],
         AgentRunStatus.running,
       );
-      return {
-        ...runHelpers.buildTurnRespondState(
-          state,
-          [...state.steps, intentStep],
-          {
-            kind: 'smalltalk',
-            userMessage: ctx.input.latestUserMessage,
-          },
-        ),
-        intentKind: 'smalltalk',
-      };
+      return withIntentScopedTools(
+        {
+          ...state,
+          steps: [...state.steps, intentStep],
+          intentKind: 'smalltalk',
+        },
+        emptyScopedToolsBundle(),
+      );
     }
 
     if (skipRecognition) {

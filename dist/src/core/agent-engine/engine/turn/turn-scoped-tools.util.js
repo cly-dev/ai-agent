@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.spreadScopedToolsBundle = exports.applyTurnScopedToolsFromContract = exports.shouldUseExplicitSkillScopedTools = exports.resolveScopedToolsSourceFromContract = exports.bundleFromRequestedSkillCtx = exports.bundleFromAllowedRunInput = void 0;
+exports.spreadScopedToolsBundle = exports.applyTurnScopedToolsFromContract = exports.shouldUseExplicitSkillScopedTools = exports.resolveScopedToolsSourceFromContract = exports.bundleFromRequestedSkillCtx = exports.emptyScopedToolsBundle = exports.bundleFromAllowedRunInput = void 0;
 function bundleFromAllowedRunInput(input) {
     return {
         scopedTools: input.tools,
@@ -10,6 +10,15 @@ function bundleFromAllowedRunInput(input) {
     };
 }
 exports.bundleFromAllowedRunInput = bundleFromAllowedRunInput;
+function emptyScopedToolsBundle() {
+    return {
+        scopedTools: [],
+        scopedLangChainTools: [],
+        scopedToolBundle: { tools: [], byName: new Map() },
+        scopedAllowedToolIds: [],
+    };
+}
+exports.emptyScopedToolsBundle = emptyScopedToolsBundle;
 function bundleFromRequestedSkillCtx(ctx) {
     return {
         scopedTools: ctx.scoped.scopedTools,

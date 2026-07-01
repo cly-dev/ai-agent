@@ -1,7 +1,6 @@
 import type { ToolObservation } from '../main/types/agent-engine.types';
 
 export type TurnRespondKind =
-  | 'smalltalk'
   | 'off_domain'
   | 'message_unclear'
   | 'unsupported_scope'

@@ -31,7 +31,7 @@ function baseNodeFromStep(step) {
 function mapAwaitUserConfirmNode(step) {
     return Object.assign(Object.assign({}, baseNodeFromStep(Object.assign(Object.assign({}, step), { id: `${step.id}_await`, objective: 'Wait for user confirmation before executing write.' }))), { action: 'await_user_confirm', input: { confirmKind: 'mutation' } });
 }
-function mapPlanStepToWorkflowNodes(step) {
+function mapPlanStepToWorkflowNodes(step, constraints = []) {
     if ((0, task_plan_util_1.isPlanComposeWriteStep)(step)) {
         return [
             Object.assign(Object.assign({}, baseNodeFromStep(step)), { action: 'compose_mutation', input: {} }),
@@ -78,6 +78,11 @@ function mapPlanStepToWorkflowNodes(step) {
                 Object.assign(Object.assign({}, baseNodeFromStep(step)), { action: 'summarize', input: { mode: 'final' } }),
             ];
         case 'reason':
+            if ((0, task_plan_util_1.planHasChitchatConstraint)({ constraints })) {
+                return [
+                    Object.assign(Object.assign({}, baseNodeFromStep(step)), { action: 'fetch_data', input: {} }),
+                ];
+            }
             return [
                 Object.assign(Object.assign({}, baseNodeFromStep(step)), { action: 'summarize', input: { mode: 'draft' } }),
             ];
@@ -91,10 +96,10 @@ function mapPlanStepToWorkflowNodes(step) {
             return [];
     }
 }
-function compileTaskPlanToWorkflowNodes(steps) {
+function compileTaskPlanToWorkflowNodes(steps, constraints = []) {
     const nodes = [];
     for (const step of steps) {
-        nodes.push(...mapPlanStepToWorkflowNodes(step));
+        nodes.push(...mapPlanStepToWorkflowNodes(step, constraints));
     }
     if (nodes.length === 0 && steps.length > 0) {
         const fallback = steps[steps.length - 1];
@@ -113,7 +118,7 @@ function compileTaskPlanToWorkflowNodes(steps) {
 exports.compileTaskPlanToWorkflowNodes = compileTaskPlanToWorkflowNodes;
 function compileTaskPlanToWorkflow(input) {
     var _a, _b;
-    const nodes = compileTaskPlanToWorkflowNodes(input.plan.steps);
+    const nodes = compileTaskPlanToWorkflowNodes(input.plan.steps, input.plan.constraints);
     if (nodes.length === 0) {
         return null;
     }

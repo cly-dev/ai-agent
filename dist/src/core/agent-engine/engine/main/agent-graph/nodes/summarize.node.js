@@ -150,7 +150,6 @@ function createSummarizeNode(bundle) {
             summarized = await summarize.summarizeSkillIntentMismatch(planSummarizeUserMessage, pendingObservation.output, ctx.input.promptMessages, ctx.input.sessionId, ctx.input.runId, ctx.promptScope, planSummarizePublishMode);
         }
         else if (pendingObservation.name === 'direct_user' ||
-            pendingObservation.name === 'smalltalk' ||
             pendingObservation.name === 'off_domain') {
             summarized = mergedPlanObservation
                 ? await summarize.summarizeToolOutputForUser(mergedPlanObservation.name, (_f = state.scopedTools.find((tool) => tool.name === mergedPlanObservation.name)) === null || _f === void 0 ? void 0 : _f.description, planSummarizeUserMessage, mergedPlanObservation.output, (_g = mergedPlanObservation.fieldLabels) !== null && _g !== void 0 ? _g : {}, (_h = mergedPlanObservation.fieldDescriptions) !== null && _h !== void 0 ? _h : {}, (_j = mergedPlanObservation.enumLabelsByPath) !== null && _j !== void 0 ? _j : {}, ctx.input.promptMessages, ctx.input.sessionId, ctx.input.runId, ctx.promptScope, state.taskPlan, undefined, undefined, planSummarizePublishMode, undefined, state.workflowRun, state.workflowNodeDefs)

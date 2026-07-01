@@ -188,9 +188,7 @@ async function summarizeDirectUserMessage(deps, userMessage, output, promptMessa
     const planContext = (0, task_plan_util_1.formatPlanContextForSummarize)(taskPlan);
     const planAnswerStep = (0, task_plan_util_1.isPendingPlanAnswerStep)(taskPlan, workflowRun, workflowNodeDefs);
     const fallback = guidanceHint || 'Hello! How can I help you?';
-    const summarizePromptKey = planAnswerStep || guidanceHint
-        ? prompt_template_keys_1.PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS
-        : prompt_template_keys_1.PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK;
+    const summarizePromptKey = prompt_template_keys_1.PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS;
     const agentPrompts = promptMessages.filter((message) => message.role === 'system' && message.content.includes('<agent_prompt>'));
     const summarizeMessages = [...agentPrompts];
     summarizeMessages.push({

@@ -309,7 +309,6 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
             );
           } else if (
             pendingObservation.name === 'direct_user' ||
-            pendingObservation.name === 'smalltalk' ||
             pendingObservation.name === 'off_domain'
           ) {
             summarized = mergedPlanObservation

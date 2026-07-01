@@ -5,6 +5,7 @@ import {
   isPlanPresentSummarizeStep,
   isPlanWriteFallbackStep,
   isPlanWriteToolStep,
+  planHasChitchatConstraint,
 } from '../agent-engine/engine/main/plan/task-plan.util';
 import { initWorkflowRun } from './workflow-run.util';
 import type {
@@ -58,7 +59,10 @@ function mapAwaitUserConfirmNode(step: TaskPlanStep): WorkflowNodeDef {
   };
 }
 
-function mapPlanStepToWorkflowNodes(step: TaskPlanStep): WorkflowNodeDef[] {
+function mapPlanStepToWorkflowNodes(
+  step: TaskPlanStep,
+  constraints: string[] = [],
+): WorkflowNodeDef[] {
   if (isPlanComposeWriteStep(step)) {
     return [
       {
@@ -146,6 +150,15 @@ function mapPlanStepToWorkflowNodes(step: TaskPlanStep): WorkflowNodeDef[] {
         },
       ];
     case 'reason':
+      if (planHasChitchatConstraint({ constraints })) {
+        return [
+          {
+            ...baseNodeFromStep(step),
+            action: 'fetch_data',
+            input: {},
+          },
+        ];
+      }
       return [
         {
           ...baseNodeFromStep(step),
@@ -170,10 +183,11 @@ function mapPlanStepToWorkflowNodes(step: TaskPlanStep): WorkflowNodeDef[] {
 
 export function compileTaskPlanToWorkflowNodes(
   steps: TaskPlanStep[],
+  constraints: string[] = [],
 ): WorkflowNodeDef[] {
   const nodes: WorkflowNodeDef[] = [];
   for (const step of steps) {
-    nodes.push(...mapPlanStepToWorkflowNodes(step));
+    nodes.push(...mapPlanStepToWorkflowNodes(step, constraints));
   }
   if (nodes.length === 0 && steps.length > 0) {
     const fallback = steps[steps.length - 1];
@@ -202,7 +216,10 @@ export function compileTaskPlanToWorkflow(input: {
   version?: number;
   resolveMethod?: string;
 }): CompileTaskPlanToWorkflowResult | null {
-  const nodes = compileTaskPlanToWorkflowNodes(input.plan.steps);
+  const nodes = compileTaskPlanToWorkflowNodes(
+    input.plan.steps,
+    input.plan.constraints,
+  );
   if (nodes.length === 0) {
     return null;
   }

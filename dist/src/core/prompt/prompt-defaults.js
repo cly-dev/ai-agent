@@ -334,9 +334,6 @@ ${AGENT_SUMMARIZE_STREAMING_OUTPUT_ZH}
 Success: summarize per operation (tool, params, outcome) from merged tool results.
 Failure: include error hints/responseSource and next steps.
 Evidence only; no fabricated fields.`,
-    [prompt_template_keys_1.PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK]: `This is small talk. Reply naturally and concisely in the same language as the user.
-Stream plain markdown prose only — do not output {"blocks":[...]} or any JSON wrapper.
-Do not call tools. Do not ask for business parameters.`,
     [prompt_template_keys_1.PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC]: `<message_blocks_spec>
 助手对用户可见回复须使用 Message Blocks：顶层 JSON 为 {"blocks":[...]}，每个 block 含 type。
 支持 type：text | list | quote | code | chart | table | metric | alert | image | loading

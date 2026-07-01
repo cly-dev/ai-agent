@@ -66,13 +66,6 @@ export function turnRespondRequestToObservation(
       quality: 'high',
     };
   }
-  if (request.kind === 'smalltalk') {
-    return {
-      name: 'smalltalk',
-      output: { userMessage: request.userMessage },
-      quality: 'medium',
-    };
-  }
   if (request.kind === 'off_domain') {
     return {
       name: 'off_domain',

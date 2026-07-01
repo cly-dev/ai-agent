@@ -26,6 +26,15 @@ export function bundleFromAllowedRunInput(input: {
   };
 }
 
+export function emptyScopedToolsBundle(): TurnScopedToolsBundle {
+  return {
+    scopedTools: [],
+    scopedLangChainTools: [],
+    scopedToolBundle: { tools: [], byName: new Map() },
+    scopedAllowedToolIds: [],
+  };
+}
+
 export function bundleFromRequestedSkillCtx(
   ctx: RequestedSkillRunContext,
 ): TurnScopedToolsBundle {

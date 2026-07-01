@@ -250,22 +250,35 @@ LangGraph 在 `agent-graph/` 中运行（`build-agent-graph.ts` + `nodes/intent.
 | 条件 | 路由 |
 |------|------|
 | `skill` 命中 | `llm`（带 skill prompt） |
-| 类目召回 `matchedCategoryIds.length > 0` | 按类目过滤 →（>5 则 bind 召回）→ `llm` → `tools` → `summarize` |
+| 类目召回 `matchedCategoryIds.length > 0` | 按类目过滤 →（>5 则 bind 召回）→ `turnRoute` → `workflow_init` → … |
+| **smalltalk**（`smalltalk-hints.json` 命中） | `scopedTools=[]` → `turnRoute`（跳过 route LLM）→ chitchat plan → `workflow_react` → `llm`（含会话历史）→ `summarize`（`direct_reply` 润色） |
+| **turnRoute `direct_answer`** | 同上 chitchat 路径（`buildChitchatPlanResult`） |
 | 类目未命中 / 过滤后无工具 / 无工具可用 / 意图不清 / 召回失败 | `intent` 设 `pendingRespond` → **`summarize`（跳过 plan/readiness/llm）** |
 
 类目未命中时 summarize 使用 `buildUnsupportedIntentGuidance()` 引导语，向用户说明当前问题不在系统支持范围内。
 
 **规范**
 
-- 不以 smalltalk 关键词硬编码决定路由；是否进 llm 只看 **类目意图是否命中**（及 skill / 已有 tool observation）。
-- 未命中时由 summarize 节点统一生成用户可见回复（`direct_user` observation）。
+- smalltalk 短语只维护在 **`src/core/intent/smalltalk-hints.json`**；命中后**不再**走 summarize 专线，而是与 `direct_answer` 共用 chitchat plan + `workflow_react` → `llm`（`buildLlmInvokeMessages` 含 session history）。
+- 类目未命中等非 smalltalk 终局仍由 summarize 节点生成用户可见回复（`direct_user` observation）。
 - bind 分档（`AGENT_BIND_FULL_MAX=5`）：过滤后工具数 **≤5 全量 bind**，**>5 再走工具向量召回**。
 
 ---
 
 ## Smalltalk 分类（配置 hints）
 
-闲聊识别用于跳过工具决策环、直达 summarize。实现见 `src/core/agent-engine/intent-kind.util.ts` 的 `detectIntentKind()`。
+闲聊识别用于进入 chitchat 执行路径（非 summarize 短路）。实现见 `src/core/agent-engine/intent-kind.util.ts` 的 `detectIntentKind()`。
+
+**执行路径**
+
+```text
+intent (smalltalk, scopedTools=[])
+  → turnRoute (buildChitchatRoutingDecision, 跳过 route LLM)
+  → workflow_init → plan (buildChitchatPlanResult)
+  → execute_node (fetch_data) → workflow_react → llm → summarize (direct_reply)
+```
+
+`reason` 步在 `constraints: ['chitchat']` 时编译为 `fetch_data`，以触发 `workflowAwaitingReact`；`llm` 阶段 `scopedTools=[]`，`decision.buildLlmInvokeMessages` 注入会话历史与 memory。
 
 **规范（必须遵守）**
 

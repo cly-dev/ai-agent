@@ -1,6 +1,6 @@
 import type { TaskPlanSnapshot, TaskPlanStep } from '../agent-engine/engine/main/plan/task-plan.types';
 import type { WorkflowNodeDef, WorkflowRunCompiledFrom, WorkflowRunState } from './workflow.types';
-export declare function compileTaskPlanToWorkflowNodes(steps: TaskPlanStep[]): WorkflowNodeDef[];
+export declare function compileTaskPlanToWorkflowNodes(steps: TaskPlanStep[], constraints?: string[]): WorkflowNodeDef[];
 export type CompileTaskPlanToWorkflowResult = {
     nodes: WorkflowNodeDef[];
     workflowRun: WorkflowRunState;

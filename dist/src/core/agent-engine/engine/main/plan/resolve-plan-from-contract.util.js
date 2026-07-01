@@ -9,6 +9,9 @@ async function resolvePlanFromContract(input) {
     if (!contract.plan.enabled) {
         throw new Error('resolvePlanFromContract called while contract.plan.enabled is false');
     }
+    if (contract.routing.route === 'direct_answer') {
+        return (0, task_plan_util_1.buildChitchatPlanResult)({ userMessage: planInput.userMessage });
+    }
     if (contract.routing.llmWriteChannel === 'none') {
         if (contract.plan.pageContextPlan === 'inline_answer') {
             return (0, task_plan_util_1.buildPageContextInlinePlanResult)({

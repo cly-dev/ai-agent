@@ -92,12 +92,6 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     description: '用户确认写操作后同步执行的结果汇报（成功条数/失败原因）',
   },
   {
-    key: PROMPT_KEYS.AGENT_SUMMARIZE_SMALLTALK,
-    category: 'agent_runtime',
-    title: '闲聊回复',
-    description: 'smalltalk summarize',
-  },
-  {
     key: PROMPT_KEYS.PLATFORM_MESSAGE_BLOCKS_SPEC,
     category: 'platform',
     title: 'Message Blocks 规范',

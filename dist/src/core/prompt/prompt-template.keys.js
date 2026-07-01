@@ -14,7 +14,6 @@ exports.PROMPT_KEYS = {
     AGENT_SUMMARIZE_TOOL_FULL: 'agent.summarize_tool_full',
     AGENT_SUMMARIZE_READ: 'agent.summarize_read',
     AGENT_SUMMARIZE_ACTION: 'agent.summarize_action',
-    AGENT_SUMMARIZE_SMALLTALK: 'agent.summarize_smalltalk',
     PLATFORM_MESSAGE_BLOCKS_SPEC: 'platform.message_blocks_spec',
     AGENT_SUMMARIZE_MESSAGE_BLOCKS: 'agent.summarize_message_blocks',
     AGENT_SUMMARIZE_PLAN_DRAFT_PROSE_SUPPLEMENT: 'agent.summarize_plan_draft_prose_supplement',
