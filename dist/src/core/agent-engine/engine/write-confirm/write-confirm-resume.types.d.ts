@@ -1,0 +1,75 @@
+import type { AgentRunResult, ResumeAfterWriteConfirmInput } from '../main/types/agent-engine.types';
+import type { PendingWriteConfirmationSnapshot } from '../../../../modules/chat/pending-write-confirmation.types';
+import type { ApprovalResumeSnapshot } from '../../../approval/approval-resume-snapshot.types';
+import type { ChatApprovalResumeAudit } from '../../../approval/chat-approval-run-audit.util';
+import type { RunExecutionScope } from '../../../session-run/run-execution.scope';
+import type { AgentGraphState } from '../main/types/agent-engine.types';
+import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
+export type WriteConfirmSessionContext = {
+    id: string;
+    agentId: number;
+    appClientId: number;
+};
+export type WriteConfirmPrimaryRun = {
+    id: number;
+    turnId: number;
+};
+export type WriteConfirmResumePrepared = {
+    session: WriteConfirmSessionContext;
+    consumed: PendingWriteConfirmationSnapshot;
+    primaryRun: WriteConfirmPrimaryRun;
+    suspendedPrimaryRunId: number;
+};
+export type ResumeChatFromApprovalInboxInput = ResumeAfterWriteConfirmInput & {
+    snapshot: ApprovalResumeSnapshot;
+    approvalRequestId?: number;
+    approvalAudit?: ChatApprovalResumeAudit | null;
+};
+export type WriteConfirmResumeHost = {
+    emitWriteConfirmationExpired(sessionId: string): void;
+    emitAgentRunComplete(sessionId: string, result: AgentRunResult): void;
+    emitRunCompletion(sessionId: string, result: AgentRunResult, graphState: AgentGraphState, pageContext: AgentChatPageContext | null, runtime: {
+        appClientId: number;
+        agentId: number;
+    }): Promise<void>;
+    handleRunAborted(input: {
+        error: import('../../../session-run/run-aborted.error').AgentRunAbortedError;
+        sessionId: string;
+        turnId: number;
+        runId: number;
+        runMetrics: import('../run-metrics.util').RunMetricsAccumulator;
+        scopedToolCount: number;
+        steps: AgentGraphState['steps'];
+    }): Promise<void>;
+    handleRunFailure(input: {
+        error: unknown;
+        userId: number;
+        sessionId: string;
+        turnId: number;
+        runId: number;
+        runMetrics: import('../run-metrics.util').RunMetricsAccumulator;
+        scopedToolCount: number;
+        scheduleMemory: import('../../../memory/goa/session-goa.types').SessionMemoryUpdateContext;
+    }): Promise<AgentRunResult | null>;
+};
+export type WriteConfirmResumeDeps = {
+    host: WriteConfirmResumeHost;
+    prisma: import('../../../../prisma/prisma.service').PrismaService;
+    agentService: import('../../../../modules/agent/agent.service').AgentService;
+    llmService: import('../../../llm/llm.service').LlmService;
+    goaService: import('../../../memory/goa/session-goa.service').SessionGoaService;
+    toolEngine: import('../../../tool-engine/tool-engine.service').ToolEngineService;
+    langGraphRunner: import('../main/runner/agent-lang-graph.runner').AgentLangGraphRunner;
+    lifecycle: import('../main/run/agent-run-lifecycle.service').AgentRunLifecycleService;
+    sse: import('../main/run/agent-run-sse.emitter').AgentRunSseEmitter;
+    assistantArtifact: import('../main/run/run-assistant-artifact.store').RunAssistantArtifactStore;
+    promptComposer: import('../../../prompt/prompt-composer.service').PromptComposerService;
+    logger: import('@nestjs/common').Logger;
+};
+export type RunWriteConfirmResumeInput = {
+    resumeInput: ResumeAfterWriteConfirmInput;
+    prepared: WriteConfirmResumePrepared;
+    scope: RunExecutionScope;
+    deps: WriteConfirmResumeDeps;
+    approvalAudit?: ChatApprovalResumeAudit | null;
+};

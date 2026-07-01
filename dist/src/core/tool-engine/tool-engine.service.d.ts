@@ -1,0 +1,30 @@
+import { PrismaService } from '../../prisma/prisma.service';
+import type { BuiltLangChainTools, ToolBuildContext, ToolDebugOptions, ToolDebugResult, ToolExecutionDefinition, ToolExecutionResult } from './tool-engine.types';
+export type { BuiltLangChainTools, ToolBuildContext, ToolDebugOptions, ToolDebugResult, ToolDefinitionInput, ToolExecutionDefinition, ToolExecutionResult, ToolIntegrationDefinition, } from './tool-engine.types';
+export declare class ToolEngineService {
+    private readonly prisma;
+    private readonly logger;
+    private static readonly DEFAULT_TIMEOUT_MS;
+    private static readonly MAX_TIMEOUT_MS;
+    constructor(prisma: PrismaService);
+    buildLangChainTools(definitions: ToolExecutionDefinition[], ctx: ToolBuildContext): BuiltLangChainTools;
+    invokeLangChainTool(bundle: BuiltLangChainTools, toolName: string, input: Record<string, unknown>): Promise<ToolExecutionResult>;
+    debugExecute(toolId: number, options?: ToolDebugOptions): Promise<ToolDebugResult>;
+    executeByName(toolName: string, input: Record<string, unknown>, allowedToolIds: number[], userId: number): Promise<ToolExecutionResult>;
+    executeFromDefinition(def: ToolExecutionDefinition, input: Record<string, unknown>, userId: number): Promise<ToolExecutionResult>;
+    private buildBaseHeaders;
+    private resolveAuthCredential;
+    private applyHeaderParameters;
+    private loadOpenApiParameterSpecs;
+    private applyPathPlaceholders;
+    private reservedBodyKeys;
+    private resolveUrl;
+    private appendQueryParam;
+    private buildJsonBody;
+    private toHttpMethod;
+    private safeJsonParse;
+    private resolveTimeoutMs;
+    private writeToolDebugSnapshot;
+    private redactSecret;
+    private redactHeaders;
+}

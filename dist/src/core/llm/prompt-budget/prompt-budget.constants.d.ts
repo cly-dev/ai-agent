@@ -1,0 +1,16 @@
+import type { PromptBlockKind, DegradeLevel } from './prompt-budget.types';
+export declare function isPromptBudgetEnabled(): boolean;
+export declare function getPromptBudgetSafetyMarginRatio(): number;
+export declare function getPromptBudgetReserveTokens(): number;
+export declare function getPromptObsMaxRecordsL1(): number;
+export declare function getPromptObsFieldPreviewChars(): number;
+export declare function getPromptObsLongFieldThreshold(): number;
+export declare function getPromptSkillExcerptChars(): number;
+export declare function getPromptAgentExcerptChars(): number;
+export declare function getPromptAgentExcerptCharsL2(): number;
+export declare function getPromptGoaMaxEpisodesL1(): number;
+export declare function getPromptHistoryMaxTurnsL0(): number;
+export declare const PROMPT_BUDGET_NOTE_TAG = "prompt_budget_note";
+export declare const BLOCK_PRIORITY: Record<PromptBlockKind, number>;
+export declare const BLOCK_MAX_DEGRADE: Record<PromptBlockKind, DegradeLevel>;
+export declare const SESSION_GOA_TAG_SECTION: Record<string, import('./prompt-budget.types').SessionGoaSection>;

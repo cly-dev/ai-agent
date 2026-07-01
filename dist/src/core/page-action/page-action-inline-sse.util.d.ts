@@ -1,0 +1,42 @@
+import type { Response } from 'express';
+import type { HostActionSsePayload } from '../host-bridge/host-action.types';
+import type { HostActionEventPublisher } from '../host-bridge/host-action-dispatch.util';
+import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
+import type { WorkflowActionKind } from '../workflow/workflow.types';
+export type PageActionSsePhase = 'started' | 'completed' | 'failed' | 'awaiting_approval';
+export type PageWorkflowNodeSsePhase = 'start' | 'complete' | 'failed' | 'awaiting_approval';
+export type PageWorkflowNodeSsePayload = {
+    phase: PageWorkflowNodeSsePhase;
+    actionRunId: number;
+    actionKey: string;
+    generation: number;
+    clientActionId?: string | null;
+    nodeId: string;
+    action: WorkflowActionKind;
+    workflowStatus?: string;
+    currentNodeId?: string | null;
+    outputRef?: string | null;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+};
+export type PageActionLifecyclePayload = {
+    phase: PageActionSsePhase;
+    actionRunId: number;
+    actionKey: string;
+    delivery: string;
+    generation: number;
+    streamId?: string | null;
+    clientActionId?: string | null;
+    text?: string;
+    dslOutcome?: string | null;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+};
+export declare function writeSseEvent(res: Response, event: string, data: unknown): void;
+export declare function initInlineSseResponse(res: Response): void;
+export declare function createInlineHostActionPublisher(res: Response, options?: {
+    onPayload?: (payload: HostActionSsePayload) => void;
+}): HostActionEventPublisher;
+export declare function writePageActionLifecycle(res: Response, payload: PageActionLifecyclePayload, recorder?: PageActionRunStepRecorder): void;
+export declare function writePageWorkflowNodeSse(res: Response | Pick<Response, 'writableEnded' | 'write'>, payload: PageWorkflowNodeSsePayload): void;
+export declare function endInlineSseResponse(res: Response): void;

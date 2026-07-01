@@ -1,0 +1,177 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ApprovalRequestService = void 0;
+const common_1 = require("@nestjs/common");
+const client_1 = require("../../../generated/prisma/client");
+const prisma_service_1 = require("../../prisma/prisma.service");
+const APPROVAL_INBOX_INCLUDE = {
+    workflow: { select: { workflowKey: true, name: true } },
+    initiator: { select: { id: true, username: true, employeeId: true } },
+};
+let ApprovalRequestService = class ApprovalRequestService {
+    constructor(prisma) {
+        this.prisma = prisma;
+    }
+    async createPending(input) {
+        var _a, _b, _c, _d;
+        return this.prisma.approvalRequest.create({
+            data: {
+                appClientId: input.appClientId,
+                source: input.source,
+                status: client_1.ApprovalStatus.pending,
+                initiatorUserId: input.initiatorUserId,
+                approverUserId: input.approverUserId,
+                workflowId: input.workflowId,
+                workflowVersion: input.workflowVersion,
+                nodeId: input.nodeId,
+                title: input.title,
+                summary: (_a = input.summary) !== null && _a !== void 0 ? _a : null,
+                previewBlocks: input.previewBlocks === undefined
+                    ? undefined
+                    : input.previewBlocks,
+                resumeSnapshot: input.resumeSnapshot,
+                pageActionRunId: (_b = input.pageActionRunId) !== null && _b !== void 0 ? _b : null,
+                sessionId: (_c = input.sessionId) !== null && _c !== void 0 ? _c : null,
+                idempotencyKey: (_d = input.idempotencyKey) !== null && _d !== void 0 ? _d : null,
+            },
+        });
+    }
+    async findPendingByIdempotencyKey(input) {
+        return this.prisma.approvalRequest.findFirst({
+            where: {
+                appClientId: input.appClientId,
+                idempotencyKey: input.idempotencyKey,
+                status: client_1.ApprovalStatus.pending,
+            },
+        });
+    }
+    async findChatBySessionPrimaryRun(input) {
+        return this.prisma.approvalRequest.findFirst({
+            where: {
+                appClientId: input.appClientId,
+                sessionId: input.sessionId,
+                source: 'chat',
+                resumeSnapshot: {
+                    path: ['channel', 'runId'],
+                    equals: input.runId,
+                },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+    }
+    async findPendingChatBySessionRun(input) {
+        return this.prisma.approvalRequest.findFirst({
+            where: {
+                appClientId: input.appClientId,
+                sessionId: input.sessionId,
+                source: 'chat',
+                status: client_1.ApprovalStatus.pending,
+                resumeSnapshot: {
+                    path: ['channel', 'runId'],
+                    equals: input.runId,
+                },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+    }
+    async syncChatRealtimeDecision(input) {
+        var _a;
+        const row = await this.findPendingChatBySessionRun({
+            appClientId: input.appClientId,
+            sessionId: input.sessionId,
+            runId: input.runId,
+        });
+        if (!row) {
+            return;
+        }
+        const payload = {
+            approvalRequestId: row.id,
+            decidedByUserId: input.decidedByUserId,
+            decisionNote: (_a = input.decisionNote) !== null && _a !== void 0 ? _a : null,
+        };
+        if (input.decision === 'approved') {
+            await this.markApproved(payload);
+            return;
+        }
+        await this.markRejected(payload);
+    }
+    async findByIdForApprover(approvalRequestId, approverUserId) {
+        return this.prisma.approvalRequest.findFirst({
+            where: { id: approvalRequestId, approverUserId },
+        });
+    }
+    async listPendingForApprover(input) {
+        var _a, _b;
+        return this.prisma.approvalRequest.findMany({
+            where: {
+                appClientId: input.appClientId,
+                approverUserId: input.approverUserId,
+                status: client_1.ApprovalStatus.pending,
+            },
+            orderBy: { createdAt: 'desc' },
+            take: (_a = input.limit) !== null && _a !== void 0 ? _a : 50,
+            skip: (_b = input.offset) !== null && _b !== void 0 ? _b : 0,
+            include: APPROVAL_INBOX_INCLUDE,
+        });
+    }
+    parseResumeSnapshot(row) {
+        return row.resumeSnapshot;
+    }
+    async casDecide(approvalRequestId, nextStatus, input) {
+        var _a;
+        const existing = await this.prisma.approvalRequest.findUnique({
+            where: { id: approvalRequestId },
+            select: { status: true, approverUserId: true },
+        });
+        if (!existing) {
+            return { ok: false, reason: 'not_found' };
+        }
+        if (existing.approverUserId !== input.decidedByUserId) {
+            return { ok: false, reason: 'not_found' };
+        }
+        if (existing.status !== client_1.ApprovalStatus.pending) {
+            return { ok: false, reason: 'already_decided' };
+        }
+        const updated = await this.prisma.approvalRequest.updateMany({
+            where: {
+                id: approvalRequestId,
+                status: client_1.ApprovalStatus.pending,
+                approverUserId: input.decidedByUserId,
+            },
+            data: {
+                status: nextStatus,
+                decidedByUserId: input.decidedByUserId,
+                decidedAt: new Date(),
+                decisionNote: (_a = input.decisionNote) !== null && _a !== void 0 ? _a : null,
+            },
+        });
+        if (updated.count === 0) {
+            return { ok: false, reason: 'not_pending' };
+        }
+        return { ok: true, previousStatus: client_1.ApprovalStatus.pending };
+    }
+    async markApproved(input) {
+        return this.casDecide(input.approvalRequestId, client_1.ApprovalStatus.approved, input);
+    }
+    async markRejected(input) {
+        return this.casDecide(input.approvalRequestId, client_1.ApprovalStatus.rejected, input);
+    }
+    async markCancelled(input) {
+        return this.casDecide(input.approvalRequestId, client_1.ApprovalStatus.cancelled, input);
+    }
+};
+ApprovalRequestService = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+], ApprovalRequestService);
+exports.ApprovalRequestService = ApprovalRequestService;
+//# sourceMappingURL=approval-request.service.js.map

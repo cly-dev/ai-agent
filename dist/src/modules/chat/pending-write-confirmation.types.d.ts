@@ -1,0 +1,61 @@
+import type { ToolLevel } from '../../../generated/prisma/client';
+import type { TaskPlanSnapshot } from '../../core/agent-engine/engine/main/plan/task-plan.types';
+import type { AgentChatPageContext } from '../../core/host-bridge/page-context.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../core/workflow/workflow.types';
+export type PendingWriteToolCall = {
+    name: string;
+    arguments: Record<string, unknown>;
+    riskLevel: ToolLevel;
+    reason: string;
+};
+export type PendingToolObservation = {
+    name: string;
+    output: unknown;
+    llmPayload?: unknown;
+    quality?: 'high' | 'medium' | 'low';
+    fieldLabels?: Record<string, string>;
+    fieldDescriptions?: Record<string, string>;
+    enumLabelsByPath?: Record<string, Record<string, string>>;
+};
+export type PendingWriteResumeContext = {
+    steps: Array<{
+        step: number;
+        type: string;
+        name?: string;
+        input?: Record<string, unknown> | string;
+        output?: Record<string, unknown> | string;
+        meta?: Record<string, unknown>;
+    }>;
+    iteration: number;
+    toolObservations: PendingToolObservation[];
+    scopedToolIds: number[];
+    intentKind: 'task' | 'smalltalk' | 'unclear';
+    hasExpandedOnce: boolean;
+    skillApplied?: boolean;
+    activeSkillId?: number | null;
+    activeSkillPrompt?: string | null;
+    activeSkillName?: string | null;
+    activeSkillDescription?: string | null;
+    activeSkillConfig?: unknown;
+    activeSkillRiskLevel?: ToolLevel | null;
+    taskPlan?: TaskPlanSnapshot | null;
+    pagedListHttpUsed?: number;
+    confirmedPreviewSerialized?: string | null;
+    pageContext?: AgentChatPageContext | null;
+    workflowRun?: WorkflowRunState | null;
+    workflowNodeDefs?: WorkflowNodeDef[];
+    workflowNodeOutputs?: Record<string, unknown>;
+    workflowAwaitingReact?: boolean;
+};
+export type PendingWriteConfirmationSnapshot = {
+    runId: number;
+    turnId: number;
+    sessionId: string;
+    userId: number;
+    appClientId: number;
+    agentId: number;
+    latestUserMessage: string;
+    toolCalls: PendingWriteToolCall[];
+    resumeContext: PendingWriteResumeContext;
+    createdAt: string;
+};

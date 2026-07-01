@@ -1,0 +1,1 @@
+{"version":3,"file":"workflow-profile.util.js","sourceRoot":"","sources":["../../../../src/modules/workflow/workflow-profile.util.ts"],"names":[],"mappings":";;;AAIA,SAAgB,oCAAoC,CAClD,OAAwB,EACxB,KAAwB;IAExB,IAAI,OAAO,KAAK,QAAQ,EAAE;QACxB,OAAO,IAAI,CAAC;KACb;IACD,IAAI,KAAK,KAAK,OAAO,EAAE;QACrB,OAAO,OAAO,KAAK,YAAY,CAAC;KACjC;IACD,OAAO,OAAO,KAAK,aAAa,CAAC;AACnC,CAAC;AAXD,oFAWC"}

@@ -1,0 +1,32 @@
+import { type PaginatedResult } from '../../common/pagination';
+import { ApprovalGateService } from '../../core/approval/approval-gate.service';
+import { ApprovalTriggerPermissionService } from '../../core/approval/approval-trigger-permission.service';
+import { LlmService } from '../../core/llm/llm.service';
+import { ToolEngineService } from '../../core/tool-engine/tool-engine.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import type { CreatePageActionDto, InvokePageActionDto, QueryPageActionDto, QueryPageActionRunDto, UpdatePageActionDto } from './dto/page-action.dto';
+import type { PageActionResponse, PageActionRunAdminDetail, PageActionRunAdminListItem } from './page-action.types';
+import type { Response } from 'express';
+import { WorkflowService } from '../workflow/workflow.service';
+export declare class PageActionService {
+    private readonly prisma;
+    private readonly llmService;
+    private readonly toolEngine;
+    private readonly workflowService;
+    private readonly approvalGate;
+    private readonly triggerPermission;
+    constructor(prisma: PrismaService, llmService: LlmService, toolEngine: ToolEngineService, workflowService: WorkflowService, approvalGate: ApprovalGateService, triggerPermission: ApprovalTriggerPermissionService);
+    create(dto: CreatePageActionDto): Promise<PageActionResponse>;
+    update(id: number, dto: UpdatePageActionDto): Promise<PageActionResponse>;
+    findOne(id: number): Promise<PageActionResponse>;
+    findPage(query: QueryPageActionDto): Promise<PaginatedResult<PageActionResponse>>;
+    findRunAdmin(id: number): Promise<PageActionRunAdminDetail>;
+    findRunPageAdmin(appClientId: number, query: QueryPageActionRunDto): Promise<PaginatedResult<PageActionRunAdminListItem>>;
+    invoke(userId: number, appClientId: number, dto: InvokePageActionDto, res: Response): Promise<void>;
+    private resolvePageContext;
+    private assertInlineStreamOnly;
+    private assertPromptLimits;
+    private findEntityOrThrow;
+    private assertAppClientExists;
+    private assertHostToolForApp;
+}

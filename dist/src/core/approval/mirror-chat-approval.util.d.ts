@@ -1,0 +1,23 @@
+import type { PendingWriteResumeContext } from '../../modules/chat/pending-write-confirmation.types';
+import type { AgentEngineTool, ToolObservation } from '../agent-engine/engine/main/types/agent-engine.types';
+import type { AgentChatPageContext } from '../host-bridge/page-context.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
+import type { ApprovalGateService } from './approval-gate.service';
+import type { ApprovalRequestService } from './approval-request.service';
+export declare function mirrorChatApprovalRequest(input: {
+    approvalGate: ApprovalGateService;
+    approvalRequests: ApprovalRequestService;
+    appClientId: number;
+    userId: number;
+    sessionId: string;
+    runId: number;
+    turnId: number;
+    nodeId: string;
+    workflowRun: WorkflowRunState;
+    workflowNodeDefs: WorkflowNodeDef[];
+    workflowNodeOutputs: Record<string, unknown>;
+    observations: ToolObservation[];
+    scopedTools: AgentEngineTool[];
+    pageContext: AgentChatPageContext | null;
+    resumeContext: PendingWriteResumeContext;
+}): Promise<number | null>;

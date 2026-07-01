@@ -1,0 +1,62 @@
+import type { ToolLevel } from '../../../generated/prisma/client';
+import type { ApprovalSource } from '../../../generated/prisma/client';
+import type { PageActionRunStepRecorder } from '../page-action/page-action-run-steps.util';
+import { ApprovalRequestService } from './approval-request.service';
+import type { ApprovalPendingWrite, ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
+export type SuspendForApprovalInput = {
+    appClientId: number;
+    source: ApprovalSource;
+    initiatorUserId: number | null;
+    approverUserId: number;
+    workflowId: number;
+    workflowVersion: number;
+    nodeId: string;
+    title: string;
+    summary?: string | null;
+    previewBlocks?: unknown;
+    workflowRun: WorkflowRunState;
+    workflowNodeDefs: WorkflowNodeDef[];
+    workflowNodeOutputs: Record<string, unknown>;
+    pendingWrite: ApprovalPendingWrite;
+    scopedToolIds: number[];
+    pageContext?: unknown | null;
+    pageActionRunId?: number | null;
+    sessionId?: string | null;
+    idempotencyKey?: string | null;
+    channel: ApprovalResumeSnapshot['channel'];
+    stepRecorder?: PageActionRunStepRecorder;
+};
+export declare class ApprovalGateService {
+    private readonly approvalRequests;
+    constructor(approvalRequests: ApprovalRequestService);
+    suspend(input: SuspendForApprovalInput): Promise<{
+        id: number;
+        appClientId: number;
+        title: string;
+        createdAt: Date;
+        updatedAt: Date;
+        source: ApprovalSource;
+        status: import("../../../generated/prisma/enums").ApprovalStatus;
+        summary: string;
+        sessionId: string;
+        workflowId: number;
+        workflowVersion: number;
+        nodeId: string;
+        expiresAt: Date;
+        initiatorUserId: number;
+        approverUserId: number;
+        previewBlocks: import("@prisma/client/runtime/client").JsonValue;
+        resumeSnapshot: import("@prisma/client/runtime/client").JsonValue;
+        pageActionRunId: number;
+        idempotencyKey: string;
+        decidedByUserId: number;
+        decidedAt: Date;
+        decisionNote: string;
+    }>;
+    buildPendingWriteFromTool(input: {
+        name: string;
+        arguments: Record<string, unknown>;
+        riskLevel: ToolLevel;
+    }): ApprovalPendingWrite;
+}
