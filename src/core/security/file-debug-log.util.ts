@@ -45,3 +45,20 @@ export function isToolEngineFileDebugEnabled(): boolean {
   }
   return isAgentEngineDebugEnabled();
 }
+
+/** Workflow / LangGraph V2 追溯；默认跟随 AGENT_ENGINE_DEBUG。 */
+export function isWorkflowDebugEnabled(): boolean {
+  const explicit = readTriStateEnv('WORKFLOW_DEBUG');
+  if (explicit !== undefined) {
+    return explicit;
+  }
+  return isAgentEngineDebugEnabled();
+}
+
+/** 是否写入 `logs/workflow/`；生产一律关闭。 */
+export function isWorkflowFileDebugEnabled(): boolean {
+  if (isProductionRuntime()) {
+    return false;
+  }
+  return isWorkflowDebugEnabled();
+}

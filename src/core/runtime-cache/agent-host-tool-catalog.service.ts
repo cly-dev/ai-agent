@@ -5,6 +5,7 @@ import { AgentHostToolCatalogStore } from './agent-host-tool-catalog.store';
 import {
   resolveLlmHostToolsFromCatalog,
 } from './host-tool-catalog-resolve.util';
+import { resolveAgentHostToolCandidateIds } from './capability-candidate.util';
 import { logRuntimeCacheEvent } from './runtime-cache-observability.util';
 import {
   buildHostToolCatalogRevision,
@@ -139,45 +140,14 @@ export class AgentHostToolCatalogService {
     appClientId: number,
     agentId: number,
   ): Promise<string> {
-    const agent = await this.prisma.agent.findFirst({
-      where: { id: agentId, appClientId },
-      select: { id: true },
-    });
-    if (!agent) {
+    const ctx = await this.loadHostToolCatalogContext(appClientId, agentId);
+    if (!ctx) {
       return '';
     }
-    const agentBindings = await this.prisma.agentHostTool.findMany({
-      where: { agentId },
-      select: { hostToolId: true },
-      orderBy: { hostToolId: 'asc' },
-    });
-    const agentBoundHostToolIds = agentBindings.map((row) => row.hostToolId);
-    if (agentBoundHostToolIds.length === 0) {
-      return buildHostToolCatalogRevision({
-        hostTools: [],
-        skillBindings: [],
-        agentBoundHostToolIds: [],
-      });
-    }
-    const [hostToolRows, skillBindingRows] = await Promise.all([
-      this.prisma.hostTool.findMany({
-        where: { id: { in: agentBoundHostToolIds }, appClientId },
-        select: { id: true, updatedAt: true },
-        orderBy: { id: 'asc' },
-      }),
-      this.prisma.skillHostTool.findMany({
-        where: {
-          hostToolId: { in: agentBoundHostToolIds },
-          skill: { agentId },
-        },
-        select: { id: true, updatedAt: true },
-        orderBy: { id: 'asc' },
-      }),
-    ]);
     return buildHostToolCatalogRevision({
-      hostTools: hostToolRows,
-      skillBindings: skillBindingRows,
-      agentBoundHostToolIds,
+      hostTools: ctx.revisionHostToolRows,
+      skillBindings: ctx.revisionSkillBindingRows,
+      agentBoundHostToolIds: ctx.candidateHostToolIds,
     });
   }
 
@@ -185,21 +155,12 @@ export class AgentHostToolCatalogService {
     appClientId: number,
     agentId: number,
   ): Promise<AgentHostToolCatalogSnapshot | null> {
-    const agent = await this.prisma.agent.findFirst({
-      where: { id: agentId, appClientId },
-      select: { id: true },
-    });
-    if (!agent) {
+    const ctx = await this.loadHostToolCatalogContext(appClientId, agentId);
+    if (!ctx) {
       return null;
     }
 
-    const agentBindings = await this.prisma.agentHostTool.findMany({
-      where: { agentId },
-      select: { hostToolId: true },
-      orderBy: { hostToolId: 'asc' },
-    });
-    const agentBoundHostToolIds = agentBindings.map((row) => row.hostToolId);
-    if (agentBoundHostToolIds.length === 0) {
+    if (ctx.candidateHostToolIds.length === 0) {
       return {
         appClientId,
         agentId,
@@ -218,7 +179,7 @@ export class AgentHostToolCatalogService {
     const [hostToolRows, skillBindingRows] = await Promise.all([
       this.prisma.hostTool.findMany({
         where: {
-          id: { in: agentBoundHostToolIds },
+          id: { in: ctx.candidateHostToolIds },
           appClientId,
         },
         include: HOST_TOOL_DETAIL_INCLUDE,
@@ -226,8 +187,8 @@ export class AgentHostToolCatalogService {
       }),
       this.prisma.skillHostTool.findMany({
         where: {
-          hostToolId: { in: agentBoundHostToolIds },
-          skill: { agentId },
+          hostToolId: { in: ctx.candidateHostToolIds },
+          skill: { appClientId },
         },
         orderBy: [{ priority: 'asc' }, { id: 'asc' }],
         select: {
@@ -248,7 +209,6 @@ export class AgentHostToolCatalogService {
       definitionKey: tool.definitionKey,
       name: tool.name,
       description: tool.description,
-      exposure: tool.exposure,
       hostPageScope: tool.hostPage?.scope ?? null,
       argsSchema:
         tool.argsSchema &&
@@ -257,6 +217,7 @@ export class AgentHostToolCatalogService {
           ? (tool.argsSchema as Record<string, unknown>)
           : { type: 'object' },
       argsTemplate: tool.argsTemplate,
+      config: tool.config,
       isActive: tool.isActive,
       updatedAt: toRevisionIso(tool.updatedAt),
     }));
@@ -285,12 +246,66 @@ export class AgentHostToolCatalogService {
           id: row.id,
           updatedAt: row.updatedAt,
         })),
-        agentBoundHostToolIds,
+        agentBoundHostToolIds: ctx.candidateHostToolIds,
       }),
-      agentBoundHostToolIds,
+      agentBoundHostToolIds: ctx.candidateHostToolIds,
       agentBoundTools,
       skillBindings,
       warmedAt: new Date().toISOString(),
+    };
+  }
+
+  private async loadHostToolCatalogContext(
+    appClientId: number,
+    agentId: number,
+  ): Promise<{
+    candidateHostToolIds: number[];
+    revisionHostToolRows: Array<{ id: number; updatedAt: Date }>;
+    revisionSkillBindingRows: Array<{ id: number; updatedAt: Date }>;
+  } | null> {
+    const agent = await this.prisma.agent.findFirst({
+      where: { id: agentId, appClientId },
+      select: { id: true, restrictHostTools: true },
+    });
+    if (!agent) {
+      return null;
+    }
+    const [agentBindings, appActiveHostTools] = await Promise.all([
+      this.prisma.agentHostTool.findMany({
+        where: { agentId },
+        select: { hostToolId: true },
+        orderBy: { hostToolId: 'asc' },
+      }),
+      this.prisma.hostTool.findMany({
+        where: { appClientId, isActive: true },
+        select: { id: true, updatedAt: true },
+        orderBy: { id: 'asc' },
+      }),
+    ]);
+    const candidateHostToolIds = resolveAgentHostToolCandidateIds({
+      restrictHostTools: agent.restrictHostTools,
+      whitelistIds: agentBindings.map((row) => row.hostToolId),
+      appActiveIds: appActiveHostTools.map((row) => row.id),
+    });
+    const candidateSet = new Set(candidateHostToolIds);
+    const revisionHostToolRows = appActiveHostTools.filter((row) =>
+      candidateSet.has(row.id),
+    );
+    let revisionSkillBindingRows: Array<{ id: number; updatedAt: Date }> = [];
+    if (candidateHostToolIds.length > 0) {
+      revisionSkillBindingRows = await this.prisma.skillHostTool.findMany({
+        where: {
+          hostToolId: { in: candidateHostToolIds },
+          skill: { appClientId },
+        },
+        select: { id: true, updatedAt: true },
+        orderBy: { id: 'asc' },
+      });
+    }
+    return {
+      candidateHostToolIds,
+      revisionHostToolRows,
+      revisionSkillBindingRows,
     };
   }
 }

@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { AgentChatPageContext } from '../../core/host-bridge';
+import { resolveHostToolPageScope } from '../../core/host-bridge/page-context-anchor.util';
 import { PromptComposerService } from '../../core/prompt/prompt-composer.service';
 import { parsePageContextFromMessageFields } from '../../core/host-bridge/parse-page-context.util';
 import { AgentHostToolCatalogService } from '../../core/runtime-cache/agent-host-tool-catalog.service';
@@ -78,7 +79,7 @@ export class SessionPrepareService {
       throw new NotFoundException('chat not found');
     }
 
-    const pageScope = pageContext?.page?.trim() || null;
+    const pageScope = resolveHostToolPageScope(pageContext);
 
     if (session.agentId) {
       const freshTools = await this.agentService.getAllowedTools(

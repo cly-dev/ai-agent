@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import type { LlmAdapter } from './llm-adapter.interface';
 import type {
@@ -27,6 +28,7 @@ type OpenAiCompatibleResponse = {
   choices?: Array<{
     delta?: {
       content?: string | null;
+      reasoning_content?: string | null;
       tool_calls?: Array<{
         function?: {
           name?: string;
@@ -36,6 +38,7 @@ type OpenAiCompatibleResponse = {
     };
     message?: {
       content?: string | null;
+      reasoning_content?: string | null;
       tool_calls?: Array<{
         function?: {
           name?: string;
@@ -48,6 +51,10 @@ type OpenAiCompatibleResponse = {
 
 @Injectable()
 export class OpenAiCompatibleAdapter implements LlmAdapter {
+  private readonly logger = new Logger(OpenAiCompatibleAdapter.name);
+  private streamReasoningOnlyChunks = 0;
+  private streamEmptyContentChunks = 0;
+  private streamContentChunks = 0;
   async chat(
     request: LlmChatRequest,
     config: LlmAdapterConfig,
@@ -119,6 +126,7 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
     }
 
     try {
+      this.resetStreamProbe();
       const response = await fetch(endpoint, {
         method: 'POST',
         headers,
@@ -156,6 +164,7 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
           if (!data) {
             continue;
           }
+          this.noteStreamChunk(data);
           const extracted = this.extractMessage(data);
           content += extracted.content;
           for (const item of extracted.toolCalls) {
@@ -176,6 +185,7 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
       if (buffer.trim()) {
         const data = this.tryParseChunk(buffer.trim());
         if (data) {
+          this.noteStreamChunk(data);
           const extracted = this.extractMessage(data);
           content += extracted.content;
           for (const item of extracted.toolCalls) {
@@ -194,6 +204,7 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
       }
 
       if (!content && toolCalls.length === 0) {
+        this.logStreamProbeSummary('stream-empty-result');
         return this.chat(
           {
             ...request,
@@ -202,6 +213,7 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
           config,
         );
       }
+      this.logStreamProbeSummary('stream-complete');
       return {
         content,
         toolCalls,
@@ -209,6 +221,7 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
         raw: { done },
       };
     } catch (error) {
+      this.logStreamProbeSummary('stream-error');
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -225,15 +238,72 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
     return `${normalizedBase}${normalizedPath}`;
   }
 
+  private resetStreamProbe(): void {
+    this.streamReasoningOnlyChunks = 0;
+    this.streamEmptyContentChunks = 0;
+    this.streamContentChunks = 0;
+  }
+
+  private logStreamProbeSummary(phase: string): void {
+    if (
+      this.streamReasoningOnlyChunks === 0 &&
+      this.streamEmptyContentChunks === 0 &&
+      this.streamContentChunks === 0
+    ) {
+      return;
+    }
+    const line =
+      `[OpenAiCompatibleAdapter] ${phase}` +
+      ` contentChunks=${this.streamContentChunks}` +
+      ` reasoningOnlyChunks=${this.streamReasoningOnlyChunks}` +
+      ` emptyChunks=${this.streamEmptyContentChunks}`;
+    if (this.streamReasoningOnlyChunks > 0 && this.streamContentChunks === 0) {
+      this.logger.warn(
+        `${line} → model may be emitting reasoning_content only; check Qwen3 thinking config`,
+      );
+      return;
+    }
+    this.logger.log(line);
+  }
+
   private extractContent(data: OpenAiCompatibleResponse): string {
+    const choice = data.choices?.[0];
     const text =
       data.message?.content ??
-      data.choices?.[0]?.message?.content ??
-      data.choices?.[0]?.delta?.content;
-    if (!text) {
-      return '';
+      choice?.message?.content ??
+      choice?.delta?.content;
+    if (typeof text === 'string' && text.length > 0) {
+      return text;
     }
-    return text;
+    const reasoning =
+      choice?.delta?.reasoning_content ??
+      choice?.message?.reasoning_content;
+    if (typeof reasoning === 'string' && reasoning.length > 0) {
+      this.logger.warn(
+        `[OpenAiCompatibleAdapter] using reasoning_content as content fallback (${reasoning.length} chars)`,
+      );
+      return reasoning;
+    }
+    return typeof text === 'string' ? text : '';
+  }
+
+  private noteStreamChunk(data: OpenAiCompatibleResponse): void {
+    const choice = data.choices?.[0];
+    const content = choice?.delta?.content ?? choice?.message?.content;
+    const reasoning =
+      choice?.delta?.reasoning_content ?? choice?.message?.reasoning_content;
+    const hasContent = typeof content === 'string' && content.length > 0;
+    const hasReasoning =
+      typeof reasoning === 'string' && reasoning.length > 0;
+    if (hasContent) {
+      this.streamContentChunks += 1;
+      return;
+    }
+    if (hasReasoning) {
+      this.streamReasoningOnlyChunks += 1;
+      return;
+    }
+    this.streamEmptyContentChunks += 1;
   }
 
   private extractToolCalls(data: OpenAiCompatibleResponse): LlmToolCall[] {

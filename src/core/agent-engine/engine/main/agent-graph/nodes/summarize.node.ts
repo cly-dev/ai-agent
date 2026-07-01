@@ -1,4 +1,9 @@
 import type { AgentGraphNodeBundle, AgentGraphNodeFn } from '../types/graph.types';
+import { applyWorkflowAfterSummarize } from '../../../../../workflow/workflow-summarize-sync.util';
+import { getWorkflowNodeDef } from '../../../../../workflow/workflow-graph-routing.util';
+import { shouldDeferPlanPresentWriteGate } from '../../../../../workflow/workflow-mutation-write-gate.util';
+import { latestWorkflowInitSkipReason } from '../../../../../workflow/workflow-init-skip.util';
+import type { AgentGraphState } from '../../types/agent-engine.types';
 import { AgentRunStatus } from '../../../../../../../generated/prisma/client';
 import {
   extractToolErrorUserHint,
@@ -45,10 +50,12 @@ import type { PlanReasonHostFillResult } from '../../plan-present/plan-reason-ho
 import { filterHostToolsForPlanStep } from '../../host-tool/host-tool-plan.util';
 import { patchLatestPlanComposeWriteObservation } from '../../plan-present/plan-compose-write.util';
 import {
+  buildPlanSummarizeObservation,
   finalizePlanAfterSummarize,
   getPendingPlanHostToolStep,
-  getPendingPlanStep,
   isPendingPlanAnswerStep,
+  planExecutionContextFromState,
+  resolveEffectivePlanStepId,
   resolvePlanSummarizePublishMode,
   resolveSummarizeUserMessageForPlan,
   shouldContinuePlanAfterSummarize,
@@ -57,6 +64,18 @@ import type { AgentRunStep } from '../../types/agent-engine.types';
 
 export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
   const { deps, ctx, runHelpers, decision, summarize, hostToolHandle } = bundle;
+
+  function mergeWorkflowSummarizeCompletion(
+    base: AgentGraphState,
+    input: {
+      continuePlan: boolean;
+      finished: boolean;
+      summarizedPlanStepId?: string | null;
+    },
+  ): AgentGraphState {
+    return { ...base, ...applyWorkflowAfterSummarize(base, input) };
+  }
+
   return async (state) => {
 
           const pendingObservation = resolveObservationForSummarize(
@@ -111,15 +130,18 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               nextSteps,
               AgentRunStatus.success,
             );
-            return {
-              ...state,
-              steps: nextSteps,
-              pendingRespond: null,
-              taskPlan: taskPlanAfterSummarize,
-              finalOutput: resolved.serialized,
-              status: AgentRunStatus.success,
-              finished: true,
-            };
+            return mergeWorkflowSummarizeCompletion(
+              {
+                ...state,
+                steps: nextSteps,
+                pendingRespond: null,
+                taskPlan: taskPlanAfterSummarize,
+                finalOutput: resolved.serialized,
+                status: AgentRunStatus.success,
+                finished: true,
+              },
+              { continuePlan: false, finished: true },
+            );
           }
           const primaryObservation = resolvePrimaryObservationForSummarize(
             pendingObservation.output,
@@ -166,47 +188,76 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               nextSteps,
               AgentRunStatus.success,
             );
-            return {
-              ...state,
-              steps: nextSteps,
-              pendingRespond: null,
-              taskPlan: state.planAborted
-                ? null
-                : finalizePlanAfterSummarize(state.taskPlan),
-              finalOutput:
-                deps.assistantArtifact.peekSerialized(
-                  ctx.input.sessionId,
-                  ctx.input.runId,
-                ) ?? stored,
-              status: AgentRunStatus.success,
-              finished: true,
-              planAborted: state.planAborted,
-            };
+            return mergeWorkflowSummarizeCompletion(
+              {
+                ...state,
+                steps: nextSteps,
+                pendingRespond: null,
+                taskPlan: state.planAborted
+                  ? null
+                  : finalizePlanAfterSummarize(state.taskPlan),
+                finalOutput:
+                  deps.assistantArtifact.peekSerialized(
+                    ctx.input.sessionId,
+                    ctx.input.runId,
+                  ) ?? stored,
+                status: AgentRunStatus.success,
+                finished: true,
+                planAborted: state.planAborted,
+              },
+              { continuePlan: false, finished: true },
+            );
           }
-          const reasonBeforeHostTool = isPlanReasonBeforeHostTool(state.taskPlan);
-          const planSummarizeUserMessage = resolveSummarizeUserMessageForPlan(
-            ctx.input.latestUserMessage,
-            state.taskPlan,
-          );
-          const mergedPlanObservation = isPendingPlanAnswerStep(state.taskPlan)
-            ? summarize.buildSummarizeObservationFromState(state, {
-                taskPlan: state.taskPlan,
-                scopedTools: state.scopedTools,
+          const workflowInitSkipReason = latestWorkflowInitSkipReason(state.steps);
+          const reasonBeforeHostTool =
+            !workflowInitSkipReason &&
+            isPlanReasonBeforeHostTool(state.taskPlan);
+          const taskPlanForSummarize = workflowInitSkipReason ? null : state.taskPlan;
+          const presentingPlanStepId = taskPlanForSummarize
+            ? resolveEffectivePlanStepId({
+                taskPlan: taskPlanForSummarize,
+                workflowRun: state.workflowRun,
               })
             : null;
+          const planSummarizeUserMessage = workflowInitSkipReason
+            ? ctx.input.latestUserMessage
+            : resolveSummarizeUserMessageForPlan(
+                ctx.input.latestUserMessage,
+                state.taskPlan,
+              );
+          const mergedPlanObservation =
+            !workflowInitSkipReason &&
+            isPendingPlanAnswerStep(
+              state.taskPlan,
+              state.workflowRun,
+              state.workflowNodeDefs,
+            )
+              ? summarize.buildSummarizeObservationFromState(state, {
+                  taskPlan: state.taskPlan,
+                  scopedTools: state.scopedTools,
+                })
+              : null;
           const draftBeforeWrite =
+            !workflowInitSkipReason &&
             mergedPlanObservation != null &&
-            isPlanDraftSummarizeBeforeWrite(state.taskPlan);
+            isPlanDraftSummarizeBeforeWrite(
+              planExecutionContextFromState(state),
+            );
           const planSummarizePublishMode = draftBeforeWrite
             ? { artifactPhase: 'draft' as const, emitAuthoritativeFull: true }
             : resolvePlanSummarizePublishMode(state.taskPlan);
           let draftPendingWrite: PlanPresentSummarizeResult | null = null;
           let reasonHostFillResult: PlanReasonHostFillResult | null = null;
           let summarized: string;
-          if (reasonBeforeHostTool && mergedPlanObservation) {
-            reasonHostFillResult = await summarize.summarizePlanReasonForHostFill(
+          if (reasonBeforeHostTool) {
+            const observationForReasonHostFill =
+              mergedPlanObservation ??
+              buildPlanSummarizeObservation({
+                userMessage: planSummarizeUserMessage,
+              });
+            reasonHostFillResult = await summarize.runPlanReasonHostFill(
               planSummarizeUserMessage,
-              mergedPlanObservation,
+              observationForReasonHostFill,
               allToolObservations(state),
               ctx.input.promptMessages,
               ctx.input.sessionId,
@@ -214,6 +265,8 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               ctx.promptScope,
               state.taskPlan!,
               state.scopedHostTools ?? [],
+              state.pageContext ?? null,
+              ctx.input.turnId,
             );
             summarized = reasonHostFillResult.serialized;
           } else if (draftBeforeWrite) {
@@ -229,6 +282,8 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               ctx.promptScope,
               state.taskPlan,
               state.scopedTools,
+              state.workflowRun,
+              state.workflowNodeDefs,
             );
             summarized = draftPendingWrite.serialized;
           } else if (pendingObservation.name === CLARIFICATION_REQUEST_OBSERVATION_NAME) {
@@ -240,6 +295,16 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               ctx.input.runId,
               ctx.promptScope,
               state.taskPlan,
+              planSummarizePublishMode,
+            );
+          } else if (pendingObservation.name === 'skill_intent_mismatch') {
+            summarized = await summarize.summarizeSkillIntentMismatch(
+              planSummarizeUserMessage,
+              pendingObservation.output,
+              ctx.input.promptMessages,
+              ctx.input.sessionId,
+              ctx.input.runId,
+              ctx.promptScope,
               planSummarizePublishMode,
             );
           } else if (
@@ -263,7 +328,12 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
                   ctx.input.runId,
                   ctx.promptScope,
                   state.taskPlan,
+                  undefined,
+                  undefined,
                   planSummarizePublishMode,
+                  undefined,
+                  state.workflowRun,
+                  state.workflowNodeDefs,
                 )
               : await summarize.summarizeDirectUserMessage(
                   planSummarizeUserMessage,
@@ -272,8 +342,10 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
                   ctx.input.sessionId,
                   ctx.input.runId,
                   ctx.promptScope,
-                  state.taskPlan,
+                  taskPlanForSummarize,
                   planSummarizePublishMode,
+                  state.workflowRun,
+                  state.workflowNodeDefs,
                 );
           } else if (pendingObservation.name === 'direct_reply') {
             summarized = await summarize.summarizeDirectLlmReply(
@@ -302,6 +374,8 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               pendingObservation.llmPayload?.args,
               planSummarizePublishMode,
               allToolObservations(state),
+              state.workflowRun,
+              state.workflowNodeDefs,
             );
           }
           if (!summarized || summarized.trim().length === 0) {
@@ -329,19 +403,22 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
             deps.sse.publishAssistantBlocks(ctx.input.sessionId, ctx.input.runId, [
               textBlock(fallback),
             ]);
-            return {
-              ...state,
-              steps: nextSteps,
-              pendingRespond: null,
-              taskPlan: finalizePlanAfterSummarize(state.taskPlan),
-              finalOutput:
-                deps.assistantArtifact.peekSerialized(
-                  ctx.input.sessionId,
-                  ctx.input.runId,
-                ) ?? stored,
-              status: AgentRunStatus.success,
-              finished: true,
-            };
+            return mergeWorkflowSummarizeCompletion(
+              {
+                ...state,
+                steps: nextSteps,
+                pendingRespond: null,
+                taskPlan: finalizePlanAfterSummarize(state.taskPlan),
+                finalOutput:
+                  deps.assistantArtifact.peekSerialized(
+                    ctx.input.sessionId,
+                    ctx.input.runId,
+                  ) ?? stored,
+                status: AgentRunStatus.success,
+                finished: true,
+              },
+              { continuePlan: false, finished: true },
+            );
           }
           const storedSummarized = runHelpers.sanitizeFinalOutput(summarized);
           const storedBlocks = tryParseStoredMessageBlocks(storedSummarized);
@@ -370,10 +447,12 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
           const summaryStep: AgentRunStep = {
             step: nextRunStepNumber(state.steps),
             type: 'summarize',
-            name: summarize.resolveSummarizeStepName(
-              state.taskPlan,
-              pendingObservation.name,
-            ),
+            name: workflowInitSkipReason
+              ? `workflow_init_skipped:${workflowInitSkipReason}`
+              : summarize.resolveSummarizeStepName(
+                  state.taskPlan,
+                  pendingObservation.name,
+                ),
             output: stepPlain,
             meta: summarize.resolveSummarizeStepMeta(pendingObservation),
           };
@@ -387,11 +466,23 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
                 ? null
                 : state.taskPlan
               : finalizePlanAfterSummarize(state.taskPlan);
+          // present_mutation 预览节点必然后接 await_user_confirm：其 continue 判定不能用
+          // 尚未 advance 的 state.workflowRun（仍指向 present_mutation，route=summarize 会误判为终止）。
+          const presentMutationContinues =
+            getWorkflowNodeDef(
+              state.workflowNodeDefs,
+              state.workflowRun?.currentNodeId,
+            )?.action === 'present_mutation';
           const continuePlan =
             !terminalTurnRespond &&
             !state.planAborted &&
             !(toolErrorObs != null && isTerminalPlanToolError(toolErrorObs)) &&
-            shouldContinuePlanAfterSummarize(taskPlanAfterSummarize);
+            (presentMutationContinues ||
+              shouldContinuePlanAfterSummarize(
+                taskPlanAfterSummarize,
+                state.workflowRun,
+                state.workflowNodeDefs,
+              ));
           if (continuePlan && planSummarizePublishMode.artifactPhase === 'draft') {
             deps.assistantArtifact.rephase(ctx.input.sessionId, ctx.input.runId, 'draft');
           }
@@ -469,7 +560,11 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               ? buildPlanDraftReplyObservation({
                   draftReply: draftReplyContent.draftReply,
                   submitText: draftReplyContent.submitText,
-                  planStepId: getPendingPlanStep(state.taskPlan)?.id ?? null,
+                  planStepId:
+                    resolveEffectivePlanStepId({
+                      taskPlan: state.taskPlan,
+                      workflowRun: state.workflowRun,
+                    }) ?? null,
                   pendingWriteToolCall: pendingWriteForGate,
                 })
               : null;
@@ -482,9 +577,30 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
               reasonHostFillResult.hostFillObservation,
               reasonHostFillResult.draftReplyObservation,
             ];
+            if (reasonHostFillResult.hostToolStreamObservation) {
+              observationsAfterDraft = [
+                ...observationsAfterDraft,
+                reasonHostFillResult.hostToolStreamObservation,
+              ];
+            }
+            if (reasonHostFillResult.hostToolDispatchObservations?.length) {
+              observationsAfterDraft = [
+                ...observationsAfterDraft,
+                ...reasonHostFillResult.hostToolDispatchObservations,
+              ];
+            }
           }
-          const pendingToolCallsFromDraft =
+          let pendingToolCallsFromDraft =
             pendingWriteForGate != null ? [pendingWriteForGate] : [];
+          if (
+            pendingToolCallsFromDraft.length > 0 &&
+            shouldDeferPlanPresentWriteGate({
+              workflowRun: state.workflowRun,
+              workflowNodeDefs: state.workflowNodeDefs,
+            })
+          ) {
+            pendingToolCallsFromDraft = [];
+          }
           if (pendingToolCallsFromDraft.length > 0) {
             deps.sse.emitThink(
               ctx.input.sessionId,
@@ -517,7 +633,10 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
             reasonHostFillResult?.submitText.trim() &&
             taskPlanAfterSummarize != null;
           if (reasonHostFillDispatched) {
-            const pendingHostStep = getPendingPlanHostToolStep(taskPlanAfterSummarize);
+            const pendingHostStep = getPendingPlanHostToolStep(
+              taskPlanAfterSummarize,
+              state.workflowRun,
+            );
             const hostToolsForPrompt = filterHostToolsForPlanStep(
               state.scopedHostTools ?? [],
               taskPlanAfterSummarize,
@@ -544,7 +663,11 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
                   resultState.steps,
                   resultState.status,
                 );
-                return resultState;
+                return mergeWorkflowSummarizeCompletion(resultState, {
+                  continuePlan,
+                  finished: resultState.finished,
+                  summarizedPlanStepId: presentingPlanStepId,
+                });
               }
             }
           } else if (continuePlan && !reasonHostFillResult) {
@@ -556,7 +679,11 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
             );
           }
 
-          return resultState;
+          return mergeWorkflowSummarizeCompletion(resultState, {
+            continuePlan,
+            finished: resultState.finished,
+            summarizedPlanStepId: presentingPlanStepId,
+          });
     
   };
 }

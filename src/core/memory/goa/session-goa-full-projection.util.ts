@@ -1,4 +1,5 @@
 import { sessionLedgerEntryKey } from './session-goa-ledger.util';
+import { formatWorkflowRunPendingSummary } from '../../workflow/workflow-goa-projection.util';
 import type {
   ActiveTask,
   ObservationEntry,
@@ -174,6 +175,16 @@ export function formatActiveTaskForPrompt(
     const artifactRef = step.artifactRef ? ` ref=${step.artifactRef}` : '';
     return `  - [${step.status}] ${step.stepId} (${step.phase}/${step.kind})${summary}${artifactRef}`;
   });
+  const workflowLines =
+    activeTask.workflowRun != null
+      ? [
+          `workflow: ${formatWorkflowRunPendingSummary(activeTask.workflowRun)}`,
+          ...activeTask.workflowRun.nodes.map(
+            (node) =>
+              `  - [${node.status}] ${node.nodeId} (${node.action})${node.outputRef ? ` ref=${node.outputRef}` : ''}`,
+          ),
+        ]
+      : [];
   return [
     '<active_task>',
     `goal: ${activeTask.plan.goal}`,
@@ -184,6 +195,7 @@ export function formatActiveTaskForPrompt(
     `completedSteps: ${activeTask.plan.completedStepIds.join(', ') || 'none'}`,
     'steps:',
     ...stepLines,
+    ...(workflowLines.length > 0 ? ['workflowNodes:', ...workflowLines] : []),
     '</active_task>',
   ].join('\n');
 }

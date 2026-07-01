@@ -13,7 +13,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { HostToolExposure } from '../../../../generated/prisma/client';
+import { HostToolSkillTrigger } from '../../../../generated/prisma/client';
 import { PaginationQueryDto } from '../../../common/pagination/pagination-query.dto';
 
 export class QueryHostPageDto extends PaginationQueryDto {
@@ -77,11 +77,6 @@ export class CreateHostToolDto {
   @IsObject()
   argsSchema!: Record<string, unknown>;
 
-  @ApiPropertyOptional({ enum: HostToolExposure, default: HostToolExposure.CATALOG })
-  @IsOptional()
-  @IsEnum(HostToolExposure)
-  exposure?: HostToolExposure;
-
   @ApiPropertyOptional({
     description: '参数模板，支持 $entity.id / $entity.type / $page 等',
   })
@@ -139,11 +134,6 @@ export class UpdateHostToolDto {
   @IsObject()
   argsSchema?: Record<string, unknown>;
 
-  @ApiPropertyOptional({ enum: HostToolExposure })
-  @IsOptional()
-  @IsEnum(HostToolExposure)
-  exposure?: HostToolExposure;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsObject()
@@ -188,11 +178,6 @@ export class QueryHostToolDto extends PaginationQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   genericOnly?: boolean;
-
-  @ApiPropertyOptional({ enum: HostToolExposure })
-  @IsOptional()
-  @IsEnum(HostToolExposure)
-  exposure?: HostToolExposure;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -254,11 +239,6 @@ export class ClientHostToolRegisterItemDto {
   @IsString()
   @MaxLength(200)
   scope?: string;
-
-  @ApiPropertyOptional({ enum: HostToolExposure, default: HostToolExposure.ON_COMPLETE })
-  @IsOptional()
-  @IsEnum(HostToolExposure)
-  exposure?: HostToolExposure;
 
   @ApiPropertyOptional({
     description: '完成通知参数模板，如 { "entityId": "$entity.id" }',

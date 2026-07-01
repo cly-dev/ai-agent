@@ -49,6 +49,21 @@ export class CreateAgentDto {
   @IsBoolean()
   enableToolCall?: boolean;
 
+  @ApiPropertyOptional({ description: '收紧 HTTP Tool 为 AgentTool 白名单' })
+  @IsOptional()
+  @IsBoolean()
+  restrictTools?: boolean;
+
+  @ApiPropertyOptional({ description: '收紧 Host Tool 为 AgentHostTool 白名单' })
+  @IsOptional()
+  @IsBoolean()
+  restrictHostTools?: boolean;
+
+  @ApiPropertyOptional({ description: '收紧 Skill 为 AgentSkill 白名单' })
+  @IsOptional()
+  @IsBoolean()
+  restrictSkills?: boolean;
+
   @ApiPropertyOptional({
     description: '自定义配置 JSON',
     example: { temperature: 0.2 },

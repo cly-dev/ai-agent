@@ -37,6 +37,7 @@ import { UpdateAgentDto } from './dto/update-agent.dto';
 import { SessionPrepareStore } from '../chat/session-prepare.store';
 import { AgentCacheStore } from './cache/agent-cache.store';
 import type { AgentRuntimeSnapshot } from './cache/agent-runtime.types';
+import { loadAgentToolCandidateIds } from '../../core/runtime-cache/agent-capability-load.util';
 import {
   buildRoleAccessibleToolWhere,
   resolveMaxToolLevel,
@@ -102,6 +103,7 @@ export class AgentService {
   }
 
   async create(dto: CreateAgentDto) {
+    const hasToolBindings = Boolean(dto.toolIds && dto.toolIds.length > 0);
     const agent = await this.prisma.agent.create({
       data: {
         appClientId: dto.appClientId,
@@ -110,6 +112,9 @@ export class AgentService {
         systemPrompt: dto.systemPrompt,
         maxSteps: dto.maxSteps ?? 8,
         enableToolCall: dto.enableToolCall ?? true,
+        restrictTools: dto.restrictTools ?? hasToolBindings,
+        restrictHostTools: dto.restrictHostTools ?? false,
+        restrictSkills: dto.restrictSkills ?? false,
         config: dto.config as Prisma.InputJsonValue | undefined,
       },
     });
@@ -179,28 +184,28 @@ export class AgentService {
       return [];
     }
 
-    const bindings = await this.prisma.agentTool.findMany({
-      where: {
-        toolId: { in: accessibleToolIds },
-        agent: { appClientId },
-      },
-      select: { agentId: true },
-      distinct: ['agentId'],
-    });
-    const agentIds = bindings.map((row) => row.agentId);
-    if (agentIds.length === 0) {
-      return [];
-    }
+    const accessibleToolIdSet = new Set(accessibleToolIds);
 
-    return this.prisma.agent.findMany({
-      where: { id: { in: agentIds }, appClientId },
+    const agents = await this.prisma.agent.findMany({
+      where: { appClientId },
       orderBy: { id: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-      },
+      select: { id: true, name: true, description: true },
     });
+    const available: AgentClientListItem[] = [];
+    for (const agent of agents) {
+      const candidateIds = await loadAgentToolCandidateIds(
+        this.prisma,
+        appClientId,
+        agent.id,
+      );
+      const hasOverlap = candidateIds.some((toolId) =>
+        accessibleToolIdSet.has(toolId),
+      );
+      if (hasOverlap) {
+        available.push(agent);
+      }
+    }
+    return available;
   }
 
   async findOne(id: number) {
@@ -218,6 +223,9 @@ export class AgentService {
         systemPrompt: dto.systemPrompt,
         maxSteps: dto.maxSteps,
         enableToolCall: dto.enableToolCall,
+        restrictTools: dto.restrictTools,
+        restrictHostTools: dto.restrictHostTools,
+        restrictSkills: dto.restrictSkills,
         config: dto.config as Prisma.InputJsonValue | undefined,
       },
     });
@@ -232,6 +240,12 @@ export class AgentService {
           skipDuplicates: true,
         }),
       ]);
+      if (dto.restrictTools === undefined) {
+        await this.prisma.agent.update({
+          where: { id },
+          data: { restrictTools: dto.toolIds.length > 0 },
+        });
+      }
     }
     await this.invalidateRuntimeCache(existing.appClientId, id);
     await this.runtimeCacheInvalidator.invalidateForAgent({
@@ -337,7 +351,7 @@ export class AgentService {
       this.prisma.skillTool.deleteMany({
         where: {
           toolId: { in: uniqueToolIds },
-          skill: { agentId },
+          skill: { appClientId },
         },
       }),
       this.prisma.agentTool.deleteMany({

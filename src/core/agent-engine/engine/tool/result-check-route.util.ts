@@ -73,6 +73,20 @@ export function resolveResultCheckPlanFallback(input: {
     };
   }
 
+  /** workflow_react 内 tool 步完成：plan 已 advance，需 mirror workflowRun 并退出当前 ReAct 环。 */
+  if (
+    planAdvance.route === 'llm' &&
+    outcome.route === 'llm' &&
+    planAdvance.reason === 'plan_advance_tool_step'
+  ) {
+    return {
+      action: 'llm_continue',
+      authority: 'plan',
+      clearPendingToolCalls: false,
+      reason: planAdvance.reason,
+    };
+  }
+
   return null;
 }
 

@@ -75,23 +75,25 @@ export class IntentScopeService {
     }
 
     if (!isUserIntentClear(input.userMessage)) {
-      const scopedToolIds = input.tools.map((tool) => tool.id);
-      const bundle = buildLangChain
-        ? this.toolEngine.buildLangChainTools(input.tools, {
-            ...input.toolBuildCtx,
-            allowedToolIds: scopedToolIds,
-          })
-        : null;
+      const scoped = await this.scopeToolsForMainLoop(
+        input.tools,
+        input.userMessage,
+        input.toolBuildCtx,
+        [],
+        buildLangChain,
+      );
       return {
         intentKind: 'unclear',
         intentClear: false,
         matchedCategoryIds: [],
         includeUncategorized: false,
-        scopedTools: input.tools,
-        scopedToolIds,
-        scopedLangChainTools: bundle?.tools ?? [],
-        scopedToolBundle: bundle,
-        scopedAllowedToolIds: scopedToolIds,
+        scopedTools: scoped.scopedTools,
+        scopedToolIds: scoped.scopedAllowedToolIds,
+        scopedLangChainTools: scoped.scopedLangChainTools,
+        scopedToolBundle: scoped.scopedToolBundle,
+        scopedAllowedToolIds: scoped.scopedAllowedToolIds,
+        bindCap: scoped.bindCap,
+        fallbackReason: scoped.fallbackReason,
       };
     }
 
@@ -193,7 +195,36 @@ export class IntentScopeService {
     bindCap?: Record<string, unknown>;
     fallbackReason?: 'bind_recall_error' | 'bind_recall_empty';
   }> {
+    const metadataScoped = filterToolsByAgentMetadata(tools, userMessage);
+    const recallSettings = await this.intentRecallConfig.get();
+    const tierCfg = readBindToolsTierConfig(recallSettings);
+    const bindTier = resolveBindToolsTopK(metadataScoped.length, tierCfg);
+
+    const emptyBundle = () => {
+      if (!buildLangChain) {
+        return {
+          scopedTools: [] as IntentScopeTool[],
+          scopedLangChainTools: [] as DynamicStructuredTool[],
+          scopedToolBundle: null,
+          scopedAllowedToolIds: [] as number[],
+        };
+      }
+      const scopedToolBundle = this.toolEngine.buildLangChainTools([], {
+        ...toolBuildCtx,
+        allowedToolIds: [],
+      });
+      return {
+        scopedTools: [] as IntentScopeTool[],
+        scopedLangChainTools: scopedToolBundle.tools,
+        scopedToolBundle,
+        scopedAllowedToolIds: [] as number[],
+      };
+    };
+
     const fallbackBundle = () => {
+      if (bindTier.recallRequired) {
+        return emptyBundle();
+      }
       const scopedIds = tools.map((tool) => tool.id);
       if (!buildLangChain) {
         return {
@@ -214,10 +245,6 @@ export class IntentScopeService {
         scopedAllowedToolIds: scopedIds,
       };
     };
-    const metadataScoped = filterToolsByAgentMetadata(tools, userMessage);
-    const recallSettings = await this.intentRecallConfig.get();
-    const tierCfg = readBindToolsTierConfig(recallSettings);
-    const bindTier = resolveBindToolsTopK(metadataScoped.length, tierCfg);
     try {
       const bindRecall = await this.categoryIntentRecall.recallTopToolsForBind(
         metadataScoped.map((tool) => ({
@@ -236,7 +263,11 @@ export class IntentScopeService {
         .map((row) => toolById.get(row.id))
         .filter((tool): tool is IntentScopeTool => tool != null);
       const effectiveTools =
-        scopedTools.length > 0 ? scopedTools : metadataScoped;
+        scopedTools.length > 0
+          ? scopedTools
+          : bindTier.recallRequired
+            ? []
+            : metadataScoped;
       const scopedIds = effectiveTools.map((tool) => tool.id);
       const scopedToolBundle = buildLangChain
         ? this.toolEngine.buildLangChainTools(effectiveTools, {
@@ -273,7 +304,7 @@ export class IntentScopeService {
       };
     } catch (error) {
       this.logger.warn(
-        `tool bind recall failed, use full tool set: ${
+        `tool bind recall failed, capped fallback: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

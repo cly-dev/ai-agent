@@ -2,14 +2,17 @@ import type { DynamicStructuredTool } from '@langchain/core/tools';
 import { AgentRunStatus, type Prisma } from '../../../../../../../generated/prisma/client';
 import {
   buildHostLangChainTools,
+  resolveHostToolPageScope,
   type AgentChatPageContext,
   type HostToolDecisionDefinition,
 } from '../../../../../host-bridge';
 import { logHostToolResolve } from '../../../../../host-bridge/host-tool-resolve-debug.util';
 import { maxRunStepNumber } from '../../run/agent-run-steps.util';
+import { stepsForRunPersistence } from '../../run/agent-run-audit.util';
 import { textBlock, sanitizeStoredFinalOutput } from '../../../message/message-blocks.util';
 import { allToolObservations } from '../../../graph-tool-observations.util';
 import { pendingRespondFromTurn } from '../../../turn/turn-respond.util';
+import { shouldEnforceRequestedSkillFromContract } from '../../../turn/skill-intent-alignment.util';
 import type { TurnRespondRequest } from '../../../turn/turn-respond.types';
 import type {
   AgentGraphState,
@@ -81,10 +84,26 @@ export function createBuildTurnRespondState() {
 }
 
 export function createIsIntentMatched(
-  requestedSkillCtx: RequestedSkillRunContext | null,
+  _requestedSkillCtx: RequestedSkillRunContext | null,
 ) {
   return (state: AgentGraphState): boolean => {
-    if (requestedSkillCtx) {
+    const contract = state.turnExecutionContract;
+    if (contract) {
+      if (
+        shouldEnforceRequestedSkillFromContract({
+          scopedToolsSource: contract.plan.scopedToolsSource,
+        })
+      ) {
+        return true;
+      }
+      if (
+        contract.plan.enabled &&
+        contract.routing.route !== 'direct_answer'
+      ) {
+        return true;
+      }
+    }
+    if ((state.taskPlan?.steps?.length ?? 0) > 0) {
       return true;
     }
     if (allToolObservations(state).length > 0) {
@@ -128,11 +147,12 @@ export async function updateRun(
   steps: AgentRunStep[],
   status: AgentRunStatus,
 ): Promise<void> {
+  const persistedSteps = stepsForRunPersistence(steps);
   await deps.prisma.agentRun.update({
     where: { id: runId },
     data: {
-      steps: steps as unknown as Prisma.InputJsonValue,
-      currentStep: maxRunStepNumber(steps),
+      steps: persistedSteps as unknown as Prisma.InputJsonValue,
+      currentStep: maxRunStepNumber(persistedSteps),
       status,
     },
   });
@@ -236,19 +256,7 @@ export async function loadScopedHostTools(
   scopedHostTools: HostToolDecisionDefinition[];
   scopedHostLangChainTools: DynamicStructuredTool[];
 }> {
-  if (!pageContext?.page?.trim()) {
-    logHostToolResolve('loadScopedHostTools', {
-      runId: input.runId,
-      sessionId: input.sessionId,
-      agentId: input.agentId,
-      skillId: skillId ?? null,
-      result: 'empty_page',
-      pageContext,
-      toolCount: 0,
-    });
-    return { scopedHostTools: [], scopedHostLangChainTools: [] };
-  }
-  const pageScope = pageContext.page.trim();
+  const pageScope = resolveHostToolPageScope(pageContext) ?? '';
   const cached = deps.runScopeCache.getHostToolsForRun(
     input.runId,
     pageScope,

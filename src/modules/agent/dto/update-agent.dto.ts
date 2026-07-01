@@ -53,6 +53,29 @@ export class UpdateAgentDto {
   enableToolCall?: boolean;
 
   @ApiPropertyOptional({
+    description: 'true：仅 AgentTool 白名单内 Tool；false 且未绑定时使用 App 全集',
+  })
+  @IsOptional()
+  @IsBoolean()
+  restrictTools?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'true：仅 AgentHostTool 白名单内 Host Tool；false 且未绑定时使用 App 全集',
+  })
+  @IsOptional()
+  @IsBoolean()
+  restrictHostTools?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'true：仅 AgentSkill 白名单内 Skill；false 且未绑定时使用 App 全集',
+  })
+  @IsOptional()
+  @IsBoolean()
+  restrictSkills?: boolean;
+
+  @ApiPropertyOptional({
     description: '自定义配置 JSON',
     example: { temperature: 0.2 },
   })

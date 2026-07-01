@@ -502,6 +502,7 @@ export class AgentRunSseEmitter {
       turnId?: number;
       beforeStream?: () => void;
       abortSignal?: AbortSignal;
+      messageTokenBudget?: number;
     },
   ): Promise<{
     userMarkdown: string;
@@ -545,7 +546,18 @@ export class AgentRunSseEmitter {
     let streamed = '';
     try {
       const result = await this.llmService.streamChat(
-        { messages, tools: [], signal: abortSignal },
+        {
+          messages,
+          tools: [],
+          signal: abortSignal,
+          messageTokenBudget: options?.messageTokenBudget,
+          budgetHints: {
+            callKind: 'summarize',
+            sessionId,
+            runId,
+            phase: 'summarize',
+          },
+        },
         {
           signal: abortSignal,
           onDelta: (delta) => {

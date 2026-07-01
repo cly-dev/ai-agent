@@ -1,14 +1,6 @@
-import {
-  HostToolExposure,
-  HostToolSkillTrigger,
-} from '../../../generated/prisma/client';
+import { HostToolSkillTrigger } from '../../../generated/prisma/client';
 import type { HostToolDecisionDefinition } from '../host-bridge';
 import type { AgentHostToolCatalogSnapshot } from './runtime-cache.types';
-
-const LLM_EXPOSURES: HostToolExposure[] = [
-  HostToolExposure.LLM,
-  HostToolExposure.BOTH,
-];
 
 export function resolvePreferredHostToolIdsFromCatalog(
   catalog: AgentHostToolCatalogSnapshot,
@@ -60,13 +52,12 @@ export function filterHostToolCatalogRowsForPage(input: {
   catalog: AgentHostToolCatalogSnapshot;
   pageScope: string;
   preferredIds: number[];
-  exposures: HostToolExposure[];
 }): AgentHostToolCatalogSnapshot['agentBoundTools'] {
   if (input.preferredIds.length === 0) {
     return [];
   }
   const preferredSet = new Set(input.preferredIds);
-  const exposureSet = new Set(input.exposures);
+  const pageScope = input.pageScope.trim();
   return input.catalog.agentBoundTools.filter((tool) => {
     if (!preferredSet.has(tool.hostToolId)) {
       return false;
@@ -74,13 +65,13 @@ export function filterHostToolCatalogRowsForPage(input: {
     if (!tool.isActive) {
       return false;
     }
-    if (!exposureSet.has(tool.exposure)) {
-      return false;
+    if (pageScope) {
+      if (tool.hostPageScope != null && tool.hostPageScope !== pageScope) {
+        return false;
+      }
+      return true;
     }
-    if (tool.hostPageScope != null && tool.hostPageScope !== input.pageScope) {
-      return false;
-    }
-    return true;
+    return tool.hostPageScope == null;
   });
 }
 
@@ -98,6 +89,7 @@ export function toHostToolDecisionDefinitions(
       name: tool.name,
       description: tool.description,
       argsSchema: tool.argsSchema,
+      hostPageScope: tool.hostPageScope,
       isRequired: requiredByToolId.get(tool.hostToolId) ?? false,
     }));
 }
@@ -108,7 +100,6 @@ export type HostToolCatalogFilterDiagnostic = {
   included: boolean;
   reasons: string[];
   hostPageScope: string | null;
-  exposure: HostToolExposure;
   isActive: boolean;
 };
 
@@ -117,13 +108,11 @@ export function buildHostToolCatalogFilterDiagnostics(
   input: {
     pageScope: string;
     preferredIds: number[];
-    exposures: HostToolExposure[];
   },
 ): HostToolCatalogFilterDiagnostic[] {
   const toolById = new Map(
     catalog.agentBoundTools.map((tool) => [tool.hostToolId, tool]),
   );
-  const exposureSet = new Set(input.exposures);
   return input.preferredIds.map((hostToolId) => {
     const tool = toolById.get(hostToolId);
     if (!tool) {
@@ -133,16 +122,12 @@ export function buildHostToolCatalogFilterDiagnostics(
         included: false,
         reasons: ['not_in_agent_bound_catalog'],
         hostPageScope: null,
-        exposure: HostToolExposure.LLM,
         isActive: false,
       };
     }
     const reasons: string[] = [];
     if (!tool.isActive) {
       reasons.push('inactive');
-    }
-    if (!exposureSet.has(tool.exposure)) {
-      reasons.push(`exposure_not_llm:${tool.exposure}`);
     }
     if (tool.hostPageScope != null && tool.hostPageScope !== input.pageScope) {
       reasons.push(
@@ -155,7 +140,6 @@ export function buildHostToolCatalogFilterDiagnostics(
       included: reasons.length === 0,
       reasons,
       hostPageScope: tool.hostPageScope,
-      exposure: tool.exposure,
       isActive: tool.isActive,
     };
   });
@@ -170,9 +154,6 @@ export function resolveLlmHostToolsFromCatalog(
   },
 ): HostToolDecisionDefinition[] {
   const pageScope = input.pageScope.trim();
-  if (!pageScope) {
-    return [];
-  }
   const { preferredIds, requiredByToolId } = resolvePreferredHostToolIdsFromCatalog(
     catalog,
     {
@@ -184,7 +165,6 @@ export function resolveLlmHostToolsFromCatalog(
     catalog,
     pageScope,
     preferredIds,
-    exposures: LLM_EXPOSURES,
   });
   return toHostToolDecisionDefinitions(scoped, requiredByToolId, preferredIds);
 }

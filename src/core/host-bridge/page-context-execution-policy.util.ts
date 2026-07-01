@@ -6,8 +6,8 @@ import {
 import type {
   PageContextDataAssessment,
   PageContextPlanKind,
-  PageContextTaskKind,
   PageContextUsage,
+  TurnPageReadKind,
 } from './page-context-usage.types';
 
 /** Turn 执行通道（与 pageContext 消费策略正交）。 */
@@ -21,15 +21,30 @@ export type PageContextExecutionPolicy = {
   plan: PageContextPlanKind;
 };
 
+type PageContextWriteChannel = 'none' | 'http' | 'host';
+
+function isWriteIntentActive(input: {
+  writeChannel?: PageContextWriteChannel;
+  hostMutationIntent?: boolean;
+}): boolean {
+  if (input.writeChannel != null) {
+    return input.writeChannel !== 'none';
+  }
+  return Boolean(input.hostMutationIntent);
+}
+
 /**
  * pageContext 消费策略：只依赖 applies + 结构化评估 + taskKind。
- * 不因 on_page_task / orchestrated 而改变（direct_answer 除外）。
+ * 任意写通道（http / host）激活时不走读 plan。
  */
 export function resolvePageContextExecutionPolicy(input: {
   route: TurnExecutionRoute;
   pageContextApplies: boolean;
-  pageContextTaskKind: PageContextTaskKind;
+  pageContextTaskKind: TurnPageReadKind;
   pageContext: AgentChatPageContext | null | undefined;
+  writeChannel?: PageContextWriteChannel;
+  /** @deprecated 使用 writeChannel */
+  hostMutationIntent?: boolean;
 }): PageContextExecutionPolicy {
   const assessment = assessPageContextData(input.pageContext);
   const baseUsage = toPageContextUsage(assessment, false);
@@ -38,26 +53,33 @@ export function resolvePageContextExecutionPolicy(input: {
     return { usage: baseUsage, plan: 'none' };
   }
 
+  if (isWriteIntentActive(input)) {
+    const usage = input.pageContextApplies
+      ? toPageContextUsage(assessment, true)
+      : baseUsage;
+    return { usage, plan: 'none' };
+  }
+
   if (!input.pageContextApplies || assessment.dataSufficiency === 'none') {
     return { usage: baseUsage, plan: 'none' };
   }
 
   const appliesUsage = toPageContextUsage(assessment, true);
 
-  if (input.pageContextTaskKind === 'analyze') {
-    if (assessment.dataSufficiency === 'inline') {
-      return { usage: appliesUsage, plan: 'inline_answer' };
-    }
-    if (assessment.dataSufficiency === 'entity_only') {
-      return { usage: appliesUsage, plan: 'entity_read_detail' };
-    }
-  }
-
   if (
-    input.pageContextTaskKind === 'answer' &&
+    (input.pageContextTaskKind === 'analyze' ||
+      input.pageContextTaskKind === 'answer') &&
     assessment.dataSufficiency === 'inline'
   ) {
     return { usage: appliesUsage, plan: 'inline_answer' };
+  }
+
+  if (
+    (input.pageContextTaskKind === 'analyze' ||
+      input.pageContextTaskKind === 'answer') &&
+    assessment.dataSufficiency === 'entity_only'
+  ) {
+    return { usage: appliesUsage, plan: 'entity_read_detail' };
   }
 
   return { usage: appliesUsage, plan: 'none' };
@@ -69,7 +91,7 @@ export function resolvePageContextExecutionPolicy(input: {
  */
 export function resolveCanonicalTurnRoute(input: {
   llmRoute: TurnExecutionRoute;
-  pageContextTaskKind: PageContextTaskKind;
+  pageContextTaskKind: TurnPageReadKind;
 }): TurnExecutionRoute {
   if (input.llmRoute === 'direct_answer') {
     return 'direct_answer';
@@ -88,14 +110,6 @@ export function shouldMaterializePageContextFromUsage(
   usage: Pick<PageContextUsage, 'applies' | 'dataSufficiency'>,
 ): boolean {
   return usage.applies && usage.dataSufficiency === 'inline';
-}
-
-/** Host 工作流仅在 canonical on_page_task 且未走 pageContext 外层 plan 时启用。 */
-export function isHostPageWorkflowEnabled(input: {
-  route: TurnExecutionRoute;
-  pageContextPlan: PageContextPlanKind;
-}): boolean {
-  return input.route === 'on_page_task' && input.pageContextPlan === 'none';
 }
 
 /** 外层 plan 是否由 pageContext 契约接管（优先于 skill 展开）。 */

@@ -3,9 +3,9 @@ import type { LlmService } from '../../../../llm/llm.service';
 import type { PromptRegistryService } from '../../../../prompt/prompt-registry.service';
 import {
   extractSubmitTextFromDraftReply,
-  extractSubmitTextFromWriteArguments,
   injectDraftIntoWriteToolArguments,
   writeToolArgsContainSubmitText,
+  writeToolHasSubmitBodyPath,
 } from '../../../../tool-engine/write-tool-draft-injection.util';
 import { formatFieldLabelsForPrompt } from '../../../../tool-engine/tool-output-projection.util';
 import { emitLlmPromptDebug } from '../../llm-prompt-debug.util';
@@ -36,11 +36,14 @@ import {
 } from './plan-present-user-message.util';
 import type { RunAssistantArtifactStore } from '../run/run-assistant-artifact.store';
 import {
-  filterScopedToolsForPlanStep,
   finalizePlanAfterSummarize,
+  resolveMutationWriteToolsForPresent,
 } from '../plan/task-plan.util';
 import { buildPlanContextForSummarize } from '../host-tool/host-tool-fill-alignment.util';
 import type { TaskPlanSnapshot } from '../plan/task-plan.types';
+import { shouldDeferPlanPresentWriteGate } from '../../../../workflow/workflow-mutation-write-gate.util';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
+import { buildDeterministicMutationPresentMarkdown } from './plan-present-display.util';
 
 export type PlanPresentOrchestrateDeps = PlanPresentUserLayerPublishDeps & {
   llmService: LlmService;
@@ -71,6 +74,8 @@ export type RunPlanPresentSummarizeInput = {
   scope: { appClientId: number; agentId: number };
   taskPlan: TaskPlanSnapshot | null | undefined;
   scopedTools: AgentEngineTool[];
+  workflowRun?: WorkflowRunState | null;
+  workflowNodeDefs?: WorkflowNodeDef[] | null;
 };
 
 /**
@@ -92,16 +97,17 @@ export async function runPlanPresentSummarize(
     scope,
     taskPlan,
     scopedTools,
+    workflowRun,
+    workflowNodeDefs,
   } = input;
 
   const planContext = buildPlanContextForSummarize(taskPlan, toolObservations);
-  const taskPlanAfterFinalize = taskPlan
-    ? finalizePlanAfterSummarize(taskPlan)
-    : null;
-  const writeTools = taskPlanAfterFinalize
-    ? filterScopedToolsForPlanStep(scopedTools, taskPlanAfterFinalize)
-    : [];
   const composed = resolveLatestPlanComposeWrite(toolObservations);
+  const writeTools = resolveMutationWriteToolsForPresent(
+    scopedTools,
+    taskPlan,
+    composed?.tool,
+  );
   const splitOutput = isSplitToolObservationsOutput(mergedObservation.output)
     ? mergedObservation.output
     : null;
@@ -228,6 +234,38 @@ export async function runPlanPresentSummarize(
     arguments: composedArgs,
     planStepId: composed.planStepId ?? null,
   };
+
+  const deferWorkflowAwaitGate = shouldDeferPlanPresentWriteGate({
+    workflowRun,
+    workflowNodeDefs,
+  });
+  const hasSubmitBody =
+    writeToolDef != null && writeToolHasSubmitBodyPath(writeToolDef);
+
+  // 结构化写操作（无自由文本正文）：无正文可读，仍走确定性参数预览，保证参数真值可核对。
+  // 文本回复类写操作落到下方 LLM present：由 LLM 生成完整说明；实际写入始终以 machineLayer 为准（与展示层解耦）。
+  if (deferWorkflowAwaitGate && writeToolDef && !hasSubmitBody) {
+    deps.sse.emitThink(sessionId, runId, '正在整理写操作草稿…\n', 'delta');
+    const userMarkdown = buildDeterministicMutationPresentMarkdown({
+      arguments: composedArgs,
+      writeTool: writeToolDef,
+    });
+    const published = finalizePlanPresentUserLayer(deps, {
+      sessionId,
+      runId,
+      turnId,
+      machineLayer,
+      userMarkdown,
+      taskPlanBeforeFinalize: taskPlan,
+      scopedTools,
+    });
+    return {
+      ...published,
+      pendingWriteToolCall: null,
+      machineLayer,
+      machineLayerDirty,
+    };
+  }
 
   const userContext = buildPlanDraftSummarizeUserContent({
     ...userContextBase,

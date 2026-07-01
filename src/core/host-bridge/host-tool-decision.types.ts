@@ -4,6 +4,8 @@ export type HostToolDecisionDefinition = {
   name: string;
   description: string;
   argsSchema: Record<string, unknown>;
+  /** 绑定页面 scope；null 表示通用 tool。 */
+  hostPageScope?: string | null;
   /** SkillHostTool.isRequired；未绑 Skill 时为 false。 */
   isRequired?: boolean;
 };

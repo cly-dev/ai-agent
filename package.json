@@ -6,7 +6,9 @@
   "private": true,
   "license": "UNLICENSED",
   "pnpm": {
-    "neverBuiltDependencies": ["sharp"]
+    "neverBuiltDependencies": [
+      "sharp"
+    ]
   },
   "scripts": {
     "build": "nest build",
@@ -15,7 +17,7 @@
     "build:prod": "prisma generate && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
-    "start:dev": "nest start --watch",
+    "start:dev": "NODE_ENV=dev nest start --watch",
     "start:test": "NODE_ENV=test nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "NODE_ENV=prod node dist/src/main.js",
@@ -46,7 +48,8 @@
     "db:backfill-app-client-auth": "ts-node prisma/scripts/backfill-app-client-auth-from-env.ts",
     "db:configure-app-client-2-auth": "ts-node prisma/scripts/configure-app-client-2-admin-auth.ts",
     "db:delete-public-buyer-tools": "ts-node prisma/scripts/delete-public-buyer-tools.ts",
-    "db:delete-obsolete-prompts": "ts-node prisma/scripts/delete-obsolete-prompt-templates.ts"
+    "db:delete-obsolete-prompts": "ts-node prisma/scripts/delete-obsolete-prompt-templates.ts",
+    "db:migrate:skill-config-workflow": "ts-node -r tsconfig-paths/register prisma/scripts/migrate-skill-config-workflow.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.1.45",
@@ -62,6 +65,7 @@
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
     "@xenova/transformers": "^2.17.2",
+    "bullmq": "^5.79.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "dotenv": "^16.4.5",

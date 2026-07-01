@@ -17,6 +17,8 @@ import type {
 import type { TaskPlanSnapshot } from '../../plan/task-plan.types';
 import type { TurnRoutingDecision } from '../../../turn/turn-routing.types';
 import type { TurnExecutionContract } from '../../../turn/turn-execution-contract.types';
+import type { TurnScopedToolsBundle } from '../../../turn/turn-scoped-tools.util';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../../workflow/workflow.types';
 
 export function createAgentGraphStateAnnotation() {
   const State = Annotation.Root({
@@ -75,6 +77,10 @@ export function createAgentGraphStateAnnotation() {
         reducer: (_state, update) => update,
       }),
       scopedToolBundle: Annotation<BuiltLangChainTools | null>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      intentScopedToolsBundle: Annotation<TurnScopedToolsBundle | null>({
         default: () => null,
         reducer: (_state, update) => update,
       }),
@@ -161,6 +167,26 @@ export function createAgentGraphStateAnnotation() {
       }),
       turnExecutionContract: Annotation<TurnExecutionContract | null | undefined>({
         default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      planRunContext: Annotation<AgentGraphState['planRunContext']>({
+        default: () => undefined,
+        reducer: (_state, update) => update,
+      }),
+      workflowRun: Annotation<WorkflowRunState | null | undefined>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      workflowNodeDefs: Annotation<WorkflowNodeDef[] | undefined>({
+        default: () => undefined,
+        reducer: (_state, update) => update,
+      }),
+      workflowNodeOutputs: Annotation<Record<string, unknown> | undefined>({
+        default: () => undefined,
+        reducer: (_state, update) => update,
+      }),
+      workflowAwaitingReact: Annotation<boolean | undefined>({
+        default: () => false,
         reducer: (_state, update) => update,
       }),
     });

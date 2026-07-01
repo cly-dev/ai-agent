@@ -28,6 +28,7 @@ import type {
   AgentRunStep,
 } from '../types/agent-engine.types';
 import { maxRunStepNumber } from './agent-run-steps.util';
+import { filterUserVisibleRunSteps, stepsForRunPersistence } from './agent-run-audit.util';
 import { buildAgentRunGoaSnapshot } from '../../../../memory/goa/session-goa-run-snapshot.util';
 import type { AgentRunGoaSnapshot } from '../../../../memory/goa/session-goa.types';
 import { toStoredTaskPlan } from '../session/session-graph-resume.util';
@@ -56,6 +57,7 @@ function buildMemoryUpdateContext(input: {
     | 'intentKind'
     | 'awaitingWriteConfirmation'
     | 'planAborted'
+    | 'workflowRun'
   >;
 }): SessionMemoryUpdateContext {
   return {
@@ -64,7 +66,7 @@ function buildMemoryUpdateContext(input: {
     userInput: input.userInput,
     finalOutput: input.finalOutput,
     newToolObservations: newToolObservationsFromGraph(input.graphState),
-    runSteps: input.graphState.steps.map((step) => ({
+    runSteps: filterUserVisibleRunSteps(input.graphState.steps).map((step) => ({
       type: step.type,
       name: step.name,
       output: step.output,
@@ -77,6 +79,9 @@ function buildMemoryUpdateContext(input: {
     phase: input.graphState.awaitingWriteConfirmation ? 'task_only' : 'full',
     awaitingWriteConfirmation: input.graphState.awaitingWriteConfirmation,
     abandonActiveTask: input.graphState.planAborted === true,
+    ...(input.graphState.workflowRun
+      ? { workflowRun: input.graphState.workflowRun }
+      : {}),
   };
 }
 
@@ -104,11 +109,12 @@ export class AgentRunLifecycleService {
     steps: AgentRunStep[],
     status: AgentRunStatus,
   ): Promise<void> {
+    const persistedSteps = stepsForRunPersistence(steps);
     await this.prisma.agentRun.update({
       where: { id: runId },
       data: {
-        steps: steps as unknown as Prisma.InputJsonValue,
-        currentStep: maxRunStepNumber(steps),
+        steps: persistedSteps as unknown as Prisma.InputJsonValue,
+        currentStep: maxRunStepNumber(persistedSteps),
         status,
       },
     });
@@ -396,7 +402,7 @@ export class AgentRunLifecycleService {
     runMetrics: RunMetricsAccumulator;
   }): Promise<AgentRunResult> {
     let status = input.graphState.status;
-    const steps = [...input.graphState.steps];
+    const steps = filterUserVisibleRunSteps([...input.graphState.steps]);
     const goaSnapshot = buildAgentRunGoaSnapshot({
       graphState: input.graphState,
       runFailed: input.graphState.status === AgentRunStatus.failed,

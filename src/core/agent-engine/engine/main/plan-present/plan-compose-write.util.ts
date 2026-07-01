@@ -9,6 +9,7 @@ import {
 } from '../plan/task-plan.util';
 import type { TaskPlanSnapshot } from '../plan/task-plan.types';
 import type { AgentChatPageContext } from '../../../../host-bridge/page-context.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
 
 /** Plan compose_write 步产出：机器层 write 参数（尚未执行 HTTP）。 */
 export const PLAN_COMPOSE_WRITE_OBSERVATION_NAME = 'plan_compose_write';
@@ -94,8 +95,15 @@ export function pickComposeWriteToolCall(
   toolCalls: GraphToolCall[],
   scopedTools: AgentEngineTool[],
   taskPlan: TaskPlanSnapshot,
+  workflowRun?: WorkflowRunState | null,
+  workflowNodeDefs?: WorkflowNodeDef[] | null,
 ): GraphToolCall | null {
-  const allowed = filterScopedToolsForPlanStep(scopedTools, taskPlan);
+  const allowed = filterScopedToolsForPlanStep(
+    scopedTools,
+    taskPlan,
+    workflowRun,
+    workflowNodeDefs,
+  );
   for (const call of toolCalls) {
     const def = allowed.find((tool) => tool.name === call.name);
     if (def && isMutationTool(def.agentMetadata)) {
@@ -141,5 +149,58 @@ export function prepareComposeWriteToolCall(input: {
         pageContext: input.pageContext ?? null,
       },
     ),
+  };
+}
+
+export type ComposeMutationInterceptResult =
+  | { kind: 'not_applicable' }
+  | { kind: 'no_allowed_call' }
+  | {
+      kind: 'applied';
+      preparedCall: GraphToolCall;
+      composeObservation: ToolObservation;
+    };
+
+/** LLM / tools 共用：compose 阶段拦截 write tool_call，存 plan_compose_write 不执行 HTTP。 */
+export function tryInterceptComposeMutationToolCalls(input: {
+  toolCalls: GraphToolCall[];
+  taskPlan: TaskPlanSnapshot;
+  scopedTools: AgentEngineTool[];
+  observations: ToolObservation[];
+  pageContext?: AgentChatPageContext | null;
+  planStepId: string;
+  workflowRun?: WorkflowRunState | null;
+  workflowNodeDefs?: WorkflowNodeDef[] | null;
+}): ComposeMutationInterceptResult {
+  const composeCall = pickComposeWriteToolCall(
+    input.toolCalls,
+    input.scopedTools,
+    input.taskPlan,
+    input.workflowRun,
+    input.workflowNodeDefs,
+  );
+  if (!composeCall) {
+    return { kind: 'no_allowed_call' };
+  }
+  const writeToolDef = input.scopedTools.find(
+    (tool) => tool.name === composeCall.name,
+  );
+  const preparedCall =
+    writeToolDef != null
+      ? prepareComposeWriteToolCall({
+          toolCall: composeCall,
+          writeTool: writeToolDef,
+          observations: input.observations,
+          scopedTools: input.scopedTools,
+          pageContext: input.pageContext ?? null,
+        })
+      : composeCall;
+  return {
+    kind: 'applied',
+    preparedCall,
+    composeObservation: buildPlanComposeWriteObservation({
+      toolCall: preparedCall,
+      planStepId: input.planStepId,
+    }),
   };
 }

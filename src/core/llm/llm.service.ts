@@ -16,8 +16,9 @@ import { LlmModelConfigCacheStore } from './llm-model-config-cache.store';
 import { normalizeToolCallArgs as normalizeToolArguments } from './tool-call-args.util';
 import {
   estimateMessagesTokens,
-  trimMessagesToTokenBudget,
 } from './message-token-budget.util';
+import { PromptBudgetService } from './prompt-budget/prompt-budget.service';
+import type { FitMessagesResult, PromptBudgetHints } from './prompt-budget/prompt-budget.types';
 import type {
   LlmChatInput,
   LlmChatMessage,
@@ -51,6 +52,7 @@ export class LlmService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly modelConfigCache: LlmModelConfigCacheStore,
+    private readonly promptBudgetService: PromptBudgetService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -83,14 +85,16 @@ export class LlmService implements OnModuleInit {
   }
 
   async chat(input: LlmChatInput): Promise<LlmChatResult> {
-    return this.invokeWithLangChain(input, false);
+    const messages = await this.applyPromptBudget(input);
+    return this.invokeWithLangChain({ ...input, messages }, false);
   }
 
   async streamChat(
     input: LlmChatInput,
     handlers?: LlmStreamHandlers,
   ): Promise<LlmChatResult> {
-    return this.invokeWithLangChain(input, true, handlers);
+    const messages = await this.applyPromptBudget(input);
+    return this.invokeWithLangChain({ ...input, messages }, true, handlers);
   }
 
   /** 模型上下文窗口（parameters.contextLength 等），非输出 max_tokens。 */
@@ -152,9 +156,33 @@ export class LlmService implements OnModuleInit {
 
   async trimMessagesToBudget(
     messages: LlmChatInput['messages'],
+    hints?: PromptBudgetHints,
+    budgetOverride?: number,
   ): Promise<LlmChatInput['messages']> {
-    const budget = await this.getMessageTokenBudget();
-    return trimMessagesToTokenBudget(messages, budget);
+    const result = await this.fitMessagesToBudget(
+      messages,
+      hints,
+      budgetOverride,
+    );
+    return result.messages;
+  }
+
+  async fitMessagesToBudget(
+    messages: LlmChatMessage[],
+    hints?: PromptBudgetHints,
+    budgetOverride?: number,
+  ): Promise<FitMessagesResult> {
+    const budget = budgetOverride ?? (await this.getMessageTokenBudget());
+    return this.promptBudgetService.fitMessages(messages, budget, hints);
+  }
+
+  private async applyPromptBudget(input: LlmChatInput): Promise<LlmChatMessage[]> {
+    const result = await this.fitMessagesToBudget(
+      input.messages,
+      input.budgetHints,
+      input.messageTokenBudget,
+    );
+    return result.messages;
   }
 
   /** 是否已配置 embedding（DB transformers/api 或环境变量降级）。 */
@@ -344,15 +372,23 @@ export class LlmService implements OnModuleInit {
     options?: {
       temperature?: number;
       maxTokens?: number;
+      budgetHints?: PromptBudgetHints;
+      messageTokenBudget?: number;
     },
-  ): Promise<{ model: ChatOpenAI; maxTokens: number }> {
+  ): Promise<{ model: ChatOpenAI; maxTokens: number; messages: LlmChatMessage[] }> {
+    const fitted = await this.fitMessagesToBudget(
+      messages,
+      options?.budgetHints,
+      options?.messageTokenBudget,
+    );
     const resolvedMaxTokens =
-      options?.maxTokens ?? (await this.resolveInvocationMaxTokens(messages));
+      options?.maxTokens ??
+      (await this.resolveInvocationMaxTokens(fitted.messages));
     const model = await this.createLangChainChatModel({
       temperature: options?.temperature,
       maxTokens: resolvedMaxTokens,
     });
-    return { model, maxTokens: resolvedMaxTokens };
+    return { model, maxTokens: resolvedMaxTokens, messages: fitted.messages };
   }
 
   private async invokeWithLangChain(
@@ -431,6 +467,9 @@ export class LlmService implements OnModuleInit {
     let merged: AIMessageChunk | undefined;
     let content = '';
     let emittedDeltaCount = 0;
+    let streamChunkCount = 0;
+    let emptyStreamChunkCount = 0;
+    let reasoningOnlyChunkCount = 0;
     try {
       if (signal?.aborted) {
         throw new DOMException('The operation was aborted.', 'AbortError');
@@ -441,7 +480,22 @@ export class LlmService implements OnModuleInit {
           throw new DOMException('The operation was aborted.', 'AbortError');
         }
         const row = chunk as AIMessageChunk;
-        const delta = this.extractAiMessageContent(row.content);
+        streamChunkCount += 1;
+        let delta = this.extractAiMessageContent(row.content);
+        if (!delta) {
+          const reasoningDelta = this.extractAiMessageReasoning(row);
+          if (reasoningDelta) {
+            reasoningOnlyChunkCount += 1;
+            delta = reasoningDelta;
+            if (emittedDeltaCount === 0 && reasoningOnlyChunkCount === 1) {
+              this.logger.warn(
+                `[LlmService] stream using reasoning_content fallback (model=${modelFallback})`,
+              );
+            }
+          } else {
+            emptyStreamChunkCount += 1;
+          }
+        }
         if (delta) {
           content += delta;
           emittedDeltaCount += 1;
@@ -468,8 +522,15 @@ export class LlmService implements OnModuleInit {
         }`,
       );
       const response = await runnable.invoke(messages);
-      content = this.extractAiMessageContent(response.content);
+      content =
+        this.extractAiMessageContent(response.content) ||
+        this.extractAiMessageReasoning(response);
       merged = undefined;
+      if (emittedDeltaCount === 0 && content) {
+        this.logger.warn(
+          `[LlmService] stream fellBackToInvoke with contentLen=${content.length} (model=${modelFallback})`,
+        );
+      }
       return {
         content,
         toolCalls: this.extractToolCalls(response),
@@ -498,6 +559,18 @@ export class LlmService implements OnModuleInit {
       response.response_metadata as Record<string, unknown> | undefined,
       modelFallback,
     );
+    const mergedContent =
+      content ||
+      this.extractAiMessageContent(response.content) ||
+      (merged ? this.extractAiMessageReasoning(merged) : '');
+    if (emittedDeltaCount === 0 && streamChunkCount > 0) {
+      this.logger.warn(
+        `[LlmService] stream ended with zero content deltas model=${modelName}` +
+          ` chunks=${streamChunkCount} emptyChunks=${emptyStreamChunkCount}` +
+          ` reasoningOnlyChunks=${reasoningOnlyChunkCount}` +
+          ` mergedContentLen=${mergedContent.length}`,
+      );
+    }
     handlers.onDelta?.({
       model: modelName,
       contentDelta: '',
@@ -506,7 +579,7 @@ export class LlmService implements OnModuleInit {
       raw: response,
     });
     return {
-      content: content || this.extractAiMessageContent(response.content),
+      content: mergedContent,
       toolCalls,
       model: modelName,
       raw: response,
@@ -923,6 +996,17 @@ export class LlmService implements OnModuleInit {
         };
       })
       .filter((item) => item !== null) as Array<Record<string, unknown>>;
+  }
+
+  private extractAiMessageReasoning(
+    message: Pick<AIMessageChunk, 'additional_kwargs'>,
+  ): string {
+    const kwargs = message.additional_kwargs as Record<string, unknown> | undefined;
+    if (!kwargs) {
+      return '';
+    }
+    const reasoning = kwargs.reasoning_content;
+    return typeof reasoning === 'string' ? reasoning : '';
   }
 
   private extractAiMessageContent(content: unknown): string {

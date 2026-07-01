@@ -5,7 +5,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  HostToolExposure,
   HostToolSkillTrigger,
   Prisma,
 } from '../../../generated/prisma/client';
@@ -16,6 +15,7 @@ import {
 } from '../../common/pagination';
 import {
   resolveHostToolArgsTemplate,
+  resolveHostToolPageScope,
   type AgentChatPageContext,
   type HostActionHostToolInvocation,
   type HostToolDecisionDefinition,
@@ -30,8 +30,10 @@ import {
   resolvePreferredHostToolIdsFromCatalog,
 } from '../../core/runtime-cache/host-tool-catalog-resolve.util';
 import { AgentHostToolCatalogService } from '../../core/runtime-cache/agent-host-tool-catalog.service';
+import { loadAgentHostToolCandidateIds } from '../../core/runtime-cache/agent-capability-load.util';
 import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WorkflowService } from '../workflow/workflow.service';
 import {
   CreateHostPageDto,
   UpdateHostPageDto,
@@ -81,16 +83,6 @@ export type ClientHostToolRegisterResult = {
   skipped: ClientHostToolRegisterSkippedItem[];
 };
 
-const COMPLETION_EXPOSURES: HostToolExposure[] = [
-  HostToolExposure.ON_COMPLETE,
-  HostToolExposure.BOTH,
-];
-
-const LLM_EXPOSURES: HostToolExposure[] = [
-  HostToolExposure.LLM,
-  HostToolExposure.BOTH,
-];
-
 const LLM_SKILL_TRIGGERS: HostToolSkillTrigger[] = [
   HostToolSkillTrigger.LLM_SCOPED,
   HostToolSkillTrigger.ON_PLAN_STEP,
@@ -104,6 +96,7 @@ export class HostToolService {
     private readonly prisma: PrismaService,
     private readonly hostToolCatalogService: AgentHostToolCatalogService,
     private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
+    private readonly workflowService: WorkflowService,
   ) {}
 
   // ── HostPage ─────────────────────────────────────────────────────────────
@@ -240,7 +233,6 @@ export class HostToolService {
         name: dto.name.trim(),
         description: dto.description,
         argsSchema: dto.argsSchema as Prisma.InputJsonValue,
-        exposure: dto.exposure ?? HostToolExposure.CATALOG,
         argsTemplate:
           dto.argsTemplate == null
             ? undefined
@@ -270,7 +262,6 @@ export class HostToolService {
       appClientId,
       ...(query.id != null ? { id: query.id } : {}),
       ...(query.isActive != null ? { isActive: query.isActive } : {}),
-      ...(query.exposure != null ? { exposure: query.exposure } : {}),
       ...(query.genericOnly === true ? { hostPageId: null } : {}),
       ...(query.scope?.trim()
         ? {
@@ -350,7 +341,6 @@ export class HostToolService {
         name: dto.name?.trim(),
         description: dto.description,
         argsSchema: dto.argsSchema as Prisma.InputJsonValue | undefined,
-        exposure: dto.exposure,
         argsTemplate:
           dto.argsTemplate === undefined
             ? undefined
@@ -466,7 +456,21 @@ export class HostToolService {
   async replaceSkillHostTools(skillId: number, dto: ReplaceSkillHostToolsDto) {
     const skill = await this.getSkillOrThrow(skillId);
     const hostToolIds = dto.tools.map((item) => item.hostToolId);
-    await this.assertHostToolsBoundToAgent(skill.agentId, hostToolIds);
+    await this.assertHostToolsInApp(skill.appClientId, hostToolIds);
+
+    if (skill.workflowId != null && skill.workflowId > 0) {
+      const skillTools = await this.prisma.skillTool.findMany({
+        where: { skillId },
+        select: { toolId: true },
+      });
+      await this.workflowService.assertSkillWorkflowBindingsCompatible({
+        workflowId: skill.workflowId,
+        appClientId: skill.appClientId,
+        workflowVersion: skill.workflowVersion,
+        skillToolIds: skillTools.map((row) => row.toolId),
+        skillHostToolIds: hostToolIds,
+      });
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.skillHostTool.deleteMany({ where: { skillId } });
@@ -486,10 +490,7 @@ export class HostToolService {
         });
       }
     });
-    await this.runtimeCacheInvalidator.invalidateForAgent({
-      agentId: skill.agentId,
-      appClientId: skill.appClientId,
-    });
+    await this.runtimeCacheInvalidator.invalidateForAppClient(skill.appClientId);
     if (hostToolIds.length > 0) {
       await this.runtimeCacheInvalidator.invalidateForHostTools(hostToolIds);
     }
@@ -505,7 +506,7 @@ export class HostToolService {
     });
     const response = toSkillHostToolsBindingResponse(
       skillId,
-      skill.agentId,
+      skill.appClientId,
       bindings,
     );
     return {
@@ -578,7 +579,6 @@ export class HostToolService {
           name,
           description: item.description,
           argsSchema: item.argsSchema as Prisma.InputJsonValue,
-          exposure: item.exposure ?? HostToolExposure.ON_COMPLETE,
           argsTemplate:
             item.argsTemplate == null
               ? undefined
@@ -641,12 +641,18 @@ export class HostToolService {
       isRequired: boolean;
     }>;
   }> {
-    const agentBoundIds = (
-      await this.prisma.agentHostTool.findMany({
-        where: { agentId: input.agentId },
-        select: { hostToolId: true },
-      })
-    ).map((row) => row.hostToolId);
+    const agent = await this.prisma.agent.findUnique({
+      where: { id: input.agentId },
+      select: { appClientId: true },
+    });
+    if (!agent) {
+      return { preferredIds: [], skillBindings: [] };
+    }
+    const agentBoundIds = await loadAgentHostToolCandidateIds(
+      this.prisma,
+      agent.appClientId,
+      input.agentId,
+    );
     if (agentBoundIds.length === 0) {
       logHostToolResolve('resolvePreferredHostToolIds', {
         runId: input.runId ?? null,
@@ -735,7 +741,6 @@ export class HostToolService {
     appClientId: number;
     pageScope: string;
     preferredIds: number[];
-    exposures: HostToolExposure[];
     runId?: number;
     sessionId?: string;
     agentId?: number;
@@ -749,8 +754,9 @@ export class HostToolService {
         id: { in: input.preferredIds },
         appClientId: input.appClientId,
         isActive: true,
-        exposure: { in: input.exposures },
-        OR: [{ hostPageId: null }, { hostPage: { scope: input.pageScope } }],
+        OR: input.pageScope.trim()
+          ? [{ hostPageId: null }, { hostPage: { scope: input.pageScope } }]
+          : [{ hostPageId: null }],
       },
       include: HOST_TOOL_DETAIL_INCLUDE,
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
@@ -767,7 +773,6 @@ export class HostToolService {
       skillId: input.skillId ?? null,
       appClientId: input.appClientId,
       pageScope: input.pageScope,
-      exposures: input.exposures,
       preferredIds: input.preferredIds,
       matchedIds: matched.map((tool) => tool.id),
       matchedNames: matched.map((tool) => tool.name),
@@ -789,7 +794,6 @@ export class HostToolService {
     appClientId: number;
     pageScope: string;
     preferredIds: number[];
-    exposures: HostToolExposure[];
   }) {
     if (input.preferredIds.length === 0) {
       return [];
@@ -814,9 +818,6 @@ export class HostToolService {
       if (!row.isActive) {
         reasons.push('inactive');
       }
-      if (!input.exposures.includes(row.exposure)) {
-        reasons.push(`exposure_not_allowed:${row.exposure}`);
-      }
       const hostPageScope = row.hostPage?.scope ?? null;
       if (row.hostPageId != null && hostPageScope !== input.pageScope) {
         reasons.push(
@@ -828,7 +829,6 @@ export class HostToolService {
         name: row.name,
         status: reasons.length === 0 ? 'included' : 'filtered',
         hostPageScope,
-        exposure: row.exposure,
         isActive: row.isActive,
         reasons,
       };
@@ -849,6 +849,7 @@ export class HostToolService {
         !Array.isArray(tool.argsSchema)
           ? (tool.argsSchema as Record<string, unknown>)
           : { type: 'object' },
+      hostPageScope: tool.hostPage?.scope ?? null,
       isRequired,
     };
   }
@@ -857,25 +858,11 @@ export class HostToolService {
     appClientId: number;
     agentId: number;
     skillId: number | null | undefined;
-    pageContext: AgentChatPageContext;
+    pageContext?: AgentChatPageContext | null;
     runId?: number;
     sessionId?: string;
   }): Promise<HostToolDecisionDefinition[]> {
-    const pageScope = input.pageContext.page?.trim();
-    if (!pageScope) {
-      logHostToolResolve('resolveLlmHostToolsForDecision', {
-        runId: input.runId ?? null,
-        sessionId: input.sessionId ?? null,
-        appClientId: input.appClientId,
-        agentId: input.agentId,
-        skillId: input.skillId ?? null,
-        pageContext: input.pageContext,
-        result: 'empty_page_scope',
-        toolCount: 0,
-      });
-      return [];
-    }
-
+    const pageScope = resolveHostToolPageScope(input.pageContext) ?? '';
     const catalog = await this.hostToolCatalogService.loadOrWarm(
       input.appClientId,
       input.agentId,
@@ -897,7 +884,7 @@ export class HostToolService {
         agentId: input.agentId,
         skillId: input.skillId ?? null,
         pageScope,
-        routePath: input.pageContext.routePath ?? null,
+        routePath: input.pageContext?.routePath ?? null,
         source: 'catalog',
         catalogRevision: catalog.revision,
         agentBoundHostToolIds: catalog.agentBoundHostToolIds,
@@ -907,7 +894,6 @@ export class HostToolService {
         pageFilterDiagnostics: buildHostToolCatalogFilterDiagnostics(catalog, {
           pageScope,
           preferredIds,
-          exposures: LLM_EXPOSURES,
         }),
       });
       return tools;
@@ -921,7 +907,7 @@ export class HostToolService {
       agentId: input.agentId,
       skillId: input.skillId ?? null,
       pageScope,
-      routePath: input.pageContext.routePath ?? null,
+      routePath: input.pageContext?.routePath ?? null,
       source: 'db',
       toolCount: tools.length,
       toolNames: tools.map((tool) => tool.name),
@@ -933,14 +919,11 @@ export class HostToolService {
     appClientId: number;
     agentId: number;
     skillId: number | null | undefined;
-    pageContext: AgentChatPageContext;
+    pageContext?: AgentChatPageContext | null;
     runId?: number;
     sessionId?: string;
   }): Promise<HostToolDecisionDefinition[]> {
-    const pageScope = input.pageContext.page?.trim();
-    if (!pageScope) {
-      return [];
-    }
+    const pageScope = resolveHostToolPageScope(input.pageContext) ?? '';
 
     const { preferredIds, skillBindings } =
       await this.resolvePreferredHostToolIds({
@@ -961,7 +944,6 @@ export class HostToolService {
       appClientId: input.appClientId,
       pageScope,
       preferredIds,
-      exposures: LLM_EXPOSURES,
       runId: input.runId,
       sessionId: input.sessionId,
       agentId: input.agentId,
@@ -981,12 +963,9 @@ export class HostToolService {
     appClientId: number;
     agentId: number;
     skillId: number | null | undefined;
-    pageContext: AgentChatPageContext;
+    pageContext?: AgentChatPageContext | null;
   }): Promise<HostActionHostToolInvocation[]> {
-    const pageScope = input.pageContext.page?.trim();
-    if (!pageScope) {
-      return [];
-    }
+    const pageScope = resolveHostToolPageScope(input.pageContext) ?? '';
 
     const { preferredIds, skillBindings } =
       await this.resolvePreferredHostToolIds({
@@ -1002,7 +981,6 @@ export class HostToolService {
       appClientId: input.appClientId,
       pageScope,
       preferredIds,
-      exposures: COMPLETION_EXPOSURES,
     });
 
     const skillTemplateByToolId = new Map(
@@ -1101,19 +1079,23 @@ export class HostToolService {
     }
   }
 
-  private async assertHostToolsBoundToAgent(
-    agentId: number,
+  private async assertHostToolsInApp(
+    appClientId: number,
     hostToolIds: number[],
   ): Promise<void> {
     if (hostToolIds.length === 0) {
       return;
     }
-    const count = await this.prisma.agentHostTool.count({
-      where: { agentId, hostToolId: { in: hostToolIds } },
+    const count = await this.prisma.hostTool.count({
+      where: {
+        appClientId,
+        id: { in: hostToolIds },
+        isActive: true,
+      },
     });
     if (count !== hostToolIds.length) {
       throw new BadRequestException(
-        'skill host tools must be bound to the agent via AgentHostTool first',
+        'skill host tools must belong to this appClient and be active',
       );
     }
   }
@@ -1121,15 +1103,16 @@ export class HostToolService {
   private async getSkillOrThrow(skillId: number) {
     const row = await this.prisma.skill.findUnique({
       where: { id: skillId },
-      select: { id: true, agentId: true, agent: { select: { appClientId: true } } },
+      select: {
+        id: true,
+        appClientId: true,
+        workflowId: true,
+        workflowVersion: true,
+      },
     });
     if (!row) {
       throw new NotFoundException(`skill ${skillId} not found`);
     }
-    return {
-      id: row.id,
-      agentId: row.agentId,
-      appClientId: row.agent.appClientId,
-    };
+    return row;
   }
 }

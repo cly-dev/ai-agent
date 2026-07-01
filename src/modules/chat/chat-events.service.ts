@@ -11,6 +11,7 @@ import { Observable, Subject, Subscription } from 'rxjs';
 import { CHAT_SSE_RELAY_CHANNEL } from '../../core/memory/redis/redis-keys';
 import { RedisConnectionService } from '../../core/memory/redis/redis-connection.service';
 import type { HostActionSsePayload } from '../../core/host-bridge/host-action.types';
+import { shouldReplayHostAction } from '../../core/host-bridge/host-tool-stream-replay.util';
 import type {
   MessageBlock,
   MessageBlockPatch,
@@ -283,6 +284,9 @@ export class ChatEventsService implements OnModuleInit, OnModuleDestroy {
   private shouldReplayOnConnect(evt: ChatSseEvent): boolean {
     if (evt.event === 'error') {
       return false;
+    }
+    if (evt.event === 'host_action') {
+      return shouldReplayHostAction(evt.payload);
     }
     if (evt.event === 'message' && evt.payload.source === 'agent-run') {
       const action = evt.payload.action;

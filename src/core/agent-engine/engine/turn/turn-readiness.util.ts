@@ -1,3 +1,4 @@
+import type { WorkflowRunState } from '../../../workflow/workflow.types';
 import type { ToolObservation } from '../main/types/agent-engine.types';
 import {
   getPendingPlanToolStep,
@@ -39,6 +40,7 @@ export type EvaluateExecutionReadinessInput = {
   pageContext?: AgentChatPageContext | null;
   pageContextUsage?: Pick<PageContextUsage, 'applies' | 'entityId'> | null;
   observationBuckets: PlanObservationBuckets;
+  workflowRun?: WorkflowRunState | null;
 };
 
 function ready(reason: string): TurnReadinessResult {
@@ -62,11 +64,11 @@ export async function evaluateExecutionReadiness(
 
   const userMessage = input.userMessage.trim();
   const plan = input.taskPlan;
-  if (!plan || isPendingPlanAnswerStep(plan)) {
+  if (!plan || isPendingPlanAnswerStep(plan, input.workflowRun)) {
     return ready('plan_answer_or_missing');
   }
 
-  const gatherStep = getPendingPlanToolStep(plan);
+  const gatherStep = getPendingPlanToolStep(plan, input.workflowRun);
   if (!gatherStep || gatherStep.kind !== 'tool') {
     return ready('no_gather_step');
   }

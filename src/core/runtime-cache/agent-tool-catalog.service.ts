@@ -7,6 +7,7 @@ import {
 import { AgentToolCatalogStore } from './agent-tool-catalog.store';
 import { AGENT_TOOL_CATALOG_INCLUDE } from './agent-tool-catalog.types';
 import type { AgentToolCatalogRow } from './agent-tool-catalog.types';
+import { resolveAgentToolCandidateIds } from './capability-candidate.util';
 import { resolveAllowedToolsFromCatalog } from './agent-tool-catalog.util';
 import { logRuntimeCacheEvent } from './runtime-cache-observability.util';
 import {
@@ -103,81 +104,94 @@ export class AgentToolCatalogService {
     appClientId: number,
     agentId: number,
   ): Promise<string> {
-    const agent = await this.prisma.agent.findFirst({
-      where: { id: agentId, appClientId },
-      select: { id: true },
-    });
-    if (!agent) {
+    const ctx = await this.loadToolCatalogContext(appClientId, agentId);
+    if (!ctx) {
       return '';
     }
-    const agentBindings = await this.prisma.agentTool.findMany({
-      where: { agentId },
-      select: { toolId: true },
-      orderBy: { toolId: 'asc' },
-    });
-    if (agentBindings.length === 0) {
-      const empty = buildToolsRuntimeRevision([]);
-      return `${empty.tools}|${empty.integrations}`;
-    }
-    const tools = await this.prisma.tool.findMany({
-      where: {
-        id: { in: agentBindings.map((row) => row.toolId) },
-        appClientId,
-      },
-      select: {
-        id: true,
-        updatedAt: true,
-        integration: { select: { id: true, updatedAt: true } },
-      },
-      orderBy: { id: 'asc' },
-    });
-    const { tools: toolsPart, integrations } = buildToolsRuntimeRevision(tools);
-    return `${toolsPart}|${integrations}`;
+    const { tools: toolsPart, integrations } = buildToolsRuntimeRevision(
+      ctx.revisionToolRows,
+    );
+    return `${toolsPart}|${integrations}|r:${ctx.agent.restrictTools ? 1 : 0}`;
   }
 
   private async buildFromDb(
     appClientId: number,
     agentId: number,
   ): Promise<AgentToolCatalogSnapshot | null> {
-    const agent = await this.prisma.agent.findFirst({
-      where: { id: agentId, appClientId },
-      select: { id: true },
-    });
-    if (!agent) {
+    const ctx = await this.loadToolCatalogContext(appClientId, agentId);
+    if (!ctx) {
       return null;
     }
-    const agentBindings = await this.prisma.agentTool.findMany({
-      where: { agentId },
-      select: { toolId: true },
-      orderBy: { toolId: 'asc' },
-    });
-    const agentBoundToolIds = agentBindings.map((row) => row.toolId);
-    if (agentBoundToolIds.length === 0) {
-      return {
-        appClientId,
-        agentId,
-        revision: await this.fetchRevisionFromDb(appClientId, agentId),
-        agentBoundToolIds: [],
-        tools: [],
-        warmedAt: new Date().toISOString(),
-      };
-    }
-    const tools = await this.prisma.tool.findMany({
-      where: {
-        id: { in: agentBoundToolIds },
-        appClientId,
-      },
-      include: AGENT_TOOL_CATALOG_INCLUDE,
-      orderBy: { id: 'asc' },
-    });
+    const tools =
+      ctx.candidateToolIds.length === 0
+        ? []
+        : await this.prisma.tool.findMany({
+            where: {
+              id: { in: ctx.candidateToolIds },
+              appClientId,
+            },
+            include: AGENT_TOOL_CATALOG_INCLUDE,
+            orderBy: { id: 'asc' },
+          });
     const revision = await this.fetchRevisionFromDb(appClientId, agentId);
     return {
       appClientId,
       agentId,
       revision,
-      agentBoundToolIds,
+      agentBoundToolIds: ctx.candidateToolIds,
       tools,
       warmedAt: new Date().toISOString(),
+    };
+  }
+
+  private async loadToolCatalogContext(
+    appClientId: number,
+    agentId: number,
+  ): Promise<{
+    agent: { restrictTools: boolean };
+    candidateToolIds: number[];
+    revisionToolRows: Array<{
+      id: number;
+      updatedAt: Date;
+      integration: { id: number; updatedAt: Date };
+    }>;
+  } | null> {
+    const agent = await this.prisma.agent.findFirst({
+      where: { id: agentId, appClientId },
+      select: { id: true, restrictTools: true },
+    });
+    if (!agent) {
+      return null;
+    }
+    const [agentBindings, appActiveTools] = await Promise.all([
+      this.prisma.agentTool.findMany({
+        where: { agentId },
+        select: { toolId: true },
+        orderBy: { toolId: 'asc' },
+      }),
+      this.prisma.tool.findMany({
+        where: { appClientId, isActive: true },
+        select: {
+          id: true,
+          updatedAt: true,
+          integration: { select: { id: true, updatedAt: true } },
+        },
+        orderBy: { id: 'asc' },
+      }),
+    ]);
+    const candidateToolIds = resolveAgentToolCandidateIds({
+      restrictTools: agent.restrictTools,
+      whitelistIds: agentBindings.map((row) => row.toolId),
+      appActiveIds: appActiveTools.map((row) => row.id),
+    });
+    const candidateSet = new Set(candidateToolIds);
+    const revisionToolRows = appActiveTools.filter((row) =>
+      candidateSet.has(row.id),
+    );
+    return {
+      agent,
+      candidateToolIds,
+      revisionToolRows,
     };
   }
 

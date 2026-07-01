@@ -11,12 +11,15 @@ import {
   type StoredTaskPlan,
 } from '../goa/session-goa.types';
 
+import type { WorkflowRunState } from '../../workflow/workflow.types';
+
 export type SessionResumeDecision =
   | {
       action: 'resume';
       plan: StoredTaskPlan;
       followUpReason: string | null;
       resumedFromRunId: number | null;
+      workflowRun?: WorkflowRunState | null;
     }
   | { action: 'fresh' }
   | { action: 'abandon_and_fresh' };
@@ -80,6 +83,7 @@ export class SessionResumeGateService {
       followUpReason:
         typeof followUp.reason === 'string' ? followUp.reason : null,
       resumedFromRunId: activeTask!.lastRunId,
+      workflowRun: activeTask!.workflowRun ?? null,
     };
   }
 }

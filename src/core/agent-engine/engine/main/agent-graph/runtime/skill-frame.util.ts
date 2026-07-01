@@ -4,8 +4,10 @@ import { enrichPlanStepsWithHostTools } from '../../host-tool/host-tool-plan.uti
 import { skipPendingHostToolStepsByContract } from '../../host-tool/host-tool-llm.util';
 import { pageContextEntityIdFromGraphState } from '../../../turn/turn-execution-contract.util';
 import { resolveTurnExecutionContract } from '../../../turn/turn-execution-contract.util';
+import { shouldEnforceRequestedSkillFromContract } from '../../../turn/skill-intent-alignment.util';
 import { isPageContextOuterPlanActive } from '../../../../../host-bridge/page-context-execution-policy.util';
 import { syncTaskPlanBeforeReAct, toPlanSyncAgentStep } from '../../plan/plan-sync.util';
+import { isWorkflowBoundRun } from '../../../../../workflow/workflow-plan-transition.util';
 import { planObservationBucketsFromState, planRunContextFromState } from '../../plan/plan-observation-scope.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import type { PlanSyncSite } from '../../plan/plan-sync.util';
@@ -62,6 +64,9 @@ export function createAgentGraphSkillFrameHelpers(
       description: tool.description,
     }));
     const contract = resolveTurnExecutionContract(state, undefined, deps.logger);
+    const enforceRequestedSkill = shouldEnforceRequestedSkillFromContract({
+      scopedToolsSource: contract.plan.scopedToolsSource,
+    });
     if (isPageContextOuterPlanActive(contract.plan.pageContextPlan)) {
       return {
         ...state,
@@ -80,7 +85,7 @@ export function createAgentGraphSkillFrameHelpers(
       agentId: ctx.input.agentId,
       userId: ctx.input.userId,
       appClientId: ctx.input.appClientId,
-      enforceRequestedSkill: ctx.requestedSkillCtx != null,
+      enforceRequestedSkill,
       availableHostTools,
       scopedHostToolIds: hostBundle.scopedHostTools.map((tool) => tool.id),
     });
@@ -155,6 +160,9 @@ export function createAgentGraphSkillFrameHelpers(
     if (!planAdvance) {
       return graphState;
     }
+    if (isWorkflowBoundRun(graphState.workflowRun)) {
+      return graphState;
+    }
     return {
       ...graphState,
       steps: [
@@ -180,9 +188,21 @@ export function createAgentGraphSkillFrameHelpers(
       skillConfig: graphState.activeSkillConfig,
       observationBuckets: planObservationBucketsFromState(graphState),
       pageContextEntityId: pageContextEntityIdFromGraphState(graphState),
+      workflowRun: graphState.workflowRun,
+      workflowNodeDefs: graphState.workflowNodeDefs,
+      workflowAwaitingReact: graphState.workflowAwaitingReact,
     });
     if (synced.taskPlan && synced.taskPlan !== graphState.taskPlan) {
       graphState = { ...graphState, taskPlan: synced.taskPlan };
+    }
+    if (synced.workflowRun) {
+      graphState = {
+        ...graphState,
+        workflowRun: synced.workflowRun,
+        ...(synced.workflowAwaitingReact !== undefined
+          ? { workflowAwaitingReact: synced.workflowAwaitingReact }
+          : {}),
+      };
     }
     if (synced.planAdvance?.reason === 'plan_advance_skill_step') {
       graphState = await applySkillFrameContext(graphState);

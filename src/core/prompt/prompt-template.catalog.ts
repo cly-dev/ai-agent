@@ -44,6 +44,12 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     description: 'respond 节点：根据 missingFields 生成用户可见澄清话术（Message Blocks）',
   },
   {
+    key: PROMPT_KEYS.AGENT_RESPOND_SKILL_INTENT_MISMATCH,
+    category: 'agent_runtime',
+    title: 'Skill 意图不匹配澄清',
+    description: 'summarize：预选 Skill 与用户写意图冲突时的友好说明（Message Blocks）',
+  },
+  {
     key: PROMPT_KEYS.AGENT_PLAN,
     category: 'agent_runtime',
     title: '任务 Plan 拆分',
@@ -116,10 +122,10 @@ export const PROMPT_TEMPLATE_CATALOG: readonly PromptTemplateCatalogItem[] = [
     description: '基于 plan_compose_write 机器层 payload 生成用户可见 Markdown',
   },
   {
-    key: PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_REASON_HOST_FILL,
+    key: PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_REASON_HOST_FILL_STREAM,
     category: 'agent_runtime',
-    title: 'Plan reason Host Fill 机器层',
-    description: 'reason→host_tool：产出 plan_host_fill.fills JSON，供浏览器 Host Tool 执行',
+    title: 'Plan reason Host Fill 流式机器层',
+    description: 'reason→host_tool：plain text 流式产出，经 DSL arg.append 填入宿主表单',
   },
   {
     key: PROMPT_KEYS.MEMORY_HISTORY_COMPRESSION,

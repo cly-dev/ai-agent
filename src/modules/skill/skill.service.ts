@@ -18,9 +18,12 @@ import {
 } from '../../core/skill/skill-runnable.util';
 import { SkillService as SkillRuntimeService } from '../../core/skill/skill.service';
 import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
+import { buildAgentSkillVisibilityWhere } from '../../core/runtime-cache/capability-candidate.util';
+import { loadAgentSkillVisibilityContext } from '../../core/runtime-cache/agent-capability-load.util';
 import { AgentHostToolCatalogService } from '../../core/runtime-cache/agent-host-tool-catalog.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentService } from '../agent/agent.service';
+import { WorkflowService } from '../workflow/workflow.service';
 import { normalizeCapabilityKey } from './util/skill-capability-key.util';
 import { CreateSkillDto } from './dto/create-skill.dto';
 import { QueryClientSkillByAgentDto } from './dto/query-client-skill-by-agent.dto';
@@ -33,7 +36,7 @@ import { resolveSkillRiskLevel } from './util/skill-risk.util';
 import {
   buildSkillFilterFields,
   buildSkillOrderBy,
-  buildSkillWhereForAgent,
+  buildSkillWhereForAppClient,
 } from './util/skill-query.util';
 import {
   SKILL_DETAIL_INCLUDE,
@@ -50,6 +53,7 @@ export class SkillService {
     private readonly agentService: AgentService,
     private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
     private readonly hostToolCatalogService: AgentHostToolCatalogService,
+    private readonly workflowService: WorkflowService,
   ) {}
 
   async create(
@@ -58,6 +62,18 @@ export class SkillService {
     dto: CreateSkillDto,
   ): Promise<SkillResponse> {
     await this.assertAgentInAppClient(agentId, appClientId);
+    return this.createForAppClient(appClientId, dto, agentId);
+  }
+
+  async createForAppClient(
+    appClientId: number,
+    dto: CreateSkillDto,
+    linkAgentId?: number,
+  ): Promise<SkillResponse> {
+    await this.assertAppClientExists(appClientId);
+    if (linkAgentId != null) {
+      await this.assertAgentInAppClient(linkAgentId, appClientId);
+    }
     const name = dto.name.trim();
     if (!name) {
       throw new BadRequestException('name is required');
@@ -68,17 +84,31 @@ export class SkillService {
     }
     const capabilityKey = normalizeCapabilityKey(dto.capabilityKey);
     const toolBindings = this.normalizeToolBindings(dto.tools);
-    await this.assertToolsBoundToAgent(agentId, toolBindings);
+    await this.assertToolsInApp(appClientId, toolBindings);
     const riskLevel = resolveSkillRiskLevel({
       explicit: dto.riskLevel,
       toolRiskLevels: await this.fetchToolRiskLevels(
         toolBindings.map((item) => item.toolId),
       ),
     });
+    if (dto.workflowId != null) {
+      await this.workflowService.assertWorkflowReferenceCompatible({
+        workflowId: dto.workflowId,
+        appClientId,
+        entry: 'skill',
+      });
+      await this.assertSkillWorkflowBindingsIfNeeded({
+        workflowId: dto.workflowId,
+        workflowVersion: dto.workflowVersion,
+        appClientId,
+        skillToolIds: toolBindings.map((item) => item.toolId),
+        skillHostToolIds: [],
+      });
+    }
 
     const row = await this.prisma.skill.create({
       data: {
-        agentId,
+        appClientId,
         name,
         capabilityKey,
         description: this.normalizeOptionalText(dto.description),
@@ -89,6 +119,14 @@ export class SkillService {
             ? undefined
             : (dto.config as Prisma.InputJsonValue),
         isActive: dto.isActive ?? true,
+        workflowId: dto.workflowId ?? undefined,
+        workflowVersion: dto.workflowVersion ?? undefined,
+        workflowOverrides:
+          dto.workflowOverrides === undefined
+            ? undefined
+            : dto.workflowOverrides === null
+              ? Prisma.JsonNull
+              : (dto.workflowOverrides as Prisma.InputJsonValue),
         skillTools:
           toolBindings.length > 0
             ? {
@@ -98,10 +136,17 @@ export class SkillService {
                 })),
               }
             : undefined,
+        ...(linkAgentId != null
+          ? {
+              agentSkills: {
+                create: [{ agentId: linkAgentId }],
+              },
+            }
+          : {}),
       },
       include: SKILL_DETAIL_INCLUDE,
     });
-    await this.invalidateAgentRuntimeCache(agentId, appClientId);
+    await this.invalidateAppClientSkillCaches(appClientId);
     return toSkillResponse(row);
   }
 
@@ -111,11 +156,24 @@ export class SkillService {
     query: QuerySkillDto,
   ): Promise<PaginatedResult<SkillResponse>> {
     await this.assertAgentInAppClient(agentId, appClientId);
+    const skillCtx = await loadAgentSkillVisibilityContext(
+      this.prisma,
+      appClientId,
+      agentId,
+    );
     const { page, pageSize, skip, take } = resolvePagination(
       query.page,
       query.pageSize,
     );
-    const where = buildSkillWhereForAgent(agentId, query);
+    const where: Prisma.SkillWhereInput = {
+      ...buildAgentSkillVisibilityWhere({
+        appClientId,
+        agentId,
+        restrictSkills: skillCtx.restrictSkills,
+        skillWhitelistIds: skillCtx.skillWhitelistIds,
+      }),
+      ...buildSkillFilterFields(query),
+    };
     const orderBy = buildSkillOrderBy(query.orderBy, query.order);
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.skill.findMany({
@@ -229,11 +287,11 @@ export class SkillService {
       query.page,
       query.pageSize,
     );
-    const where: Prisma.SkillWhereInput = {
-      agent: { appClientId },
-      ...(query.agentId != null ? { agentId: query.agentId } : {}),
-      ...buildSkillFilterFields(query),
-    };
+    const where = buildSkillWhereForAppClient(
+      appClientId,
+      query,
+      query.agentId,
+    );
     const orderBy = buildSkillOrderBy(query.orderBy, query.order);
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.skill.findMany({
@@ -258,7 +316,7 @@ export class SkillService {
   }
 
   async update(skillId: number, dto: UpdateSkillDto): Promise<SkillResponse> {
-    await this.getSkillOrThrow(skillId);
+    const existing = await this.getSkillOrThrow(skillId);
     if (dto.name !== undefined && !dto.name.trim()) {
       throw new BadRequestException('name cannot be empty');
     }
@@ -269,6 +327,29 @@ export class SkillService {
       dto.capabilityKey === undefined
         ? undefined
         : normalizeCapabilityKey(dto.capabilityKey);
+    if (dto.workflowId != null) {
+      await this.workflowService.assertWorkflowReferenceCompatible({
+        workflowId: dto.workflowId,
+        appClientId: existing.appClientId,
+        entry: 'skill',
+      });
+    }
+
+    const nextWorkflowId =
+      dto.workflowId !== undefined ? dto.workflowId : existing.workflowId;
+    const nextWorkflowVersion =
+      dto.workflowVersion !== undefined
+        ? dto.workflowVersion
+        : existing.workflowVersion;
+    if (nextWorkflowId != null && nextWorkflowId > 0) {
+      await this.assertSkillWorkflowBindingsIfNeeded({
+        workflowId: nextWorkflowId,
+        workflowVersion: nextWorkflowVersion,
+        appClientId: existing.appClientId,
+        skillToolIds: existing.skillTools.map((row) => row.toolId),
+        skillHostToolIds: existing.skillHostTools.map((row) => row.hostToolId),
+      });
+    }
     const row = await this.prisma.skill.update({
       where: { id: skillId },
       data: {
@@ -287,10 +368,24 @@ export class SkillService {
               : (dto.config as Prisma.InputJsonValue),
         isActive: dto.isActive,
         riskLevel: dto.riskLevel,
+        ...(dto.workflowId !== undefined
+          ? { workflowId: dto.workflowId }
+          : {}),
+        ...(dto.workflowVersion !== undefined
+          ? { workflowVersion: dto.workflowVersion }
+          : {}),
+        ...(dto.workflowOverrides !== undefined
+          ? {
+              workflowOverrides:
+                dto.workflowOverrides === null
+                  ? Prisma.JsonNull
+                  : (dto.workflowOverrides as Prisma.InputJsonValue),
+            }
+          : {}),
       },
       include: SKILL_DETAIL_INCLUDE,
     });
-    await this.invalidateAgentRuntimeCache(row.agentId, row.agent.appClientId);
+    await this.invalidateAppClientSkillCaches(existing.appClientId);
     return toSkillResponse(row);
   }
 
@@ -300,7 +395,17 @@ export class SkillService {
   ): Promise<SkillResponse> {
     const existing = await this.getSkillOrThrow(skillId);
     const toolBindings = this.normalizeToolBindings(dto.tools);
-    await this.assertToolsBoundToAgent(existing.agentId, toolBindings);
+    await this.assertToolsInApp(existing.appClientId, toolBindings);
+
+    if (existing.workflowId != null && existing.workflowId > 0) {
+      await this.assertSkillWorkflowBindingsIfNeeded({
+        workflowId: existing.workflowId,
+        workflowVersion: existing.workflowVersion,
+        appClientId: existing.appClientId,
+        skillToolIds: toolBindings.map((item) => item.toolId),
+        skillHostToolIds: existing.skillHostTools.map((row) => row.hostToolId),
+      });
+    }
 
     const riskLevel = resolveSkillRiskLevel({
       explicit: existing.riskLevel,
@@ -325,15 +430,21 @@ export class SkillService {
         include: SKILL_DETAIL_INCLUDE,
       });
     });
-    await this.invalidateAgentRuntimeCache(existing.agentId, existing.agent.appClientId);
+    await this.invalidateAppClientSkillCaches(existing.appClientId);
     return toSkillResponse(row);
   }
 
   async remove(skillId: number): Promise<SkillResponse> {
     const row = await this.getSkillOrThrow(skillId);
     await this.prisma.skill.delete({ where: { id: skillId } });
-    await this.invalidateAgentRuntimeCache(row.agentId, row.agent.appClientId);
+    await this.invalidateAppClientSkillCaches(row.appClientId);
     return toSkillResponse(row);
+  }
+
+  private async invalidateAppClientSkillCaches(
+    appClientId: number,
+  ): Promise<void> {
+    await this.runtimeCacheInvalidator.invalidateForAppClient(appClientId);
   }
 
   private async invalidateAgentRuntimeCache(
@@ -414,26 +525,27 @@ export class SkillService {
     return normalized;
   }
 
-  private async assertToolsBoundToAgent(
-    agentId: number,
+  private async assertToolsInApp(
+    appClientId: number,
     bindings: Array<{ toolId: number; isRequired: boolean }>,
   ): Promise<void> {
     if (bindings.length === 0) {
       return;
     }
     const toolIds = bindings.map((item) => item.toolId);
-    const rows = await this.prisma.agentTool.findMany({
+    const rows = await this.prisma.tool.findMany({
       where: {
-        agentId,
-        toolId: { in: toolIds },
+        appClientId,
+        id: { in: toolIds },
+        isActive: true,
       },
-      select: { toolId: true },
+      select: { id: true },
     });
     if (rows.length !== toolIds.length) {
-      const found = new Set(rows.map((row) => row.toolId));
+      const found = new Set(rows.map((row) => row.id));
       const missing = toolIds.filter((id) => !found.has(id));
       throw new BadRequestException(
-        `tool id(s) must be bound to agent ${agentId}: ${missing.join(', ')}`,
+        `tool id(s) must belong to appClient ${appClientId} and be active: ${missing.join(', ')}`,
       );
     }
   }
@@ -481,5 +593,15 @@ export class SkillService {
     }
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private async assertSkillWorkflowBindingsIfNeeded(input: {
+    workflowId: number;
+    workflowVersion?: number | null;
+    appClientId: number;
+    skillToolIds: number[];
+    skillHostToolIds: number[];
+  }): Promise<void> {
+    await this.workflowService.assertSkillWorkflowBindingsCompatible(input);
   }
 }

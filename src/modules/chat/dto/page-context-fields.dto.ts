@@ -12,7 +12,7 @@ import {
 export class AgentChatPageContextDto {
   @ApiPropertyOptional({
     description: '业务页面标识，与 host_action.scope 对齐',
-    example: 'review-detail',
+    example: 'entity-detail',
   })
   @IsOptional()
   @IsString()
@@ -26,8 +26,8 @@ export class AgentChatPageContextDto {
   routePath?: string;
 
   @ApiPropertyOptional({
-    description: '路由动态参数，如 { reviewId: "43689" }',
-    example: { reviewId: '43689' },
+    description: '路由动态参数，如 { entityId: "43689" }',
+    example: { entityId: '43689' },
   })
   @IsOptional()
   @IsObject()
@@ -46,7 +46,7 @@ export class AgentChatPageContextDto {
   programName?: string;
 
   @ApiPropertyOptional({
-    description: '页面主实体，如 { type: "review", id: "123" }',
+    description: '页面主实体，如 { type: "order", id: "123" }',
   })
   @IsOptional()
   @IsObject()

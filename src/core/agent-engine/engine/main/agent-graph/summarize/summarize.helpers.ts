@@ -1,6 +1,8 @@
 import type { HostToolDecisionDefinition } from '../../../../../host-bridge/host-tool-decision.types';
+import type { AgentChatPageContext } from '../../../../../host-bridge/page-context.types';
 import type { LlmChatMessage } from '../../../../../llm/llm.types';
 import type { PlanSummarizePublishMode, TaskPlanSnapshot } from '../../plan/task-plan.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../../workflow/workflow.types';
 import type { AgentGraphState, ToolObservation, AgentEngineTool } from '../../types/agent-engine.types';
 import type { AgentGraphDeps } from '../types/graph.types';
 import {
@@ -17,13 +19,17 @@ import {
 } from './observation.util';
 import {
   summarizeClarificationRequest,
+  summarizeSkillIntentMismatch,
   summarizeDirectLlmReply,
   summarizeDirectUserMessage,
   summarizePlanPresentWithPendingWrite,
-  summarizePlanReasonForHostFill,
   summarizeToolOutputForUser,
   summarizeWriteConfirmResume,
 } from './stream.util';
+import {
+  runPlanReasonHostFill,
+  type PlanReasonHostFillResult,
+} from '../../plan-present/plan-reason-host-orchestrate.util';
 
 export interface AgentGraphSummarizeHelpers {
   isLowQualityToolObservation: typeof isLowQualityToolObservation;
@@ -54,6 +60,8 @@ export interface AgentGraphSummarizeHelpers {
     executedArgs?: Record<string, unknown>,
     publishMode?: PlanSummarizePublishMode,
     sessionObservations?: ToolObservation[],
+    workflowRun?: WorkflowRunState | null,
+    workflowNodeDefs?: WorkflowNodeDef[] | null,
   ) => ReturnType<typeof summarizeToolOutputForUser>;
   summarizeDirectUserMessage: (
     userMessage: string,
@@ -64,6 +72,8 @@ export interface AgentGraphSummarizeHelpers {
     scope: { appClientId: number; agentId: number },
     taskPlan?: TaskPlanSnapshot | null,
     publishMode?: PlanSummarizePublishMode,
+    workflowRun?: WorkflowRunState | null,
+    workflowNodeDefs?: WorkflowNodeDef[] | null,
   ) => ReturnType<typeof summarizeDirectUserMessage>;
   summarizeClarificationRequest: (
     userMessage: string,
@@ -75,6 +85,15 @@ export interface AgentGraphSummarizeHelpers {
     taskPlan?: TaskPlanSnapshot | null,
     publishMode?: PlanSummarizePublishMode,
   ) => ReturnType<typeof summarizeClarificationRequest>;
+  summarizeSkillIntentMismatch: (
+    userMessage: string,
+    output: unknown,
+    promptMessages: LlmChatMessage[],
+    sessionId: string,
+    runId: number,
+    scope: { appClientId: number; agentId: number },
+    publishMode?: PlanSummarizePublishMode,
+  ) => ReturnType<typeof summarizeSkillIntentMismatch>;
   summarizeDirectLlmReply: (
     userMessage: string,
     output: unknown,
@@ -95,8 +114,10 @@ export interface AgentGraphSummarizeHelpers {
     scope: { appClientId: number; agentId: number },
     taskPlan?: TaskPlanSnapshot | null,
     scopedTools?: AgentEngineTool[],
+    workflowRun?: WorkflowRunState | null,
+    workflowNodeDefs?: WorkflowNodeDef[] | null,
   ) => ReturnType<typeof summarizePlanPresentWithPendingWrite>;
-  summarizePlanReasonForHostFill: (
+  runPlanReasonHostFill: (
     userMessage: string,
     mergedObservation: ToolObservation,
     toolObservations: ToolObservation[],
@@ -106,7 +127,9 @@ export interface AgentGraphSummarizeHelpers {
     scope: { appClientId: number; agentId: number },
     taskPlan: TaskPlanSnapshot,
     scopedHostTools: HostToolDecisionDefinition[],
-  ) => ReturnType<typeof summarizePlanReasonForHostFill>;
+    pageContext?: AgentChatPageContext | null,
+    turnId?: number,
+  ) => Promise<PlanReasonHostFillResult>;
   resolveSummarizeStepName: typeof resolveSummarizeStepName;
   resolveSummarizeStepMeta: typeof resolveSummarizeStepMeta;
 }
@@ -133,9 +156,35 @@ export function createAgentGraphSummarizeHelpers(deps: AgentGraphDeps): AgentGra
     summarizeToolOutputForUser: summarizeToolOutputForUser.bind(null, deps) as AgentGraphSummarizeHelpers['summarizeToolOutputForUser'],
     summarizeDirectUserMessage: summarizeDirectUserMessage.bind(null, deps) as AgentGraphSummarizeHelpers['summarizeDirectUserMessage'],
     summarizeClarificationRequest: summarizeClarificationRequest.bind(null, deps) as AgentGraphSummarizeHelpers['summarizeClarificationRequest'],
+    summarizeSkillIntentMismatch: summarizeSkillIntentMismatch.bind(null, deps) as AgentGraphSummarizeHelpers['summarizeSkillIntentMismatch'],
     summarizeDirectLlmReply: summarizeDirectLlmReply.bind(null, deps) as AgentGraphSummarizeHelpers['summarizeDirectLlmReply'],
     summarizePlanPresentWithPendingWrite: summarizePlanPresentWithPendingWrite.bind(null, deps) as AgentGraphSummarizeHelpers['summarizePlanPresentWithPendingWrite'],
-    summarizePlanReasonForHostFill: summarizePlanReasonForHostFill.bind(null, deps) as AgentGraphSummarizeHelpers['summarizePlanReasonForHostFill'],
+    runPlanReasonHostFill: (
+      userMessage,
+      mergedObservation,
+      toolObservations,
+      promptMessages,
+      sessionId,
+      runId,
+      scope,
+      taskPlan,
+      scopedHostTools,
+      pageContext,
+      turnId,
+    ) =>
+      runPlanReasonHostFill(deps, {
+        userMessage,
+        mergedObservation,
+        toolObservations,
+        promptMessages,
+        sessionId,
+        runId,
+        turnId,
+        scope,
+        taskPlan,
+        scopedHostTools,
+        pageContext,
+      }),
     resolveSummarizeStepName,
     resolveSummarizeStepMeta,
   };

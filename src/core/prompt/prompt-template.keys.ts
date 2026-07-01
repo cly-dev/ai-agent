@@ -10,6 +10,8 @@ export const PROMPT_KEYS = {
   AGENT_READINESS_SLOT_CHECK: 'agent.readiness_slot_check',
   /** respond 节点：槽位缺失时的反问 */
   AGENT_RESPOND_CLARIFICATION: 'agent.respond_clarification',
+  /** summarize：预选 Skill 与用户写意图冲突时的澄清 */
+  AGENT_RESPOND_SKILL_INTENT_MISMATCH: 'agent.respond_skill_intent_mismatch',
   AGENT_PLAN: 'agent.plan',
   /** route_plan 节点：判断 direct_answer / on_page_task / orchestrated_task */
   AGENT_TURN_ROUTE: 'agent.turn_route',
@@ -29,8 +31,9 @@ export const PROMPT_KEYS = {
   AGENT_SUMMARIZE_PLAN_DRAFT_PROSE_SUPPLEMENT: 'agent.summarize_plan_draft_prose_supplement',
   /** Plan present 步：基于 plan_compose_write 向用户展示草稿 */
   AGENT_SUMMARIZE_PLAN_PRESENT_FROM_COMPOSE: 'agent.summarize_plan_present_from_compose',
-  /** Plan reason 步：为后续 host_tool 生成机器层 fills JSON */
-  AGENT_SUMMARIZE_PLAN_REASON_HOST_FILL: 'agent.summarize_plan_reason_host_fill',
+  /** Plan reason 步：机器层 plain text 流式（DSL arg.append） */
+  AGENT_SUMMARIZE_PLAN_REASON_HOST_FILL_STREAM:
+    'agent.summarize_plan_reason_host_fill_stream',
   /** 写确认续跑后 summarize：汇报已确认写操作的成功/失败与条数 */
   AGENT_SUMMARIZE_WRITE_CONFIRM_RESUME: 'agent.summarize_write_confirm_resume',
   MEMORY_HISTORY_COMPRESSION: 'memory.history_compression',

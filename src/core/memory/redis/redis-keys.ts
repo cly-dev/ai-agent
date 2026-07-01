@@ -73,7 +73,7 @@ export function sessionRunActiveKey(sessionId: string): string {
   return `${REDIS_KEY_PREFIX}session-run:active:${sessionId}`;
 }
 
-/** 跨实例排队 job（JSON RunJob）。 */
+/** 旧版 per-session Redis LIST 队列 key（BullMQ 迁移后仅清理遗留）。 */
 export function sessionRunQueueKey(sessionId: string): string {
   return `${REDIS_KEY_PREFIX}session-run:queue:${sessionId}`;
 }

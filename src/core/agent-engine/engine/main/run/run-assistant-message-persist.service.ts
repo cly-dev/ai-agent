@@ -100,38 +100,51 @@ export class RunAssistantMessagePersistService {
     }
 
     if (turn.outputMessageId != null) {
-      const existing = await tx.message.findUnique({
-        where: { id: turn.outputMessageId },
-      });
-      logPersistContentMismatch({
-        sessionId: input.sessionId,
-        runId: input.runId,
-        turnId: input.turnId,
-        tag: 'PERSIST_TURN_UPDATE',
-        artifactSerialized: artifact.serialized,
-        priorDbContent: existing?.content ?? '',
-      });
-      const message = await tx.message.update({
-        where: { id: turn.outputMessageId },
-        data: { content: artifact.serialized },
-      });
-      emitAgentMessagePersistDebug({
-        tag: 'PERSIST_UPDATE',
-        sessionId: input.sessionId,
-        runId: input.runId,
-        turnId: input.turnId,
-        messageId: message.id,
-        dbContent: message.content,
-        source: serializedSourceSnapshot(artifact.serialized, {
-          label: 'artifact',
-          blocks: artifact.blocks,
-        }),
-      });
-      await tx.agentRun.update({
-        where: { id: input.runId },
-        data: { outputMessageId: message.id },
-      });
-      return { message, replacedTurnOutput: true };
+      // 若 turn 当前输出消息之后已有更新的用户消息（如写确认动作），说明它已被用户交互封存：
+      // 后续 run（如写确认恢复的 worker 终稿）不能就地覆盖旧草稿，否则会丢失草稿并让完成态
+      // 排到确认动作之前。此时改为新建消息，保持「草稿 → 用户确认 → 完成」的真实顺序。
+      const sealedByUserReply =
+        (await tx.message.count({
+          where: {
+            sessionId: session.id,
+            role: 'user',
+            id: { gt: turn.outputMessageId },
+          },
+        })) > 0;
+      if (!sealedByUserReply) {
+        const existing = await tx.message.findUnique({
+          where: { id: turn.outputMessageId },
+        });
+        logPersistContentMismatch({
+          sessionId: input.sessionId,
+          runId: input.runId,
+          turnId: input.turnId,
+          tag: 'PERSIST_TURN_UPDATE',
+          artifactSerialized: artifact.serialized,
+          priorDbContent: existing?.content ?? '',
+        });
+        const message = await tx.message.update({
+          where: { id: turn.outputMessageId },
+          data: { content: artifact.serialized },
+        });
+        emitAgentMessagePersistDebug({
+          tag: 'PERSIST_UPDATE',
+          sessionId: input.sessionId,
+          runId: input.runId,
+          turnId: input.turnId,
+          messageId: message.id,
+          dbContent: message.content,
+          source: serializedSourceSnapshot(artifact.serialized, {
+            label: 'artifact',
+            blocks: artifact.blocks,
+          }),
+        });
+        await tx.agentRun.update({
+          where: { id: input.runId },
+          data: { outputMessageId: message.id },
+        });
+        return { message, replacedTurnOutput: true };
+      }
     }
 
     const message = await tx.message.create({

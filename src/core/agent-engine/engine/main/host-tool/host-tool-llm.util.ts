@@ -1,4 +1,5 @@
 import type { AgentChatPageContext } from '../../../../host-bridge/page-context.types';
+import { canDispatchHostAction } from '../../../../host-bridge/page-context-anchor.util';
 import type { HostActionSsePayload } from '../../../../host-bridge/host-action.types';
 import { buildHostActionPayload } from '../../../../host-bridge/host-action.util';
 import type { GraphToolCall } from '../types/agent-engine.types';
@@ -14,13 +15,13 @@ import {
 import { getPendingPlanHostToolStep } from '../plan/task-plan.util';
 
 export type HostToolStepSkipReason =
-  | 'missing_page_context'
   | 'no_scoped_host_tools'
   | 'host_tool_name_mismatch'
   | 'no_host_tool_calls'
   | 'unexpected_http_tool_calls'
   | 'required_host_tool_missed'
-  | 'turn_contract_host_tool_blocked';
+  | 'turn_contract_host_tool_blocked'
+  | 'undispatchable_page_anchor';
 
 export type HostToolPlanStepHandleResult = {
   planAdvance: TaskPlanAdvanceResult;
@@ -53,7 +54,6 @@ function hasUnmetRequiredHostTools(input: {
 export function evaluateHostToolPreLlmSkip(input: {
   pendingHostStep: TaskPlanStep | null;
   taskPlan: TaskPlanSnapshot | null | undefined;
-  pageContext: AgentChatPageContext | null | undefined;
   hostToolsForPrompt: HostToolDecisionDefinition[];
   scopedHostTools: HostToolDecisionDefinition[];
 }): HostToolStepSkipReason | null {
@@ -65,9 +65,6 @@ export function evaluateHostToolPreLlmSkip(input: {
     scopedHostTools: input.scopedHostTools,
     hostCalls: [],
   });
-  if (!input.pageContext?.page?.trim()) {
-    return requiredMissed ? 'required_host_tool_missed' : 'missing_page_context';
-  }
   if (input.hostToolsForPrompt.length === 0) {
     return requiredMissed ? 'required_host_tool_missed' : 'no_scoped_host_tools';
   }
@@ -77,11 +74,11 @@ export function evaluateHostToolPreLlmSkip(input: {
 export function evaluateHostToolPostLlm(input: {
   pendingHostStep: TaskPlanStep | null;
   taskPlan: TaskPlanSnapshot | null | undefined;
-  pageContext: AgentChatPageContext | null | undefined;
   hostCalls: GraphToolCall[];
   httpCalls: GraphToolCall[];
   hasToolCalls: boolean;
   scopedHostTools: HostToolDecisionDefinition[];
+  pageContext?: AgentChatPageContext | null;
 }):
   | { action: 'dispatch'; hostCalls: GraphToolCall[]; planStepId: string }
   | {
@@ -102,7 +99,6 @@ export function evaluateHostToolPostLlm(input: {
   const {
     pendingHostStep,
     taskPlan,
-    pageContext,
     hostCalls,
     httpCalls,
     hasToolCalls,
@@ -114,9 +110,25 @@ export function evaluateHostToolPostLlm(input: {
 
   if (
     hostCalls.length > 0 &&
-    pageContext?.page?.trim() &&
     hostToolCallsMatchPlanStep(pendingHostStep, hostCalls)
   ) {
+    const hostPageScopes = resolveHostPageScopesForCalls({
+      hostCalls,
+      scopedHostTools,
+    });
+    if (
+      !canDispatchHostAction({
+        pageContext: input.pageContext,
+        hostPageScopes,
+      })
+    ) {
+      return {
+        action: 'skip',
+        planStepId: pendingHostStep.id,
+        reason: 'undispatchable_page_anchor',
+        hostCalls,
+      };
+    }
     return {
       action: 'dispatch',
       hostCalls,
@@ -131,13 +143,9 @@ export function evaluateHostToolPostLlm(input: {
   });
 
   if (hostCalls.length > 0) {
-    const reason = !pageContext?.page?.trim()
-      ? requiredMissed
-        ? 'required_host_tool_missed'
-        : 'missing_page_context'
-      : requiredMissed
-        ? 'required_host_tool_missed'
-        : 'host_tool_name_mismatch';
+    const reason = requiredMissed
+      ? 'required_host_tool_missed'
+      : 'host_tool_name_mismatch';
     if (reason === 'required_host_tool_missed') {
       return {
         action: 'required_missed',
@@ -195,6 +203,16 @@ export function evaluateHostToolPostLlm(input: {
   return { action: 'none' };
 }
 
+function resolveHostPageScopesForCalls(input: {
+  hostCalls: GraphToolCall[];
+  scopedHostTools: HostToolDecisionDefinition[];
+}): Array<string | null | undefined> {
+  const scopeByName = new Map(
+    input.scopedHostTools.map((tool) => [tool.name, tool.hostPageScope ?? null]),
+  );
+  return input.hostCalls.map((call) => scopeByName.get(call.name) ?? null);
+}
+
 export function finalizeHostToolPlanStep(input: {
   taskPlan: TaskPlanSnapshot;
   planStepId: string;
@@ -202,20 +220,41 @@ export function finalizeHostToolPlanStep(input: {
   httpCalls?: GraphToolCall[];
   skipReason?: HostToolStepSkipReason;
   pageContext?: AgentChatPageContext | null;
+  scopedHostTools?: HostToolDecisionDefinition[];
   runId?: number;
   turnId?: number;
+  /** fill_stream 已在 summarize 完成 live dispatch；本步仅 advance plan。 */
+  streamReconciled?: boolean;
 }): HostToolPlanStepHandleResult | null {
-  const dispatched = Boolean(input.hostCalls?.length && !input.skipReason);
+  const hasHostCalls = Boolean(input.hostCalls?.length);
+  let effectiveSkipReason = input.skipReason;
+
+  if (hasHostCalls && !effectiveSkipReason && input.hostCalls) {
+    const hostPageScopes = resolveHostPageScopesForCalls({
+      hostCalls: input.hostCalls,
+      scopedHostTools: input.scopedHostTools ?? [],
+    });
+    if (
+      !canDispatchHostAction({
+        pageContext: input.pageContext,
+        hostPageScopes,
+      })
+    ) {
+      effectiveSkipReason = 'undispatchable_page_anchor';
+    }
+  }
+
+  const dispatched = Boolean(hasHostCalls && !effectiveSkipReason);
   const planAdvance = advanceHostToolPlanStep(input.taskPlan, {
     planStepId: input.planStepId,
-    hostCalls: input.hostCalls,
+    hostCalls: dispatched ? input.hostCalls : undefined,
     requireMatch: dispatched,
   });
   if (!planAdvance) {
     return null;
   }
 
-  if (dispatched && input.hostCalls && input.pageContext?.page?.trim()) {
+  if (dispatched && input.hostCalls && !input.streamReconciled) {
     const observations = buildHostToolDispatchObservations({
       hostCalls: input.hostCalls,
       planStepId: input.planStepId,
@@ -234,10 +273,17 @@ export function finalizeHostToolPlanStep(input: {
     return { planAdvance, observations, ssePayload };
   }
 
+  if (dispatched && input.streamReconciled) {
+    return {
+      planAdvance,
+      observations: [],
+    };
+  }
+
   const observations = [
     buildHostToolSkippedObservation({
       planStepId: input.planStepId,
-      reason: input.skipReason ?? 'host_tool_step_skipped',
+      reason: effectiveSkipReason ?? 'host_tool_step_skipped',
       hostCalls: input.hostCalls,
       httpCalls: input.httpCalls,
     }),
@@ -245,7 +291,7 @@ export function finalizeHostToolPlanStep(input: {
   return {
     planAdvance,
     observations,
-    skipReason: input.skipReason,
+    skipReason: effectiveSkipReason,
   };
 }
 

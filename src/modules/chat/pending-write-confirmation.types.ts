@@ -1,6 +1,10 @@
 import type { ToolLevel } from '../../../generated/prisma/client';
 import type { TaskPlanSnapshot } from '../../core/agent-engine/engine/main/plan/task-plan.types';
 import type { AgentChatPageContext } from '../../core/host-bridge/page-context.types';
+import type {
+  WorkflowNodeDef,
+  WorkflowRunState,
+} from '../../core/workflow/workflow.types';
 
 export type PendingWriteToolCall = {
   name: string;
@@ -49,6 +53,11 @@ export type PendingWriteResumeContext = {
   confirmedPreviewSerialized?: string | null;
   /** 写确认挂起时的宿主页面上下文（续跑 host_action 镜像）。 */
   pageContext?: AgentChatPageContext | null;
+  /** 挂起时 L1 workflow 快照。 */
+  workflowRun?: WorkflowRunState | null;
+  workflowNodeDefs?: WorkflowNodeDef[];
+  workflowNodeOutputs?: Record<string, unknown>;
+  workflowAwaitingReact?: boolean;
 };
 
 export type PendingWriteConfirmationSnapshot = {

@@ -16,6 +16,9 @@ import { SkillService } from '../../../../skill/skill.service';
 import { RequestedSkillRunService } from '../skill/requested-skill-run.service';
 import { HostToolService } from '../../../../../modules/host-tool/host-tool.service';
 import { RunScopeCacheService } from '../../../../runtime-cache/run-scope-cache.service';
+import { ApprovalGateService } from '../../../../approval/approval-gate.service';
+import { ApprovalRequestService } from '../../../../approval/approval-request.service';
+import { ApprovalTriggerPermissionService } from '../../../../approval/approval-trigger-permission.service';
 import type { AgentGraphState, AgentLangGraphRunInput } from '../types/agent-engine.types';
 import {
   buildAndRunAgentGraph,
@@ -47,6 +50,9 @@ export class AgentLangGraphRunner {
     private readonly requestedSkillRun: RequestedSkillRunService,
     private readonly hostToolService: HostToolService,
     private readonly runScopeCache: RunScopeCacheService,
+    private readonly approvalGate: ApprovalGateService,
+    private readonly approvalRequests: ApprovalRequestService,
+    private readonly approvalTriggerPermission: ApprovalTriggerPermissionService,
   ) {}
 
   private deps(): AgentGraphDeps {
@@ -68,6 +74,9 @@ export class AgentLangGraphRunner {
       requestedSkillRun: this.requestedSkillRun,
       hostToolService: this.hostToolService,
       runScopeCache: this.runScopeCache,
+      approvalGate: this.approvalGate,
+      approvalRequests: this.approvalRequests,
+      approvalTriggerPermission: this.approvalTriggerPermission,
       logger: this.logger,
     };
   }

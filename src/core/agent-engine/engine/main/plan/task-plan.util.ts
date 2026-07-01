@@ -25,6 +25,8 @@ import type {
   TaskStepPhase,
   PlanSummarizePublishMode,
 } from './task-plan.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
+import { getWorkflowNodeDef } from '../../../../workflow/workflow-graph-routing.util';
 import type { PageContextUsage } from '../../../../host-bridge/page-context-usage.types';
 import { planInitialSummarizeReadyOnFresh } from '../../../../host-bridge/page-context-execution-policy.util';
 import {
@@ -66,6 +68,7 @@ const VALID_STEP_KINDS = new Set([
   'host_tool',
   'summarize',
   'reason',
+  'workflow_gate',
 ]);
 const VALID_STEP_PHASES = new Set(['gather', 'analyze', 'answer', 'mutate']);
 
@@ -515,40 +518,8 @@ export function buildPlanSnapshot(input: {
   return wrapSnapshotWithPlanStack(finalizePlanSnapshot(input));
 }
 
-/** 由 skill.config.workflow 步序推导 deliverable（外层壳，不读 intent HTTP 写工具）。 */
-export function inferDeliverableFromWorkflowSteps(
-  steps: TaskPlanStep[],
-): TaskDeliverable {
-  const hasWriteToolStep = steps.some(
-    (step) => step.kind === 'tool' && isPlanWriteToolRole(step.toolRole),
-  );
-  if (hasWriteToolStep) {
-    return 'mutation';
-  }
-  if (steps.some((step) => step.kind === 'host_tool')) {
-    return 'answer';
-  }
-  if (
-    steps.some(
-      (step) =>
-        step.kind === 'summarize' ||
-        step.phase === 'answer' ||
-        step.id === 'answer',
-    )
-  ) {
-    return 'answer';
-  }
-  if (steps.some((step) => step.toolRole === 'read-list')) {
-    return 'list';
-  }
-  if (steps.some((step) => step.toolRole === 'read-detail')) {
-    return 'detail';
-  }
-  return 'answer';
-}
-
 /**
- * 外层 kind=skill 壳的 deliverable：以 Skill 配置 / workflow 为准，
+ * 外层 kind=skill 壳的 deliverable：以 Skill 配置为准，
  * 不因 intent 收窄出 write tool 就强行 mutation（page-host-primary 场景）。
  */
 export function resolveOuterSkillPlanDeliverable(input: {
@@ -568,10 +539,6 @@ export function resolveOuterSkillPlanDeliverable(input: {
   });
   const hostPrimary =
     input.pageHostPrimary === true || skillIsHostOnlySkill(caps);
-
-  if (planConfig.workflowSteps?.length) {
-    return inferDeliverableFromWorkflowSteps(planConfig.workflowSteps);
-  }
 
   if (planConfig.deliverable) {
     return hostPrimary
@@ -758,37 +725,6 @@ export function buildTaskPlan(input: BuildTaskPlanInput): TaskPlanSnapshot {
     skillName: input.skillName,
   });
 
-  if (planConfig.workflowSteps && planConfig.workflowSteps.length > 0) {
-    const validatedSteps = validatePlanStepsAgainstScoped(
-      planConfig.workflowSteps,
-      scopedToolSummaries,
-    );
-    if (validatedSteps) {
-      const deliverable = inferDeliverableFromTools(
-        scopedToolSummaries,
-        planConfig.deliverable,
-        input.skillApplied,
-        input.skillRiskLevel,
-        { hostOnlySkill },
-      );
-      const { hasWrite } = summarizeScopedRoles(scopedToolSummaries);
-      const workflowUsable =
-        deliverable !== 'mutation' ||
-        !hasWrite ||
-        isCompliantMutationPlan(validatedSteps);
-      if (workflowUsable) {
-        return buildPlanSnapshot({
-          source: 'workflow',
-          userMessage,
-          goal,
-          deliverable,
-          steps: validatedSteps,
-          constraints: skillConstraints,
-        });
-      }
-    }
-  }
-
   const deliverable = inferDeliverableFromTools(
     scopedToolSummaries,
     planConfig.deliverable,
@@ -838,7 +774,57 @@ function getStepById(
   return plan.steps.find((step) => step.id === stepId) ?? null;
 }
 
-/** pending 队列首步（含 skill / tool / summarize / reason）。 */
+/** Workflow 模式下 Plan 步解析的统一输入（图节点 / summarize / gate 共用）。 */
+export type PlanExecutionContext = {
+  taskPlan: TaskPlanSnapshot | null | undefined;
+  workflowRun?: WorkflowRunState | null;
+  workflowNodeDefs?: WorkflowNodeDef[] | null;
+};
+
+export function planExecutionContextFromState(input: {
+  taskPlan?: TaskPlanSnapshot | null;
+  workflowRun?: WorkflowRunState | null;
+  workflowNodeDefs?: WorkflowNodeDef[] | null;
+}): PlanExecutionContext {
+  return {
+    taskPlan: input.taskPlan,
+    workflowRun: input.workflowRun,
+    workflowNodeDefs: input.workflowNodeDefs,
+  };
+}
+
+export function workflowNodeActionForPlanStepId(
+  workflowNodeDefs: WorkflowNodeDef[] | null | undefined,
+  stepId: string | null | undefined,
+): string | null {
+  return getWorkflowNodeDef(workflowNodeDefs, stepId)?.action ?? null;
+}
+
+export function resolvePlanExecutionStep(
+  ctx: PlanExecutionContext,
+): {
+  step: TaskPlanStep | null;
+  workflowNodeAction: string | null;
+} {
+  const step = resolveEffectivePlanStep({
+    taskPlan: ctx.taskPlan,
+    workflowRun: ctx.workflowRun,
+  });
+  const stepId =
+    step?.id ??
+    (ctx.workflowRun?.status === 'running'
+      ? ctx.workflowRun.currentNodeId
+      : null);
+  return {
+    step,
+    workflowNodeAction: workflowNodeActionForPlanStepId(
+      ctx.workflowNodeDefs,
+      stepId,
+    ),
+  };
+}
+
+/** pending 队列首步（含 skill / tool / summarize / reason）。Plan-only 路径用。 */
 export function getPendingPlanStep(
   plan: TaskPlanSnapshot | null | undefined,
 ): TaskPlanStep | null {
@@ -849,55 +835,134 @@ export function getPendingPlanStep(
   return getStepById(plan, stepId);
 }
 
+/**
+ * Workflow 运行时有效 Plan 步：workflowRun.currentNodeId 为 SSOT，否则 fallback pending 队列。
+ * readiness / llm / tools / summarize 在 workflow 模式应统一使用此入口。
+ */
+export function resolveEffectivePlanStep(input: {
+  taskPlan: TaskPlanSnapshot | null | undefined;
+  workflowRun?: WorkflowRunState | null;
+}): TaskPlanStep | null {
+  const plan = input.taskPlan;
+  if (!plan) {
+    return null;
+  }
+  const run = input.workflowRun;
+  if (run?.status === 'running' && run.currentNodeId) {
+    const fromWorkflow = getStepById(plan, run.currentNodeId);
+    if (fromWorkflow) {
+      return fromWorkflow;
+    }
+  }
+  return getPendingPlanStep(plan);
+}
+
+export function resolveEffectivePlanStepId(input: {
+  taskPlan: TaskPlanSnapshot | null | undefined;
+  workflowRun?: WorkflowRunState | null;
+}): string | null {
+  return resolveEffectivePlanStep(input)?.id ?? null;
+}
+
 /** pending 队列首步（仅 kind=host_tool）。 */
 export function getPendingPlanHostToolStep(
   plan: TaskPlanSnapshot | null | undefined,
+  workflowRun?: WorkflowRunState | null,
 ): TaskPlanStep | null {
-  const step = getPendingPlanStep(plan);
+  const step = resolveEffectivePlanStep({ taskPlan: plan, workflowRun });
   return step?.kind === 'host_tool' ? step : null;
 }
 
 /** Plan 步在 LangGraph 中的执行通路（单一来源，供 advance / summarize 续跑共用）。 */
-export type PlanStepExecutionRoute = 'llm' | 'summarize' | 'terminal';
+export type PlanStepExecutionRoute =
+  | 'llm'
+  | 'summarize'
+  | 'workflow'
+  | 'terminal';
 
 /**
  * 当前 pending 步应走哪条图路由。
  * - summarize / reason → summarize 节点（文本生成）
+ * - workflow_gate → Workflow execute_node（如 await_user_confirm）
  * - tool / host_tool / skill → llm 节点（工具决策 / Host Tool dispatch / skill 帧）
  * - 无 pending → terminal
  */
 export function resolvePlanStepExecutionRoute(
   step: TaskPlanStep | null | undefined,
+  workflowNodeAction?: string | null,
 ): PlanStepExecutionRoute {
   if (!step) {
     return 'terminal';
   }
+  if (isPlanAwaitUserConfirmStep(step, workflowNodeAction)) {
+    return 'workflow';
+  }
   if (step.kind === 'summarize' || step.kind === 'reason') {
     return 'summarize';
   }
+  if (step.kind === 'workflow_gate') {
+    return 'workflow';
+  }
   return 'llm';
+}
+
+/** await_user_confirm 对应 Plan 步（workflow_gate；兼容历史 summarize 编译）。 */
+export function isPlanAwaitUserConfirmStep(
+  step: TaskPlanStep | null | undefined,
+  workflowNodeAction?: string | null,
+): boolean {
+  return (
+    step?.kind === 'workflow_gate' ||
+    workflowNodeAction === 'await_user_confirm'
+  );
+}
+
+/** Workflow 托管门控步（非 summarize 文本生成）。 */
+export function isPlanWorkflowGateStep(
+  step: TaskPlanStep | null | undefined,
+  workflowNodeAction?: string | null,
+): boolean {
+  return resolvePlanStepExecutionRoute(step, workflowNodeAction) === 'workflow';
+}
+
+/** summarize / reason / workflow_gate：不向 LLM 暴露 HTTP tool scope。 */
+export function isPlanStepBlockingToolScope(
+  step: TaskPlanStep | null | undefined,
+  workflowNodeAction?: string | null,
+): boolean {
+  const route = resolvePlanStepExecutionRoute(step, workflowNodeAction);
+  return route === 'summarize' || route === 'workflow';
 }
 
 /** 文本生成步（summarize / reason），与 resolvePlanStepExecutionRoute 一致。 */
 export function isPlanTextGenerationStep(
   step: TaskPlanStep | null | undefined,
+  workflowNodeAction?: string | null,
 ): boolean {
-  return resolvePlanStepExecutionRoute(step) === 'summarize';
+  return resolvePlanStepExecutionRoute(step, workflowNodeAction) === 'summarize';
 }
 
 /** pending 队列首步（仅 kind=tool）。 */
 export function getPendingPlanToolStep(
   plan: TaskPlanSnapshot | null | undefined,
+  workflowRun?: WorkflowRunState | null,
 ): TaskPlanStep | null {
-  const step = getPendingPlanStep(plan);
+  const step = resolveEffectivePlanStep({ taskPlan: plan, workflowRun });
   return step?.kind === 'tool' ? step : null;
 }
 
 /** summarize / reason 步不应再 bind 工具，仅文本决策或走 summarize 节点。 */
 export function isPendingPlanAnswerStep(
   plan: TaskPlanSnapshot | null | undefined,
+  workflowRun?: WorkflowRunState | null,
+  workflowNodeDefs?: WorkflowNodeDef[] | null,
 ): boolean {
-  return isPlanTextGenerationStep(getPendingPlanStep(plan));
+  const { step, workflowNodeAction } = resolvePlanExecutionStep({
+    taskPlan: plan,
+    workflowRun,
+    workflowNodeDefs,
+  });
+  return isPlanTextGenerationStep(step, workflowNodeAction);
 }
 
 function matchingToolNamesForPlanStep(
@@ -1096,14 +1161,21 @@ export function resolveScopedToolRoleForPlan(
 export function filterScopedToolsForPlanStep<T extends PlanScopedTool>(
   tools: T[],
   taskPlan: TaskPlanSnapshot | null | undefined,
+  workflowRun?: WorkflowRunState | null,
+  workflowNodeDefs?: WorkflowNodeDef[] | null,
 ): T[] {
-  if (isPendingPlanAnswerStep(taskPlan)) {
+  const { step: executionStep, workflowNodeAction } = resolvePlanExecutionStep({
+    taskPlan,
+    workflowRun,
+    workflowNodeDefs,
+  });
+  if (isPlanStepBlockingToolScope(executionStep, workflowNodeAction)) {
     return [];
   }
-  if (getPendingPlanHostToolStep(taskPlan)) {
+  if (getPendingPlanHostToolStep(taskPlan, workflowRun)) {
     return [];
   }
-  const step = getPendingPlanToolStep(taskPlan);
+  const step = getPendingPlanToolStep(taskPlan, workflowRun);
   if (!step || step.kind !== 'tool' || !step.toolRole) {
     return tools;
   }
@@ -1136,11 +1208,55 @@ export function isPlanWriteToolStep(
   return step?.kind === 'tool' && isPlanWriteToolRole(step.toolRole);
 }
 
+/**
+ * present_mutation 步展示草稿时解析 write tool：不依赖 finalize 后的 await 步（会触发 answer 步空工具集）。
+ * 优先 plan_compose_write 绑定的 tool，其次 mutation 链上的 write_data / write 步。
+ */
+export function resolveMutationWriteToolsForPresent<T extends PlanScopedTool>(
+  scopedTools: T[],
+  taskPlan: TaskPlanSnapshot | null | undefined,
+  composedToolName?: string | null,
+): T[] {
+  const trimmed = composedToolName?.trim();
+  if (trimmed) {
+    const bound = scopedTools.find((tool) => tool.name === trimmed);
+    if (bound) {
+      return [bound];
+    }
+  }
+  if (!taskPlan) {
+    return [];
+  }
+  const writeStep = taskPlan.steps.find((step) =>
+    isPlanWriteExecutionStepInMutationFlow(step),
+  );
+  if (!writeStep) {
+    return [];
+  }
+  const planForWriteStep: TaskPlanSnapshot = {
+    ...taskPlan,
+    currentStepId: writeStep.id,
+    currentObjective: writeStep.objective,
+    taskPhase: writeStep.phase,
+    pendingStepIds: taskPlan.pendingStepIds.includes(writeStep.id)
+      ? taskPlan.pendingStepIds
+      : [writeStep.id, ...taskPlan.pendingStepIds],
+  };
+  return filterScopedToolsForPlanStep(scopedTools, planForWriteStep);
+}
+
 export const PLAN_COMPOSE_WRITE_STEP_ID = 'compose_write';
 export const PLAN_PRESENT_STEP_ID = 'present';
 export const PLAN_WRITE_STEP_ID = 'write';
+/** Workflow DB 节点 id（mutation preset present_mutation） */
+export const WORKFLOW_PRESENT_MUTATION_STEP_ID = 'present_mutation';
 /** @deprecated 旧模板步 id，与 present 等价 */
 export const PLAN_DRAFT_STEP_ID = 'draft';
+
+type PresentSummarizeWorkflowNodeHint = {
+  id: string;
+  action: string;
+};
 
 export function isPlanComposeWriteStep(
   step: TaskPlanStep | null | undefined,
@@ -1149,6 +1265,32 @@ export function isPlanComposeWriteStep(
     step?.kind === 'tool' &&
     step.id === PLAN_COMPOSE_WRITE_STEP_ID &&
     isPlanWriteToolStep(step)
+  );
+}
+
+/**
+ * compose 阶段：只产 write 参数、不执行 HTTP。
+ * Plan 模板 compose_write，或 Workflow compose_mutation（analyze + write tool）。
+ */
+export function isComposeMutationParameterStep(
+  step: TaskPlanStep | null | undefined,
+  workflowNodeAction?: string | null,
+): boolean {
+  if (isPlanComposeWriteStep(step)) {
+    return true;
+  }
+  if (workflowNodeAction === 'compose_mutation') {
+    return (
+      step?.kind === 'tool' &&
+      step.phase === 'analyze' &&
+      isPlanWriteToolStep(step)
+    );
+  }
+  return (
+    step?.kind === 'tool' &&
+    step.phase === 'analyze' &&
+    isPlanWriteToolStep(step) &&
+    step.id !== PLAN_WRITE_STEP_ID
   );
 }
 
@@ -1163,15 +1305,57 @@ export function isPlanWriteFallbackStep(
   );
 }
 
+/** 实际 HTTP 写执行步：Plan write fallback 或 Workflow write_data。 */
+export function isPlanWriteExecutionStep(
+  step: TaskPlanStep | null | undefined,
+  workflowNodeAction?: string | null,
+): boolean {
+  if (isPlanWriteFallbackStep(step)) {
+    return true;
+  }
+  if (
+    step?.kind !== 'tool' ||
+    step.phase !== 'mutate' ||
+    !isPlanWriteToolStep(step)
+  ) {
+    return false;
+  }
+  if (workflowNodeAction === 'write_data') {
+    return true;
+  }
+  return step.id === PLAN_WRITE_STEP_ID;
+}
+
+/** Plan / TaskPlan 镜像：mutate 阶段写 tool 步（含 Workflow write_data 投影）。 */
+export function isPlanWriteExecutionStepInMutationFlow(
+  step: TaskPlanStep | null | undefined,
+): boolean {
+  if (isPlanWriteFallbackStep(step)) {
+    return true;
+  }
+  return (
+    step?.kind === 'tool' &&
+    step.phase === 'mutate' &&
+    isPlanWriteToolStep(step)
+  );
+}
+
 export function isPlanPresentSummarizeStep(
   step: TaskPlanStep | null | undefined,
+  workflowNodeDefs?: PresentSummarizeWorkflowNodeHint[] | null,
 ): boolean {
   if (step?.kind !== 'summarize') {
     return false;
   }
-  return (
-    step.id === PLAN_PRESENT_STEP_ID || step.id === PLAN_DRAFT_STEP_ID
-  );
+  if (
+    step.id === PLAN_PRESENT_STEP_ID ||
+    step.id === PLAN_DRAFT_STEP_ID ||
+    step.id === WORKFLOW_PRESENT_MUTATION_STEP_ID
+  ) {
+    return true;
+  }
+  const def = workflowNodeDefs?.find((row) => row.id === step.id);
+  return def?.action === 'present_mutation';
 }
 
 const MUTATION_CORE_STEP_IDS = [
@@ -1504,8 +1688,10 @@ function applyPlanAdvance(
   plan: TaskPlanSnapshot,
   completedStepId: string,
 ): TaskPlanSnapshot {
+  const normalized =
+    plan.frames.length === 0 ? wrapSnapshotWithPlanStack(plan) : plan;
   return syncPlanFromActiveFrame(
-    applyActiveFrameStepComplete(plan, completedStepId),
+    applyActiveFrameStepComplete(normalized, completedStepId),
   );
 }
 
@@ -1683,20 +1869,34 @@ export function finalizePlanAfterSummarize(
   if (!plan) {
     return null;
   }
-  const stepId = plan.pendingStepIds[0] ?? plan.currentStepId;
-  const step = getStepById(plan, stepId);
+  const normalized =
+    plan.frames.length === 0 ? wrapSnapshotWithPlanStack(plan) : plan;
+  const stepId = normalized.pendingStepIds[0] ?? normalized.currentStepId;
+  const step = getStepById(normalized, stepId);
   if (!step || !isPlanTextGenerationStep(step)) {
-    return plan;
+    return normalized;
   }
-  const updated = applyPlanAdvance(plan, step.id);
+  const updated = applyPlanAdvance(normalized, step.id);
   return updated.pendingStepIds.length > 0 ? updated : null;
 }
 
-/** summarize/reason 中间步完成后，Plan 是否仍有需 llm 承接的执行步（与 resolvePlanStepExecutionRoute 一致）。 */
+/**
+ * summarize/reason 中间步完成后，Agent 图是否应继续（非 END）。
+ * - tool / host_tool / skill 步 → llm 环
+ * - workflow_gate 步 → Workflow execute_node（非二次 summarize）
+ */
 export function shouldContinuePlanAfterSummarize(
   plan: TaskPlanSnapshot | null | undefined,
+  workflowRun?: WorkflowRunState | null,
+  workflowNodeDefs?: WorkflowNodeDef[] | null,
 ): boolean {
-  return resolvePlanStepExecutionRoute(getPendingPlanStep(plan)) === 'llm';
+  const { step, workflowNodeAction } = resolvePlanExecutionStep({
+    taskPlan: plan,
+    workflowRun,
+    workflowNodeDefs,
+  });
+  const route = resolvePlanStepExecutionRoute(step, workflowNodeAction);
+  return route === 'llm' || route === 'workflow';
 }
 
 /** Plan 首步即为 summarize/reason 时，跳过 ReAct tool 环。 */
@@ -1760,6 +1960,7 @@ function observationArgsFingerprint(observation: ToolObservation): string {
 /** 已完成 gather 步（不在 pending 中的 tool 步）。 */
 function completedGatherToolStepsForPlan(
   plan: TaskPlanSnapshot,
+  workflowRun?: WorkflowRunState | null,
 ): TaskPlanStep[] {
   const pending = new Set(plan.pendingStepIds);
   let steps = plan.steps.filter(
@@ -1780,11 +1981,19 @@ function completedGatherToolStepsForPlan(
       (step) =>
         step.toolRole === 'read-detail' || step.toolRole === 'read-list',
     );
-    if (readSteps.length > 0) {
-      steps = readSteps;
-    } else {
-      steps = [];
-    }
+    const pendingStep = resolveEffectivePlanStep({
+      taskPlan: plan,
+      workflowRun,
+    });
+    const terminalMutationSummarize =
+      pendingStep?.kind === 'summarize' && plan.pendingStepIds.length <= 1;
+    const writeSteps = terminalMutationSummarize
+      ? steps.filter((step) => isPlanWriteExecutionStepInMutationFlow(step))
+      : [];
+    steps =
+      readSteps.length > 0 || writeSteps.length > 0
+        ? [...readSteps, ...writeSteps]
+        : [];
   }
   return steps;
 }
@@ -1803,9 +2012,13 @@ export function filterObservationsForPlanSummarize(input: {
   observations: ToolObservation[];
   scopedTools?: PlanScopedTool[];
   strict?: boolean;
+  workflowRun?: WorkflowRunState | null;
 }): ObservationsForPlanSummarizeResult {
   const strict = input.strict === true;
-  const gatherSteps = completedGatherToolStepsForPlan(input.plan);
+  const gatherSteps = completedGatherToolStepsForPlan(
+    input.plan,
+    input.workflowRun,
+  );
   if (gatherSteps.length === 0) {
     return { observations: input.observations, filterMiss: false };
   }
@@ -1849,6 +2062,7 @@ export function observationsForPlanSummarize(input: {
   plan: TaskPlanSnapshot;
   observations: ToolObservation[];
   scopedTools?: PlanScopedTool[];
+  workflowRun?: WorkflowRunState | null;
 }): ToolObservation[] {
   return filterObservationsForPlanSummarize({
     ...input,

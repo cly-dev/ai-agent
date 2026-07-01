@@ -4,6 +4,11 @@ import type {
   PageContextDataSufficiency,
   PageContextUsage,
 } from './page-context-usage.types';
+import {
+  buildPageContextObservationName,
+  readInlineRecordsFromPageContext,
+  resolvePageContextEntityId,
+} from './page-context-metadata-scan.util';
 
 export type PageContextMaterializedObservation = {
   name: string;
@@ -11,44 +16,12 @@ export type PageContextMaterializedObservation = {
   llmPayload?: Record<string, unknown>;
 };
 
-export const PAGE_CONTEXT_REVIEW_OBSERVATION_NAME = 'page_context:review';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function pickString(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function readReviewRecord(
-  pageContext: AgentChatPageContext,
-): Record<string, unknown> | null {
-  const metadata = pageContext.metadata;
-  if (!isRecord(metadata)) {
-    return null;
-  }
-  const review = metadata.review;
-  if (!isRecord(review)) {
-    return null;
-  }
-  const content = pickString(review.content);
-  if (!content) {
-    return null;
-  }
-  const entityId =
-    pickString(pageContext.entity?.id) ??
-    pickString(review.id) ??
-    pickString(pageContext.routeParams?.reviewId);
-  const record: Record<string, unknown> = { ...review, content };
-  if (entityId) {
-    record.id = entityId;
-  }
-  return record;
 }
 
 /** 结构化评估 pageContext 数据充足度（不解析用户自然语言）。 */
@@ -66,16 +39,9 @@ export function assessPageContextData(
   }
   const page = pickString(pageContext.page);
   const entityType = pickString(pageContext.entity?.type);
-  const entityId =
-    pickString(pageContext.entity?.id) ??
-    pickString(pageContext.routeParams?.reviewId) ??
-    pickString(pageContext.routeParams?.id);
-
-  const inlineContentKinds: string[] = [];
-  const reviewRecord = readReviewRecord(pageContext);
-  if (reviewRecord) {
-    inlineContentKinds.push('review');
-  }
+  const entityId = resolvePageContextEntityId(pageContext);
+  const inlineRecords = readInlineRecordsFromPageContext(pageContext);
+  const inlineContentKinds = inlineRecords.map((row) => row.kind);
 
   let dataSufficiency: PageContextDataSufficiency = 'none';
   if (inlineContentKinds.length > 0) {
@@ -126,6 +92,10 @@ export function isPageContextSourcedObservation(input: {
   return input.output.source === 'page_context';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /** 从物化 observation output 读取实体 id。 */
 export function readEntityIdFromPageContextObservation(
   output: unknown,
@@ -164,6 +134,46 @@ export function pageContextObservationMatchesEntity(input: {
   return obsEntityId != null && obsEntityId === input.entityId;
 }
 
+function buildMaterializedObservation(input: {
+  kind: string;
+  record: Record<string, unknown>;
+  entityType: string;
+  entityId: string | null;
+  page: string | null;
+}): PageContextMaterializedObservation {
+  const observationName = buildPageContextObservationName(input.kind);
+  const output = {
+    source: 'page_context',
+    entityType: input.entityType,
+    entityId: input.entityId,
+    page: input.page,
+    records: [input.record],
+    data: input.record,
+    summary: {
+      total: 1,
+      source: 'page_context_inline',
+      entityType: input.entityType,
+    },
+  };
+  return {
+    name: observationName,
+    output,
+    llmPayload: {
+      tool: observationName,
+      executed: true,
+      source: 'session',
+      success: true,
+      reuseNote:
+        'Inline entity data from page_context. Do not call read-list or read-detail for the same entity unless the user explicitly requests a server refresh.',
+      records: [input.record],
+      summary: {
+        total: 1,
+        source: 'page_context_inline',
+      },
+    },
+  };
+}
+
 /** 将页上内联数据物化为 preloaded observation（供 Plan 跳步与 summarize）。 */
 export function materializePageContextObservations(
   pageContext: AgentChatPageContext | null | undefined,
@@ -172,46 +182,21 @@ export function materializePageContextObservations(
     return [];
   }
   const assessment = assessPageContextData(pageContext);
-  if (!assessment.inlineContentKinds.includes('review')) {
+  const inlineRecords = readInlineRecordsFromPageContext(pageContext);
+  if (inlineRecords.length === 0) {
     return [];
   }
-  const reviewRecord = readReviewRecord(pageContext);
-  if (!reviewRecord) {
-    return [];
-  }
-  const entityId = pickString(reviewRecord.id) ?? assessment.entityId;
-  const output = {
-    source: 'page_context',
-    entityType: assessment.entityType ?? 'review',
-    entityId,
-    page: assessment.page,
-    records: [reviewRecord],
-    data: reviewRecord,
-    summary: {
-      total: 1,
-      source: 'page_context_inline',
-      entityType: assessment.entityType ?? 'review',
-    },
-  };
-  return [
-    {
-      name: PAGE_CONTEXT_REVIEW_OBSERVATION_NAME,
-      output,
-      llmPayload: {
-        tool: PAGE_CONTEXT_REVIEW_OBSERVATION_NAME,
-        executed: true,
-        source: 'session',
-        success: true,
-        reuseNote:
-          'Inline entity data from page_context. Do not call read-list or read-detail for the same entity unless the user explicitly requests a server refresh.',
-        records: [reviewRecord],
-        summary: {
-          total: 1,
-          source: 'page_context_inline',
-        },
-      },
-    },
-  ];
+  return inlineRecords.map((row) => {
+    const entityId = pickString(row.record.id) ?? assessment.entityId;
+    const entityType = assessment.entityType ?? row.kind;
+    return buildMaterializedObservation({
+      kind: row.kind,
+      record: row.record,
+      entityType,
+      entityId,
+      page: assessment.page,
+    });
+  });
 }
 
 export function mergePageContextPreloadedObservations<

@@ -53,18 +53,14 @@ import {
   resolveSummarizeUserMessageForPlan,
 } from '../../plan/task-plan.util';
 import type { PlanSummarizePublishMode, TaskPlanSnapshot } from '../../plan/task-plan.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../../workflow/workflow.types';
 import { resolveSummarizeLlmDelivery } from '../../summarize/summarize-llm-delivery.util';
 import type { PlanPresentSummarizeResult } from '../../plan-present/plan-draft-summarize.util';
 import { runPlanPresentSummarize } from '../../plan-present/plan-present-orchestrate.util';
 import {
-  runPlanReasonHostFill,
-  type PlanReasonHostFillResult,
-} from '../../plan-present/plan-reason-host-orchestrate.util';
-import {
   applySummarizeMemoryScope,
   resolveSummarizeMemoryScope,
 } from '../../summarize/summarize-memory-scope.util';
-import type { HostToolDecisionDefinition } from '../../../../../host-bridge/host-tool-decision.types';
 import type { AgentEngineTool, ToolObservation } from '../../types/agent-engine.types';
 import type { AgentGraphDeps } from '../types/graph.types';
 import { stringifyForPrompt } from '../runtime/decision.util';
@@ -76,6 +72,8 @@ import {
   extractDirectReplyDraft,
   extractDirectUserGuidanceHint,
   parseClarificationRequestOutput,
+  parseSkillIntentMismatchOutput,
+  buildSkillIntentMismatchFallbackPlainText,
   resolveSummarizePromptKey,
   resolveToolStepCode,
 } from './observation.util';
@@ -318,6 +316,74 @@ export async function summarizeClarificationRequest(deps: AgentGraphDeps,
     }
   }
 
+export async function summarizeSkillIntentMismatch(deps: AgentGraphDeps,
+    userMessage: string,
+    output: unknown,
+    promptMessages: LlmChatMessage[],
+    sessionId: string,
+    runId: number,
+    scope: { appClientId: number; agentId: number },
+    publishMode?: PlanSummarizePublishMode,
+  ): Promise<string> {
+    const parsed = parseSkillIntentMismatchOutput(output);
+    const effectiveUserMessage = parsed.userMessage || userMessage;
+    const fallback = buildSkillIntentMismatchFallbackPlainText({
+      mismatchCode: parsed.mismatchCode,
+      requestedSkillName: parsed.requestedSkillName,
+    });
+    const agentPrompts = promptMessages.filter(
+      (message) =>
+        message.role === 'system' && message.content.includes('<agent_prompt>'),
+    );
+    const summarizeMessages: LlmChatMessage[] = [...agentPrompts];
+    summarizeMessages.push({
+      role: 'system',
+      content: await deps.promptRegistry.render(
+        PROMPT_KEYS.AGENT_RESPOND_SKILL_INTENT_MISMATCH,
+        scope,
+      ),
+    });
+    summarizeMessages.push({
+      role: 'user',
+      content: [
+        `User request: ${effectiveUserMessage}`,
+        parsed.requestedSkillName
+          ? `Requested skill: ${parsed.requestedSkillName} (id=${parsed.requestedSkillId ?? 'unknown'})`
+          : null,
+        parsed.mismatchCode ? `mismatchCode: ${parsed.mismatchCode}` : null,
+        parsed.routingReason ? `Routing reason: ${parsed.routingReason}` : null,
+      ]
+        .filter((line): line is string => line != null && line.length > 0)
+        .join('\n'),
+    });
+    try {
+      const { blocks } = await deps.sse.summarizeMessageBlocks(
+        summarizeMessages,
+        sessionId,
+        runId,
+        [],
+        fallback,
+        resolveSummarizeLlmDelivery(
+          PROMPT_KEYS.AGENT_RESPOND_SKILL_INTENT_MISMATCH,
+        ),
+        publishMode,
+      );
+      return serializeMessageBlocksForStorage(blocks);
+    } catch (error) {
+      deps.logger.warn(
+        `skill intent mismatch summarize fallback: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      const published = deps.sse.publishAssistantBlocks(sessionId, runId, [
+        textBlock(fallback),
+      ]);
+      return serializeMessageBlocksForStorage(
+        published.length > 0 ? published : [textBlock(fallback)],
+      );
+    }
+  }
+
 export async function summarizeDirectUserMessage(deps: AgentGraphDeps, 
     userMessage: string,
     output: unknown,
@@ -327,10 +393,16 @@ export async function summarizeDirectUserMessage(deps: AgentGraphDeps,
     scope: { appClientId: number; agentId: number },
     taskPlan?: TaskPlanSnapshot | null,
     publishMode?: PlanSummarizePublishMode,
+    workflowRun?: WorkflowRunState | null,
+    workflowNodeDefs?: WorkflowNodeDef[] | null,
   ): Promise<string> {
     const guidanceHint = extractDirectUserGuidanceHint(output);
     const planContext = formatPlanContextForSummarize(taskPlan);
-    const planAnswerStep = isPendingPlanAnswerStep(taskPlan);
+    const planAnswerStep = isPendingPlanAnswerStep(
+      taskPlan,
+      workflowRun,
+      workflowNodeDefs,
+    );
     const fallback = guidanceHint || 'Hello! How can I help you?';
     const summarizePromptKey = planAnswerStep || guidanceHint
       ? PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS
@@ -384,31 +456,6 @@ export async function summarizeDirectUserMessage(deps: AgentGraphDeps,
     }
   }
 
-export async function summarizePlanReasonForHostFill(
-  deps: AgentGraphDeps,
-  userMessage: string,
-  mergedObservation: ToolObservation,
-  toolObservations: ToolObservation[],
-  promptMessages: LlmChatMessage[],
-  sessionId: string,
-  runId: number,
-  scope: { appClientId: number; agentId: number },
-  taskPlan: TaskPlanSnapshot,
-  scopedHostTools: HostToolDecisionDefinition[],
-): Promise<PlanReasonHostFillResult> {
-  return runPlanReasonHostFill(deps, {
-    userMessage,
-    mergedObservation,
-    toolObservations,
-    promptMessages,
-    sessionId,
-    runId,
-    scope,
-    taskPlan,
-    scopedHostTools,
-  });
-}
-
 export async function summarizePlanPresentWithPendingWrite(
   deps: AgentGraphDeps,
   toolName: string,
@@ -422,6 +469,8 @@ export async function summarizePlanPresentWithPendingWrite(
   scope: { appClientId: number; agentId: number },
   taskPlan: TaskPlanSnapshot | null | undefined,
   scopedTools: AgentEngineTool[],
+  workflowRun?: WorkflowRunState | null,
+  workflowNodeDefs?: WorkflowNodeDef[] | null,
 ): Promise<PlanPresentSummarizeResult> {
   return runPlanPresentSummarize(deps, {
     toolName,
@@ -435,6 +484,8 @@ export async function summarizePlanPresentWithPendingWrite(
     scope,
     taskPlan,
     scopedTools,
+    workflowRun,
+    workflowNodeDefs,
   });
 }
 
@@ -455,6 +506,8 @@ export async function summarizeToolOutputForUser(deps: AgentGraphDeps,
     executedArgs?: Record<string, unknown>,
     publishMode?: PlanSummarizePublishMode,
     sessionObservations?: ToolObservation[],
+    workflowRun?: WorkflowRunState | null,
+    workflowNodeDefs?: WorkflowNodeDef[] | null,
   ): Promise<string> {
     const splitOutput = isSplitToolObservationsOutput(output) ? output : null;
     const primaryObservation = splitOutput
@@ -493,9 +546,15 @@ export async function summarizeToolOutputForUser(deps: AgentGraphDeps,
       userMessage,
       fieldLabels,
     });
-    const planAnswerStep = isPendingPlanAnswerStep(taskPlan);
+    const planAnswerStep = isPendingPlanAnswerStep(
+      taskPlan,
+      workflowRun,
+      workflowNodeDefs,
+    );
     const summarizePromptKey = resolveSummarizePromptKey({
       taskPlan,
+      workflowRun,
+      workflowNodeDefs,
       fullDetail,
       summarizeScenario,
     });

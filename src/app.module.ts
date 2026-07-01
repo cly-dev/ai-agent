@@ -31,6 +31,10 @@ import { LlmModelConfigModule } from './modules/llm-model-config/llm-model-confi
 import { PromptTemplateModule } from './modules/prompt-template/prompt-template.module';
 import { RoleModule } from './modules/role/role.module';
 import { HostToolModule } from './modules/host-tool/host-tool.module';
+import { PageActionModule } from './modules/page-action/page-action.module';
+import { ApprovalModule } from './core/approval/approval.module';
+import { ApprovalModule as ApprovalInboxModule } from './modules/approval/approval.module';
+import { WorkflowModule } from './modules/workflow/workflow.module';
 
 @Module({
   imports: [
@@ -54,6 +58,10 @@ import { HostToolModule } from './modules/host-tool/host-tool.module';
     PromptTemplateModule,
     RoleModule,
     HostToolModule,
+    PageActionModule,
+    ApprovalModule,
+    ApprovalInboxModule,
+    WorkflowModule,
     AgentModule,
     ChatModule,
     MessageModule,

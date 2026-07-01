@@ -21,9 +21,10 @@ import {
   buildDecisionUserFrame,
   getPendingPlanHostToolStep,
   getPendingPlanToolStep,
-  isPlanComposeWriteStep,
-  isPlanWriteFallbackStep,
+  isComposeMutationParameterStep,
+  isPlanWriteExecutionStepInMutationFlow,
 } from '../../plan/task-plan.util';
+import { appendWorkflowNodeOutputsToLlmMessages } from '../../../../../workflow/workflow-node-outputs.util';
 import type { TaskPlanSnapshot } from '../../plan/task-plan.types';
 import type { GraphToolCall } from '../../types/agent-engine.types';
 import type { AgentGraphDeps } from '../types/graph.types';
@@ -62,6 +63,7 @@ export function buildLlmInvokeMessages(
     toolDecisionPrompt: string,
     messageTokenBudget: number,
     taskPlan?: TaskPlanSnapshot | null,
+    workflowNodeOutputs?: Record<string, unknown>,
   ): {
     messages: Array<{ role: string; content: string; toolCallId?: string }>;
     trimMeta: {
@@ -94,6 +96,13 @@ export function buildLlmInvokeMessages(
     )) {
       messages.push({ role: item.role, content: item.content });
     }
+
+    const withWorkflowOutputs = appendWorkflowNodeOutputsToLlmMessages(
+      messages,
+      workflowNodeOutputs,
+    );
+    messages.length = 0;
+    messages.push(...withWorkflowOutputs);
 
     const observationBlock = formatSplitObservationsPromptBlock({
       workingMemory: toolObservationsToPayloads(
@@ -186,14 +195,14 @@ export function appendPlanStepDecisionHint(
     taskPlan: TaskPlanSnapshot | null | undefined,
   ): string {
     const step = getPendingPlanToolStep(taskPlan);
-    if (isPlanComposeWriteStep(step)) {
+    if (isComposeMutationParameterStep(step)) {
       return `${toolDecisionPrompt}\n\n<plan_step_override>
 COMPOSE_WRITE step: emit exactly ONE bound write tool_call with all required parameters from <tool_schema> (identifiers, headers, enums) and the full submit body from read observations.
 This overrides skill "wait for draft" and generic "empty tool_calls when no draft" rules.
 plan_compose_write / plan_draft_reply are runtime observations — NOT callable tools.
 </plan_step_override>`;
     }
-    if (isPlanWriteFallbackStep(step)) {
+    if (isPlanWriteExecutionStepInMutationFlow(step)) {
       return `${toolDecisionPrompt}\n\n<plan_step_override>
 WRITE fallback step: call ONLY tools listed in <tool_schema>.
 If plan_compose_write summary exists, copy its pendingWriteTool + arguments verbatim — do not invent new reply text.
@@ -212,14 +221,8 @@ Do NOT call HTTP tools from <tool_schema>. Args are executed in the user's brows
   }
 
 export function stringifyForPrompt(value: unknown): string {
-    const maxChars = 6000;
     try {
-      const serialized =
-        typeof value === 'string' ? value : JSON.stringify(value);
-      if (serialized.length <= maxChars) {
-        return serialized;
-      }
-      return `${serialized.slice(0, maxChars)}...(truncated)`;
+      return typeof value === 'string' ? value : JSON.stringify(value);
     } catch {
       return String(value);
     }

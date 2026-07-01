@@ -17,6 +17,9 @@ export type AvailableSkillRow = ActiveSkillSnapshot & {
   skillToolIds: number[];
   hostToolIds: number[];
   runnableKind: 'http' | 'host' | 'both';
+  workflowId?: number | null;
+  workflowVersion?: number | null;
+  workflowOverrides?: unknown;
 };
 
 export type ListAvailableSkillsInput = {

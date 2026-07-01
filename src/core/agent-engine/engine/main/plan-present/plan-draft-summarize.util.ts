@@ -28,12 +28,17 @@ import {
   finalizePlanAfterSummarize,
   getPendingPlanStep,
   getPendingPlanToolStep,
-  isPendingPlanAnswerStep,
   isPlanPresentSummarizeStep,
-  isPlanWriteFallbackStep,
+  isPlanTextGenerationStep,
+  isPlanWorkflowGateStep,
+  isPlanWriteExecutionStepInMutationFlow,
   isPlanWriteToolStep,
+  planExecutionContextFromState,
+  resolvePlanExecutionStep,
+  type PlanExecutionContext,
 } from '../plan/task-plan.util';
 import type { TaskPlanSnapshot } from '../plan/task-plan.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
 import type { AgentChatPageContext } from '../../../../host-bridge/page-context.types';
 
 export type PendingWriteToolCallPayload = {
@@ -174,27 +179,50 @@ function resolveWriteToolDef(
   toolName: string,
   scopedTools: AgentEngineTool[],
   taskPlan: TaskPlanSnapshot,
+  workflowRun?: WorkflowRunState | null,
+  workflowNodeDefs?: WorkflowNodeDef[] | null,
 ): AgentEngineTool | undefined {
-  const allowedTools = filterScopedToolsForPlanStep(scopedTools, taskPlan);
+  const allowedTools = filterScopedToolsForPlanStep(
+    scopedTools,
+    taskPlan,
+    workflowRun,
+    workflowNodeDefs,
+  );
   return allowedTools.find((tool) => tool.name === toolName);
 }
 
-/** 当前 summarize 步为 present（或 legacy draft），且完成后下一步为 write。 */
-export function isPlanDraftSummarizeBeforeWrite(
-  plan: TaskPlanSnapshot | null | undefined,
+function isMutationStepAfterPresentSummarize(
+  afterFinalize: TaskPlanSnapshot,
 ): boolean {
-  if (!plan || !isPendingPlanAnswerStep(plan)) {
+  const nextStep = getPendingPlanStep(afterFinalize);
+  if (!nextStep) {
     return false;
   }
-  const pendingStep = getPendingPlanStep(plan);
-  if (!isPlanPresentSummarizeStep(pendingStep)) {
+  if (isPlanWorkflowGateStep(nextStep)) {
+    return true;
+  }
+  if (isPlanWriteExecutionStepInMutationFlow(nextStep)) {
+    return true;
+  }
+  return isPlanWriteToolStep(getPendingPlanToolStep(afterFinalize));
+}
+
+/** 当前 summarize 步为 present（legacy / Workflow DB），且完成后进入 await 或 write。 */
+export function isPlanDraftSummarizeBeforeWrite(
+  ctx: PlanExecutionContext,
+): boolean {
+  const { step, workflowNodeAction } = resolvePlanExecutionStep(ctx);
+  if (!ctx.taskPlan || !isPlanTextGenerationStep(step, workflowNodeAction)) {
     return false;
   }
-  const afterFinalize = finalizePlanAfterSummarize(plan);
+  if (!isPlanPresentSummarizeStep(step, ctx.workflowNodeDefs)) {
+    return false;
+  }
+  const afterFinalize = finalizePlanAfterSummarize(ctx.taskPlan);
   if (!afterFinalize) {
     return false;
   }
-  return isPlanWriteToolStep(getPendingPlanToolStep(afterFinalize));
+  return isMutationStepAfterPresentSummarize(afterFinalize);
 }
 
 /** 是否为读 tool observation 兜底 dump（[toolName] + JSON），不可作用户层草稿。 */
@@ -462,7 +490,7 @@ export function resolvePendingWriteForPlanWriteStepResult(input: {
   pageContext?: AgentChatPageContext | null;
 }): ResolvePendingWriteForPlanWriteStepResult {
   const pendingToolStep = getPendingPlanToolStep(input.taskPlan);
-  if (!input.taskPlan || !isPlanWriteFallbackStep(pendingToolStep)) {
+  if (!input.taskPlan || !isPlanWriteExecutionStepInMutationFlow(pendingToolStep)) {
     return {
       call: null,
       failureReason: 'not_write_fallback_step',
@@ -576,7 +604,7 @@ export function resolvePendingWriteFromComposedObservation(input: {
 }): GraphToolCall | null {
   if (
     !input.taskPlan ||
-    !isPlanWriteFallbackStep(getPendingPlanToolStep(input.taskPlan))
+    !isPlanWriteExecutionStepInMutationFlow(getPendingPlanToolStep(input.taskPlan))
   ) {
     return null;
   }

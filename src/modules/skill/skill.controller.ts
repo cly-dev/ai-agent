@@ -83,13 +83,28 @@ export class SkillController {
     );
   }
 
+  @Post('app-client/:appClientId/skills')
+  @ApiParam({ name: 'appClientId', type: Number })
+  @ApiOperation({
+    summary: '为 App 创建 Skill（推荐）',
+    description:
+      'Skill 归属 AppClient；可选初始 SkillTool（须为 App 内 active Tool）。响应含嵌套 appClient。',
+  })
+  @ApiResponse({ status: 201, description: '创建成功' })
+  createForAppClient(
+    @Param('appClientId', ParseIntPipe) appClientId: number,
+    @Body() body: CreateSkillDto,
+  ) {
+    return this.service.createForAppClient(appClientId, body);
+  }
+
   @Post('agent/:agentId/app-client/:appClientId/skills')
   @ApiParam({ name: 'agentId', type: Number })
   @ApiParam({ name: 'appClientId', type: Number })
   @ApiOperation({
-    summary: '为 Agent 创建 Skill',
+    summary: '为 Agent 创建 Skill（兼容；会写入 AgentSkill）',
     description:
-      'Skill 归属该 Agent；可选初始 SkillTool，toolId 须已出现在 AgentTool 中。响应含嵌套 agent、appClient。',
+      '创建 App 级 Skill 并关联 AgentSkill。可选初始 SkillTool。响应含嵌套 appClient。',
   })
   @ApiResponse({ status: 201, description: '创建成功' })
   create(

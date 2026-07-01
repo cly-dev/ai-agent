@@ -173,8 +173,8 @@ export function resolveSkillContextFromPlan(plan: TaskPlanSnapshot | null): {
       activeSkillRiskLevel: null,
     };
   }
-  const frame = getActivePlanFrame(plan);
-  if (!frame.skillId) {
+  const frame = plan.frames[plan.activeFrameIndex];
+  if (!frame?.skillId) {
     return {
       skillApplied: false,
       activeSkillId: null,

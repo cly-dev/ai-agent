@@ -7,6 +7,7 @@ export type TurnRespondKind =
   | 'unsupported_scope'
   | 'intent_recall_failed'
   | 'clarification'
+  | 'skill_intent_mismatch'
   | 'direct_reply';
 
 export type TurnRespondMissingField = {
@@ -23,6 +24,9 @@ export type TurnRespondRequest = {
     toolRole?: string;
     readinessReason?: string;
     routingReason?: string;
+    mismatchCode?: string;
+    requestedSkillId?: number;
+    requestedSkillName?: string;
   };
 };
 

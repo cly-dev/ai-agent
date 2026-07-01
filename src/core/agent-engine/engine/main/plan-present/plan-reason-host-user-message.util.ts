@@ -10,19 +10,12 @@ import {
 } from '../../llm-output-sanitize.util';
 import type { PlanHostFillEntry } from './plan-host-fill.util';
 import { extractPrimaryFillTextFromHostFills } from './plan-host-fill.util';
+import { readHostToolStringArg } from '../../../../host-bridge/host-tool-string-arg.util';
 import type { AgentRunSseEmitter } from '../run/agent-run-sse.emitter';
 import type { RunAssistantArtifactStore } from '../run/run-assistant-artifact.store';
 
-const HOST_TOOL_TEXT_ARG_KEYS = ['text', 'content', 'value', 'draft', 'body'];
-
 function readFillDisplayText(fill: PlanHostFillEntry): string {
-  for (const key of HOST_TOOL_TEXT_ARG_KEYS) {
-    const value = fill.arguments[key];
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim();
-    }
-  }
-  return '';
+  return readHostToolStringArg(fill.arguments) ?? '';
 }
 
 /** 用户层 Markdown：展示机器层 fill 正文（确定性模板，非第二趟 LLM）。 */

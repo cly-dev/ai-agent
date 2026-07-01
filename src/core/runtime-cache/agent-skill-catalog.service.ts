@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { AgentSkillWarmupRow } from '../skill/skill.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentSkillCatalogStore } from './agent-skill-catalog.store';
+import {
+  loadAgentHostToolCandidateIds,
+  loadAgentSkillVisibilityContext,
+} from './agent-capability-load.util';
+import { buildAgentSkillVisibilityWhere } from './capability-candidate.util';
 import { logRuntimeCacheEvent } from './runtime-cache-observability.util';
 import {
   buildEntityRevisionsFingerprint,
@@ -125,16 +130,18 @@ export class AgentSkillCatalogService {
     const skillPart = buildEntityRevisionsFingerprint(
       skills.map((row) => ({ id: row.id, updatedAt: row.updatedAt })),
     );
-    const hostBindings = await this.prisma.agentHostTool.findMany({
-      where: {
-        agentId: input.agentId,
-        hostTool: { isActive: true, appClientId: input.appClientId },
-      },
-      select: { hostToolId: true },
-      orderBy: { hostToolId: 'asc' },
-    });
-    const hostPart = hostBindings.map((row) => row.hostToolId).join(',');
-    return `s:${skillPart}|h:${hostPart}|r:${input.roleId}`;
+    const hostCandidateIds = await loadAgentHostToolCandidateIds(
+      this.prisma,
+      input.appClientId,
+      input.agentId,
+    );
+    const hostPart = hostCandidateIds.join(',');
+    const skillCtx = await loadAgentSkillVisibilityContext(
+      this.prisma,
+      input.appClientId,
+      input.agentId,
+    );
+    return `s:${skillPart}|h:${hostPart}|r:${input.roleId}|rs:${skillCtx.restrictSkills ? 1 : 0}`;
   }
 
   private async buildFromDb(input: {
@@ -150,16 +157,13 @@ export class AgentSkillCatalogService {
     if (!agent) {
       return null;
     }
-    const [skills, hostBindings] = await Promise.all([
+    const [skills, runnableHostToolIds] = await Promise.all([
       this.querySkills(input),
-      this.prisma.agentHostTool.findMany({
-        where: {
-          agentId: input.agentId,
-          hostTool: { isActive: true, appClientId: input.appClientId },
-        },
-        select: { hostToolId: true },
-        orderBy: { hostToolId: 'asc' },
-      }),
+      loadAgentHostToolCandidateIds(
+        this.prisma,
+        input.appClientId,
+        input.agentId,
+      ),
     ]);
     const catalogSkills: AgentSkillCatalogRow[] = skills.map((row) => ({
       id: row.id,
@@ -179,20 +183,30 @@ export class AgentSkillCatalogService {
       roleId: input.roleId,
       revision: await this.fetchRevisionFromDb(input),
       skills: catalogSkills,
-      runnableHostToolIds: hostBindings.map((row) => row.hostToolId),
+      runnableHostToolIds,
       warmedAt: new Date().toISOString(),
     };
   }
 
   private async querySkills(input: {
+    appClientId: number;
     agentId: number;
     roleId: number;
     roleSkillFiltered: boolean;
   }) {
+    const skillCtx = await loadAgentSkillVisibilityContext(
+      this.prisma,
+      input.appClientId,
+      input.agentId,
+    );
     return this.prisma.skill.findMany({
       where: {
-        agentId: input.agentId,
-        isActive: true,
+        ...buildAgentSkillVisibilityWhere({
+          appClientId: input.appClientId,
+          agentId: input.agentId,
+          restrictSkills: skillCtx.restrictSkills,
+          skillWhitelistIds: skillCtx.skillWhitelistIds,
+        }),
         ...(input.roleSkillFiltered
           ? { roleSkills: { some: { roleId: input.roleId } } }
           : {}),

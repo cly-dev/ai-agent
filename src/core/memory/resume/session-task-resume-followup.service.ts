@@ -5,6 +5,7 @@ import type { LlmChatMessage } from '../../llm/llm.types';
 import { PROMPT_KEYS } from '../../prompt/prompt-template.keys';
 import { PromptRegistryService } from '../../prompt/prompt-registry.service';
 import { formatGoaContextHint } from '../goa/session-goa-projection.util';
+import { formatWorkflowRunPendingSummary } from '../../workflow/workflow-goa-projection.util';
 import {
   isActiveTaskChatResumable,
   type SessionGoaPayload,
@@ -55,11 +56,16 @@ export class SessionTaskResumeFollowUpService {
       input.goa.recentEpisodes,
       task,
     );
+    const workflowHint =
+      task.workflowRun != null
+        ? formatWorkflowRunPendingSummary(task.workflowRun)
+        : '';
     const userContent = [
       `Active task goal: ${task.plan.goal}`,
       `Original request: ${task.plan.originalUserRequest}`,
       `Deliverable: ${task.plan.deliverable}`,
       `Pending/running steps: ${pendingSteps || 'none'}`,
+      ...(workflowHint ? [`Workflow state: ${workflowHint}`] : []),
       episodeHint ? `Session memory: ${episodeHint}` : '',
       `Latest user message: ${input.latestUserMessage.trim()}`,
     ]
@@ -72,12 +78,13 @@ export class SessionTaskResumeFollowUpService {
     ];
 
     try {
-      const { model } = await this.llmService.createLangChainChatModelForMessages(
-        messages,
-      );
+      const { model, messages: fittedMessages } =
+        await this.llmService.createLangChainChatModelForMessages(messages, {
+          budgetHints: { callKind: 'routing' },
+        });
       const structured = await model
         .withStructuredOutput(taskResumeFollowUpSchema)
-        .invoke(messages);
+        .invoke(fittedMessages);
       return taskResumeFollowUpSchema.parse(structured);
     } catch (error) {
       this.logger.warn(

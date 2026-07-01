@@ -36,18 +36,46 @@ import {
 } from '../../plan/plan-sync.util';
 import { buildPlanSessionWorkingMemory } from '../../session/session-goa-plan-projection.util';
 import { resolveOuterPlan } from '../../plan/task-plan-llm.util';
-import type { TaskPlanAdvanceResult } from '../../plan/task-plan.types';
+import type {
+  TaskPlanAdvanceResult,
+  TaskPlanSnapshot,
+} from '../../plan/task-plan.types';
 import {
   buildPlanSummarizeObservation,
   resolveTaskPlanAdvance,
   summarizeScopedToolsForPlan,
 } from '../../plan/task-plan.util';
-import type { AgentRunStep } from '../../types/agent-engine.types';
+import type { AgentGraphState, AgentRunStep } from '../../types/agent-engine.types';
+import {
+  applyPlanAdvanceAsWorkflowProgress,
+  isWorkflowBoundRun,
+} from '../../../../../workflow/workflow-plan-transition.util';
+import { maybeTagWorkflowReactInternalStep } from '../../run/agent-run-audit.util';
+
+function workflowProgressPatch(
+  state: AgentGraphState,
+  planBefore: TaskPlanSnapshot | null,
+  planAdvance: TaskPlanAdvanceResult | null,
+  options?: { clearWorkflowAwaitingReact?: boolean },
+): Partial<AgentGraphState> {
+  if (!planBefore || !planAdvance) {
+    return {};
+  }
+  return applyPlanAdvanceAsWorkflowProgress({
+    taskPlan: state.taskPlan,
+    workflowRun: state.workflowRun,
+    workflowNodeDefs: state.workflowNodeDefs,
+    workflowAwaitingReact: state.workflowAwaitingReact,
+    planBefore,
+    planAdvance,
+    options,
+  });
+}
 
 export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
   const { deps, ctx, runHelpers, skillFrame, summarize } = bundle;
   return async (state) => {
-
+          const planBeforeReact = state.taskPlan ?? null;
           const phase = inferResultCheckPhase(state);
           const savedRoundMeta = state.lastToolRoundMeta;
           if (phase === 'post_tools' && !savedRoundMeta) {
@@ -86,6 +114,9 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
               skillConfig: state.activeSkillConfig,
               observationBuckets: planObservationBucketsFromState(state),
               pageContextEntityId: pageContextEntityIdFromGraphState(state),
+              workflowRun: state.workflowRun,
+              workflowNodeDefs: state.workflowNodeDefs,
+              workflowAwaitingReact: state.workflowAwaitingReact,
             });
             taskPlanForCheck = synced.taskPlan;
             planAdvanceFromSync = synced.planAdvance;
@@ -149,7 +180,25 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
             outcome,
             planAdvance,
           });
-          const taskPlanNext = planAdvance?.updatedPlan ?? state.taskPlan ?? null;
+          const workflowProgressOptions =
+            planFallback?.action === 'llm_continue' &&
+            planFallback.reason === 'plan_advance_tool_step'
+              ? { clearWorkflowAwaitingReact: true as const }
+              : undefined;
+          const workflowPatch =
+            planAdvance != null
+              ? workflowProgressPatch(
+                  state,
+                  planBeforeReact,
+                  planAdvance,
+                  workflowProgressOptions,
+                )
+              : {};
+          const taskPlanNext =
+            planAdvance != null
+              ? ((workflowPatch.taskPlan as TaskPlanSnapshot | null | undefined) ??
+                planAdvance.updatedPlan)
+              : (state.taskPlan ?? null);
           const observationsForCheck = allToolObservations(state);
           const summaryObservationForAbort =
             outcome.route === 'summarize'
@@ -216,7 +265,8 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
                 )
               : [];
           const planSyncSteps: AgentRunStep[] =
-            planAdvanceFromSync != null
+            planAdvanceFromSync != null &&
+            !isWorkflowBoundRun(state.workflowRun)
               ? [
                   toPlanSyncAgentStep({
                     step: nextRunStepNumber([...state.steps, ...skipSteps]),
@@ -233,10 +283,11 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
           const planRouteAuthority: ResultCheckRouteAuthority =
             planFallback?.authority ??
             (isSafetyAbortRoute ? 'safety_abort' : 'react');
-          const resultCheckStep: AgentRunStep = {
-            step: nextRunStepNumber([...state.steps, ...skipSteps, ...planSyncSteps]),
-            type: 'result_check',
-            output: runHelpers.normalizeJsonLike({
+          const resultCheckStep: AgentRunStep = maybeTagWorkflowReactInternalStep(
+            {
+              step: nextRunStepNumber([...state.steps, ...skipSteps, ...planSyncSteps]),
+              type: 'result_check',
+              output: runHelpers.normalizeJsonLike({
               phase: outcome.phase,
               route: outcome.route,
               reason: outcome.reason,
@@ -260,7 +311,9 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
               planAbortedSameArgsRepeat: abortPlanOnRecoverableSameArgs,
               taskPlanStep: taskPlanAfterCheck?.currentStepId ?? null,
             }),
-          };
+          },
+          state,
+          );
           let steps = [...state.steps, ...skipSteps, ...planSyncSteps, resultCheckStep];
 
           const emitRouteThink = (message: string): void => {
@@ -300,6 +353,7 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
             );
             return {
               ...state,
+              ...workflowPatch,
               steps,
               taskPlan: effectiveTaskPlanNext,
               pendingToolCalls: [],
@@ -317,6 +371,7 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
             );
             return skillFrame.applySkillFrameContext({
               ...state,
+              ...workflowPatch,
               steps,
               taskPlan: effectiveTaskPlanNext,
               pendingToolCalls: resolveSkillStepPendingToolCalls({
@@ -340,6 +395,7 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
             );
             return {
               ...state,
+              ...workflowPatch,
               steps,
               taskPlan: effectiveTaskPlanNext,
               pendingToolCalls: planFallback.clearPendingToolCalls
@@ -566,6 +622,7 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
 
           return {
             ...state,
+            ...workflowProgressPatch(state, planBeforeReact, planAdvance),
             steps,
             taskPlan: taskPlanAfterCheck,
             pendingToolCalls: outcome.pendingToolCalls,

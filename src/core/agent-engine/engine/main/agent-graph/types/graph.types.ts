@@ -20,6 +20,9 @@ import { RequestedSkillRunService } from '../../skill/requested-skill-run.servic
 import type { RequestedSkillRunContext } from '../../skill/requested-skill-run.service';
 import { HostToolService } from '../../../../../../modules/host-tool/host-tool.service';
 import { RunScopeCacheService } from '../../../../../runtime-cache/run-scope-cache.service';
+import { ApprovalGateService } from '../../../../../approval/approval-gate.service';
+import { ApprovalRequestService } from '../../../../../approval/approval-request.service';
+import { ApprovalTriggerPermissionService } from '../../../../../approval/approval-trigger-permission.service';
 import type { SessionGoaPayload } from '../../../../../memory/goa/session-goa.types';
 import type {
   AgentGraphState,
@@ -50,6 +53,9 @@ export interface AgentGraphDeps {
   requestedSkillRun: RequestedSkillRunService;
   hostToolService: HostToolService;
   runScopeCache: RunScopeCacheService;
+  approvalGate: ApprovalGateService;
+  approvalRequests: ApprovalRequestService;
+  approvalTriggerPermission: ApprovalTriggerPermissionService;
   logger: Logger;
 }
 

@@ -24,8 +24,14 @@ export type TaskDeliverable =
   | 'mutation'
   | 'answer';
 
-/** 步骤执行方式：`skill` 进入 skill 帧；`tool` 走 HTTP ReAct；`host_tool` 走 LLM→前端 Host Tool；`summarize` / `reason` 见各节点。 */
-export type TaskStepKind = 'skill' | 'tool' | 'host_tool' | 'summarize' | 'reason';
+/** 步骤执行方式：`skill` 进入 skill 帧；`tool` 走 HTTP ReAct；`host_tool` 走 LLM→前端 Host Tool；`summarize` / `reason` 见各节点；`workflow_gate` 由 Workflow execute_node 执行（如 await_user_confirm）。 */
+export type TaskStepKind =
+  | 'skill'
+  | 'tool'
+  | 'host_tool'
+  | 'summarize'
+  | 'reason'
+  | 'workflow_gate';
 
 /** 任务阶段：`gather` 拉数、`analyze` 分析、`answer` 作答、`mutate` 写操作。 */
 export type TaskStepPhase = 'gather' | 'analyze' | 'answer' | 'mutate';
@@ -81,7 +87,7 @@ export type BuildTaskPlanInput = {
     name: string;
     role: ToolDecisionRole;
   }>;
-  /** 当前 page scope 下可供 Plan LLM 编排的 Host Tool（exposure=LLM/BOTH）。 */
+  /** 当前 page scope 下可供 Plan LLM 编排的 Host Tool（Agent/Skill 绑定 + isActive）。 */
   availableHostTools?: PlanHostToolSummary[];
   skillApplied?: boolean;
   skillName?: string | null;
@@ -194,6 +200,8 @@ export type PlanSessionWorkingMemory = {
 export type ResolveTaskPlanInput = BuildTaskPlanInput & {
   skillPrompt?: string | null;
   sessionWorkingMemory?: PlanSessionWorkingMemory | null;
+  /** Skill.workflowId 绑定资产编译后的内层 plan；优先于 skill.config.workflow。 */
+  skillBoundWorkflowPlan?: TaskPlanSnapshot | null;
 };
 
 export type OuterPlanSkillSummary = {

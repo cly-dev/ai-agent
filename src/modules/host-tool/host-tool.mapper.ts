@@ -40,7 +40,6 @@ export function toHostToolResponse(row: HostToolDetailRow): HostToolResponse {
     name: row.name,
     description: row.description,
     argsSchema: row.argsSchema,
-    exposure: row.exposure,
     argsTemplate: row.argsTemplate,
     sortOrder: row.sortOrder,
     isActive: row.isActive,
@@ -58,7 +57,6 @@ export function toClientHostToolCatalogItem(
     name: row.name,
     description: row.description,
     argsSchema: row.argsSchema,
-    exposure: row.exposure,
     pageScope: row.hostPage?.scope ?? null,
     definitionKey: row.definitionKey,
   };
@@ -126,7 +124,7 @@ export function toAgentHostToolsBindingResponse(
 
 export function toSkillHostToolsBindingResponse(
   skillId: number,
-  agentId: number,
+  appClientId: number,
   bindings: SkillHostToolBindingRow[],
 ): SkillHostToolsBindingResponse {
   const skillHostTools = bindings.map((row) =>
@@ -134,7 +132,7 @@ export function toSkillHostToolsBindingResponse(
   );
   return {
     skillId,
-    agentId,
+    appClientId,
     hostTools: skillHostTools.map((row) => row.hostTool),
     skillHostTools,
   };

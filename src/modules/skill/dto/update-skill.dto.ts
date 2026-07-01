@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsEnum, IsObject, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
 import { ToolLevel } from '../../../../generated/prisma/client';
 
 export class UpdateSkillDto {
@@ -43,4 +44,23 @@ export class UpdateSkillDto {
   @IsOptional()
   @IsEnum(ToolLevel)
   riskLevel?: ToolLevel;
+
+  @ApiPropertyOptional({ description: '引用的 Workflow 资产 ID；传 null 可清空' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  workflowId?: number | null;
+
+  @ApiPropertyOptional({ description: 'pin Workflow revision version' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  workflowVersion?: number | null;
+
+  @ApiPropertyOptional({ description: '按 nodeId 覆盖 objective 等字段' })
+  @IsOptional()
+  @IsObject()
+  workflowOverrides?: Record<string, { objective?: string }> | null;
 }

@@ -1,22 +1,23 @@
-import type { AgentRunStep } from '../agent-engine/engine/main/types/agent-engine.types';
-import type { AgentEngineTool } from '../agent-engine/engine/main/types/agent-engine.types';
-import { isMutationTool } from '../agent-engine/engine/tool/tool-execution-status.util';
+import { isMutationTool } from '../tool-engine/tool-mutation.util';
 import type {
   HostActionHostToolInvocation,
   HostActionSsePayload,
 } from './host-action.types';
-import type { AgentChatPageContext } from './page-context.types';
+import { HOST_TOOL_STREAM_PROTOCOL_VERSION } from './host-tool-stream.types';
+import type { HostMutationRunStep, HostMutationScopedTool } from './host-mutation-step.types';
 import {
   parseSkillHostBridgeConfig,
   resolveHostActionMetadata,
   type SkillHostBridgeConfig,
 } from './host-action.resolve.util';
+import type { AgentChatPageContext } from './page-context.types';
+import { resolveHostToolPageScope } from './page-context-anchor.util';
 
 export type { SkillHostBridgeConfig };
 
 export function hasSuccessfulMutationStep(
-  steps: AgentRunStep[],
-  scopedTools: AgentEngineTool[],
+  steps: HostMutationRunStep[],
+  scopedTools: HostMutationScopedTool[],
 ): boolean {
   const toolByName = new Map(scopedTools.map((tool) => [tool.name, tool]));
   for (const step of steps) {
@@ -34,9 +35,9 @@ export function hasSuccessfulMutationStep(
   return false;
 }
 
-/** 推送 hostTools 给前端 registry 执行（Plan LLM 产参或 mutation 后模板解析）。 */
+/** 构建 mode=full 快照（run step 元数据）；live dispatch 请用 dispatchHostActionInstant。 */
 export function buildHostActionPayload(input: {
-  pageContext: AgentChatPageContext;
+  pageContext?: AgentChatPageContext | null;
   runId: number;
   turnId: number;
   hostTools: HostActionHostToolInvocation[];
@@ -45,17 +46,26 @@ export function buildHostActionPayload(input: {
   reason?: string;
 }): HostActionSsePayload {
   const skillHostBridge = parseSkillHostBridgeConfig(input.skillConfig);
-  const entity = input.pageContext.entity
-    ? ({ ...input.pageContext.entity } as Record<string, unknown>)
+  const pageContext = input.pageContext ?? {};
+  const entity = pageContext.entity
+    ? ({ ...pageContext.entity } as Record<string, unknown>)
     : undefined;
-  const metadata = resolveHostActionMetadata(input.pageContext);
+  const metadata = resolveHostActionMetadata(pageContext);
+  const scope = resolveHostToolPageScope(pageContext);
   return {
     action: 'host_action',
-    scope: input.pageContext.page?.trim() || undefined,
+    v: HOST_TOOL_STREAM_PROTOCOL_VERSION,
+    stream: { mode: 'full', seq: 1 },
+    scope: scope ?? undefined,
     entity,
     ...(metadata ? { metadata } : {}),
     hostTools: input.hostTools,
-    ...(input.planStepId ? { planStepId: input.planStepId } : {}),
+    ...(input.planStepId
+      ? {
+          hostStepId: input.planStepId,
+          planStepId: input.planStepId,
+        }
+      : {}),
     reason:
       input.reason ??
       skillHostBridge?.reason ??

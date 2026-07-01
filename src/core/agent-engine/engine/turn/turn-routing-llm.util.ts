@@ -8,6 +8,9 @@ import {
   buildTurnRouteFallbackDecision,
   buildTurnRouteLlmUserPayload,
 } from './turn-routing.util';
+import { resolveLlmWriteChannelFromRaw } from './parse-llm-write-channel.util';
+import { hostMutationIntentFromWriteChannel } from './turn-write-channel.types';
+import type { TurnPageReadKind } from '../../../host-bridge/page-context-usage.types';
 import type { TurnRouteLlmInput, TurnRoutingDecision } from './turn-routing.types';
 
 const turnRouteSchema = z.object({
@@ -16,6 +19,8 @@ const turnRouteSchema = z.object({
   suggestedSkillId: z.number().int().positive().nullable(),
   pageContextApplies: z.boolean(),
   pageContextTaskKind: z.enum(['analyze', 'answer', 'mutation', 'none']),
+  writeChannel: z.enum(['none', 'http', 'host']).default('none'),
+  hostMutationIntent: z.boolean().optional(),
 });
 
 async function invokeTurnRouteLlm(input: {
@@ -36,15 +41,20 @@ async function invokeTurnRouteLlm(input: {
     },
   ];
   try {
-    const { model } = await input.llmService.createLangChainChatModelForMessages(
-      messages,
-    );
+    const { model, messages: fittedMessages } =
+      await input.llmService.createLangChainChatModelForMessages(messages, {
+        budgetHints: { callKind: 'routing' },
+      });
     const structuredModel = model.withStructuredOutput(turnRouteSchema);
-    return (await structuredModel.invoke(messages)) as z.infer<
+    return (await structuredModel.invoke(fittedMessages)) as z.infer<
       typeof turnRouteSchema
     >;
   } catch {
-    const result = await input.llmService.chat({ messages, tools: [] });
+    const result = await input.llmService.chat({
+      messages,
+      tools: [],
+      budgetHints: { callKind: 'routing' },
+    });
     const parsed = tryParseJsonObject(result.content);
     if (!parsed) {
       return null;
@@ -88,14 +98,24 @@ export async function resolveTurnRoute(input: {
     availableSkillIds.has(llmRaw.suggestedSkillId)
       ? llmRaw.suggestedSkillId
       : onPageSuggestedSkillId;
+  const llmPageContextTaskKind = llmRaw.pageContextTaskKind;
+  const pageContextTaskKind: TurnPageReadKind =
+    llmPageContextTaskKind === 'mutation' ? 'none' : llmPageContextTaskKind;
+  const llmWriteChannel = resolveLlmWriteChannelFromRaw({
+    route: llmRaw.route,
+    writeChannel: llmRaw.writeChannel,
+    hostMutationIntent: llmRaw.hostMutationIntent,
+    pageContextTaskKind: llmRaw.pageContextTaskKind,
+  });
   return {
     route: llmRaw.route,
     method: 'llm',
     reason: llmRaw.reason.trim(),
     suggestedSkillId,
     pageContextApplies: llmRaw.pageContextApplies,
-    pageContextTaskKind: llmRaw.pageContextApplies
-      ? llmRaw.pageContextTaskKind
-      : 'none',
+    pageContextTaskKind,
+    llmPageContextTaskKind,
+    llmWriteChannel,
+    hostMutationIntent: hostMutationIntentFromWriteChannel(llmWriteChannel),
   };
 }

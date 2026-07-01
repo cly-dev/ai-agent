@@ -21,14 +21,53 @@ export {
   hasSuccessfulMutationStep,
   type SkillHostBridgeConfig,
 } from './host-action.util';
+export type {
+  HostMutationRunStep,
+  HostMutationScopedTool,
+} from './host-mutation-step.types';
 export {
   collectSuccessfulMutationIdentifierValues,
   isPageContextAlignedWithSuccessfulMutations,
 } from './host-mutation-page-alignment.util';
 export {
+  dispatchHostActionInstant,
+  type DispatchHostActionInstantInput,
+} from './host-action-instant-dispatch.util';
+export {
   dispatchHostActionSse,
   type HostActionEventPublisher,
 } from './host-action-dispatch.util';
+export { isHostToolStreamEnabled } from './host-tool-stream-env.util';
+export {
+  HOST_TOOL_STRING_ARG_KEYS,
+  pickHostToolStringArgKey,
+  readHostToolStringArg,
+  resolveHostToolStringArgKey,
+} from './host-tool-string-arg.util';
+export {
+  HOST_TOOL_STREAM_OBSERVATION_NAME,
+  buildHostToolStreamObservation,
+  findHostToolStreamObservation,
+  isHostToolStreamAlreadyDispatched,
+  type HostToolStreamObservationOutput,
+  type HostToolStreamToolObservation,
+} from './host-tool-stream-observation.util';
+export { shouldReplayHostAction } from './host-tool-stream-replay.util';
+export {
+  HostToolStreamSession,
+  type HostToolStreamFinalizeResult,
+} from './host-tool-stream-session.util';
+export {
+  HOST_TOOL_STREAM_REASON,
+  buildHostToolStreamId,
+  buildPlanReasonHostStreamTarget,
+  primaryHostToolStreamTool,
+  resolvePlanReasonHostFillTools,
+  resolvePlanReasonHostStreamDelivery,
+  type HostToolStreamTarget,
+  type HostToolStreamToolTarget,
+  type PlanReasonHostStreamDelivery,
+} from './host-tool-stream-target.util';
 export {
   parseSkillHostBridgeConfig,
   resolveHostActionMetadata,
@@ -46,9 +85,9 @@ export type {
   PageContextPlanKind,
   PageContextTaskKind,
   PageContextUsage,
+  TurnPageReadKind,
 } from './page-context-usage.types';
 export {
-  isHostPageWorkflowEnabled,
   isPageContextOuterPlanActive,
   hasPageContextMaterializedObservations,
   planInitialSummarizeReadyOnFresh,
@@ -59,7 +98,18 @@ export {
   type TurnExecutionRoute,
 } from './page-context-execution-policy.util';
 export {
-  PAGE_CONTEXT_REVIEW_OBSERVATION_NAME,
+  assessPageContextAnchor,
+  canDispatchHostAction,
+  resolveHostToolPageScope,
+  type PageContextAnchor,
+} from './page-context-anchor.util';
+export {
+  buildPageContextObservationName,
+  readInlineRecordsFromPageContext,
+  resolvePageContextEntityId,
+  type PageContextInlineRecord,
+} from './page-context-metadata-scan.util';
+export {
   assessPageContextData,
   buildPageContextRouteHint,
   isPageContextSourcedObservation,

@@ -99,6 +99,18 @@ export class RuntimeCacheInvalidator {
     ]);
   }
 
+  async invalidateForAppClient(appClientId: number): Promise<void> {
+    const agents = await this.prisma.agent.findMany({
+      where: { appClientId },
+      select: { id: true },
+    });
+    await Promise.all(
+      agents.map((agent) =>
+        this.invalidateForAgent({ agentId: agent.id, appClientId }),
+      ),
+    );
+  }
+
   async invalidateForTools(toolIds: number[]): Promise<void> {
     if (toolIds.length === 0) {
       return;
@@ -108,18 +120,13 @@ export class RuntimeCacheInvalidator {
       toolIds,
     );
 
-    const agentRows = await this.prisma.agentTool.findMany({
-      where: { toolId: { in: toolIds } },
-      select: { agentId: true, agent: { select: { appClientId: true } } },
-      distinct: ['agentId'],
+    const appRows = await this.prisma.tool.findMany({
+      where: { id: { in: toolIds } },
+      select: { appClientId: true },
+      distinct: ['appClientId'],
     });
     await Promise.all(
-      agentRows.map((row) =>
-        this.invalidateForAgent({
-          agentId: row.agentId,
-          appClientId: row.agent.appClientId,
-        }),
-      ),
+      appRows.map((row) => this.invalidateForAppClient(row.appClientId)),
     );
   }
 
@@ -127,23 +134,18 @@ export class RuntimeCacheInvalidator {
     if (hostToolIds.length === 0) {
       return;
     }
-    const bindings = await this.prisma.agentHostTool.findMany({
-      where: { hostToolId: { in: hostToolIds } },
-      select: { agentId: true, agent: { select: { appClientId: true } } },
-      distinct: ['agentId'],
+    const appRows = await this.prisma.hostTool.findMany({
+      where: { id: { in: hostToolIds } },
+      select: { appClientId: true },
+      distinct: ['appClientId'],
     });
     await Promise.all(
-      bindings.map((row) =>
-        this.invalidateForAgent({
-          agentId: row.agentId,
-          appClientId: row.agent.appClientId,
-        }),
-      ),
+      appRows.map((row) => this.invalidateForAppClient(row.appClientId)),
     );
   }
 
   async invalidateForSkillAgent(agentId: number, appClientId: number): Promise<void> {
-    await this.invalidateForAgent({ agentId, appClientId });
+    await this.invalidateForAppClient(appClientId);
   }
 
   async invalidateForIntegration(integrationId: number): Promise<void> {

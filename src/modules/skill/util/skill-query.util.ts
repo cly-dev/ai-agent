@@ -64,13 +64,30 @@ export function buildSkillOrderBy(
 
 export function buildSkillWhereForAgent(
   agentId: number,
+  appClientId: number,
   query: Pick<
     QuerySkillDto,
     'id' | 'isActive' | 'riskLevel' | 'name' | 'capabilityKey' | 'keyword'
   >,
 ): Prisma.SkillWhereInput {
   return {
-    agentId,
+    appClientId,
+    agentSkills: { some: { agentId } },
+    ...buildSkillFilterFields(query),
+  };
+}
+
+export function buildSkillWhereForAppClient(
+  appClientId: number,
+  query: Pick<
+    QuerySkillDto,
+    'id' | 'isActive' | 'riskLevel' | 'name' | 'capabilityKey' | 'keyword'
+  >,
+  agentId?: number,
+): Prisma.SkillWhereInput {
+  return {
+    appClientId,
+    ...(agentId != null ? { agentSkills: { some: { agentId } } } : {}),
     ...buildSkillFilterFields(query),
   };
 }

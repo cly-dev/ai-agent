@@ -6,7 +6,7 @@ export type PageContextDataAssessment = {
   entityType: string | null;
   entityId: string | null;
   dataSufficiency: PageContextDataSufficiency;
-  /** 已有内联正文的实体种类，如 review */
+  /** 已有内联正文的 metadata 键名（含非空 content 字段的对象）。 */
   inlineContentKinds: string[];
 };
 
@@ -16,17 +16,18 @@ export type PageContextUsage = PageContextDataAssessment & {
 };
 
 /**
- * Route LLM 判定：用户想如何用页上内联数据（非话术匹配）。
- * - analyze: 分析/总结当前实体正文 → 可走 inline_answer Plan
- * - answer: 基于页上数据直接作答（非变更）
- * - mutation: 回复/提交/修改 → 走 Skill / mutation Plan，仅物化 observation 跳 read
- * - none: 未消费页上下文或无关
+ * Route LLM 判定：用户想如何消费页上内联数据（读路径）。
+ * - analyze / answer / none：读路径
+ * - mutation：LLM 遗留字段，结构化层映射为 hostMutationIntent（写路径）
  */
 export type PageContextTaskKind =
   | 'analyze'
   | 'answer'
   | 'mutation'
   | 'none';
+
+/** 结构化最终态读路径 taskKind（不含 mutation）。 */
+export type TurnPageReadKind = 'analyze' | 'answer' | 'none';
 
 /**
  * Plan 如何消费 pageContext（由 route + 确定性评估写入契约，plan 只读）。

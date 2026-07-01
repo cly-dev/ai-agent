@@ -8,52 +8,111 @@ import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import { resolveAutoOuterPlanSkill } from '../../plan/outer-plan-skill-resolve.util';
 import { resolveTurnRoute } from '../../../turn/turn-routing-llm.util';
 import type { TurnRouteLlmInput } from '../../../turn/turn-routing.types';
+import { finalizeTurnWriteChannel } from '../../../turn/finalize-turn-write-channel.util';
 import { buildTurnExecutionContract } from '../../../turn/turn-execution-contract.util';
+import type { BuildTurnExecutionContractRequestedSkill } from '../../../turn/turn-execution-contract.types';
+import {
+  deriveSkillExecutionChannels,
+  EMPTY_SKILL_EXECUTION_CHANNELS,
+} from '../../../../../workflow/derive-skill-execution-channels.util';
+import { loadSkillExecutionChannels } from '../../../../../workflow/load-skill-execution-channels.util';
+import {
+  applyTurnScopedToolsFromContract,
+  bundleFromAllowedRunInput,
+  spreadScopedToolsBundle,
+} from '../../../turn/turn-scoped-tools.util';
 import { finalizeTurnRoutingDecision } from '../../../turn/turn-routing.util';
 import {
   mergePageContextPreloadedObservations,
 } from '../../../../../host-bridge/page-context-usage.util';
 import { shouldMaterializePageContextFromUsage } from '../../../../../host-bridge/page-context-execution-policy.util';
 import {
-  normalizeSkillRunnableCapabilities,
-  skillIsHostOnlySkill,
   deriveSkillRunnableKind,
+  normalizeSkillRunnableCapabilities,
 } from '../../../../../skill/skill-runnable.util';
 import type { AvailableSkillRow } from '../../../../../skill/skill.types';
 import type { AgentRunStep, AgentGraphState } from '../../types/agent-engine.types';
-import type { RequestedSkillRunContext } from '../../skill/requested-skill-run.service';
 
 function resolveRequestedSkillRowForTurnRoute(input: {
   requestedSkillId: number | null;
   availableSkills: AvailableSkillRow[];
-  requestedSkillCtx: RequestedSkillRunContext | null;
 }): AvailableSkillRow | null {
   if (input.requestedSkillId == null) {
     return null;
   }
-  const fromAvailable = input.availableSkills.find(
-    (skill) => skill.id === input.requestedSkillId,
+  return (
+    input.availableSkills.find((skill) => skill.id === input.requestedSkillId) ??
+    null
   );
-  if (fromAvailable) {
-    return fromAvailable;
+}
+
+function resolveRequestedSkillForContract(input: {
+  requestedSkillId: number | null;
+  requestedSkillRow: AvailableSkillRow | null;
+  requestedSkillCtx: import('../../skill/requested-skill-run.service').RequestedSkillRunContext | null;
+}): Omit<BuildTurnExecutionContractRequestedSkill, 'executionChannels'> | null {
+  if (input.requestedSkillId == null) {
+    return null;
+  }
+  if (input.requestedSkillRow) {
+    return {
+      id: input.requestedSkillRow.id,
+      name: input.requestedSkillRow.name,
+      skillToolIds: input.requestedSkillRow.skillToolIds,
+      hostToolIds: input.requestedSkillRow.hostToolIds,
+      runnableKind: input.requestedSkillRow.runnableKind,
+      workflowId: input.requestedSkillRow.workflowId,
+      workflowVersion: input.requestedSkillRow.workflowVersion,
+      riskLevel: input.requestedSkillRow.riskLevel,
+      config: input.requestedSkillRow.config,
+    };
   }
   if (
     input.requestedSkillCtx &&
     input.requestedSkillCtx.skillId === input.requestedSkillId
   ) {
-    const capabilities = normalizeSkillRunnableCapabilities(
-      input.requestedSkillCtx.skill,
-    );
+    const caps = normalizeSkillRunnableCapabilities(input.requestedSkillCtx.skill);
     return {
       id: input.requestedSkillCtx.skillId,
       name: input.requestedSkillCtx.skill.name,
-      description: input.requestedSkillCtx.skill.description,
-      skillToolIds: capabilities.skillToolIds,
-      hostToolIds: capabilities.hostToolIds,
-      runnableKind: deriveSkillRunnableKind(capabilities),
-    } as AvailableSkillRow;
+      skillToolIds: caps.skillToolIds,
+      hostToolIds: caps.hostToolIds,
+      runnableKind: deriveSkillRunnableKind(caps),
+    };
   }
   return null;
+}
+
+async function resolveRequestedSkillExecutionChannels(
+  prisma: AgentGraphNodeBundle['deps']['prisma'],
+  requestedSkill: Omit<BuildTurnExecutionContractRequestedSkill, 'executionChannels'> | null,
+): Promise<import('../../../../../workflow/derive-skill-execution-channels.util').SkillExecutionChannels> {
+  if (!requestedSkill) {
+    return EMPTY_SKILL_EXECUTION_CHANNELS;
+  }
+  let workflowId = requestedSkill.workflowId ?? null;
+  let workflowVersion = requestedSkill.workflowVersion ?? null;
+  if (workflowId == null || workflowId <= 0) {
+    const skillRow = await prisma.skill.findUnique({
+      where: { id: requestedSkill.id },
+      select: { workflowId: true, workflowVersion: true },
+    });
+    workflowId = skillRow?.workflowId ?? null;
+    workflowVersion = skillRow?.workflowVersion ?? workflowVersion;
+  }
+  if (workflowId != null && workflowId > 0) {
+    return loadSkillExecutionChannels(prisma, {
+      workflowId,
+      workflowVersion,
+      skillToolIds: requestedSkill.skillToolIds,
+      hostToolIds: requestedSkill.hostToolIds,
+    });
+  }
+  return deriveSkillExecutionChannels({
+    nodes: [],
+    skillToolIds: requestedSkill.skillToolIds,
+    hostToolIds: requestedSkill.hostToolIds,
+  });
 }
 
 function readIntentStepOutput(
@@ -146,8 +205,16 @@ export function createTurnRouteNode(
     const requestedSkillRow = resolveRequestedSkillRowForTurnRoute({
       requestedSkillId,
       availableSkills,
+    });
+    const requestedSkillBase = resolveRequestedSkillForContract({
+      requestedSkillId,
+      requestedSkillRow,
       requestedSkillCtx: ctx.requestedSkillCtx,
     });
+    const executionChannels = await resolveRequestedSkillExecutionChannels(
+      deps.prisma,
+      requestedSkillBase,
+    );
     const routeInput: TurnRouteLlmInput = {
       userMessage: ctx.input.latestUserMessage,
       pageContext: pageContextForRoute as Record<string, unknown> | null,
@@ -174,6 +241,7 @@ export function createTurnRouteNode(
             description: requestedSkillRow.description,
           }
         : null,
+      requestedSkillExecutionChannels: executionChannels,
     };
 
     const llmRoutingDecision = await resolveTurnRoute({
@@ -182,9 +250,20 @@ export function createTurnRouteNode(
       scope: ctx.promptScope,
       routeInput,
     });
-    const turnRoutingDecision = finalizeTurnRoutingDecision({
+    const turnRoutingDecisionRaw = finalizeTurnRoutingDecision({
       decision: llmRoutingDecision,
       pageContext: pageContextForRoute,
+    });
+    const requestedSkillForContract = requestedSkillBase
+      ? { ...requestedSkillBase, executionChannels }
+      : null;
+    const {
+      writeChannel: effectiveWriteChannel,
+      routing: turnRoutingDecision,
+      skillChannelAnchored,
+    } = finalizeTurnWriteChannel({
+      routing: turnRoutingDecisionRaw,
+      skillChannels: requestedSkillForContract?.executionChannels ?? null,
     });
     const pageContextAppliesBoosted =
       turnRoutingDecision.pageContextApplies &&
@@ -194,31 +273,19 @@ export function createTurnRouteNode(
     const pageContextTaskKindBoosted =
       turnRoutingDecision.pageContextTaskKind !==
       llmRoutingDecision.pageContextTaskKind;
-
-    const requestedSkillIsHostOnly =
-      requestedSkillRow != null
-        ? skillIsHostOnlySkill(
-            normalizeSkillRunnableCapabilities({
-              skillToolIds:
-                'skillToolIds' in requestedSkillRow
-                  ? requestedSkillRow.skillToolIds
-                  : undefined,
-              hostToolIds:
-                'hostToolIds' in requestedSkillRow
-                  ? requestedSkillRow.hostToolIds
-                  : undefined,
-            }),
-          ) ||
-          ('runnableKind' in requestedSkillRow &&
-            requestedSkillRow.runnableKind === 'host')
-        : false;
+    const hostMutationIntentBoosted =
+      turnRoutingDecision.hostMutationIntent &&
+      !llmRoutingDecision.hostMutationIntent;
+    const llmWriteChannelCorrected =
+      llmRoutingDecision.llmWriteChannel !== effectiveWriteChannel;
 
     const turnExecutionContract = buildTurnExecutionContract({
       routing: turnRoutingDecision,
       userMessage: ctx.input.latestUserMessage,
       toolsEnabled: true,
       requestedSkillId,
-      requestedSkillIsHostOnly,
+      requestedSkill: requestedSkillForContract,
+      effectiveWriteChannel,
       pageHostCandidateId: autoSkillCandidate?.skill.id ?? null,
       pageContext: pageContextForRoute,
     });
@@ -246,8 +313,12 @@ export function createTurnRouteNode(
       pageContextPlan: turnExecutionContract.plan.pageContextPlan,
       pageContextAppliesBoosted,
       pageContextTaskKindBoosted,
+      hostMutationIntent: turnRoutingDecision.hostMutationIntent,
+      llmHostMutationIntent: llmRoutingDecision.hostMutationIntent,
+      hostMutationIntentBoosted,
       pageContextRouteCorrected,
       llmRoute: llmRoutingDecision.route,
+      skillAlignment: turnExecutionContract.skillAlignment,
     });
 
     const routeStep: AgentRunStep = {
@@ -262,6 +333,7 @@ export function createTurnRouteNode(
         pageHostSkillCandidateId: autoSkillCandidate?.skill.id ?? null,
         requestedSkillId,
         skillSelect: turnExecutionContract.plan.skillSelect,
+        scopedToolsSource: turnExecutionContract.plan.scopedToolsSource,
         allowHostToolSteps: turnExecutionContract.plan.allowHostToolSteps,
         availableSkillIds: availableSkills.map((skill) => skill.id),
         availableHostToolNames: hostBundle.scopedHostTools.map(
@@ -270,12 +342,22 @@ export function createTurnRouteNode(
         pageContextUsage: turnExecutionContract.plan.pageContextUsage,
         pageContextPlan: turnExecutionContract.plan.pageContextPlan,
         pageContextTaskKind: turnRoutingDecision.pageContextTaskKind,
+        hostMutationIntent: turnRoutingDecision.hostMutationIntent,
+        llmWriteChannel: llmRoutingDecision.llmWriteChannel,
+        llmWriteChannelDraft: llmRoutingDecision.llmWriteChannel,
+        llmWriteChannelCorrected,
         llmPageContextApplies: llmRoutingDecision.pageContextApplies,
-        llmPageContextTaskKind: llmRoutingDecision.pageContextTaskKind,
+        llmPageContextTaskKind: llmRoutingDecision.llmPageContextTaskKind,
+        llmHostMutationIntent: llmRoutingDecision.hostMutationIntent,
         pageContextAppliesBoosted,
         pageContextTaskKindBoosted,
+        hostMutationIntentBoosted,
         pageContextRouteCorrected,
+        skillChannelAnchored,
+        effectiveWriteChannel,
+        skillExecutionChannels: executionChannels,
         llmRoute: llmRoutingDecision.route,
+        skillAlignment: turnExecutionContract.skillAlignment,
       }),
     };
     const stepsWithRoute = [...state.steps, routeStep];
@@ -314,6 +396,19 @@ export function createTurnRouteNode(
       AgentRunStatus.running,
     );
 
+    const intentScopedTools =
+      state.intentScopedToolsBundle ??
+      bundleFromAllowedRunInput({
+        tools: ctx.input.tools,
+        langChainTools: ctx.input.langChainTools,
+        allowedToolIds: ctx.input.allowedToolIds,
+      });
+    const activeScopedTools = applyTurnScopedToolsFromContract({
+      contract: turnExecutionContract,
+      intentScopedTools,
+      requestedSkillCtx: ctx.requestedSkillCtx,
+    });
+
     const nextState: AgentGraphState = {
       ...state,
       steps: stepsWithRoute,
@@ -323,6 +418,7 @@ export function createTurnRouteNode(
       preloadedToolObservations: preloadedFromPageContext,
       scopedHostTools: hostBundle.scopedHostTools,
       scopedHostLangChainTools: hostBundle.scopedHostLangChainTools,
+      ...spreadScopedToolsBundle(activeScopedTools),
     };
     return nextState;
   };

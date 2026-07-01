@@ -28,17 +28,19 @@ function mapSkillCore(
   row: SkillDetailRow | SkillListRow,
 ): Omit<
   SkillResponse,
-  'skillTools' | 'skillHostTools' | 'hostTools' | 'toolCount' | 'hostToolCount' | 'roleSkillCount'
+  | 'skillTools'
+  | 'skillHostTools'
+  | 'hostTools'
+  | 'toolCount'
+  | 'hostToolCount'
+  | 'roleSkillCount'
+  | 'agentSkillCount'
 > {
-  const { appClient, ...agent } = row.agent;
   return {
     id: row.id,
-    agentId: row.agentId,
-    appClientId: agent.appClientId,
-    appClientName: appClient.name,
-    agentName: agent.name,
-    agent,
-    appClient,
+    appClientId: row.appClientId,
+    appClientName: row.appClient.name,
+    appClient: row.appClient,
     name: row.name,
     capabilityKey: row.capabilityKey,
     description: row.description,
@@ -46,6 +48,9 @@ function mapSkillCore(
     riskLevel: row.riskLevel,
     requiresWriteConfirmation: skillRequiresWriteConfirmation(row.riskLevel),
     config: row.config,
+    workflowId: row.workflowId,
+    workflowVersion: row.workflowVersion,
+    workflowOverrides: row.workflowOverrides,
     isActive: row.isActive,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -64,6 +69,7 @@ export function toSkillResponse(row: SkillDetailRow): SkillResponse {
     toolCount: row._count?.skillTools ?? row.skillTools.length,
     hostToolCount: skillHostTools.length,
     roleSkillCount: row._count?.roleSkills ?? 0,
+    agentSkillCount: row._count?.agentSkills ?? 0,
   };
 }
 
@@ -76,6 +82,7 @@ export function toSkillListResponse(row: SkillListRow): SkillResponse {
     toolCount: row._count?.skillTools ?? row.skillTools.length,
     hostToolCount: row._count?.skillHostTools ?? 0,
     roleSkillCount: row._count?.roleSkills ?? 0,
+    agentSkillCount: row._count?.agentSkills ?? 0,
   };
 }
 

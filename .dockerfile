@@ -27,7 +27,7 @@ COPY omnix/ecosystem.config.cjs ./
 COPY omnix/src ./src
 
 RUN pnpm exec prisma generate \
-  && pnpm run build
+  && pnpm run build:test
 
 FROM base AS runner
 

@@ -14,6 +14,7 @@ import {
 import {
   resolveTurnExecutionContract,
 } from '../../../turn/turn-execution-contract.util';
+import { shouldEnforceRequestedSkillFromContract } from '../../../turn/skill-intent-alignment.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import { planRunContextFromState } from '../../plan/plan-observation-scope.util';
 import { buildPlanRunStepOutput } from '../../plan/plan-sync.util';
@@ -40,6 +41,7 @@ import type {
 } from '../../types/agent-engine.types';
 import { logHostToolResolve } from '../../../../../host-bridge/host-tool-resolve-debug.util';
 import { collectRemovedPendingHostToolStepIds } from '../../host-tool/host-tool-plan.util';
+import { tryBuildSessionResumeWorkflowSlice } from '../../../../../workflow/session-resume-workflow.util';
 
 export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
   const { deps, ctx, runHelpers, skillFrame, summarize } = bundle;
@@ -139,6 +141,10 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
           'replace',
         );
         if (initialAdvance) {
+          const workflowSlice = tryBuildSessionResumeWorkflowSlice({
+            workflowRun: resumeDecision.workflowRun,
+            taskPlan: initialAdvance.updatedPlan,
+          });
           return skillFrame.applySkillFrameContext({
             ...state,
             steps: stepsWithPlan,
@@ -148,14 +154,32 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
             pendingRespond: pendingRespondFromObservation(
               initialAdvance.summaryObservation as ToolObservation,
             ),
+            ...(workflowSlice
+              ? {
+                  workflowRun: workflowSlice.workflowRun,
+                  workflowNodeDefs: workflowSlice.workflowNodeDefs,
+                  workflowAwaitingReact: workflowSlice.workflowAwaitingReact,
+                }
+              : {}),
           });
         }
+        const workflowSlice = tryBuildSessionResumeWorkflowSlice({
+          workflowRun: resumeDecision.workflowRun,
+          taskPlan,
+        });
         return skillFrame.applySkillFrameContext({
           ...state,
           steps: stepsWithPlan,
           turnExecutionContract: contract,
           taskPlan,
           planRunContext: 'resume',
+          ...(workflowSlice
+            ? {
+                workflowRun: workflowSlice.workflowRun,
+                workflowNodeDefs: workflowSlice.workflowNodeDefs,
+                workflowAwaitingReact: workflowSlice.workflowAwaitingReact,
+              }
+            : {}),
         });
       }
     }
@@ -387,7 +411,9 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
           ),
           availableSkillIds: availableSkills.map((skill) => skill.id),
           requestedSkillId: contract.plan.explicitSkillId,
-          requestedSkillSkipIntent: ctx.requestedSkillCtx != null,
+          requestedSkillEnforced: shouldEnforceRequestedSkillFromContract({
+            scopedToolsSource: contract.plan.scopedToolsSource,
+          }),
           sessionWorkingMemoryIncluded: sessionWorkingMemory != null,
           skillFrameExpanded,
           outerFrameCount,

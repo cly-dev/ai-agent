@@ -177,6 +177,15 @@ export async function expandPendingSkillStepIfNeeded(input: {
     input.toolBuildCtx,
   );
   const scopedSummaries = summarizeScopedToolsForPlan(bind.scopedTools);
+  const skillBoundWorkflowPlan =
+    await input.skillService.tryBuildTaskPlanFromSkillWorkflow({
+      appClientId: input.appClientId,
+      userMessage: input.plan.originalUserRequest,
+      skill,
+      goal: input.plan.goal,
+      allowedToolIds: bind.scopedAllowedToolIds,
+      allowedHostToolIds: skill.hostToolIds,
+    });
   const innerResolved = await resolveTaskPlan({
     llmService: input.llmService,
     promptRegistry: input.promptRegistry,
@@ -193,6 +202,7 @@ export async function expandPendingSkillStepIfNeeded(input: {
       skillToolIds: skill.skillToolIds,
       skillHostToolIds: skill.hostToolIds,
       availableHostTools: input.availableHostTools,
+      skillBoundWorkflowPlan,
     },
   });
   const innerPlan = innerResolved.plan;

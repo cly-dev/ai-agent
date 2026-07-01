@@ -1,6 +1,7 @@
 /** 会话 GOA 记忆类型（DB 权威；与 Redis session context 解耦）。 */
 
 import type { AgentChatPageContext } from '../../host-bridge/page-context.types';
+import type { WorkflowRunState } from '../../workflow/workflow.types';
 
 export type TurnEpisodeStatus = 'task' | 'smalltalk' | 'failed';
 
@@ -126,6 +127,8 @@ export type ActiveTask = {
   plan: StoredTaskPlan;
   stepProgress: TaskStepProgress[];
   observationLog: ObservationEntry[];
+  /** L1 workflow 快照（由图状态投影）。 */
+  workflowRun?: WorkflowRunState | null;
   startedTurnId: number;
   lastTurnId: number;
   lastRunId: number;
@@ -160,6 +163,7 @@ export type AgentRunGoaSnapshot = {
   activeTaskStatus: ActiveTaskStatus;
   intentKind?: 'task' | 'smalltalk' | 'unclear';
   awaitingWriteConfirmation?: boolean;
+  workflowRun?: WorkflowRunState | null;
   capturedAt?: string;
 };
 
@@ -183,6 +187,7 @@ export type SessionMemoryUpdateContext = {
   awaitingWriteConfirmation?: boolean;
   /** 工具终态失败 / 同参重试耗尽：清除会话内未完成 activeTask。 */
   abandonActiveTask?: boolean;
+  workflowRun?: WorkflowRunState | null;
 };
 
 export function createEmptySessionGoaPayload(sessionId: string): SessionGoaPayload {

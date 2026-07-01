@@ -1,12 +1,7 @@
-import type { AgentRunStep } from '../agent-engine/engine/main/types/agent-engine.types';
-import type { AgentEngineTool } from '../agent-engine/engine/main/types/agent-engine.types';
-import { isMutationTool } from '../agent-engine/engine/tool/tool-execution-status.util';
 import { parseAgentMetadata } from '../tool-engine/tool-agent-metadata.util';
+import { isMutationTool } from '../tool-engine/tool-mutation.util';
+import type { HostMutationRunStep, HostMutationScopedTool } from './host-mutation-step.types';
 import type { AgentChatPageContext } from './page-context.types';
-
-function isPresent(value: unknown): boolean {
-  return value !== undefined && value !== null && value !== '';
-}
 
 function normalizeIdentifierToken(value: unknown): string | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -51,8 +46,8 @@ function collectLeafIdentifierValues(
 
 /** 从成功 mutation 步的入参中收集 businessFields 对应叶子值（含嵌套数组）。 */
 export function collectSuccessfulMutationIdentifierValues(input: {
-  steps: AgentRunStep[];
-  scopedTools: AgentEngineTool[];
+  steps: HostMutationRunStep[];
+  scopedTools: HostMutationScopedTool[];
 }): Set<string> {
   const toolByName = new Map(input.scopedTools.map((tool) => [tool.name, tool]));
   const values = new Set<string>();
@@ -94,8 +89,8 @@ export function collectSuccessfulMutationIdentifierValues(input: {
  */
 export function isPageContextAlignedWithSuccessfulMutations(input: {
   pageContext: AgentChatPageContext;
-  steps: AgentRunStep[];
-  scopedTools: AgentEngineTool[];
+  steps: HostMutationRunStep[];
+  scopedTools: HostMutationScopedTool[];
 }): boolean {
   const entityId = normalizeIdentifierToken(input.pageContext.entity?.id);
   if (!entityId) {

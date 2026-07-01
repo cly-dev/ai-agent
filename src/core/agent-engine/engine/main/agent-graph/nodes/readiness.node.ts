@@ -21,16 +21,17 @@ import {
 import { buildSkillFrameExpandedPlanSyncStep } from '../../plan/plan-sync.util';
 import {
   buildPlanSummarizeObservation,
-  getPendingPlanStep,
   getPendingPlanToolStep,
   isPlanTextGenerationStep,
-  isPlanWriteFallbackStep,
+  isPlanWriteExecutionStepInMutationFlow,
+  resolvePlanExecutionStep,
 } from '../../plan/task-plan.util';
 import {
   formatComposedWriteGateDiagnosticForLog,
   resolvePendingWriteForPlanWriteStepResult,
 } from '../../plan-present/plan-draft-summarize.util';
 import type { AgentRunStep } from '../../types/agent-engine.types';
+import { maybeTagWorkflowReactInternalStep } from '../../run/agent-run-audit.util';
 
 export function createReadinessNode(
   bundle: AgentGraphNodeBundle,
@@ -42,8 +43,17 @@ export function createReadinessNode(
     if (hasPendingRespond(stateAfterSkill.pendingRespond)) {
       return stateAfterSkill;
     }
-    const pendingPlanStep = getPendingPlanStep(stateAfterSkill.taskPlan);
-    if (isPlanTextGenerationStep(pendingPlanStep)) {
+    const pendingPlanStep = resolvePlanExecutionStep({
+      taskPlan: stateAfterSkill.taskPlan,
+      workflowRun: stateAfterSkill.workflowRun,
+      workflowNodeDefs: stateAfterSkill.workflowNodeDefs,
+    });
+    if (
+      isPlanTextGenerationStep(
+        pendingPlanStep.step,
+        pendingPlanStep.workflowNodeAction,
+      )
+    ) {
       deps.sse.emitThink(
         ctx.input.sessionId,
         ctx.input.runId,
@@ -85,15 +95,19 @@ export function createReadinessNode(
       pageContext,
       pageContextUsage:
         stateAfterSkill.turnExecutionContract?.plan.pageContextUsage ?? null,
+      workflowRun: stateAfterSkill.workflowRun,
     });
-    const readinessStep: AgentRunStep = {
-      step: stepNum,
-      type: 'readiness',
-      output: runHelpers.normalizeJsonLike({
-        status: readinessResult.status,
-        reason: readinessResult.reason,
-      }),
-    };
+    const readinessStep = maybeTagWorkflowReactInternalStep(
+      {
+        step: stepNum,
+        type: 'readiness',
+        output: runHelpers.normalizeJsonLike({
+          status: readinessResult.status,
+          reason: readinessResult.reason,
+        }),
+      },
+      stateAfterSkill,
+    );
     const frameExpanded =
       (stateAfterSkill.taskPlan?.frames.length ?? 0) > frameCountBefore;
     const frameSyncStep =
@@ -123,8 +137,11 @@ export function createReadinessNode(
       ...(frameSyncStep ? [frameSyncStep] : []),
     ];
     await runHelpers.updateRun(ctx.input.runId, steps, AgentRunStatus.running);
-    const pendingToolStep = getPendingPlanToolStep(stateAfterSkill.taskPlan);
-    if (isPlanWriteFallbackStep(pendingToolStep)) {
+    const pendingToolStep = getPendingPlanToolStep(
+      stateAfterSkill.taskPlan,
+      stateAfterSkill.workflowRun,
+    );
+    if (isPlanWriteExecutionStepInMutationFlow(pendingToolStep)) {
       const reuse = resolvePendingWriteForPlanWriteStepResult({
         observations: allToolObservations(stateAfterSkill),
         taskPlan: stateAfterSkill.taskPlan,

@@ -95,7 +95,7 @@ async function main(): Promise<void> {
   const agent = await resolveAgent(appClientId);
 
   const existing = await prisma.skill.findFirst({
-    where: { agentId: agent.id, name: SKILL_NAME },
+    where: { appClientId: agent.appClientId, name: SKILL_NAME },
     include: {
       skillTools: { select: { toolId: true, isRequired: true } },
     },
@@ -134,13 +134,16 @@ async function main(): Promise<void> {
   const riskLevel = resolveSkillRiskLevel({ toolRiskLevels });
   const skill = await prisma.skill.create({
     data: {
-      agentId: agent.id,
+      appClientId: agent.appClientId,
       name: SKILL_NAME,
       capabilityKey: SKILL_CAPABILITY_KEY,
       description: '根据订单号或条件查询订单信息',
       prompt: SAMPLE_PROMPT,
       riskLevel,
       isActive: true,
+      agentSkills: {
+        create: [{ agentId: agent.id }],
+      },
       skillTools:
         toolIds.length > 0
           ? {
@@ -170,7 +173,7 @@ async function main(): Promise<void> {
         toolBindings: skill.skillTools,
         hint:
           toolIds.length === 0
-            ? 'Agent 尚无 AgentTool，请先绑定工具后 PUT .../skills/:id/tools'
+            ? 'Agent 尚无可用 Tool，请先在 App 注册工具后 PUT .../skills/:id/tools'
             : undefined,
       },
       null,

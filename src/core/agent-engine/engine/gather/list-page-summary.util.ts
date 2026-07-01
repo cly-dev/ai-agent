@@ -360,13 +360,14 @@ export async function summarizeListPageWithLlm(
   let structuredErrorDetail: string | undefined;
 
   try {
-    const { model } =
+    const { model, messages: fittedMessages } =
       await input.llmService.createLangChainChatModelForMessages(messages, {
         maxTokens: 1024,
+        budgetHints: { callKind: 'gather_page_summary', skipFit: true },
       });
     const structuredModel = model.withStructuredOutput(pageSummarySchema);
     const summary = (await structuredModel.invoke(
-      messages,
+      fittedMessages,
     )) as PageSummaryLlmResult;
     const finalSummary = applyRowsTruncatedNote(summary, prepared);
     recordPageSummaryLlmMetrics(input.runMetrics, {
@@ -384,6 +385,7 @@ export async function summarizeListPageWithLlm(
       messages,
       tools: [],
       maxTokens: 1024,
+      budgetHints: { callKind: 'gather_page_summary', skipFit: true },
     });
     recordPageSummaryLlmMetrics(input.runMetrics, {
       messages,

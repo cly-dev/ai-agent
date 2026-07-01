@@ -1,3 +1,4 @@
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
 import type { SplitToolObservationsInput } from '../../graph-tool-observations.util';
 import type { SummarizeMemoryScopeMeta } from '../../observation-format.util';
 import type { ToolObservation } from '../types/agent-engine.types';
@@ -37,6 +38,8 @@ export type ResolveSummarizeMemoryScopeInput = {
   split: SplitToolObservationsInput;
   plan?: TaskPlanSnapshot | null;
   scopedTools?: PlanScopedTool[];
+  workflowRun?: WorkflowRunState | null;
+  workflowNodeDefs?: WorkflowNodeDef[] | null;
 };
 
 type PlanFilteredSplit = {
@@ -71,7 +74,11 @@ function planFilteredSplit(
       currentRunFilterMiss: false,
     };
   }
-  const answerStep = isPendingPlanAnswerStep(plan);
+  const answerStep = isPendingPlanAnswerStep(
+    plan,
+    input.workflowRun,
+    input.workflowNodeDefs,
+  );
   if (!answerStep) {
     return {
       workingMemory: input.split.workingMemory,
@@ -85,12 +92,14 @@ function planFilteredSplit(
     observations: input.split.workingMemory,
     scopedTools: input.scopedTools,
     strict: true,
+    workflowRun: input.workflowRun,
   });
   const cr = filterObservationsForPlanSummarize({
     plan,
     observations: input.split.currentRun,
     scopedTools: input.scopedTools,
     strict: true,
+    workflowRun: input.workflowRun,
   });
   return {
     workingMemory: wm.observations,
@@ -165,7 +174,7 @@ export function resolveSummarizeMemoryScope(
   }
 
   // follow-up analyze/reason：本轮无工具 → 只认 working_memory
-  if (currentRun.length === 0 && plan && isPendingPlanAnswerStep(plan)) {
+  if (currentRun.length === 0 && plan && isPendingPlanAnswerStep(plan, input.workflowRun, input.workflowNodeDefs)) {
     if (workingMemory.length > 0) {
       return withSelectedFilterMiss(
         {
@@ -187,7 +196,7 @@ export function resolveSummarizeMemoryScope(
   }
 
   // 新话题 / 本轮刚拉数：有 current_run 且非 plan answer 步 → 丢弃 session 噪音
-  if (currentRun.length > 0 && (!plan || !isPendingPlanAnswerStep(plan))) {
+  if (currentRun.length > 0 && (!plan || !isPendingPlanAnswerStep(plan, input.workflowRun, input.workflowNodeDefs))) {
     return scopeResult({
       primarySource: 'current_run',
       workingMemory: [],
@@ -221,7 +230,7 @@ export function resolveSummarizeMemoryScope(
   }
 
   // 两边都有：plan answer 步优先 working_memory（续分析），否则 current_run
-  if (plan && isPendingPlanAnswerStep(plan)) {
+  if (plan && isPendingPlanAnswerStep(plan, input.workflowRun, input.workflowNodeDefs)) {
     if (
       completedGatherStepsSatisfiedInObservations({
         plan,

@@ -113,8 +113,7 @@ export type TrimMessagesResult = {
 
 /**
  * Trim messages to fit an estimated input token budget.
- * Decision-loop blocks (agent/tool_schema/tool_decision/user) are never dropped.
- * Observations may be truncated but not dropped.
+ * @deprecated Use PromptBudgetService / LlmService.fitMessagesToBudget instead.
  */
 export function trimMessagesToTokenBudgetDetailed(
   messages: LlmChatMessage[],

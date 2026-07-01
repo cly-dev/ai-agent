@@ -1,4 +1,5 @@
 import { parseAgentMetadata } from '../../../tool-engine/tool-agent-metadata.util';
+import { isMutationTool } from '../../../tool-engine/tool-mutation.util';
 import { OperationType, ToolMode } from '../../../tool-engine/tool-agent-metadata.types';
 import { isPaginationParam } from '../../../tool-engine/tool-pagination-params.util';
 import {
@@ -61,13 +62,7 @@ export function readToolInvokeMaxRetries(): number {
   return Number.isFinite(value) && value >= 0 ? value : 2;
 }
 
-export function isMutationTool(agentMetadata: unknown): boolean {
-  const meta = parseAgentMetadata(agentMetadata);
-  if (!meta) {
-    return false;
-  }
-  return meta.isMutation || meta.mode === ToolMode.WRITE;
-}
+export { isMutationTool } from '../../../tool-engine/tool-mutation.util';
 
 /** tools 节点内重试已结束后，retry 类 disposition 应视为终态 summarize。 */
 export function finalizeToolErrorDispositionAfterInvoke(

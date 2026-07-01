@@ -29,18 +29,20 @@ export async function resolvePlanFromContract(input: {
     throw new Error('resolvePlanFromContract called while contract.plan.enabled is false');
   }
 
-  if (contract.plan.pageContextPlan === 'inline_answer') {
-    return buildPageContextInlinePlanResult({
-      userMessage: planInput.userMessage,
-      pageContextUsage: contract.plan.pageContextUsage,
-    });
-  }
-  if (contract.plan.pageContextPlan === 'entity_read_detail') {
-    return buildPageContextEntityReadPlanResult({
-      userMessage: planInput.userMessage,
-      scopedToolSummaries: planInput.scopedToolSummaries,
-      pageContextUsage: contract.plan.pageContextUsage,
-    });
+  if (contract.routing.llmWriteChannel === 'none') {
+    if (contract.plan.pageContextPlan === 'inline_answer') {
+      return buildPageContextInlinePlanResult({
+        userMessage: planInput.userMessage,
+        pageContextUsage: contract.plan.pageContextUsage,
+      });
+    }
+    if (contract.plan.pageContextPlan === 'entity_read_detail') {
+      return buildPageContextEntityReadPlanResult({
+        userMessage: planInput.userMessage,
+        scopedToolSummaries: planInput.scopedToolSummaries,
+        pageContextUsage: contract.plan.pageContextUsage,
+      });
+    }
   }
 
   switch (contract.plan.skillSelect) {

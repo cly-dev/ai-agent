@@ -1,7 +1,4 @@
-import type {
-  HostToolExposure,
-  HostToolSkillTrigger,
-} from '../../../generated/prisma/client';
+import type { HostToolSkillTrigger } from '../../../generated/prisma/client';
 import type { HostToolDecisionDefinition } from '../host-bridge';
 
 export type RuntimeRevision = {
@@ -59,10 +56,10 @@ export type AgentHostToolCatalogRow = {
   definitionKey: string;
   name: string;
   description: string;
-  exposure: HostToolExposure;
   hostPageScope: string | null;
   argsSchema: Record<string, unknown>;
   argsTemplate: unknown;
+  config: unknown | null;
   isActive: boolean;
   updatedAt: string;
 };

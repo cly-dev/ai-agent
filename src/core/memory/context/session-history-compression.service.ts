@@ -194,6 +194,7 @@ export class SessionHistoryCompressionService {
       maxTokens: getSessionHistoryCompressMaxSummaryTokens(),
       temperature: 0.2,
       stream: false,
+      budgetHints: { callKind: 'compression', skipFit: true },
     });
 
     const text = (result.content ?? '').trim();

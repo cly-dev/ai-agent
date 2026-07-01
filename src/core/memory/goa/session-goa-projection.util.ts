@@ -1,6 +1,10 @@
 import { compactArgsForObservation } from '../../agent-engine/engine/observation-format.util';
 import { resolveXShopIdFromUserMessage } from '../../../common/integration-site.util';
 import {
+  buildStepProgressFromWorkflowRun,
+  resolveActiveTaskStatusFromWorkflow,
+} from '../../workflow/workflow-goa-projection.util';
+import {
   ARTIFACT_SUMMARY_MAX_CHARS,
   EPISODE_GOAL_MAX_CHARS,
   EPISODE_OUTCOME_MAX_CHARS,
@@ -338,34 +342,41 @@ export function buildActiveTaskFromAgentRun(input: {
   const completed = new Set(plan.completedStepIds);
   const pending = new Set(plan.pendingStepIds);
   const usedArtifactIds = new Set<string>();
-  const stepProgress: TaskStepProgress[] = plan.steps.map((planStep) => {
-    let status: TaskStepProgress['status'] = 'pending';
-    if (completed.has(planStep.id)) {
-      status = 'done';
-    } else if (pending.has(planStep.id)) {
-      status = plan.currentStepId === planStep.id ? 'running' : 'pending';
-    } else if (plan.currentStepId === planStep.id) {
-      status = 'running';
-    }
-    const artifactRef = resolveArtifactRefForPlanStep(
-      planStep,
-      input.artifacts,
-      usedArtifactIds,
-      input.ctx.turnId,
-      input.ctx.runId,
-    );
-    return {
-      stepId: planStep.id,
-      phase: planStep.phase,
-      kind: planStep.kind,
-      status,
-      summary:
-        status === 'done' || status === 'running'
-          ? summarizeStepFromRun(planStep, input.ctx, input.artifacts)
-          : undefined,
-      artifactRef,
-    };
-  });
+  const workflowRun =
+    input.ctx.workflowRun ?? input.prev?.workflowRun ?? null;
+
+  const stepProgress: TaskStepProgress[] =
+    workflowRun != null
+      ? buildStepProgressFromWorkflowRun({ workflowRun, plan })
+      : plan.steps.map((planStep) => {
+          let status: TaskStepProgress['status'] = 'pending';
+          if (completed.has(planStep.id)) {
+            status = 'done';
+          } else if (pending.has(planStep.id)) {
+            status =
+              plan.currentStepId === planStep.id ? 'running' : 'pending';
+          } else if (plan.currentStepId === planStep.id) {
+            status = 'running';
+          }
+          const artifactRef = resolveArtifactRefForPlanStep(
+            planStep,
+            input.artifacts,
+            usedArtifactIds,
+            input.ctx.turnId,
+            input.ctx.runId,
+          );
+          return {
+            stepId: planStep.id,
+            phase: planStep.phase,
+            kind: planStep.kind,
+            status,
+            summary:
+              status === 'done' || status === 'running'
+                ? summarizeStepFromRun(planStep, input.ctx, input.artifacts)
+                : undefined,
+            artifactRef,
+          };
+        });
 
   const observationLog = appendObservationEntries(
     input.prev?.observationLog ?? [],
@@ -374,14 +385,23 @@ export function buildActiveTaskFromAgentRun(input: {
 
   return {
     taskId: input.prev?.taskId ?? `task-${input.ctx.turnId}-${input.ctx.runId}`,
-    status: resolveActiveTaskStatus({
-      plan,
-      runStatus: input.ctx.runStatus,
-      awaitingWriteConfirmation: input.ctx.awaitingWriteConfirmation,
-    }),
+    status:
+      workflowRun != null
+        ? resolveActiveTaskStatusFromWorkflow({
+            workflowRun,
+            plan,
+            runStatus: input.ctx.runStatus,
+            awaitingWriteConfirmation: input.ctx.awaitingWriteConfirmation,
+          })
+        : resolveActiveTaskStatus({
+            plan,
+            runStatus: input.ctx.runStatus,
+            awaitingWriteConfirmation: input.ctx.awaitingWriteConfirmation,
+          }),
     plan,
     stepProgress,
     observationLog,
+    ...(workflowRun != null ? { workflowRun } : {}),
     startedTurnId: input.prev?.startedTurnId ?? input.ctx.turnId,
     lastTurnId: input.ctx.turnId,
     lastRunId: input.ctx.runId,

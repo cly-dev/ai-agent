@@ -1,13 +1,12 @@
 import type { LlmChatMessage } from '../../../../llm/llm.types';
-import type { LlmService } from '../../../../llm/llm.service';
-import type { PromptRegistryService } from '../../../../prompt/prompt-registry.service';
-import { PROMPT_KEYS } from '../../../../prompt/prompt-template.keys';
-import { emitLlmPromptDebug } from '../../llm-prompt-debug.util';
+import type { AgentChatPageContext } from '../../../../host-bridge/page-context.types';
 import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-tool-decision.types';
 import type { ToolObservation } from '../types/agent-engine.types';
 import type { RunAssistantArtifactStore } from '../run/run-assistant-artifact.store';
 import { buildPlanContextForSummarize } from '../host-tool/host-tool-fill-alignment.util';
 import {
+  finalizePlanAfterSummarize,
+  getPendingPlanHostToolStep,
   getPendingPlanStep,
   resolveSummarizeUserMessageForPlan,
 } from '../plan/task-plan.util';
@@ -18,26 +17,25 @@ import {
   extractPrimaryFillTextFromHostFills,
   resolveHostToolsForUpcomingHostStep,
 } from './plan-host-fill.util';
+import { resolveReasonHostFillObservationPayload } from './plan-reason-host-machine-prompt.util';
 import {
-  buildPlanReasonHostFillUserContent,
-  invokePlanReasonHostFillMachineLayer,
-  resolveReasonHostFillObservationPayload,
-} from './plan-reason-host-fill-llm.util';
+  buildPlanReasonHostMachineContext,
+  runPlanReasonHostMachineLayer,
+  type PlanReasonHostMachineLayerDeps,
+} from './plan-reason-host-machine-layer.util';
 import {
   buildPlanReasonHostUserMarkdown,
   publishPlanReasonHostUserLayer,
   type PlanReasonHostUserLayerPublishDeps,
 } from './plan-reason-host-user-message.util';
 
-export type PlanReasonHostFillOrchestrateDeps = PlanReasonHostUserLayerPublishDeps & {
-  llmService: LlmService;
-  promptRegistry: PromptRegistryService;
-  logger: { warn: (message: string) => void; log: (message: string) => void };
-  assistantArtifact: Pick<
-    RunAssistantArtifactStore,
-    'peekBlocks' | 'peekTurnId'
-  >;
-};
+export type PlanReasonHostFillOrchestrateDeps = PlanReasonHostUserLayerPublishDeps &
+  PlanReasonHostMachineLayerDeps & {
+    assistantArtifact: Pick<
+      RunAssistantArtifactStore,
+      'peekBlocks' | 'peekTurnId'
+    >;
+  };
 
 export type RunPlanReasonHostFillInput = {
   userMessage: string;
@@ -46,9 +44,11 @@ export type RunPlanReasonHostFillInput = {
   promptMessages: LlmChatMessage[];
   sessionId: string;
   runId: number;
+  turnId?: number;
   scope: { appClientId: number; agentId: number };
   taskPlan: TaskPlanSnapshot;
   scopedHostTools: HostToolDecisionDefinition[];
+  pageContext?: AgentChatPageContext | null;
 };
 
 export type PlanReasonHostFillResult = {
@@ -57,10 +57,12 @@ export type PlanReasonHostFillResult = {
   submitText: string;
   hostFillObservation: ToolObservation;
   draftReplyObservation: ToolObservation;
+  hostToolStreamObservation?: ToolObservation;
+  hostToolDispatchObservations?: ToolObservation[];
 };
 
 /**
- * reason → host_tool：机器层 plan_host_fill + 用户层确定性展示 + plan_draft_reply。
+ * reason → host_tool：机器层 stream + 用户层确定性展示。
  */
 export async function runPlanReasonHostFill(
   deps: PlanReasonHostFillOrchestrateDeps,
@@ -76,6 +78,7 @@ export async function runPlanReasonHostFill(
     scope,
     taskPlan,
     scopedHostTools,
+    pageContext,
   } = input;
 
   const reasonStep = getPendingPlanStep(taskPlan);
@@ -94,21 +97,19 @@ export async function runPlanReasonHostFill(
       runId,
       userMarkdown: '',
     });
-    const hostFillObservation = buildPlanHostFillObservation({
-      planStepId: reasonStepId,
-      fills: [],
-    });
-    const draftReplyObservation = buildPlanDraftReplyObservation({
-      draftReply: '',
-      submitText: '',
-      planStepId: reasonStepId,
-    });
     return {
       serialized: published.serialized,
       draftReply: '',
       submitText: '',
-      hostFillObservation,
-      draftReplyObservation,
+      hostFillObservation: buildPlanHostFillObservation({
+        planStepId: reasonStepId,
+        fills: [],
+      }),
+      draftReplyObservation: buildPlanDraftReplyObservation({
+        draftReply: '',
+        submitText: '',
+        planStepId: reasonStepId,
+      }),
     };
   };
 
@@ -124,41 +125,40 @@ export async function runPlanReasonHostFill(
       message.role === 'system' && message.content.includes('<agent_prompt>'),
   );
   const allowedToolNames = new Set(hostTools.map((tool) => tool.name));
-  const userContext = buildPlanReasonHostFillUserContent({
+  const afterFinalize = finalizePlanAfterSummarize(taskPlan);
+  const upcomingHostStep = afterFinalize
+    ? getPendingPlanHostToolStep(afterFinalize)
+    : null;
+  if (!upcomingHostStep) {
+    deps.logger.warn(
+      `plan reason host fill skipped: host tools resolved but no pending host step runId=${runId}`,
+    );
+    return emptyResult();
+  }
+  const turnId =
+    input.turnId ??
+    deps.assistantArtifact.peekTurnId(sessionId, runId) ??
+    runId;
+
+  const machineContext = buildPlanReasonHostMachineContext({
+    agentPrompts,
     userMessage: planUserMessage,
     planContext,
     hostTools,
     splitObservationsText: observationPayload.splitObservationsText,
     serializedOutput: observationPayload.serializedOutput,
-  });
-
-  emitLlmPromptDebug((message) => deps.logger.log(message), {
-    runId,
-    sessionId,
-    phase: 'summarize',
-    messages: [
-      ...agentPrompts,
-      {
-        role: 'system',
-        content: await deps.promptRegistry.render(
-          PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_REASON_HOST_FILL,
-          scope,
-        ),
-      },
-      { role: 'user', content: userContext },
-    ],
-    meta: { planReasonHostFill: true },
-  });
-
-  const fills = await invokePlanReasonHostFillMachineLayer({
-    llmService: deps.llmService,
-    agentPrompts,
-    promptRegistry: deps.promptRegistry,
-    scope,
-    userContext,
     allowedToolNames,
-    logWarn: (message) => deps.logger.warn(`${message} runId=${runId}`),
+    pageContext,
+    sessionId,
+    runId,
+    turnId,
+    scope,
+    hostStepId: upcomingHostStep.id,
+    reasonStepId,
   });
+
+  const machineResult = await runPlanReasonHostMachineLayer(deps, machineContext);
+  const { fills } = machineResult;
 
   const submitText = extractPrimaryFillTextFromHostFills(fills);
   const userMarkdown = buildPlanReasonHostUserMarkdown({
@@ -168,24 +168,24 @@ export async function runPlanReasonHostFill(
   const published = publishPlanReasonHostUserLayer(deps, {
     sessionId,
     runId,
+    turnId,
     userMarkdown,
-  });
-
-  const hostFillObservation = buildPlanHostFillObservation({
-    planStepId: reasonStepId,
-    fills,
-  });
-  const draftReplyObservation = buildPlanDraftReplyObservation({
-    draftReply: published.draftReply,
-    submitText,
-    planStepId: reasonStepId,
   });
 
   return {
     serialized: published.serialized,
     draftReply: published.draftReply,
     submitText,
-    hostFillObservation,
-    draftReplyObservation,
+    hostFillObservation: buildPlanHostFillObservation({
+      planStepId: reasonStepId,
+      fills,
+    }),
+    draftReplyObservation: buildPlanDraftReplyObservation({
+      draftReply: published.draftReply,
+      submitText,
+      planStepId: reasonStepId,
+    }),
+    hostToolStreamObservation: machineResult.hostToolStreamObservation,
+    hostToolDispatchObservations: machineResult.hostToolDispatchObservations,
   };
 }

@@ -538,6 +538,7 @@ export async function inferToolSchemasFromSample(
       temperature: 0.2,
       maxTokens: 4096,
       stream: false,
+      budgetHints: { callKind: 'schema_inference', skipFit: true },
     });
 
     const parsed = extractJsonObject(result.content ?? '');

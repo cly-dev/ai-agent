@@ -8,6 +8,11 @@ import { isUserIntentClear as isUserIntentMessageClear } from '../../../../../in
 import { loadSmallTalkHints } from '../../../../../intent/smalltalk-hints.util';
 import { recordMachineCodeUsage } from '../../../run-metrics.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
+import {
+  bundleFromAllowedRunInput,
+  spreadScopedToolsBundle,
+  type TurnScopedToolsBundle,
+} from '../../../turn/turn-scoped-tools.util';
 import type {
   AgentRunStep,
   ParsedIntentPayload,
@@ -17,6 +22,23 @@ export function createIntentNode(
   bundle: AgentGraphNodeBundle,
 ): AgentGraphNodeFn {
   const { deps, ctx, runHelpers } = bundle;
+
+  const allowedToolsBundle = (): TurnScopedToolsBundle =>
+    bundleFromAllowedRunInput({
+      tools: ctx.input.tools,
+      langChainTools: ctx.input.langChainTools,
+      allowedToolIds: ctx.input.allowedToolIds,
+    });
+
+  const withIntentScopedTools = (
+    state: Parameters<AgentGraphNodeFn>[0],
+    bundle: TurnScopedToolsBundle,
+  ) => ({
+    ...state,
+    intentScopedToolsBundle: bundle,
+    ...spreadScopedToolsBundle(bundle),
+  });
+
   return async (state) => {
     const stepNum = nextRunStepNumber(state.steps);
 
@@ -223,11 +245,14 @@ export function createIntentNode(
         [...state.steps, intentStep],
         AgentRunStatus.running,
       );
-      return {
-        ...state,
-        steps: [...state.steps, intentStep],
-        intentKind,
-      };
+      return withIntentScopedTools(
+        {
+          ...state,
+          steps: [...state.steps, intentStep],
+          intentKind,
+        },
+        allowedToolsBundle(),
+      );
     }
 
     const parsed: ParsedIntentPayload = {
@@ -297,14 +322,18 @@ export function createIntentNode(
       [...state.steps, intentStep],
       AgentRunStatus.running,
     );
-    return {
-      ...state,
-      steps: [...state.steps, intentStep],
-      intentKind,
-      scopedTools: scoped.scopedTools,
-      scopedLangChainTools: scoped.scopedLangChainTools,
-      scopedToolBundle: scoped.scopedToolBundle,
-      scopedAllowedToolIds: scoped.scopedAllowedToolIds,
-    };
+    return withIntentScopedTools(
+      {
+        ...state,
+        steps: [...state.steps, intentStep],
+        intentKind,
+      },
+      {
+        scopedTools: scoped.scopedTools,
+        scopedLangChainTools: scoped.scopedLangChainTools,
+        scopedToolBundle: scoped.scopedToolBundle,
+        scopedAllowedToolIds: scoped.scopedAllowedToolIds,
+      },
+    );
   };
 }

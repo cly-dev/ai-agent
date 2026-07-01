@@ -90,7 +90,11 @@ export async function invokePlanDraftProseSupplement(input: {
     content: input.userContext,
   });
   try {
-    const result = await input.llmService.chat({ messages, tools: [] });
+    const result = await input.llmService.chat({
+      messages,
+      tools: [],
+      budgetHints: { callKind: 'summarize' },
+    });
     return extractLlmUserFacingText(result.content ?? '').trim();
   } catch (error) {
     input.logWarn?.(

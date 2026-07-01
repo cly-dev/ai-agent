@@ -1,4 +1,4 @@
-import type { Prisma, ToolLevel } from '../../../../generated/prisma/client';
+import type { Prisma } from '../../../../generated/prisma/client';
 import { AGENT_LINKED_TOOL_SELECT } from '../../agent/types/agent.types';
 import { HOST_TOOL_DETAIL_INCLUDE } from '../../host-tool/host-tool.types';
 import type { SkillHostToolBindingResponse, HostToolResponse } from '../../host-tool/host-tool.types';
@@ -13,19 +13,6 @@ export const SKILL_APP_CLIENT_SELECT = {
   updatedAt: true,
 } satisfies Prisma.AppClientSelect;
 
-export const SKILL_AGENT_SELECT = {
-  id: true,
-  appClientId: true,
-  name: true,
-  description: true,
-  maxSteps: true,
-  enableToolCall: true,
-  createdAt: true,
-  appClient: {
-    select: SKILL_APP_CLIENT_SELECT,
-  },
-} satisfies Prisma.AgentSelect;
-
 export const SKILL_TOOLS_INCLUDE_FRAGMENT = {
   skillTools: {
     orderBy: { toolId: 'asc' as const },
@@ -37,9 +24,9 @@ export const SKILL_TOOLS_INCLUDE_FRAGMENT = {
   },
 } satisfies Prisma.SkillInclude;
 
-const SKILL_AGENT_INCLUDE_FRAGMENT = {
-  agent: {
-    select: SKILL_AGENT_SELECT,
+const SKILL_APP_CLIENT_INCLUDE_FRAGMENT = {
+  appClient: {
+    select: SKILL_APP_CLIENT_SELECT,
   },
 } satisfies Prisma.SkillInclude;
 
@@ -49,20 +36,21 @@ const SKILL_COUNTS_INCLUDE_FRAGMENT = {
       skillTools: true,
       roleSkills: true,
       skillHostTools: true,
+      agentSkills: true,
     },
   },
 } satisfies Prisma.SkillInclude;
 
 /** 列表：HTTP 工具 + 计数，不含 Host Tool 详情。 */
 export const SKILL_LIST_INCLUDE = {
-  ...SKILL_AGENT_INCLUDE_FRAGMENT,
+  ...SKILL_APP_CLIENT_INCLUDE_FRAGMENT,
   ...SKILL_TOOLS_INCLUDE_FRAGMENT,
   ...SKILL_COUNTS_INCLUDE_FRAGMENT,
 } satisfies Prisma.SkillInclude;
 
 /** 详情：含完整 Host Tool 绑定。 */
 export const SKILL_DETAIL_INCLUDE = {
-  ...SKILL_AGENT_INCLUDE_FRAGMENT,
+  ...SKILL_APP_CLIENT_INCLUDE_FRAGMENT,
   ...SKILL_TOOLS_INCLUDE_FRAGMENT,
   skillHostTools: {
     orderBy: [{ priority: 'asc' as const }, { id: 'asc' as const }],
@@ -74,6 +62,7 @@ export const SKILL_DETAIL_INCLUDE = {
     select: {
       skillTools: true,
       roleSkills: true,
+      agentSkills: true,
     },
   },
 } satisfies Prisma.SkillInclude;
@@ -100,34 +89,25 @@ export type SkillAppClientSummary = Prisma.AppClientGetPayload<{
   select: typeof SKILL_APP_CLIENT_SELECT;
 }>;
 
-export type SkillAgentSummary = Omit<
-  Prisma.AgentGetPayload<{
-    select: typeof SKILL_AGENT_SELECT;
-  }>,
-  'appClient'
->;
-
 export type SkillResponse = {
   id: number;
-  agentId: number;
-  /** 与 agent.appClientId 相同，便于列表筛选与写接口 */
   appClientId: number;
   /** 所属项目展示名，前端列表用此字段代替 appClientId */
   appClientName: string;
-  /** 所属 Agent 展示名 */
-  agentName: string;
   name: string;
   capabilityKey: string | null;
   description: string | null;
   prompt: string;
-  riskLevel: ToolLevel;
+  riskLevel: import('../../../../generated/prisma/client').ToolLevel;
   /** L2/L3 时运行前需用户确认（与 Tool 写操作规则一致） */
   requiresWriteConfirmation: boolean;
   config: unknown;
+  workflowId: number | null;
+  workflowVersion: number | null;
+  workflowOverrides: unknown;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-  agent: SkillAgentSummary;
   appClient: SkillAppClientSummary;
   skillTools: SkillToolBindingResponse[];
   /** 扁平 Host Tool 列表（详情接口；列表为空数组） */
@@ -138,6 +118,8 @@ export type SkillResponse = {
   /** 已绑 Host Tool 数量 */
   hostToolCount: number;
   roleSkillCount: number;
+  /** Agent 白名单绑定数（收紧模式） */
+  agentSkillCount: number;
 };
 
 /** C 端 Skill 列表项（不含 prompt / config）。 */
@@ -146,7 +128,7 @@ export type SkillClientListItem = {
   name: string;
   description: string | null;
   capabilityKey: string | null;
-  riskLevel: ToolLevel;
+  riskLevel: import('../../../../generated/prisma/client').ToolLevel;
   requiresWriteConfirmation: boolean;
   toolIds: number[];
   hostToolIds: number[];

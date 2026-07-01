@@ -4,12 +4,14 @@ import {
   Injectable,
   Logger,
   OnModuleInit,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
 import { SessionRunStateStore } from '../memory/session-run/session-run-state.store';
 import { WriteConfirmationPort } from './write-confirmation.port';
 import { RunEventPublisher } from './run-event.publisher';
 import type { AgentRunLauncher } from './agent-run-launcher.service';
+import type { SessionRunJobQueueService } from './session-run-job-queue.service';
 import { AgentRunAbortedError } from './run-aborted.error';
 import { RunCancellationToken } from './run-cancellation-token';
 import { RunExecutionScope } from './run-execution.scope';
@@ -23,6 +25,7 @@ import type {
   SessionRunSupersedeEvent,
   SupersedeReason,
 } from './session-run.types';
+import type { ApprovalResumeSnapshot } from '../approval/approval-resume-snapshot.types';
 
 type ActiveRunHandle = {
   runId: number;
@@ -64,6 +67,13 @@ export class SessionRunCoordinator implements OnModuleInit {
       ),
     )
     private readonly launcher: AgentRunLauncher,
+    @Optional()
+    @Inject(
+      forwardRef(
+        () => require('./session-run-job-queue.service').SessionRunJobQueueService,
+      ),
+    )
+    private readonly jobQueue?: SessionRunJobQueueService,
   ) {}
 
   onModuleInit(): void {
@@ -90,12 +100,14 @@ export class SessionRunCoordinator implements OnModuleInit {
     const state = this.sessions.get(sessionId);
     const remoteActive = await this.runState.getActiveSnapshot(sessionId);
     const localActive = state?.active;
-    const redisQueueLen = await this.runState.queueLength(sessionId);
+    const remoteQueueLen = this.useBullMq()
+      ? await this.jobQueue!.countSession(sessionId)
+      : 0;
     return {
       generation: this.getGeneration(sessionId),
       activeRunId: localActive?.runId ?? remoteActive?.runId ?? null,
       activeTurnId: localActive?.turnId ?? remoteActive?.turnId ?? null,
-      pendingJobCount: (state?.pending.length ?? 0) + redisQueueLen,
+      pendingJobCount: (state?.pending.length ?? 0) + remoteQueueLen,
       redisBacked: this.runState.isRedisBacked(),
     };
   }
@@ -156,6 +168,9 @@ export class SessionRunCoordinator implements OnModuleInit {
       }
     }
     await this.runState.evictSession(sessionId);
+    if (this.useBullMq()) {
+      await this.jobQueue!.clearSession(sessionId);
+    }
     this.runEvents.purgeReplayForSession(sessionId);
   }
 
@@ -252,19 +267,71 @@ export class SessionRunCoordinator implements OnModuleInit {
     };
   }
 
+  /** BullMQ worker 或本进程 drain 消费单条 job。 */
+  async processQueuedJob(job: RunJob): Promise<void> {
+    const sessionId = job.sessionId;
+    await this.syncGenerationFromStore(sessionId);
+    const state = this.getState(sessionId);
+    const generation = state.generation;
+    const token = new RunCancellationToken();
+    const supersedeReason = state.lastSupersedeReason;
+    state.draining = {
+      userId: job.userId,
+      generation,
+      token,
+    };
+    const scope = this.createScope(job, generation, token, supersedeReason);
+    try {
+      await this.launcher.execute(job, scope);
+    } catch (error) {
+      if (error instanceof AgentRunAbortedError) {
+        return;
+      }
+      this.logger.warn(
+        `session run job failed sessionId=${sessionId} jobId=${job.jobId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    } finally {
+      state.draining = null;
+    }
+  }
+
+  /** 收件箱 confirm：入队 write_confirm（携带快照），与会话内 confirm 共用队列语义。 */
+  async enqueueApprovalInboxResumeFromSnapshot(input: {
+    userId: number;
+    sessionId: string;
+    appClientId: number;
+    pageContext?: RunJob['pageContext'];
+    snapshot: ApprovalResumeSnapshot;
+    approvalRequestId: number;
+  }): Promise<number> {
+    const job = this.buildJob({
+      kind: 'write_confirm',
+      sessionId: input.sessionId,
+      userId: input.userId,
+      appClientId: input.appClientId,
+      input: '',
+      pageContext: input.pageContext ?? null,
+    });
+    job.approvalInboxSnapshot = input.snapshot;
+    job.approvalRequestId = input.approvalRequestId;
+    return this.enqueue(job, 'queue');
+  }
+
   async enqueue(job: RunJob, policy: RunEnqueuePolicy): Promise<number> {
     await this.syncGenerationFromStore(job.sessionId);
     if (policy === 'supersede') {
       await this.supersede(job.sessionId, job.userId, 'user_message');
       await this.writeConfirmation.clear(job.sessionId);
     }
-    if (this.runState.isRedisBacked()) {
-      await this.runState.pushJob(job.sessionId, job);
+    if (this.useBullMq()) {
+      await this.jobQueue!.enqueue(job);
     } else {
       const state = this.getState(job.sessionId);
       state.pending.push(job);
+      void this.scheduleDrain(job.sessionId);
     }
-    void this.scheduleDrain(job.sessionId);
     return this.getState(job.sessionId).generation;
   }
 
@@ -284,12 +351,14 @@ export class SessionRunCoordinator implements OnModuleInit {
       };
     }
 
-    const redisQueueLen = await this.runState.queueLength(sessionId);
+    const remoteQueueLen = this.useBullMq()
+      ? await this.jobQueue!.countSession(sessionId)
+      : 0;
     const hadRunnableWork =
       active != null ||
       state.draining != null ||
       state.pending.length > 0 ||
-      redisQueueLen > 0;
+      remoteQueueLen > 0;
     if (!hadRunnableWork) {
       return {
         superseded: false,
@@ -412,7 +481,10 @@ export class SessionRunCoordinator implements OnModuleInit {
       state.draining.token.abort(reason);
     }
     state.pending = [];
-    await this.runState.clearQueue(sessionId);
+    if (this.useBullMq()) {
+      await this.jobQueue!.clearSession(sessionId);
+    }
+    await this.runState.clearLegacySessionQueue(sessionId);
     const next = await this.runState.incrementGeneration(sessionId);
     state.generation = next;
     this.runEvents.purgeReplayForSession(sessionId);
@@ -441,11 +513,18 @@ export class SessionRunCoordinator implements OnModuleInit {
     return state;
   }
 
+  private useBullMq(): boolean {
+    return this.jobQueue?.isEnabled() === true;
+  }
+
   private scheduleDrain(sessionId: string): void {
     void this.tryStartDrain(sessionId);
   }
 
   private async tryStartDrain(sessionId: string): Promise<void> {
+    if (this.useBullMq()) {
+      return;
+    }
     const state = this.getState(sessionId);
     if (state.drainingLock) {
       return;
@@ -477,59 +556,28 @@ export class SessionRunCoordinator implements OnModuleInit {
   }
 
   private async retryDrainIfQueued(sessionId: string): Promise<void> {
-    const redisLen = await this.runState.queueLength(sessionId);
+    if (this.useBullMq()) {
+      return;
+    }
     const localLen = this.sessions.get(sessionId)?.pending.length ?? 0;
-    if (redisLen > 0 || localLen > 0) {
+    if (localLen > 0) {
       void this.scheduleDrain(sessionId);
     }
   }
 
   private async drain(sessionId: string): Promise<void> {
+    if (this.useBullMq()) {
+      return;
+    }
     await this.syncGenerationFromStore(sessionId);
     const state = this.getState(sessionId);
     while (true) {
       await this.syncGenerationFromStore(sessionId);
-      const job = this.runState.isRedisBacked()
-        ? await this.runState.popJob(sessionId)
-        : state.pending.shift();
+      const job = state.pending.shift();
       if (!job) {
         break;
       }
-      if (this.runState.isRedisBacked()) {
-        const renewed = await this.runState.renewDrainLock(sessionId);
-        if (!renewed) {
-          await this.runState.pushJob(sessionId, job);
-          break;
-        }
-      }
-      const generation = state.generation;
-      const token = new RunCancellationToken();
-      const supersedeReason = state.lastSupersedeReason;
-      state.draining = {
-        userId: job.userId,
-        generation,
-        token,
-      };
-      const scope = this.createScope(
-        job,
-        generation,
-        token,
-        supersedeReason,
-      );
-      try {
-        await this.launcher.execute(job, scope);
-      } catch (error) {
-        if (error instanceof AgentRunAbortedError) {
-          continue;
-        }
-        this.logger.warn(
-          `session run job failed sessionId=${sessionId} jobId=${job.jobId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      } finally {
-        state.draining = null;
-      }
+      await this.processQueuedJob(job);
     }
   }
 }

@@ -55,18 +55,6 @@ enum IntegrationAuthMode {
   USER_PREFERRED
 }
 
-/// 前端 Host Tool 暴露方式（执行仍在浏览器；DB 仅存元数据）。
-enum HostToolExposure {
-  /// 仅登记；暂不参与 completed / LLM
-  CATALOG
-  /// mutation 成功后可在 host_action 中引用（未来 hostTool 字段）
-  ON_COMPLETE
-  /// Plan 绑定后可注入 LLM（host_tool / host_tools 段）
-  LLM
-  /// 完成通知与 LLM 调用均可
-  BOTH
-}
-
 /// Skill 在何种 Plan 场景下关联 Host Tool。
 enum HostToolSkillTrigger {
   /// Plan deliverable=mutation 且成功后可引用
@@ -105,6 +93,9 @@ model User {
   llmModelConfigs  UserLlmModelConfig[]
   userApps         UserApp[]
   userIntegrations UserIntegration[]
+  pageActionRuns   PageActionRun[]
+  approvalsInitiated ApprovalRequest[] @relation("ApprovalInitiator")
+  approvalsToApprove ApprovalRequest[] @relation("ApprovalApprover")
 }
 
 model Role {
@@ -156,6 +147,11 @@ model AppClient {
   promptTemplates PromptTemplate[]
   hostPages       HostPage[]
   hostTools       HostTool[]
+  pageActions     PageAction[]
+  pageActionRuns  PageActionRun[]
+  workflows       Workflow[]
+  skills          Skill[]
+  approvalRequests ApprovalRequest[]
 }
 
 model LlmModelConfig {
@@ -315,6 +311,7 @@ model Tool {
   schema         Json // 参数结构
   skillTools     SkillTool[]
   agentTools     AgentTool[]
+  workflowTools  WorkflowTool[]
   inputSchema    Json
   outputSchema   Json?
   /// 工具响应裁剪与字段语义（coreFields / optionalFields / arrayLimits）
@@ -376,12 +373,12 @@ model UserIntegration {
   @@index([integrationId])
 }
 
-/// Agent 专属技能包：意图命中时注入 prompt；SkillTool 须为 AgentTool 子集（gate），不替代 RoleTool 授权。
+/// App 级技能包：意图命中时注入 prompt；SkillTool 为 App 候选池子集（gate），不替代 RoleTool 授权。
 model Skill {
   id            Int      @id @default(autoincrement())
-  agentId       Int
+  appClientId   Int
   name          String
-  /// 跨 Agent 对齐的能力键（可选）；供后续 Role 按 capability 授权。
+  /// 跨 Agent 对齐的能力键（可选）；供 Role 按 capability 授权。
   capabilityKey String?
   description   String?
   prompt        String   @db.Text
@@ -392,14 +389,35 @@ model Skill {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  agent      Agent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  skillTools SkillTool[]
-  skillHostTools SkillHostTool[]
-  roleSkills RoleSkill[]
+  workflowId         Int?
+  workflowVersion    Int?
+  workflowOverrides  Json?
+  workflow           Workflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
 
-  @@unique([agentId, name])
-  @@unique([agentId, capabilityKey])
-  @@index([agentId, isActive])
+  appClient    AppClient     @relation(fields: [appClientId], references: [id], onDelete: Cascade)
+  agentSkills  AgentSkill[]
+  skillTools   SkillTool[]
+  skillHostTools SkillHostTool[]
+  roleSkills   RoleSkill[]
+
+  @@unique([appClientId, name])
+  @@unique([appClientId, capabilityKey])
+  @@index([appClientId, isActive])
+  @@index([workflowId])
+}
+
+/// Agent 可见 Skill 白名单（收紧模式）；默认共享 App 级 Skill 库时可为空。
+model AgentSkill {
+  id      Int @id @default(autoincrement())
+  agentId Int
+  skillId Int
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, skillId])
+  @@index([agentId])
+  @@index([skillId])
 }
 
 /// Role 可用的 Skill 白名单（可选；与 RoleTool 并列，不间接授权 Tool）。
@@ -471,11 +489,17 @@ model Agent {
   systemPrompt   String
   maxSteps       Int      @default(8)
   enableToolCall Boolean  @default(true)
+  /// true：仅 AgentTool 白名单内 HTTP Tool 进入候选池；false 且白名单为空时用 App 全集。
+  restrictTools      Boolean @default(false)
+  /// true：仅 AgentHostTool 白名单内 Host Tool 进入候选池。
+  restrictHostTools  Boolean @default(false)
+  /// true：仅 AgentSkill 白名单内 Skill 可见；false 且白名单为空时用 App 全集。
+  restrictSkills     Boolean @default(false)
   config         Json?
   createdAt      DateTime @default(now())
 
-  appClient    AppClient     @relation(fields: [appClientId], references: [id])
-  skills       Skill[]
+  appClient       AppClient       @relation(fields: [appClientId], references: [id])
+  agentSkills     AgentSkill[]
   agentRuns       AgentRun[]
   agentTools      AgentTool[]
   agentHostTools  AgentHostTool[]
@@ -661,8 +685,7 @@ model HostTool {
   description    String           @db.Text
   /// 参数 JSON Schema（供 LLM 与前端校验）
   argsSchema     Json
-  exposure       HostToolExposure @default(CATALOG)
-  /// ON_COMPLETE / BOTH 时：参数模板，如 { "entityId": "$entity.id", "entityType": "$entity.type" }
+  /// 完成通知等场景的参数模板，如 { "entityId": "$entity.id" }
   argsTemplate   Json?
   sortOrder      Int              @default(0)
   isActive       Boolean          @default(true)
@@ -676,6 +699,8 @@ model HostTool {
   agentHostTools AgentHostTool[]
   skillHostTools SkillHostTool[]
   roleHostTools  RoleHostTool[]
+  pageActions    PageAction[]
+  workflowHostTools WorkflowHostTool[]
 
   @@unique([appClientId, definitionKey])
   @@unique([appClientId, name])
@@ -732,5 +757,246 @@ model RoleHostTool {
 
   @@unique([roleId, hostToolId])
   @@index([roleId])
+  @@index([hostToolId])
+}
+
+/// Page Bot 交付方式：仅 inline_stream（sync 已废弃，DB 枚举保留兼容）。
+enum PageActionDelivery {
+  inline_stream
+  sync
+}
+
+enum PageActionRunStatus {
+  running
+  awaiting_approval
+  completed
+  failed
+  cancelled
+}
+
+/// 页内 one-shot 能力（绑定 HostTool；后台注册后 C 端方可 invoke）。
+model PageAction {
+  id            Int                @id @default(autoincrement())
+  appClientId   Int
+  /// App 内稳定键，如 demo-playground.fill_draft
+  actionKey     String
+  name          String
+  description   String?
+  hostToolId    Int
+  /// 与 pageContext.page 对齐；空表示通用/不限页
+  pageScope     String?
+  systemPrompt  String             @db.Text
+  defaultDelivery PageActionDelivery @default(inline_stream)
+  allowCustomInstruction Boolean   @default(true)
+  isActive      Boolean            @default(true)
+  sortOrder     Int                @default(0)
+  config        Json?
+  /// 仅从 Skill 导入时的追溯；运行时不用
+  sourceSkillId Int?
+  workflowId         Int?
+  workflowVersion    Int?
+  workflowOverrides  Json?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  appClient AppClient       @relation(fields: [appClientId], references: [id], onDelete: Cascade)
+  hostTool  HostTool        @relation(fields: [hostToolId], references: [id], onDelete: Restrict)
+  workflow  Workflow?       @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  runs      PageActionRun[]
+
+  @@unique([appClientId, actionKey])
+  @@index([appClientId, isActive])
+  @@index([appClientId, pageScope, isActive])
+  @@index([hostToolId])
+  @@index([workflowId])
+}
+
+/// 每次 PageAction invoke 的审计记录（无 Session / AgentRun）。
+model PageActionRun {
+  id               Int                  @id @default(autoincrement())
+  pageActionId     Int
+  appClientId      Int
+  userId           Int
+  delivery         PageActionDelivery
+  status           PageActionRunStatus  @default(running)
+  instruction      String?              @db.Text
+  context          Json?
+  pageContext      Json?
+  fillText         String?              @db.Text
+  dslOutcome       String?
+  errorCode        String?
+  errorMessage     String?
+  streamId         String?
+  model            String?
+  promptTokens     Int?
+  completionTokens Int?
+  durationMs       Int?
+  idempotencyKey   String?
+  clientActionId   String?
+  /// 运行步骤审计（lifecycle / llm / dsl），供 B 端后台展示。
+  steps            Json                 @default("[]")
+  workflowId       Int?
+  workflowVersion  Int?
+  workflowRun      Json?
+  /// 与 host_action SSE generation 对齐；默认等于 run id。
+  generation       Int                  @default(1)
+  createdAt        DateTime             @default(now())
+  finishedAt       DateTime?
+
+  pageAction PageAction @relation(fields: [pageActionId], references: [id], onDelete: Cascade)
+  appClient  AppClient  @relation(fields: [appClientId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([pageActionId, createdAt])
+  @@index([appClientId, userId, createdAt])
+  @@index([appClientId, idempotencyKey])
+
+  approvalRequest ApprovalRequest?
+}
+
+/// 审批请求来源（触发链路）。
+enum ApprovalSource {
+  chat
+  page_action
+  webhook
+}
+
+/// 审批请求状态机。
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+  expired
+  cancelled
+}
+
+/// 统一审批请求：chat / pageAction / webhook 共享的待审批 SSOT（持久、可跨进程恢复）。
+model ApprovalRequest {
+  id              Int            @id @default(autoincrement())
+  appClientId     Int
+  source          ApprovalSource
+  status          ApprovalStatus @default(pending)
+  /// 谁/什么触发（webhook 无人类发起人时为 null）——审计用，非授权判定字段
+  initiatorUserId Int?
+  /// 谁必须审批（权威决策字段）：chat/pageAction = 发起人；webhook = workflow 配置指定
+  approverUserId  Int
+  workflowId      Int
+  workflowVersion Int
+  /// 挂起节点
+  nodeId          String
+  /// C 端展示用（标题 / 摘要 / 待写参数预览），不含敏感全量
+  title           String
+  summary         String?        @db.Text
+  previewBlocks   Json?
+  /// 通用恢复快照（ApprovalResumeSnapshot 序列化）
+  resumeSnapshot  Json
+  /// 关联触发实体（可选，用于回链与幂等）
+  pageActionRunId Int?           @unique
+  sessionId       String?
+  /// 幂等 & 并发确认保护
+  idempotencyKey  String?
+  decidedByUserId Int?
+  decidedAt       DateTime?
+  decisionNote    String?        @db.Text
+  expiresAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  appClient     AppClient      @relation(fields: [appClientId], references: [id], onDelete: Cascade)
+  initiator     User?          @relation("ApprovalInitiator", fields: [initiatorUserId], references: [id], onDelete: SetNull)
+  approver      User           @relation("ApprovalApprover", fields: [approverUserId], references: [id], onDelete: Cascade)
+  workflow      Workflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  pageActionRun PageActionRun? @relation(fields: [pageActionRunId], references: [id], onDelete: SetNull)
+
+  @@index([appClientId, approverUserId, status, createdAt])
+  @@index([appClientId, status])
+  @@index([workflowId])
+}
+
+enum WorkflowProfile {
+  chat_skill
+  page_action
+  shared
+}
+
+enum WorkflowDeliverable {
+  analysis
+  list
+  detail
+  mutation
+  answer
+}
+
+/// AppClient 级可复用 Workflow 资产（动作节点编排）。
+model Workflow {
+  id            Int                 @id @default(autoincrement())
+  appClientId   Int
+  workflowKey   String
+  name          String
+  description   String?
+  goal          String?             @db.Text
+  profile       WorkflowProfile
+  deliverable   WorkflowDeliverable @default(answer)
+  nodes         Json
+  version       Int                 @default(1)
+  constraints   Json                @default("[]")
+  isActive      Boolean             @default(true)
+  sortOrder     Int                 @default(0)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  appClient         AppClient          @relation(fields: [appClientId], references: [id], onDelete: Cascade)
+  workflowTools     WorkflowTool[]
+  workflowHostTools WorkflowHostTool[]
+  revisions         WorkflowRevision[]
+  skills            Skill[]
+  pageActions       PageAction[]
+  approvalRequests  ApprovalRequest[]
+
+  @@unique([appClientId, workflowKey])
+  @@index([appClientId, isActive])
+}
+
+model WorkflowRevision {
+  id          Int                 @id @default(autoincrement())
+  workflowId  Int
+  version     Int
+  nodes       Json
+  deliverable WorkflowDeliverable
+  constraints Json                @default("[]")
+  changeNote  String?
+  createdAt   DateTime            @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, version])
+  @@index([workflowId, version])
+}
+
+model WorkflowTool {
+  id         Int     @id @default(autoincrement())
+  workflowId Int
+  toolId     Int
+  isRequired Boolean @default(false)
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  tool     Tool     @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, toolId])
+  @@index([workflowId])
+  @@index([toolId])
+}
+
+model WorkflowHostTool {
+  id         Int     @id @default(autoincrement())
+  workflowId Int
+  hostToolId Int
+  isRequired Boolean @default(false)
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  hostTool HostTool @relation(fields: [hostToolId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, hostToolId])
+  @@index([workflowId])
   @@index([hostToolId])
 }

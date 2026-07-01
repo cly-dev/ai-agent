@@ -16,7 +16,6 @@ import {
   sessionRunQueueKey,
 } from '../redis/redis-keys';
 import { RedisConnectionService } from '../redis/redis-connection.service';
-import type { RunJob } from '../../session-run/session-run.types';
 import type {
   SessionRunActiveSnapshot,
   SessionRunSupersedeEvent,
@@ -200,56 +199,8 @@ export class SessionRunStateStore implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async pushJob(sessionId: string, job: RunJob): Promise<void> {
-    const client = this.redis.getClient();
-    if (!client) {
-      return;
-    }
-    try {
-      await client.rpush(sessionRunQueueKey(sessionId), JSON.stringify(job));
-    } catch (error) {
-      this.logger.warn(
-        `session run queue push failed sessionId=${sessionId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
-  async popJob(sessionId: string): Promise<RunJob | null> {
-    const client = this.redis.getClient();
-    if (!client) {
-      return null;
-    }
-    try {
-      const raw = await client.lpop(sessionRunQueueKey(sessionId));
-      if (!raw) {
-        return null;
-      }
-      return JSON.parse(raw) as RunJob;
-    } catch (error) {
-      this.logger.warn(
-        `session run queue pop failed sessionId=${sessionId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return null;
-    }
-  }
-
-  async queueLength(sessionId: string): Promise<number> {
-    const client = this.redis.getClient();
-    if (!client) {
-      return 0;
-    }
-    try {
-      return await client.llen(sessionRunQueueKey(sessionId));
-    } catch {
-      return 0;
-    }
-  }
-
-  async clearQueue(sessionId: string): Promise<void> {
+  /** 清理旧版 Redis LIST 队列 key（BullMQ 迁移后仅作遗留 key 回收）。 */
+  async clearLegacySessionQueue(sessionId: string): Promise<void> {
     const client = this.redis.getClient();
     if (!client) {
       return;

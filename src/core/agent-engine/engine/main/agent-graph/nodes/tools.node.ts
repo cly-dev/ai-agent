@@ -39,8 +39,19 @@ import {
   applyPlanDraftToWriteToolCalls,
   resolvePlanSubmitTextForWrite,
 } from '../../plan-present/plan-draft-reply.util';
-import { buildReadToolObservationMatcher } from '../../plan-present/plan-compose-write.util';
-import { resolveTaskPlanAdvance } from '../../plan/task-plan.util';
+import {
+  buildReadToolObservationMatcher,
+  tryInterceptComposeMutationToolCalls,
+} from '../../plan-present/plan-compose-write.util';
+import {
+  isComposeMutationParameterStep,
+  resolvePlanExecutionStep,
+  resolveTaskPlanAdvance,
+} from '../../plan/task-plan.util';
+import { applyComposeMutationProgress, applyPlanAdvanceAsWorkflowProgress } from '../../../../../workflow/workflow-plan-transition.util';
+import { resolveWriteConfirmationPolicy } from '../../../../../workflow/workflow-mutation-write-gate.util';
+import { toolRequiresWriteConfirmation } from '../../../../../risk/risk-level.util';
+import { logWorkflowDebug } from '../../../../../workflow/trace/workflow-debug.util';
 import type { AgentRunStep, GraphToolCall, ToolObservation } from '../../types/agent-engine.types';
 
 export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
@@ -229,11 +240,29 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
               onToolDebugLog: (message) => deps.logger.log(message),
             });
 
+          const writePolicy = resolveWriteConfirmationPolicy({
+            workflowRun: state.workflowRun,
+            workflowNodeDefs: state.workflowNodeDefs,
+            taskPlan: state.taskPlan,
+            approvedWriteToolNames: ctx.input.approvedWriteToolNames,
+          });
+          const bypassApprovedNames =
+            writePolicy.kind === 'bypass_after_workflow_await'
+              ? state.scopedTools
+                  .filter((tool) =>
+                    toolRequiresWriteConfirmation({
+                      riskLevel: tool.riskLevel,
+                      agentMetadata: tool.agentMetadata,
+                    }),
+                  )
+                  .map((tool) => tool.name)
+              : ctx.input.approvedWriteToolNames;
+
           const { safeCalls, writeCallsNeedingConfirm } =
             partitionToolCallsByWriteConfirmation(
               pendingToolCalls,
               state.scopedTools,
-              ctx.input.approvedWriteToolNames,
+              bypassApprovedNames,
             );
           const writeCallsForGate = filterSchemaValidWriteConfirmationCalls(
             writeCallsNeedingConfirm,
@@ -260,10 +289,76 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
             };
           }
 
+          if (
+            writePolicy.kind === 'defer_to_workflow_await' &&
+            writeCallsNeedingConfirm.length > 0
+          ) {
+            const { step: executionStep, workflowNodeAction } =
+              resolvePlanExecutionStep({
+                taskPlan: state.taskPlan,
+                workflowRun: state.workflowRun,
+                workflowNodeDefs: state.workflowNodeDefs,
+              });
+            if (
+              state.taskPlan &&
+              executionStep &&
+              isComposeMutationParameterStep(executionStep, workflowNodeAction)
+            ) {
+              const intercept = tryInterceptComposeMutationToolCalls({
+                toolCalls: pendingToolCalls,
+                taskPlan: state.taskPlan,
+                scopedTools: state.scopedTools,
+                observations: allToolObservations(state),
+                pageContext: state.pageContext ?? null,
+                planStepId: executionStep.id,
+                workflowRun: state.workflowRun,
+                workflowNodeDefs: state.workflowNodeDefs,
+              });
+              if (intercept.kind === 'applied') {
+                const progressed = applyComposeMutationProgress({
+                  taskPlan: state.taskPlan,
+                  workflowRun: state.workflowRun,
+                  workflowNodeDefs: state.workflowNodeDefs,
+                  workflowAwaitingReact: state.workflowAwaitingReact,
+                  planStepId: executionStep.id,
+                  composeObservation: intercept.composeObservation,
+                });
+                deps.logger.log(
+                  `compose_mutation intercept in tools.node runId=${ctx.input.runId} tool=${intercept.preparedCall.name}`,
+                );
+                return {
+                  ...state,
+                  workflowRun: progressed.workflowRun ?? state.workflowRun,
+                  workflowAwaitingReact:
+                    progressed.workflowAwaitingReact ??
+                    state.workflowAwaitingReact,
+                  toolObservations: mergeRunRoundObservations(state, [
+                    intercept.composeObservation,
+                  ]),
+                  taskPlan: progressed.taskPlan,
+                  pendingToolCalls: [],
+                  lastToolRoundMeta: null,
+                  pagedListHttpUsed: pagedGatherHttpBudget.used,
+                };
+              }
+            }
+            deps.logger.warn(
+              `write gate deferred: premature write before await_user_confirm runId=${ctx.input.runId} tools=${writeCallsNeedingConfirm.map((call) => call.name).join(',')}`,
+            );
+            return {
+              ...state,
+              pendingToolCalls: [],
+              lastToolRoundMeta: null,
+              pagedListHttpUsed: pagedGatherHttpBudget.used,
+            };
+          }
+
           if (writeCallsForGate.length > 0) {
             let nextSteps = [...state.steps];
             let observations = [...allToolObservations(state)];
             let taskPlan = state.taskPlan ?? null;
+            let workflowRunForContext = state.workflowRun;
+            let workflowAwaitingReactForContext = state.workflowAwaitingReact;
 
             if (safeCalls.length > 0) {
               const safeRound = await expandPagedListGather({
@@ -300,8 +395,23 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
                   toolCalls: safeCalls,
                   skillConfig: state.activeSkillConfig,
                 });
-                if (advance) {
-                  taskPlan = advance.updatedPlan;
+                if (advance && taskPlan) {
+                  const planBefore = taskPlan;
+                  const progressed = applyPlanAdvanceAsWorkflowProgress({
+                    taskPlan,
+                    workflowRun: workflowRunForContext,
+                    workflowNodeDefs: state.workflowNodeDefs,
+                    workflowAwaitingReact: workflowAwaitingReactForContext,
+                    planBefore,
+                    planAdvance: advance,
+                  });
+                  taskPlan = (progressed.taskPlan as typeof taskPlan) ?? taskPlan;
+                  if (progressed.workflowRun) {
+                    workflowRunForContext = progressed.workflowRun;
+                  }
+                  if (progressed.workflowAwaitingReact !== undefined) {
+                    workflowAwaitingReactForContext = progressed.workflowAwaitingReact;
+                  }
                 }
               }
 
@@ -385,8 +495,20 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
                 pagedListHttpUsed: pagedGatherHttpBudget.used,
                 confirmedPreviewSerialized,
                 pageContext: state.pageContext ?? null,
+                workflowRun: workflowRunForContext ?? null,
+                workflowNodeDefs: state.workflowNodeDefs,
+                workflowNodeOutputs: state.workflowNodeOutputs,
+                workflowAwaitingReact: workflowAwaitingReactForContext === true,
               },
               createdAt: new Date().toISOString(),
+            });
+            logWorkflowDebug('write_confirm_gate', {
+              runId: ctx.input.runId,
+              sessionId: ctx.input.sessionId,
+              turnId: ctx.input.turnId,
+              toolNames: writeCallsForGate.map((call) => call.name),
+              workflowRun: state.workflowRun ?? null,
+              hasWorkflowNodeDefs: (state.workflowNodeDefs?.length ?? 0) > 0,
             });
             const confirmationPayload = {
               source: 'agent-run' as const,
@@ -448,6 +570,8 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
               steps: nextSteps,
               toolObservations: mergeRunRoundObservations(state, observations),
               taskPlan,
+              workflowRun: workflowRunForContext,
+              workflowAwaitingReact: workflowAwaitingReactForContext,
               pendingToolCalls: [],
               awaitingWriteConfirmation: true,
               finalOutput:

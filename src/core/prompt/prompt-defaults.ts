@@ -256,7 +256,8 @@ Output strict JSON only:
   "reason": string,
   "suggestedSkillId": number | null,
   "pageContextApplies": boolean,
-  "pageContextTaskKind": "analyze" | "answer" | "mutation" | "none"
+  "pageContextTaskKind": "analyze" | "answer" | "none",
+  "writeChannel": "none" | "http" | "host"
 }
 
 ## Routes
@@ -264,33 +265,48 @@ Output strict JSON only:
 | route | When |
 |-------|------|
 | direct_answer | Chit-chat, general knowledge, or topics unrelated to current page skills/host tools. Being on a business page does NOT make every message a page task. |
-| on_page_task | User clearly wants a **host/browser action** on the current page (fill draft, sync UI) via availableHostTools or pageHostSkillCandidate. **NOT** for analyzing inline page entity text — use orchestrated_task + pageContextTaskKind=analyze instead. |
-| orchestrated_task | HTTP tools, skill orchestration, **analyzing/answering inline page entity content**, mutation via APIs, multi-step work, or ambiguous skill choice. |
+| on_page_task | User clearly wants a **host/browser action** (fill draft, sync UI) via availableHostTools or pageHostSkillCandidate. **NOT** for HTTP API submit/reply — use orchestrated_task + writeChannel=http. |
+| orchestrated_task | HTTP tools, skill orchestration, **analyzing/answering inline page entity content**, API mutation (submit/reply/remark), multi-step work, or ambiguous skill choice. |
 
-## pageContextApplies
+## pageContextApplies (read path only)
 
-Set true when the user refers to the CURRENT page entity or "this/current context" (e.g. analyze/summarize/reply to the review shown on the page). Use pageContextHint.dataSufficiency — when inlineContentKinds is non-empty and the user wants analysis/answer about that entity, pageContextApplies should be true.
+Set true when the user wants to **read/consume** CURRENT page entity data (analyze/summarize/answer using inline content on the page). Use pageContextHint.dataSufficiency — when inlineContentKinds is non-empty and the user wants analysis/answer about that entity, pageContextApplies should be true.
 
 Set false when the user asks for unrelated data, global search, another entity, or smalltalk even if pageContext is present.
 
-## pageContextTaskKind
+**pageContextApplies does NOT gate write actions.**
 
-Only meaningful when pageContextApplies=true; otherwise use "none".
+## pageContextTaskKind (read path only)
+
+How the user wants to use **inline page data** when pageContextApplies=true. Otherwise use "none".
 
 | kind | When |
 |------|------|
 | analyze | User wants analysis/summary/commentary of inline page entity content (no write/submit). |
 | answer | User wants a direct answer using inline page data without server mutation. |
-| mutation | User wants reply/submit/update/write on the current entity — NOT a pure analysis shortcut. |
-| none | pageContextApplies is false. |
+| none | Not consuming inline page data for read. |
+
+## writeChannel (write path — primary)
+
+| channel | When |
+|---------|------|
+| none | Pure read/analysis/smalltalk; no submit/fill/reply/mutation. |
+| http | User wants **API mutation**: submit reply/remark, update record via HTTP tools, confirm-and-write workflows. Examples: 回复评论, 提交, remark, 更新订单. Use route=orchestrated_task. |
+| host | User wants **browser/host action**: fill form draft, push to page via host tool, stream into UI. Use route=on_page_task when aligned with pageHostSkillCandidate. |
+
+Rules:
+- API reply/submit/remark/edit via backend tools → writeChannel=http (NOT host).
+- Fill draft / push to page / host tool stream → writeChannel=host.
+- requestedSkillExecutionChannels.httpMutation=true and hostPush=false → prefer writeChannel=http for submit/reply intents.
+- requestedSkillExecutionChannels.hostPush=true → writeChannel=host only when user wants page fill/push.
 
 ## Rules
 - Read userMessage first. intentRecallMatches only narrow HTTP tools — they do NOT prove the user wants a page workflow.
-- pageHostSkillCandidate means ONE skill matches page host tools — use on_page_task ONLY when user intent aligns with that skill's purpose (host/browser action), not for pure analysis of inline page data.
+- pageHostSkillCandidate: use on_page_task + writeChannel=host ONLY when user intent is host/browser action.
 - When pageContextHint.dataSufficiency=inline and pageContextTaskKind=analyze or answer, route MUST be orchestrated_task (not on_page_task).
 - When unsure between on_page_task and orchestrated_task, prefer orchestrated_task.
 - When message is clearly off-domain (e.g. unrelated smalltalk), use direct_answer — even if requestedSkill is set.
-- requestedSkill: user explicitly chose a skill in UI. Still classify route from userMessage; use requestedSkill.id for suggestedSkillId when route=on_page_task.
+- requestedSkill: user explicitly chose a skill in UI. Use requestedSkillExecutionChannels as capability hint; still classify writeChannel from userMessage.
 - suggestedSkillId: requestedSkill.id, pageHostSkillCandidate.id, or availableSkills[].id when route=on_page_task; otherwise null.
 - reason: short English (<=120 chars) for observability.`,
 
@@ -396,18 +412,14 @@ ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
-  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_REASON_HOST_FILL]: `你是 Plan reason 步的 Host Tool 机器层产参模块。根据 user 消息中的 observations、plan_context 与 host_tools，为后续浏览器 Host Tool 步产出参数。
+  [PROMPT_KEYS.AGENT_SUMMARIZE_PLAN_REASON_HOST_FILL_STREAM]: `你是 Plan reason 步的 Host Tool 机器层正文生成模块。根据 user 消息中的 observations、plan_context 与 host_tools，为后续浏览器 Host Tool 步生成可直接写入表单的正文。
 
 输出要求（硬性）：
-- 只输出一行合法 JSON，不要 Markdown，不要解释，不要代码围栏外的文字。
-- JSON 形状：{"fills":[{"tool":"<host_tool_name>","arguments":{...}}]}
-- fills[].tool 必须是 host_tools 列表中的 name。
-- fills[].arguments 必须满足对应工具的 argsSchema；只填业务所需字段，禁止多余键。
-- 正文类 Host Tool（如回复草稿）：arguments 中只放可直接写入表单/输入框的连续正文（通常 text 或 schema 规定的字符串字段）。
-- 禁止在 arguments 的任何字符串字段中包含：pipe 表格行、JSON 字符串化 observation、API 字段名清单、操作说明、确认提示、Markdown 标题。
-- 实体数据已在 observations / page_context 中：禁止把整行记录 echo 成 TSV；只生成目标工具需要的业务文案或参数。
-- 若 host_tools 含多个工具，仅为当前 plan 步需要的工具生成 fills（通常与 host_tools 列表一致）。
-- 使用与用户请求相同的语言书写正文类字段。`,
+- 只输出连续正文本身：不要 JSON，不要 Markdown，不要代码围栏，不要解释，不要标题。
+- 正文必须可直接填入 host_tools 中声明的字符串字段（如 text）。
+- 禁止输出：pipe 表格行、JSON、observation 原文、API 字段名、操作说明、确认提示、元说明套话。
+- 实体数据已在 observations / page_context 中：禁止 echo 整行 TSV 记录。
+- 使用与用户请求相同的语言。`,
 
   [PROMPT_KEYS.AGENT_READINESS_SLOT_CHECK]: `You are the turn readiness slot checker for a business agent.
 Given the user message, plan objective, required business field names, and optional session observation summary, decide whether the agent can proceed to tool execution WITHOUT guessing parameter values.
@@ -427,6 +439,18 @@ Rules:
 - Use hints provided; you may add a generic example format if param hints exist
 - Do not call tools; do not claim data was fetched
 - Single turn: polite, professional, same language as the user message
+${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
+
+  [PROMPT_KEYS.AGENT_RESPOND_SKILL_INTENT_MISMATCH]: `Generate a concise, friendly reply when the user selected a Skill that cannot fulfill their request (skill_intent_mismatch).
+${AGENT_SUMMARIZE_STREAMING_OUTPUT_ZH}
+Rules:
+- User message in user payload is the primary intent; requested Skill is only a capability preference
+- Explain briefly why the selected Skill does not match (use mismatchCode + requestedSkillName; do not invent tool names)
+- For write_intent_vs_http_only_skill: Skill is HTTP/query oriented; user asked for page fill/submit — suggest clearing Skill selection and resending, or picking a host-capable Skill
+- For write_intent_vs_no_host_skill: Skill has no host/page write tools — same guidance as above
+- Do NOT call tools; do NOT claim any action was executed
+- End with one clear next step (clear skillId and resend, or rephrase for the selected Skill)
+- Same language as the user message; polite, no blame
 ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 
   [PROMPT_KEYS.MEMORY_HISTORY_COMPRESSION]: `你是多轮对话历史压缩器。将较早的对话整理成简洁中文摘要，供后续轮次参考（注入 <session_history_summary>）。

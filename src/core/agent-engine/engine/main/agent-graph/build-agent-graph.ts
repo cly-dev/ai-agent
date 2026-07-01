@@ -1,8 +1,18 @@
 import { END, START, StateGraph } from '@langchain/langgraph';
 import { AgentRunStatus } from '../../../../../../generated/prisma/client';
 import type { SessionGoaPayload } from '../../../../memory/goa/session-goa.types';
+import { logWorkflowGraphBoot } from '../../../../workflow/trace/workflow-debug.util';
+import {
+  routeAfterExecuteNode,
+  routeAfterSummarizeWorkflowAxis,
+  routeAfterWorkflowAdvance,
+  routeAfterWorkflowReact,
+  routeAfterWorkflowInit,
+  routeResultCheckWorkflowAxis,
+  getCurrentWorkflowNode,
+} from '../../../../workflow/workflow-graph-routing.util';
 import { shouldRouteToRespond } from '../../turn/turn-graph.util';
-import { buildLegacyTurnExecutionContract } from '../../turn/turn-execution-contract.util';
+import { buildWriteConfirmResumeContract } from '../../turn/turn-execution-contract.util';
 import { shouldRouteGraphToTools } from '../../gather/paged-list-gather.util';
 import {
   planObservationBucketsFromState,
@@ -25,16 +35,24 @@ import {
 } from './runtime';
 import { createAgentGraphSummarizeHelpers } from './summarize';
 import type { AgentGraphNodeFn } from './types/graph.types';
-import { createPlanNode } from './nodes/plan.node';
 import { createIntentNode } from './nodes/intent.node';
 import { createTurnRouteNode } from './nodes/turn-route.node';
-import { createReadinessNode } from './nodes/readiness.node';
-import { createLlmNode } from './nodes/llm.node';
 import { createToolsNode } from './nodes/tools.node';
 import { createResultCheckNode } from './nodes/result-check.node';
 import { createSummarizeNode } from './nodes/summarize.node';
+import { createWorkflowInitNode } from './nodes/workflow-init.node';
+import { createExecuteNodeNode } from './nodes/execute-node.node';
+import { createWorkflowAdvanceNode } from './nodes/workflow-advance.node';
+import { createWorkflowReactNode } from './nodes/workflow-react.node';
 import type { RequestedSkillRunContext } from '../skill/requested-skill-run.service';
+import { bundleFromAllowedRunInput } from '../../turn/turn-scoped-tools.util';
 
+/**
+ * Chat LangGraph 主轴（9 个顶层节点）：
+ * intent → turnRoute → workflow_init → execute_node ↔ workflow_react → workflow_advance → summarize
+ * 旁路：tools / resultCheck（写确认 resume、summarize 续跑）
+ * plan / readiness / llm 不在顶层注册；plan 在 workflow_init 内，ReAct 在 workflow_react 内。
+ */
 function withRunCancellation(
   deps: AgentGraphDeps,
   input: AgentLangGraphRunInput,
@@ -57,10 +75,21 @@ function withRunCancellation(
   };
 }
 
+function resolveWorkflowEdge(route: string): string {
+  if (route === '__end__') {
+    return END;
+  }
+  return route;
+}
+
 export async function buildAndRunAgentGraph(
   deps: AgentGraphDeps,
   input: AgentLangGraphRunInput,
 ): Promise<AgentGraphState> {
+  logWorkflowGraphBoot({
+    runId: input.runId,
+    sessionId: input.sessionId,
+  });
   const requestedSkillCtx: RequestedSkillRunContext | null =
     input.requestedSkillId != null
       ? await deps.requestedSkillRun.loadRunContext({
@@ -125,9 +154,10 @@ export async function buildAndRunAgentGraph(
   const graph = new StateGraph(State)
     .addNode('intent', wrap(createIntentNode(bundle)))
     .addNode('turnRoute', wrap(createTurnRouteNode(bundle)))
-    .addNode('plan', wrap(createPlanNode(bundle)))
-    .addNode('readiness', wrap(createReadinessNode(bundle)))
-    .addNode('llm', wrap(createLlmNode(bundle)))
+    .addNode('workflow_init', wrap(createWorkflowInitNode(bundle)))
+    .addNode('execute_node', wrap(createExecuteNodeNode(bundle)))
+    .addNode('workflow_advance', wrap(createWorkflowAdvanceNode(bundle)))
+    .addNode('workflow_react', wrap(createWorkflowReactNode(bundle)))
     .addNode('tools', wrap(createToolsNode(bundle)))
     .addNode('resultCheck', wrap(createResultCheckNode(bundle)))
     .addNode('summarize', wrap(createSummarizeNode(bundle)))
@@ -136,10 +166,17 @@ export async function buildAndRunAgentGraph(
         if (shouldRouteToRespond(s)) {
           return 'summarize';
         }
+        if (s.workflowRun?.status === 'running' && s.workflowRun.currentNodeId) {
+          const current = getCurrentWorkflowNode(s);
+          if (
+            current?.status === 'pending' ||
+            current?.status === 'running'
+          ) {
+            return 'execute_node';
+          }
+          return 'workflow_advance';
+        }
         return 'resultCheck';
-      }
-      if (input.resumeFromLlm) {
-        return 'llm';
       }
       return 'intent';
     })
@@ -159,35 +196,20 @@ export async function buildAndRunAgentGraph(
       if (shouldRouteToRespond(s)) {
         return 'summarize';
       }
-      return 'plan';
+      return 'workflow_init';
     })
-    .addConditionalEdges('plan', (s: AgentGraphState) => {
-      if (s.finished) {
-        return END;
-      }
-      if (shouldRouteToRespond(s)) {
-        return 'summarize';
-      }
-      return 'readiness';
-    })
-    .addConditionalEdges('readiness', (s: AgentGraphState) => {
-      if (s.finished) {
-        return END;
-      }
-      if (shouldRouteToRespond(s)) {
-        return 'summarize';
-      }
-      return 'llm';
-    })
-    .addConditionalEdges('llm', (state: AgentGraphState) => {
-      if (state.finished) {
-        return END;
-      }
-      if (shouldRouteToRespond(state)) {
-        return 'summarize';
-      }
-      return 'resultCheck';
-    })
+    .addConditionalEdges('workflow_init', (s: AgentGraphState) =>
+      resolveWorkflowEdge(routeAfterWorkflowInit(s)),
+    )
+    .addConditionalEdges('execute_node', (s: AgentGraphState) =>
+      resolveWorkflowEdge(routeAfterExecuteNode(s)),
+    )
+    .addConditionalEdges('workflow_react', (s: AgentGraphState) =>
+      resolveWorkflowEdge(routeAfterWorkflowReact(s)),
+    )
+    .addConditionalEdges('workflow_advance', (s: AgentGraphState) =>
+      resolveWorkflowEdge(routeAfterWorkflowAdvance(s)),
+    )
     .addConditionalEdges('tools', (state: AgentGraphState) => {
       if (state.finished) {
         return END;
@@ -200,6 +222,26 @@ export async function buildAndRunAgentGraph(
       }
       if (shouldRouteToRespond(state)) {
         return 'summarize';
+      }
+      const workflowRoute = routeResultCheckWorkflowAxis(state);
+      if (workflowRoute) {
+        return workflowRoute;
+      }
+      if (state.workflowAwaitingReact) {
+        return 'workflow_react';
+      }
+      if (
+        state.workflowRun?.status === 'running' &&
+        state.workflowRun.currentNodeId
+      ) {
+        const current = getCurrentWorkflowNode(state);
+        if (
+          current?.status === 'pending' ||
+          current?.status === 'running'
+        ) {
+          return 'execute_node';
+        }
+        return 'workflow_advance';
       }
       if (
         shouldRouteGraphToTools({
@@ -216,27 +258,40 @@ export async function buildAndRunAgentGraph(
       if (state.iteration >= input.maxSteps) {
         return END;
       }
-      return 'llm';
+      return 'summarize';
     })
     .addConditionalEdges('summarize', (state: AgentGraphState) => {
-      if (state.finished || input.resumeFromWriteConfirm) {
+      if (state.finished) {
+        return END;
+      }
+      if (input.resumeFromWriteConfirm) {
+        if (
+          state.workflowRun?.status === 'running' &&
+          state.workflowRun.currentNodeId
+        ) {
+          return resolveWorkflowEdge(
+            routeAfterSummarizeWorkflowAxis(state, false),
+          );
+        }
         return END;
       }
       if (state.pendingToolCalls.length > 0) {
         return 'tools';
       }
-      return 'readiness';
+      return resolveWorkflowEdge(
+        routeAfterSummarizeWorkflowAxis(state, false),
+      );
     });
 
   const app = graph.compile();
-  const skipTurnRouteContract =
-    input.resumeFromLlm || input.resumeFromWriteConfirm
-      ? buildLegacyTurnExecutionContract(
-          input.resumeFromLlm
-            ? 'resume_from_llm'
-            : 'resume_from_write_confirm',
-        )
-      : null;
+  const skipTurnRouteContract = input.resumeFromWriteConfirm
+    ? buildWriteConfirmResumeContract('resume_from_write_confirm')
+    : null;
+  const allowedToolsBundle = bundleFromAllowedRunInput({
+    tools: input.tools,
+    langChainTools: input.langChainTools,
+    allowedToolIds: input.allowedToolIds,
+  });
   const defaultInitial: AgentGraphState = {
     iteration: 0,
     steps: [],
@@ -247,14 +302,8 @@ export async function buildAndRunAgentGraph(
     finalOutput: '',
     status: AgentRunStatus.running,
     finished: false,
-    scopedTools: requestedSkillCtx?.scoped.scopedTools ?? input.tools,
-    scopedLangChainTools:
-      requestedSkillCtx?.scoped.scopedLangChainTools ??
-      input.langChainTools.tools,
-    scopedToolBundle:
-      requestedSkillCtx?.scoped.scopedToolBundle ?? input.langChainTools,
-    scopedAllowedToolIds:
-      requestedSkillCtx?.scoped.scopedAllowedToolIds ?? input.allowedToolIds,
+    ...allowedToolsBundle,
+    intentScopedToolsBundle: allowedToolsBundle,
     toolProfilesByName: input.toolProfilesByName,
     hasExpandedOnce: false,
     skillApplied: false,
@@ -277,6 +326,10 @@ export async function buildAndRunAgentGraph(
     scopedHostLangChainTools: [],
     turnRoutingDecision: null,
     turnExecutionContract: skipTurnRouteContract,
+    workflowRun: null,
+    workflowNodeDefs: undefined,
+    workflowNodeOutputs: undefined,
+    workflowAwaitingReact: false,
   };
   const graphOverride = input.graphInitialState ?? {};
   const priorObservations: ToolObservation[] = sessionPriorObservations.map(

@@ -15,8 +15,10 @@ import type { ToolHttpRequestLayout } from '../../../../tool-engine/tool-http-re
 import type { PendingRespond } from '../../turn/turn-respond.types';
 import type { TurnRoutingDecision } from '../../turn/turn-routing.types';
 import type { TurnExecutionContract } from '../../turn/turn-execution-contract.types';
+import type { TurnScopedToolsBundle } from '../../turn/turn-scoped-tools.util';
 import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-tool-decision.types';
 import type { AgentChatPageContext } from '../../../../host-bridge/page-context.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
 
 export type AgentRunInput = {
   userId: number;
@@ -41,6 +43,7 @@ export type AgentRunStepType =
   | 'skill'
   | 'plan'
   | 'plan_sync'
+  | 'workflow'
   | 'route_plan'
   | 'intent'
   | 'readiness'
@@ -84,6 +87,8 @@ export type AgentRunStep = {
       workingMemoryCount?: number;
       currentRunCount?: number;
     };
+    /** internal = workflow_react 内环诊断，用户可见列表过滤。 */
+    auditTier?: 'internal';
   };
 };
 
@@ -159,6 +164,8 @@ export type AgentGraphState = {
   scopedLangChainTools: DynamicStructuredTool[];
   scopedAllowedToolIds: number[];
   scopedToolBundle: BuiltLangChainTools | null;
+  /** intent 节点产出；契约 intent 路径时恢复此快照。 */
+  intentScopedToolsBundle: TurnScopedToolsBundle | null;
   toolProfilesByName: Record<string, ToolResponseProfile | null>;
   hasExpandedOnce: boolean;
   awaitingWriteConfirmation?: boolean;
@@ -200,6 +207,14 @@ export type AgentGraphState = {
   turnRoutingDecision?: TurnRoutingDecision | null;
   /** 本轮唯一执行契约（plan / host_tool / resume 只读此对象）。 */
   turnExecutionContract?: TurnExecutionContract | null;
+  /** V2 L1：Workflow 运行态（orchestrated task 权威进度）。 */
+  workflowRun?: WorkflowRunState | null;
+  /** 与 workflowRun 对应的节点定义（compile / DB load）。 */
+  workflowNodeDefs?: WorkflowNodeDef[];
+  /** 节点产出归档（outputRef → payload）。 */
+  workflowNodeOutputs?: Record<string, unknown>;
+  /** 当前节点委托旧 ReAct 环（readiness → llm → tools → resultCheck）。 */
+  workflowAwaitingReact?: boolean;
 };
 
 export type AgentLangGraphRunInput = {
@@ -220,8 +235,7 @@ export type AgentLangGraphRunInput = {
   runMetrics: RunMetricsAccumulator;
   toolProfilesByName: Record<string, ToolResponseProfile | null>;
   turnId: number;
-  resumeFromLlm?: boolean;
-  /** 写确认续跑：跳过 skill/plan/llm，从 resultCheck 或 summarize 接续 Plan */
+  /** 写确认续跑：从 resultCheck / workflow 节点接续 */
   resumeFromWriteConfirm?: boolean;
   graphInitialState?: Partial<AgentGraphState>;
   approvedWriteToolNames?: string[];

@@ -1,8 +1,8 @@
 /**
  * Host Tool 流式 DSL 协议类型（规范 v1）。
- * 规范文档：docs/host-tool-stream-dsl-frontend.md
+ * 规范文档：docs/host-tool-dsl-frontend-guide.md
  *
- * 实现状态：类型已定稿；服务端 dispatch 与 SDK 消费待落地。
+ * 实现状态：v1 dispatch 已实现（fill_stream + instant）；SDK 消费见 docs/host-tool-dsl-frontend-guide.md
  */
 
 export const HOST_TOOL_STREAM_PROTOCOL_VERSION = 1 as const;
@@ -30,6 +30,9 @@ export type HostToolDslSessionBegin = {
   entity?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   reason?: string;
+  /** host_tool plan step id（Chat）；PageAction 可省略 */
+  hostStepId?: string;
+  /** @deprecated 与 hostStepId 同义，保留兼容 */
   planStepId?: string;
   runId?: number;
   turnId?: number;
@@ -103,6 +106,8 @@ export type HostActionBatchPayload = {
   entity?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   hostTools: HostActionHostToolInvocation[];
+  hostStepId?: string;
+  /** @deprecated 使用 hostStepId */
   planStepId?: string;
   reason?: string;
   runId?: number;
@@ -122,6 +127,9 @@ export type HostActionStreamPayload = {
   entity?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   hostTools?: HostActionHostToolInvocation[];
+  /** host_tool plan step id；与 planStepId 同义时两者均下发 */
+  hostStepId?: string;
+  /** @deprecated 使用 hostStepId */
   planStepId?: string;
   reason?: string;
   runId?: number;
@@ -146,23 +154,3 @@ export function isHostActionBatchPayload(
 ): payload is HostActionBatchPayload {
   return !isHostActionStreamPayload(payload);
 }
-
-// --- Host Tool 元数据（B 端 / C 端 register）---
-
-export type HostToolStreamPolicy = 'instant' | 'stream' | 'auto';
-
-export type HostToolStreamConfig = {
-  /** 默认 false；true 时服务端按 policy 发 DSL 流。 */
-  enabled?: boolean;
-  policy?: HostToolStreamPolicy;
-  /** 可 `arg.append` 的路径列表，如 `['text', 'content']`。 */
-  streamablePaths?: string[];
-  /** policy=auto 时，字符串长度 ≥ 阈值走 stream。默认 48。 */
-  autoStreamMinChars?: number;
-  /** Phase 1 伪流式切块大小（字符）。默认 16。 */
-  chunkSize?: number;
-  /**
-   * append 时是否调用 handler。默认 false：仅更新累积器，commit/full 再执行。
-   */
-  invokeOnAppend?: boolean;
-};

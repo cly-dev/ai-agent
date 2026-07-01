@@ -2,6 +2,7 @@ import {
   buildIntentClarificationGuidance,
   buildUnsupportedIntentGuidance,
 } from '../../../intent/intent-scope.util';
+import { guidanceForWorkflowInitSkippedReadinessReason } from '../../../workflow/workflow-init-skip.util';
 import type { ToolObservation } from '../main/types/agent-engine.types';
 import type {
   PendingRespond,
@@ -82,6 +83,19 @@ export function turnRespondRequestToObservation(
       quality: 'medium',
     };
   }
+  if (request.kind === 'skill_intent_mismatch') {
+    return {
+      name: 'skill_intent_mismatch',
+      output: {
+        userMessage: request.userMessage,
+        mismatchCode: request.payload?.mismatchCode ?? null,
+        requestedSkillId: request.payload?.requestedSkillId ?? null,
+        requestedSkillName: request.payload?.requestedSkillName ?? null,
+        routingReason: request.payload?.routingReason ?? null,
+      },
+      quality: 'high',
+    };
+  }
   if (request.kind === 'direct_reply') {
     return {
       name: 'direct_reply',
@@ -90,11 +104,16 @@ export function turnRespondRequestToObservation(
     };
   }
   const guidanceHint = guidanceHintForTurnKind(request.kind);
+  const workflowInitGuidance = guidanceForWorkflowInitSkippedReadinessReason(
+    request.payload?.readinessReason,
+  );
   return {
     name: 'direct_user',
-    output: guidanceHint
-      ? { userMessage: request.userMessage, guidanceHint }
-      : { userMessage: request.userMessage },
+    output: workflowInitGuidance
+      ? { userMessage: request.userMessage, guidanceHint: workflowInitGuidance }
+      : guidanceHint
+        ? { userMessage: request.userMessage, guidanceHint }
+        : { userMessage: request.userMessage },
     quality: 'medium',
   };
 }

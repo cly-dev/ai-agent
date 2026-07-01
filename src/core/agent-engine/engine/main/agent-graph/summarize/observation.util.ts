@@ -22,6 +22,7 @@ import {
   isAgentToolErrorObservation,
 } from '../../../agent-run-user-messages.util';
 import type { AgentMachineCode } from '../../../agent-run-user-messages.util';
+import type { SkillIntentMismatchCode } from '../../../turn/skill-intent-alignment.types';
 import { isEmptyListToolObservation } from '../../../tool/tool-observation.util';
 import { splitToolObservationsFromState } from '../../../graph-tool-observations.util';
 import {
@@ -36,6 +37,7 @@ import {
   isPendingPlanAnswerStep,
 } from '../../plan/task-plan.util';
 import type { TaskPlanSnapshot } from '../../plan/task-plan.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../../workflow/workflow.types';
 import {
   applySummarizeMemoryScope,
   resolveSummarizeMemoryScope,
@@ -204,11 +206,12 @@ export function filterUsableToolObservations(
 export function buildSummarizeObservationFromState(
     state: Pick<
       AgentGraphState,
-      'preloadedToolObservations' | 'toolObservations'
+      'preloadedToolObservations' | 'toolObservations' | 'workflowRun'
     >,
     planContext?: {
       taskPlan?: TaskPlanSnapshot | null;
       scopedTools?: AgentGraphState['scopedTools'];
+      workflowNodeDefs?: AgentGraphState['workflowNodeDefs'];
     },
   ): ToolObservation | null {
     const rawSplit = splitToolObservationsFromState(state);
@@ -220,6 +223,8 @@ export function buildSummarizeObservationFromState(
       split: usableSplit,
       plan: planContext?.taskPlan,
       scopedTools: planContext?.scopedTools,
+      workflowRun: state.workflowRun,
+      workflowNodeDefs: planContext?.workflowNodeDefs,
     });
     const split = applySummarizeMemoryScope(usableSplit, memoryScope);
     if (split.workingMemory.length === 0 && split.currentRun.length === 0) {
@@ -343,6 +348,57 @@ export function parseClarificationRequestOutput(output: unknown): {
     };
   }
 
+export function parseSkillIntentMismatchOutput(output: unknown): {
+    userMessage: string;
+    mismatchCode: SkillIntentMismatchCode | null;
+    requestedSkillId: number | null;
+    requestedSkillName: string | null;
+    routingReason: string | null;
+  } {
+    if (!output || typeof output !== 'object' || Array.isArray(output)) {
+      return {
+        userMessage: '',
+        mismatchCode: null,
+        requestedSkillId: null,
+        requestedSkillName: null,
+        routingReason: null,
+      };
+    }
+    const row = output as Record<string, unknown>;
+    const mismatchCode =
+      typeof row.mismatchCode === 'string'
+        ? (row.mismatchCode as SkillIntentMismatchCode)
+        : null;
+    return {
+      userMessage:
+        typeof row.userMessage === 'string' ? row.userMessage.trim() : '',
+      mismatchCode,
+      requestedSkillId:
+        typeof row.requestedSkillId === 'number' ? row.requestedSkillId : null,
+      requestedSkillName:
+        typeof row.requestedSkillName === 'string'
+          ? row.requestedSkillName.trim()
+          : null,
+      routingReason:
+        typeof row.routingReason === 'string' ? row.routingReason.trim() : null,
+    };
+  }
+
+export function buildSkillIntentMismatchFallbackPlainText(input: {
+    mismatchCode: SkillIntentMismatchCode | null;
+    requestedSkillName: string | null;
+  }): string {
+    const skillLabel = input.requestedSkillName?.trim() || '当前技能';
+    switch (input.mismatchCode) {
+      case 'write_intent_vs_http_only_skill':
+        return `你选择了「${skillLabel}」，它主要用于数据查询或分析，无法完成页面上的填写或提交。可以取消技能选择后重新发送，或换成支持页面操作的技能。`;
+      case 'write_intent_vs_no_host_skill':
+        return `你选择了「${skillLabel}」，它不包含页面写入能力，无法完成填写或提交。请取消技能选择后重试，或选择带页面操作能力的技能。`;
+      default:
+        return `当前选择的技能与你说的话不太匹配。可以取消技能选择后按你的问题重发，或换一种与该技能匹配的说法。`;
+    }
+  }
+
 export function resolveSummarizeStepName(
     taskPlan: TaskPlanSnapshot | null | undefined,
     observationName: string,
@@ -369,10 +425,18 @@ export function resolveSummarizeStepMeta(
 
 export function resolveSummarizePromptKey(input: {
     taskPlan: TaskPlanSnapshot | null | undefined;
+    workflowRun?: WorkflowRunState | null;
+    workflowNodeDefs?: WorkflowNodeDef[] | null;
     fullDetail: boolean;
     summarizeScenario: ReturnType<typeof classifySummarizeScenario>;
   }): (typeof PROMPT_KEYS)[keyof typeof PROMPT_KEYS] {
-    if (isPendingPlanAnswerStep(input.taskPlan)) {
+    if (
+      isPendingPlanAnswerStep(
+        input.taskPlan,
+        input.workflowRun,
+        input.workflowNodeDefs,
+      )
+    ) {
       return PROMPT_KEYS.AGENT_SUMMARIZE_MESSAGE_BLOCKS;
     }
     if (input.fullDetail) {

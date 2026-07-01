@@ -422,13 +422,18 @@ async function invokeLlmTaskPlan(input: {
   ];
 
   try {
-    const { model } = await input.llmService.createLangChainChatModelForMessages(
-      messages,
-    );
+    const { model, messages: fittedMessages } =
+      await input.llmService.createLangChainChatModelForMessages(messages, {
+        budgetHints: { callKind: 'plan' },
+      });
     const structuredModel = model.withStructuredOutput(llmTaskPlanSchema);
-    return (await structuredModel.invoke(messages)) as LlmTaskPlanOutput;
+    return (await structuredModel.invoke(fittedMessages)) as LlmTaskPlanOutput;
   } catch {
-    const result = await input.llmService.chat({ messages, tools: [] });
+    const result = await input.llmService.chat({
+      messages,
+      tools: [],
+      budgetHints: { callKind: 'plan' },
+    });
     const parsed = tryParseJsonObject(result.content);
     if (!parsed) {
       return null;
@@ -501,15 +506,20 @@ async function invokeLlmOuterPlan(input: {
     },
   ];
   try {
-    const { model } = await input.llmService.createLangChainChatModelForMessages(
-      messages,
-    );
+    const { model, messages: fittedMessages } =
+      await input.llmService.createLangChainChatModelForMessages(messages, {
+        budgetHints: { callKind: 'plan' },
+      });
     const structuredModel = model.withStructuredOutput(llmOuterPlanSchema);
-    return (await structuredModel.invoke(messages)) as z.infer<
+    return (await structuredModel.invoke(fittedMessages)) as z.infer<
       typeof llmOuterPlanSchema
     >;
   } catch {
-    const result = await input.llmService.chat({ messages, tools: [] });
+    const result = await input.llmService.chat({
+      messages,
+      tools: [],
+      budgetHints: { callKind: 'plan' },
+    });
     const parsed = tryParseJsonObject(result.content);
     if (!parsed) {
       return null;
@@ -630,14 +640,12 @@ export async function resolveTaskPlan(input: {
   scope: { appClientId: number; agentId: number };
   planInput: ResolveTaskPlanInput;
 }): Promise<ResolveTaskPlanResult> {
-  const planConfig = parseSkillPlanConfig(input.planInput.skillConfig);
-
-  // ① skill.config.workflow：显式步序，校验通过则直接采用（不调 LLM）
-  if (planConfig.workflowSteps && planConfig.workflowSteps.length > 0) {
-    const workflowPlan = buildTaskPlan(input.planInput);
-    if (workflowPlan.source === 'workflow') {
-      return { plan: workflowPlan, method: 'workflow' };
-    }
+  // ① Skill.workflowId：DB Workflow 资产
+  if (input.planInput.skillBoundWorkflowPlan) {
+    return {
+      plan: input.planInput.skillBoundWorkflowPlan,
+      method: 'workflow',
+    };
   }
 
   // ② scoped 含 write：固定 compose_write → present → write → confirm 模板
@@ -654,7 +662,7 @@ export async function resolveTaskPlan(input: {
     });
   }
 
-  // ③ Plan LLM；不合规 mutation 步序则替换为模板
+  // ④ Plan LLM；不合规 mutation 步序则替换为模板
   const llmResult = await tryBuildTaskPlanViaLlm(input);
   if (llmResult) {
     const hasWrite = scopedToolsIncludeWrite(
@@ -677,7 +685,7 @@ export async function resolveTaskPlan(input: {
     return llmResult;
   }
 
-  // ④ 规则 template / minimal 兜底
+  // ⑤ 规则 template / minimal 兜底
   const plan = buildTaskPlan(input.planInput);
   return {
     plan,

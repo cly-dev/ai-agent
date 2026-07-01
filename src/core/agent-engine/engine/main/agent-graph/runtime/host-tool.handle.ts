@@ -1,7 +1,8 @@
 import {
-  dispatchHostActionSse,
+  dispatchHostActionInstant,
   type HostToolDecisionDefinition,
 } from '../../../../../host-bridge';
+import { isHostToolStreamAlreadyDispatched } from '../../../../../host-bridge/host-tool-stream-observation.util';
 import { buildHostToolSkippedObservation } from '../../host-tool/host-tool-plan.util';
 import {
   buildHostToolRequiredMissedStep,
@@ -18,14 +19,10 @@ import {
   applyPlanDraftToWriteToolCalls,
   resolvePlanSubmitTextForWrite,
 } from '../../plan-present/plan-draft-reply.util';
-import {
-  resolveHostToolCallsWithPlanDraft,
-} from '../../plan-present/plan-draft-host-tool.util';
 import { resolvePlanHostFillCalls } from '../../plan-present/plan-host-fill.util';
 import { resolveTurnExecutionContract } from '../../../turn/turn-execution-contract.util';
 import { allToolObservations } from '../../../graph-tool-observations.util';
-import type { PlanSyncSite } from '../../plan/plan-sync.util';
-import type { TaskPlanAdvanceResult, TaskPlanStep } from '../../plan/task-plan.types';
+import type {  TaskPlanStep } from '../../plan/task-plan.types';
 import type { AgentGraphState, AgentRunStep, GraphToolCall, ToolObservation } from '../../types/agent-engine.types';
 import type { AgentGraphDeps, AgentGraphRunContext } from '../types/graph.types';
 import type { AgentGraphRunHelpers } from './run.helpers';
@@ -66,6 +63,7 @@ export interface AgentGraphHostToolHandleHelpers {
       httpCalls: GraphToolCall[];
       sessionId: string;
       runId: number;
+      turnId: number;
       warnMessage?: string;
     },
     withPlanSyncStep: AgentGraphSkillFrameHelpers['withPlanSyncStep'],
@@ -96,6 +94,7 @@ export function applyHostToolPlanStepHandle(
     httpCalls: GraphToolCall[];
     sessionId: string;
     runId: number;
+    turnId: number;
     warnMessage?: string;
   },
   withPlanSyncStep: AgentGraphSkillFrameHelpers['withPlanSyncStep'],
@@ -103,8 +102,9 @@ export function applyHostToolPlanStepHandle(
   if (input.warnMessage) {
     deps.logger.warn(input.warnMessage);
   }
-  if (input.handle.ssePayload) {
-    dispatchHostActionSse(
+  if (input.handle.ssePayload?.hostTools?.length) {
+    const payload = input.handle.ssePayload;
+    dispatchHostActionInstant(
       (sessionId, envelope) =>
         deps.runSseGateway.emitHostAction(
           sessionId,
@@ -112,7 +112,19 @@ export function applyHostToolPlanStepHandle(
           envelope.payload,
         ),
       input.sessionId,
-      input.handle.ssePayload,
+      {
+        pageContext: graphState.pageContext,
+        runId: payload.runId ?? input.runId,
+        turnId: payload.turnId ?? input.turnId,
+        hostTools: payload.hostTools,
+        planStepId: payload.planStepId ?? input.planStepId,
+        reason: payload.reason,
+        generation:
+          deps.runSseGateway.getBoundRunGeneration(
+            input.sessionId,
+            input.runId,
+          ) ?? undefined,
+      },
     );
   }
   const hostToolRunStep = buildHostToolRunStepFromPlanHandle({
@@ -172,7 +184,6 @@ export function tryDispatchHostToolFromPlanDraft(
     nextIteration,
     steps,
     httpCalls = [],
-    llmHostCalls,
     reason = 'plan_host_tool_from_draft',
   } = input;
   if (!graphState.taskPlan) {
@@ -198,22 +209,28 @@ export function tryDispatchHostToolFromPlanDraft(
   const postLlmOutcome = evaluateHostToolPostLlm({
     pendingHostStep,
     taskPlan: graphState.taskPlan,
-    pageContext: graphState.pageContext,
     hostCalls,
     httpCalls,
     hasToolCalls: hostCalls.length > 0,
     scopedHostTools: graphState.scopedHostTools ?? [],
+    pageContext: graphState.pageContext,
   });
   if (postLlmOutcome.action !== 'dispatch') {
     return null;
   }
+  const streamAlreadyDispatched = isHostToolStreamAlreadyDispatched(
+    observationsForLlm,
+    postLlmOutcome.planStepId,
+  );
   const handled = finalizeHostToolPlanStep({
     taskPlan: graphState.taskPlan,
     planStepId: postLlmOutcome.planStepId,
     hostCalls,
     pageContext: graphState.pageContext,
+    scopedHostTools: graphState.scopedHostTools ?? [],
     runId: ctx.input.runId,
     turnId: ctx.input.turnId,
+    streamReconciled: streamAlreadyDispatched,
   });
   if (!handled) {
     return null;
@@ -222,7 +239,9 @@ export function tryDispatchHostToolFromPlanDraft(
     step: llmStepNumber,
     type: 'llm',
     output: runHelpers.normalizeJsonLike({
-      reason,
+      reason: streamAlreadyDispatched
+        ? 'plan_host_tool_from_draft_stream_reconciled'
+        : reason,
       toolCalls: hostCalls,
       taskPlanTrace: decision.buildTaskPlanTraceForLlmStep(graphState.taskPlan),
     }),
@@ -237,6 +256,7 @@ export function tryDispatchHostToolFromPlanDraft(
       httpCalls,
       sessionId: ctx.input.sessionId,
       runId: ctx.input.runId,
+      turnId: ctx.input.turnId,
     },
     skillFrame.withPlanSyncStep,
   );
@@ -320,6 +340,7 @@ export function handleHostToolPreLlmSkip(
         httpCalls: [],
         sessionId: ctx.input.sessionId,
         runId: ctx.input.runId,
+        turnId: ctx.input.turnId,
         warnMessage: `host_tool blocked by turn contract runId=${ctx.input.runId} planStep=${pendingHostStep.id}`,
       },
       skillFrame.withPlanSyncStep,
@@ -328,7 +349,6 @@ export function handleHostToolPreLlmSkip(
   const preLlmSkipReason = evaluateHostToolPreLlmSkip({
     pendingHostStep,
     taskPlan: graphState.taskPlan,
-    pageContext: graphState.pageContext,
     hostToolsForPrompt,
     scopedHostTools: graphState.scopedHostTools ?? [],
   });
@@ -395,6 +415,7 @@ export function handleHostToolPreLlmSkip(
       httpCalls: [],
       sessionId: ctx.input.sessionId,
       runId: ctx.input.runId,
+      turnId: ctx.input.turnId,
       warnMessage: `host_tool plan step skipped before llm runId=${ctx.input.runId} planStep=${pendingHostStep.id} reason=${preLlmSkipReason}`,
     },
     skillFrame.withPlanSyncStep,
@@ -433,24 +454,24 @@ export function processHostToolAfterLlmDecision(
   } = input;
   let hostCalls = initialHostCalls;
   if (pendingHostStep && graphState.taskPlan) {
-    hostCalls = resolveHostToolCallsWithPlanDraft({
+    const fromPlanHostFill = resolvePlanHostFillCalls({
       taskPlan: graphState.taskPlan,
+      observations: observationsForLlm,
       pendingHostStep,
       hostToolsForPrompt,
-      observations: observationsForLlm,
-      artifactBlocks:
-        deps.assistantArtifact.peekBlocks(ctx.input.sessionId, ctx.input.runId) ?? null,
-      llmHostCalls: hostCalls,
     });
+    if (fromPlanHostFill.length > 0) {
+      hostCalls = fromPlanHostFill;
+    }
   }
   const postLlmOutcome = evaluateHostToolPostLlm({
     pendingHostStep,
     taskPlan: graphState.taskPlan,
-    pageContext: graphState.pageContext,
     hostCalls,
     httpCalls,
     hasToolCalls: toolCallsFromLlm.length > 0,
     scopedHostTools: graphState.scopedHostTools ?? [],
+    pageContext: graphState.pageContext,
   });
   if (postLlmOutcome.action === 'required_missed') {
     const hostToolStep = buildHostToolRequiredMissedStep({
@@ -483,6 +504,13 @@ export function processHostToolAfterLlmDecision(
   if (postLlmOutcome.action === 'none' || !graphState.taskPlan) {
     return { kind: 'continue' };
   }
+  const streamAlreadyDispatched =
+    postLlmOutcome.action === 'dispatch'
+      ? isHostToolStreamAlreadyDispatched(
+          observationsForLlm,
+          postLlmOutcome.planStepId,
+        )
+      : false;
   const handled =
     postLlmOutcome.action === 'dispatch'
       ? finalizeHostToolPlanStep({
@@ -490,8 +518,10 @@ export function processHostToolAfterLlmDecision(
           planStepId: postLlmOutcome.planStepId,
           hostCalls: postLlmOutcome.hostCalls,
           pageContext: graphState.pageContext,
+          scopedHostTools: graphState.scopedHostTools ?? [],
           runId: ctx.input.runId,
           turnId: ctx.input.turnId,
+          streamReconciled: streamAlreadyDispatched,
         })
       : finalizeHostToolPlanStep({
           taskPlan: graphState.taskPlan,
@@ -516,6 +546,7 @@ export function processHostToolAfterLlmDecision(
       httpCalls,
       sessionId: ctx.input.sessionId,
       runId: ctx.input.runId,
+      turnId: ctx.input.turnId,
       warnMessage:
         postLlmOutcome.action === 'skip'
           ? hostToolPostLlmWarnMessage({

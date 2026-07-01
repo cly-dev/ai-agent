@@ -20,6 +20,10 @@ import {
   skillIsResolvableForRequested,
   skillIsResolvableInScope,
 } from './skill-runnable.util';
+import { buildAgentSkillVisibilityWhere } from '../runtime-cache/capability-candidate.util';
+import { loadAgentSkillVisibilityContext, loadAgentHostToolCandidateIds } from '../runtime-cache/agent-capability-load.util';
+import { tryBuildTaskPlanFromSkillWorkflow } from '../workflow/resolve-skill-workflow-plan.util';
+import type { TaskPlanSnapshot } from '../agent-engine/engine/main/plan/task-plan.types';
 
 type SkillDbRow = {
   id: number;
@@ -29,6 +33,9 @@ type SkillDbRow = {
   config: unknown;
   riskLevel: AvailableSkillRow['riskLevel'];
   capabilityKey: string | null;
+  workflowId: number | null;
+  workflowVersion: number | null;
+  workflowOverrides: unknown;
   skillTools: Array<{ toolId: number }>;
   skillHostTools: Array<{ hostToolId: number }>;
 };
@@ -54,12 +61,13 @@ export class SkillService {
     }
     const [rows, runnableHostToolIds] = await Promise.all([
       this.queryAgentSkills({
+        appClientId: input.appClientId,
         agentId: input.agentId,
         roleId: roleContext.roleId,
         roleSkillFiltered: roleContext.roleSkillFiltered,
         skillId: input.skillId,
       }),
-      this.loadAgentRunnableHostToolIds(input.agentId),
+      this.loadAgentRunnableHostToolIds(input.appClientId, input.agentId),
     ]);
     const row = rows[0];
     if (!row) {
@@ -132,18 +140,20 @@ export class SkillService {
       return [];
     }
     const scopedToolIds = new Set(input.scopedTools.map((tool) => tool.id));
+    const queryBase = {
+      appClientId: input.appClientId,
+      agentId: input.agentId,
+      roleId: roleContext.roleId,
+      roleSkillFiltered: roleContext.roleSkillFiltered,
+    };
     const runnableHostToolIds = await this.loadAgentRunnableHostToolIds(
+      input.appClientId,
       input.agentId,
     );
     const scopedHostToolIdSet = this.toScopedHostToolIdSet(
       input.scopedHostToolIds,
       runnableHostToolIds,
     );
-    const queryBase = {
-      agentId: input.agentId,
-      roleId: roleContext.roleId,
-      roleSkillFiltered: roleContext.roleSkillFiltered,
-    };
     const httpRows =
       scopedToolIds.size > 0
         ? await this.queryAgentSkills({
@@ -226,7 +236,36 @@ export class SkillService {
     };
   }
 
+  async tryBuildTaskPlanFromSkillWorkflow(input: {
+    appClientId: number;
+    userMessage: string;
+    skill: Pick<
+      AvailableSkillRow,
+      'workflowId' | 'workflowVersion' | 'workflowOverrides'
+    >;
+    goal?: string;
+    allowedToolIds: number[];
+    allowedHostToolIds: number[];
+  }): Promise<TaskPlanSnapshot | null> {
+    if (input.skill.workflowId == null || input.skill.workflowId <= 0) {
+      return null;
+    }
+    return tryBuildTaskPlanFromSkillWorkflow(this.prisma, {
+      appClientId: input.appClientId,
+      userMessage: input.userMessage,
+      binding: {
+        workflowId: input.skill.workflowId,
+        workflowVersion: input.skill.workflowVersion,
+        workflowOverrides: input.skill.workflowOverrides,
+      },
+      goal: input.goal,
+      allowedToolIds: input.allowedToolIds,
+      allowedHostToolIds: input.allowedHostToolIds,
+    });
+  }
+
   private async queryHostBoundSkills(input: {
+    appClientId: number;
     agentId: number;
     roleId: number;
     roleSkillFiltered: boolean;
@@ -236,6 +275,7 @@ export class SkillService {
       return [];
     }
     return this.queryAgentSkills({
+      appClientId: input.appClientId,
       agentId: input.agentId,
       roleId: input.roleId,
       roleSkillFiltered: input.roleSkillFiltered,
@@ -265,6 +305,7 @@ export class SkillService {
   }
 
   private async queryPureHostSkills(input: {
+    appClientId: number;
     agentId: number;
     roleId: number;
     roleSkillFiltered: boolean;
@@ -274,6 +315,7 @@ export class SkillService {
       return [];
     }
     return this.queryAgentSkills({
+      appClientId: input.appClientId,
       agentId: input.agentId,
       roleId: input.roleId,
       roleSkillFiltered: input.roleSkillFiltered,
@@ -332,16 +374,15 @@ export class SkillService {
   }
 
   private async loadAgentRunnableHostToolIds(
+    appClientId: number,
     agentId: number,
   ): Promise<ReadonlySet<number>> {
-    const bindings = await this.prisma.agentHostTool.findMany({
-      where: {
-        agentId,
-        hostTool: { isActive: true },
-      },
-      select: { hostToolId: true },
-    });
-    return new Set(bindings.map((binding) => binding.hostToolId));
+    const ids = await loadAgentHostToolCandidateIds(
+      this.prisma,
+      appClientId,
+      agentId,
+    );
+    return new Set(ids);
   }
 
   private resolveRunnableHostToolIds(
@@ -374,6 +415,7 @@ export class SkillService {
   }
 
   private async queryAgentSkills(input: {
+    appClientId: number;
     agentId: number;
     roleId: number;
     roleSkillFiltered: boolean;
@@ -384,10 +426,19 @@ export class SkillService {
     hostToolIdFilter?: number[];
   }): Promise<SkillDbRow[]> {
     const hostToolIdFilter = input.hostToolIdFilter ?? [];
+    const skillCtx = await loadAgentSkillVisibilityContext(
+      this.prisma,
+      input.appClientId,
+      input.agentId,
+    );
     return this.prisma.skill.findMany({
       where: {
-        agentId: input.agentId,
-        isActive: true,
+        ...buildAgentSkillVisibilityWhere({
+          appClientId: input.appClientId,
+          agentId: input.agentId,
+          restrictSkills: skillCtx.restrictSkills,
+          skillWhitelistIds: skillCtx.skillWhitelistIds,
+        }),
         ...(input.skillId != null ? { id: input.skillId } : {}),
         ...(input.pureHostOnly
           ? {
@@ -422,6 +473,9 @@ export class SkillService {
         config: true,
         riskLevel: true,
         capabilityKey: true,
+        workflowId: true,
+        workflowVersion: true,
+        workflowOverrides: true,
         skillTools: { select: { toolId: true } },
         skillHostTools: { select: { hostToolId: true } },
       },
@@ -450,6 +504,9 @@ export class SkillService {
       skillToolIds,
       hostToolIds,
       runnableKind: deriveSkillRunnableKind({ skillToolIds, hostToolIds }),
+      workflowId: row.workflowId,
+      workflowVersion: row.workflowVersion,
+      workflowOverrides: row.workflowOverrides,
     };
   }
 }

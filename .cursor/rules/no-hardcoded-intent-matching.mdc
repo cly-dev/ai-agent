@@ -5,17 +5,19 @@ alwaysApply: true
 
 # No Hardcoded Intent / Smalltalk Matching
 
-Agent、intent、skill 相关 **TypeScript 代码** 中禁止硬编码：
+Agent、intent、skill、host-bridge 相关 **TypeScript 代码** 中禁止硬编码：
 
 - 特定语言的关键词、寒暄句、正则表达式
 - 中英文问候/感谢/身份问句等 phrase list
 - 按 locale 写死的 `if (message.includes('你好'))` 类逻辑
+- 业务实体字段/场景名（如 `metadata.review`、`reviewId`、`'review'` 内联 kind）——应走前端传入的 pageContext 结构，服务端只做协议级扫描
 
 ## 正确做法
 
 | 需求 | 配置位置 |
 |------|----------|
 | 闲聊 / smalltalk 短语 | `src/core/intent/smalltalk-hints.json`（通过 `loadSmallTalkHints()` 加载） |
+| pageContext 内联正文 | 前端 `metadata.{kind}.content` 协议；服务端 `page-context-metadata-scan.util.ts` 结构性扫描 |
 | 意图召回阈值、跳过规则 | 环境变量 + `IntentRecallConfig` / skill recall config |
 | 复杂意图分类 | LLM prompt / structured output，或向量召回 |
 | 租户/站点差异 | DB 配置、Prompt 模板，而非代码分支 |
@@ -23,10 +25,12 @@ Agent、intent、skill 相关 **TypeScript 代码** 中禁止硬编码：
 ## 实现约束
 
 - `detectIntentKind()` 只消费外部传入的 `configurableHints`，不在 util 内维护语言词表。
+- `assessPageContextData()` 只扫描 `entity` / `routeParams` / `metadata.content` 协议，不写死业务 metadata 键名或实体 kind。
 - 新增寒暄或意图规则时：**改 JSON / env / DB / prompt**，不要改 agent 引擎里的匹配逻辑。
-- Code review：若 PR 在 `src/core/agent-engine/`、`src/core/intent/`、`src/core/skill/` 引入固定语句或 regex 词表，应拒绝并改为配置化。
+- Code review：若 PR 在 `src/core/agent-engine/`、`src/core/intent/`、`src/core/skill/`、`src/core/host-bridge/` 引入固定业务字段名或 regex 词表，应拒绝并改为协议/配置化。
 
 ## 参考
 
 - 闲聊 hint 配置：`src/core/intent/smalltalk-hints.json`
 - 意图模块说明：`src/core/intent/intent.md` →「Smalltalk 分类」
+- pageContext 内联协议：`src/core/host-bridge/page-context.types.ts` · `page-context-metadata-scan.util.ts`

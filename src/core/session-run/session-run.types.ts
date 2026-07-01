@@ -1,4 +1,5 @@
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
+import type { ApprovalResumeSnapshot } from '../approval/approval-resume-snapshot.types';
 import type { RunCancellationToken } from './run-cancellation-token';
 
 export type RunJobKind =
@@ -20,6 +21,9 @@ export type RunJob = {
   input: string;
   requestedSkillId?: number;
   pageContext?: AgentChatPageContext | null;
+  /** 收件箱 confirm：从 ApprovalRequest 快照续跑，与会话内 confirm 共用队列。 */
+  approvalInboxSnapshot?: ApprovalResumeSnapshot;
+  approvalRequestId?: number;
 };
 
 export type RunExecutionHandle = {

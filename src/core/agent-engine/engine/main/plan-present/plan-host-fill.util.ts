@@ -1,4 +1,5 @@
 import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-tool-decision.types';
+import { HOST_TOOL_STRING_ARG_KEYS } from '../../../../host-bridge/host-tool-string-arg.util';
 import { summarizeHostToolsForLlmSchema } from '../../../../host-bridge/host-tool-langchain.util';
 import type { GraphToolCall, ToolObservation } from '../types/agent-engine.types';
 import { findPrecedingReasonStepId } from '../host-tool/host-tool-fill-alignment.util';
@@ -23,8 +24,6 @@ export type PlanHostFillObservationOutput = {
   fills: PlanHostFillEntry[];
   source: 'plan_reason_host_fill';
 };
-
-const HOST_TOOL_TEXT_ARG_KEYS = ['text', 'content', 'value', 'draft', 'body'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -95,7 +94,7 @@ export function extractPrimaryFillTextFromHostFills(
   fills: PlanHostFillEntry[],
 ): string {
   for (const fill of fills) {
-    for (const key of HOST_TOOL_TEXT_ARG_KEYS) {
+    for (const key of HOST_TOOL_STRING_ARG_KEYS) {
       const value = fill.arguments[key];
       if (typeof value === 'string' && isUsablePlanDraftSubmitText(value)) {
         return value.trim();
@@ -161,7 +160,7 @@ function normalizeHostFillEntry(
       args[key] = value.trim();
     }
   }
-  const hasPayload = HOST_TOOL_TEXT_ARG_KEYS.some((key) => {
+  const hasPayload = HOST_TOOL_STRING_ARG_KEYS.some((key) => {
     const value = args[key];
     return typeof value === 'string' && value.trim().length > 0;
   });

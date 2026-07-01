@@ -44,7 +44,6 @@ export type HostToolResponse = {
   name: string;
   description: string;
   argsSchema: unknown;
-  exposure: string;
   argsTemplate: unknown | null;
   sortOrder: number;
   isActive: boolean;
@@ -58,7 +57,6 @@ export type ClientHostToolCatalogItem = {
   name: string;
   description: string;
   argsSchema: unknown;
-  exposure: string;
   pageScope: string | null;
   definitionKey: string;
 };
@@ -92,7 +90,7 @@ export type AgentHostToolsBindingResponse = {
 
 export type SkillHostToolsBindingResponse = {
   skillId: number;
-  agentId: number;
+  appClientId: number;
   hostTools: HostToolResponse[];
   skillHostTools: SkillHostToolBindingResponse[];
 };

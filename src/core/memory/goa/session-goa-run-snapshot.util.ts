@@ -1,5 +1,6 @@
 import { toStoredTaskPlan } from '../../agent-engine/engine/main/session/session-graph-resume.util';
 import type { AgentGraphState } from '../../agent-engine/engine/main/types/agent-engine.types';
+import type { WorkflowRunState } from '../../workflow/workflow.types';
 import type {
   ActiveTaskStatus,
   AgentRunGoaSnapshot,
@@ -21,10 +22,27 @@ function isStoredTaskPlan(value: unknown): value is StoredTaskPlan {
   return typeof row.goal === 'string' && typeof row.originalUserRequest === 'string';
 }
 
+function isWorkflowRunState(value: unknown): value is WorkflowRunState {
+  const row = asRecord(value);
+  if (!row || !Array.isArray(row.nodes)) {
+    return false;
+  }
+  return (
+    typeof row.workflowId === 'number' &&
+    typeof row.version === 'number' &&
+    (row.currentNodeId === null || typeof row.currentNodeId === 'string') &&
+    typeof row.status === 'string'
+  );
+}
+
 export function buildAgentRunGoaSnapshot(input: {
   graphState: Pick<
     AgentGraphState,
-    'taskPlan' | 'intentKind' | 'awaitingWriteConfirmation' | 'status'
+    | 'taskPlan'
+    | 'intentKind'
+    | 'awaitingWriteConfirmation'
+    | 'status'
+    | 'workflowRun'
   >;
   runFailed?: boolean;
 }): AgentRunGoaSnapshot | null {
@@ -47,6 +65,9 @@ export function buildAgentRunGoaSnapshot(input: {
     intentKind: input.graphState.intentKind,
     awaitingWriteConfirmation:
       input.graphState.awaitingWriteConfirmation === true,
+    ...(input.graphState.workflowRun
+      ? { workflowRun: input.graphState.workflowRun }
+      : {}),
     capturedAt: new Date().toISOString(),
   };
 }
@@ -68,6 +89,9 @@ export function parseAgentRunGoaSnapshot(
       ? status
       : 'in_progress';
   const intentKind = row.intentKind;
+  const workflowRun = isWorkflowRunState(row.workflowRun)
+    ? row.workflowRun
+    : undefined;
   return {
     storedTaskPlan: row.storedTaskPlan,
     activeTaskStatus,
@@ -77,6 +101,7 @@ export function parseAgentRunGoaSnapshot(
       ? { intentKind }
       : {}),
     awaitingWriteConfirmation: row.awaitingWriteConfirmation === true,
+    ...(workflowRun ? { workflowRun } : {}),
     ...(typeof row.capturedAt === 'string' ? { capturedAt: row.capturedAt } : {}),
   };
 }

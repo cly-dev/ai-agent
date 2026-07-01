@@ -6,6 +6,11 @@ import {
   type PlanRunContext,
 } from './plan-observation-scope.util';
 import type { TaskPlanAdvanceResult, TaskPlanSnapshot } from './task-plan.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
+import {
+  applyPlanAdvanceAsWorkflowProgress,
+  isWorkflowBoundRun,
+} from '../../../../workflow/workflow-plan-transition.util';
 import type { OuterPlanSkillSelectMethod } from './outer-plan-skill-resolve.util';
 import {
   resolveHostToolPlanRunStatus,
@@ -18,6 +23,8 @@ import {
 export type TaskPlanSyncResult = {
   taskPlan: TaskPlanSnapshot | null;
   planAdvance: TaskPlanAdvanceResult | null;
+  workflowRun?: WorkflowRunState;
+  workflowAwaitingReact?: boolean;
 };
 
 export type PlanSyncSite = 'llm' | 'result_check' | 'readiness';
@@ -29,6 +36,9 @@ export type SyncTaskPlanBeforeReActInput = {
   runOwnedObservations?: ToolObservation[];
   observationBuckets?: PlanObservationBuckets;
   pageContextEntityId?: string | null;
+  workflowRun?: WorkflowRunState | null;
+  workflowNodeDefs?: WorkflowNodeDef[] | null;
+  workflowAwaitingReact?: boolean;
 };
 
 /**
@@ -52,8 +62,27 @@ export function syncTaskPlanBeforeReAct(
     purpose: 'pre_tools_advance',
     pageContextEntityId: input.pageContextEntityId,
   });
+  if (!planAdvance) {
+    return { taskPlan: input.taskPlan, planAdvance: null };
+  }
+  if (isWorkflowBoundRun(input.workflowRun)) {
+    const progressed = applyPlanAdvanceAsWorkflowProgress({
+      taskPlan: input.taskPlan,
+      workflowRun: input.workflowRun,
+      workflowNodeDefs: input.workflowNodeDefs,
+      workflowAwaitingReact: input.workflowAwaitingReact,
+      planBefore: input.taskPlan,
+      planAdvance,
+    });
+    return {
+      taskPlan: progressed.taskPlan ?? input.taskPlan,
+      planAdvance,
+      workflowRun: progressed.workflowRun,
+      workflowAwaitingReact: progressed.workflowAwaitingReact,
+    };
+  }
   return {
-    taskPlan: planAdvance?.updatedPlan ?? input.taskPlan,
+    taskPlan: planAdvance.updatedPlan,
     planAdvance,
   };
 }
@@ -68,7 +97,7 @@ export function buildPlanRunStepOutput(input: {
   availableHostToolNames: string[];
   availableSkillIds: number[];
   requestedSkillId?: number | null;
-  requestedSkillSkipIntent?: boolean;
+  requestedSkillEnforced?: boolean;
   sessionWorkingMemoryIncluded?: boolean;
   /** skill 帧展开后相对外层 plan 的观测标记 */
   skillFrameExpanded?: boolean;
@@ -95,7 +124,7 @@ export function buildPlanRunStepOutput(input: {
     hostToolRunStatus: planHostStatus.hostToolRunStatus,
     availableSkillIds: input.availableSkillIds,
     requestedSkillId: input.requestedSkillId ?? null,
-    requestedSkillSkipIntent: input.requestedSkillSkipIntent ?? false,
+    requestedSkillEnforced: input.requestedSkillEnforced ?? false,
     source: input.taskPlan.source,
     deliverable: input.taskPlan.deliverable,
     goal: input.taskPlan.goal,

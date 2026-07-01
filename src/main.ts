@@ -1,5 +1,5 @@
 import './core/env/load-env';
-import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -13,6 +13,9 @@ import {
   isDevStaticAssetsEnabled,
   isSwaggerEnabled,
 } from './core/security/runtime-env.util';
+import {
+  CLIENT_PUBLIC_API_EXCLUDES,
+} from './middleware/client-public-api-paths';
 import {
   applyClientPublicCors,
   handleClientPublicCorsPreflight,
@@ -56,17 +59,7 @@ async function bootstrap() {
     }),
   );
   app.setGlobalPrefix('admin', {
-    exclude: [
-      { path: 'chat', method: RequestMethod.ALL },
-      { path: 'user/login', method: RequestMethod.POST },
-      { path: 'user/password-reminder', method: RequestMethod.GET },
-      { path: 'chat/(.*)', method: RequestMethod.ALL },
-      { path: 'app-client/auth', method: RequestMethod.POST },
-      { path: 'agent/client/available', method: RequestMethod.GET },
-      { path: 'agent/:agentId/skills/client', method: RequestMethod.GET},
-      { path: 'host-tool/client/catalog', method: RequestMethod.GET },
-      { path: 'host-tool/client/register', method: RequestMethod.POST },
-    ],
+    exclude: CLIENT_PUBLIC_API_EXCLUDES,
   });
   if (isSwaggerEnabled()) {
     const swaggerConfig = new DocumentBuilder()
