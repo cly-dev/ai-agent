@@ -1,8 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.handleClientPublicCorsPreflight = exports.applyClientPublicCors = exports.shouldApplyClientPublicCors = void 0;
+exports.handleClientPublicCorsPreflight = exports.handleHttpCorsPreflight = exports.applyClientPublicCors = exports.applyHttpCors = exports.shouldApplyClientPublicCors = exports.shouldApplyHttpCors = void 0;
 const client_cors_origins_util_1 = require("./client-cors-origins.util");
-const client_public_api_paths_1 = require("./client-public-api-paths");
 const DEFAULT_ALLOW_HEADERS = [
     'Content-Type',
     'Authorization',
@@ -13,13 +12,14 @@ const DEFAULT_ALLOW_HEADERS = [
     'Cache-Control',
     'Last-Event-ID',
 ].join(', ');
-function shouldApplyClientPublicCors(req) {
-    return (0, client_public_api_paths_1.matchesClientPublicApiPath)(req.path);
+function shouldApplyHttpCors(_req) {
+    return true;
 }
-exports.shouldApplyClientPublicCors = shouldApplyClientPublicCors;
-function applyClientPublicCors(req, res) {
+exports.shouldApplyHttpCors = shouldApplyHttpCors;
+exports.shouldApplyClientPublicCors = shouldApplyHttpCors;
+function applyHttpCors(req, res) {
     const origin = req.headers.origin;
-    const allowedOrigin = (0, client_cors_origins_util_1.resolveAllowedClientCorsOrigin)(typeof origin === 'string' ? origin : undefined);
+    const allowedOrigin = (0, client_cors_origins_util_1.resolveAllowedCorsOrigin)(typeof origin === 'string' ? origin : undefined);
     if (allowedOrigin) {
         res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
         res.setHeader('Vary', 'Origin');
@@ -38,13 +38,15 @@ function applyClientPublicCors(req, res) {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Max-Age', '86400');
 }
-exports.applyClientPublicCors = applyClientPublicCors;
-function handleClientPublicCorsPreflight(req, res) {
+exports.applyHttpCors = applyHttpCors;
+exports.applyClientPublicCors = applyHttpCors;
+function handleHttpCorsPreflight(req, res) {
     if (req.method === 'OPTIONS') {
         res.sendStatus(204);
         return true;
     }
     return false;
 }
-exports.handleClientPublicCorsPreflight = handleClientPublicCorsPreflight;
+exports.handleHttpCorsPreflight = handleHttpCorsPreflight;
+exports.handleClientPublicCorsPreflight = handleHttpCorsPreflight;
 //# sourceMappingURL=client-public-cors.util.js.map

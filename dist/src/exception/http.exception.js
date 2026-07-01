@@ -41,9 +41,7 @@ let HttpExceptionFilter = HttpExceptionFilter_1 = class HttpExceptionFilter {
                 }
             }
             this.logException(exception, req, status, message);
-            if ((0, client_public_cors_util_1.shouldApplyClientPublicCors)(req)) {
-                (0, client_public_cors_util_1.applyClientPublicCors)(req, res);
-            }
+            (0, client_public_cors_util_1.applyHttpCors)(req, res);
             res.status(200).send({
                 status,
                 data,
@@ -52,9 +50,7 @@ let HttpExceptionFilter = HttpExceptionFilter_1 = class HttpExceptionFilter {
         }
         catch (filterError) {
             this.logger.error(`Exception filter failed: ${req.method} ${(_a = req.originalUrl) !== null && _a !== void 0 ? _a : req.url}`, filterError instanceof Error ? filterError.stack : String(filterError));
-            if ((0, client_public_cors_util_1.shouldApplyClientPublicCors)(req)) {
-                (0, client_public_cors_util_1.applyClientPublicCors)(req, res);
-            }
+            (0, client_public_cors_util_1.applyHttpCors)(req, res);
             res.status(200).send({
                 status: 500,
                 data: null,

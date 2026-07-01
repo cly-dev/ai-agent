@@ -25,6 +25,7 @@ module.exports = {
         REDIS_PASSWORD: process.env.REDIS_PASSWORD,
         REDIS_DB: process.env.REDIS_DB,
         CLIENT_CORS_ORIGINS: process.env.CLIENT_CORS_ORIGINS,
+        CORS_ORIGINS: process.env.CORS_ORIGINS,
         APP_CLIENT_HOST: process.env.APP_CLIENT_HOST,
       },
       max_memory_restart: process.env.PM2_MAX_MEMORY || '1G',

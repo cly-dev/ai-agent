@@ -1,7 +1,9 @@
 import { isProductionRuntime } from '../core/security/runtime-env.util';
 
-function parseClientCorsOrigins(): string[] {
-  const raw = process.env.CLIENT_CORS_ORIGINS?.trim();
+function parseCorsOrigins(): string[] {
+  const raw =
+    process.env.CORS_ORIGINS?.trim() ||
+    process.env.CLIENT_CORS_ORIGINS?.trim();
   if (!raw) {
     return [];
   }
@@ -13,34 +15,43 @@ function parseClientCorsOrigins(): string[] {
 
 let cachedOrigins: string[] | null = null;
 
-export function getClientCorsAllowlist(): string[] {
+export function getCorsAllowlist(): string[] {
   if (cachedOrigins === null) {
-    cachedOrigins = parseClientCorsOrigins();
+    cachedOrigins = parseCorsOrigins();
   }
   return cachedOrigins;
 }
 
+/** @deprecated 使用 getCorsAllowlist */
+export const getClientCorsAllowlist = getCorsAllowlist;
+
 /** 开发环境未配置白名单时，为本地调试反射 Origin。 */
-export function shouldReflectClientCorsOrigin(): boolean {
-  if (getClientCorsAllowlist().length > 0) {
+export function shouldReflectCorsOrigin(): boolean {
+  if (getCorsAllowlist().length > 0) {
     return false;
   }
   return !isProductionRuntime();
 }
 
-export function resolveAllowedClientCorsOrigin(
+/** @deprecated 使用 shouldReflectCorsOrigin */
+export const shouldReflectClientCorsOrigin = shouldReflectCorsOrigin;
+
+export function resolveAllowedCorsOrigin(
   origin: string | undefined,
 ): string | null {
   if (typeof origin !== 'string' || origin.trim().length === 0) {
     return null;
   }
   const normalized = origin.trim();
-  const allowlist = getClientCorsAllowlist();
+  const allowlist = getCorsAllowlist();
   if (allowlist.length > 0) {
     return allowlist.includes(normalized) ? normalized : null;
   }
-  if (shouldReflectClientCorsOrigin()) {
+  if (shouldReflectCorsOrigin()) {
     return normalized;
   }
   return null;
 }
+
+/** @deprecated 使用 resolveAllowedCorsOrigin */
+export const resolveAllowedClientCorsOrigin = resolveAllowedCorsOrigin;

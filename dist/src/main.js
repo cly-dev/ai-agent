@@ -15,12 +15,8 @@ const client_public_cors_util_1 = require("./middleware/client-public-cors.util"
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.use((req, res, next) => {
-        if (!(0, client_public_cors_util_1.shouldApplyClientPublicCors)(req)) {
-            next();
-            return;
-        }
-        (0, client_public_cors_util_1.applyClientPublicCors)(req, res);
-        if ((0, client_public_cors_util_1.handleClientPublicCorsPreflight)(req, res)) {
+        (0, client_public_cors_util_1.applyHttpCors)(req, res);
+        if ((0, client_public_cors_util_1.handleHttpCorsPreflight)(req, res)) {
             return;
         }
         next();

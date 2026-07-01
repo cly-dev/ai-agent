@@ -1,6 +1,5 @@
 import type { Request, Response } from 'express';
-import { resolveAllowedClientCorsOrigin } from './client-cors-origins.util';
-import { matchesClientPublicApiPath } from './client-public-api-paths';
+import { resolveAllowedCorsOrigin } from './client-cors-origins.util';
 
 const DEFAULT_ALLOW_HEADERS = [
   'Content-Type',
@@ -13,17 +12,21 @@ const DEFAULT_ALLOW_HEADERS = [
   'Last-Event-ID',
 ].join(', ');
 
-export function shouldApplyClientPublicCors(req: Request): boolean {
-  return matchesClientPublicApiPath(req.path);
+/** 全站 API（B 端 /admin + C 端公开路由）均应用 CORS。 */
+export function shouldApplyHttpCors(_req: Request): boolean {
+  return true;
 }
 
+/** @deprecated 使用 shouldApplyHttpCors */
+export const shouldApplyClientPublicCors = shouldApplyHttpCors;
+
 /**
- * C 端接口跨域响应头。
- * SSE（EventSource）可能携带 Last-Event-ID；浏览器预检需允许常用鉴权头。
+ * 浏览器跨域响应头（B/C 全接口）。
+ * SSE（EventSource）可能携带 Last-Event-ID；预检需允许常用鉴权头。
  */
-export function applyClientPublicCors(req: Request, res: Response): void {
+export function applyHttpCors(req: Request, res: Response): void {
   const origin = req.headers.origin;
-  const allowedOrigin = resolveAllowedClientCorsOrigin(
+  const allowedOrigin = resolveAllowedCorsOrigin(
     typeof origin === 'string' ? origin : undefined,
   );
   if (allowedOrigin) {
@@ -49,7 +52,10 @@ export function applyClientPublicCors(req: Request, res: Response): void {
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
-export function handleClientPublicCorsPreflight(
+/** @deprecated 使用 applyHttpCors */
+export const applyClientPublicCors = applyHttpCors;
+
+export function handleHttpCorsPreflight(
   req: Request,
   res: Response,
 ): boolean {
@@ -59,3 +65,6 @@ export function handleClientPublicCorsPreflight(
   }
   return false;
 }
+
+/** @deprecated 使用 handleHttpCorsPreflight */
+export const handleClientPublicCorsPreflight = handleHttpCorsPreflight;

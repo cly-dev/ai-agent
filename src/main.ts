@@ -17,20 +17,15 @@ import {
   CLIENT_PUBLIC_API_EXCLUDES,
 } from './middleware/client-public-api-paths';
 import {
-  applyClientPublicCors,
-  handleClientPublicCorsPreflight,
-  shouldApplyClientPublicCors,
+  applyHttpCors,
+  handleHttpCorsPreflight,
 } from './middleware/client-public-cors.util';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.use((req: Request, res: Response, next) => {
-    if (!shouldApplyClientPublicCors(req)) {
-      next();
-      return;
-    }
-    applyClientPublicCors(req, res);
-    if (handleClientPublicCorsPreflight(req, res)) {
+    applyHttpCors(req, res);
+    if (handleHttpCorsPreflight(req, res)) {
       return;
     }
     next();
