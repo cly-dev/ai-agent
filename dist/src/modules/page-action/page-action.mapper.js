@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.toPageActionRunAdminDetail = exports.toPageActionRunAdminListItem = exports.toPageActionResponse = void 0;
 const page_action_run_steps_util_1 = require("../../core/page-action/page-action-run-steps.util");
 function toPageActionResponse(row) {
-    var _a;
+    var _a, _b, _c;
     return {
         id: row.id,
         appClientId: row.appClientId,
@@ -12,7 +12,7 @@ function toPageActionResponse(row) {
         name: row.name,
         description: row.description,
         hostToolId: row.hostToolId,
-        hostToolName: row.hostTool.name,
+        hostToolName: (_c = (_b = row.hostTool) === null || _b === void 0 ? void 0 : _b.name) !== null && _c !== void 0 ? _c : null,
         pageScope: row.pageScope,
         systemPrompt: row.systemPrompt,
         defaultDelivery: row.defaultDelivery,

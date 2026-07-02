@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parseAgentRunSteps = exports.mergeTurnExecutionSteps = exports.nextRunStepNumber = exports.maxRunStepNumber = void 0;
+exports.parseAgentRunSteps = exports.mergeTurnExecutionSteps = exports.offsetRunSteps = exports.nextRunStepNumber = exports.maxRunStepNumber = void 0;
 function maxRunStepNumber(steps) {
     return steps.reduce((max, row) => Math.max(max, typeof row.step === 'number' ? row.step : 0), 0);
 }
@@ -9,6 +9,10 @@ function nextRunStepNumber(steps) {
     return maxRunStepNumber(steps) + 1;
 }
 exports.nextRunStepNumber = nextRunStepNumber;
+function offsetRunSteps(steps, startStep) {
+    return steps.map((step, index) => (Object.assign(Object.assign({}, step), { step: startStep + index })));
+}
+exports.offsetRunSteps = offsetRunSteps;
 function mergeTurnExecutionSteps(runs) {
     const ordered = [...runs].sort((a, b) => a.sequence - b.sequence || a.runId - b.runId);
     const merged = [];

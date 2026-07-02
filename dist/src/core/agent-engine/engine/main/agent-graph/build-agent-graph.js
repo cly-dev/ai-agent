@@ -107,10 +107,10 @@ async function buildAndRunAgentGraph(deps, input) {
             if ((0, turn_graph_util_1.shouldRouteToRespond)(s)) {
                 return 'summarize';
             }
-            if (((_a = s.workflowRun) === null || _a === void 0 ? void 0 : _a.status) === 'running' && s.workflowRun.currentNodeId) {
+            if (((_a = s.workflowRun) === null || _a === void 0 ? void 0 : _a.status) === 'running' &&
+                s.workflowRun.currentNodeId) {
                 const current = (0, workflow_graph_routing_util_1.getCurrentWorkflowNode)(s);
-                if ((current === null || current === void 0 ? void 0 : current.status) === 'pending' ||
-                    (current === null || current === void 0 ? void 0 : current.status) === 'running') {
+                if ((current === null || current === void 0 ? void 0 : current.status) === 'pending' || (current === null || current === void 0 ? void 0 : current.status) === 'running') {
                     return 'execute_node';
                 }
                 return 'workflow_advance';
@@ -165,8 +165,7 @@ async function buildAndRunAgentGraph(deps, input) {
         if (((_a = state.workflowRun) === null || _a === void 0 ? void 0 : _a.status) === 'running' &&
             state.workflowRun.currentNodeId) {
             const current = (0, workflow_graph_routing_util_1.getCurrentWorkflowNode)(state);
-            if ((current === null || current === void 0 ? void 0 : current.status) === 'pending' ||
-                (current === null || current === void 0 ? void 0 : current.status) === 'running') {
+            if ((current === null || current === void 0 ? void 0 : current.status) === 'pending' || (current === null || current === void 0 ? void 0 : current.status) === 'running') {
                 return 'execute_node';
             }
             return 'workflow_advance';

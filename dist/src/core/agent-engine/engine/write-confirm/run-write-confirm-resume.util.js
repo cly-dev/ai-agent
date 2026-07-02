@@ -15,7 +15,8 @@ const agent_run_steps_util_1 = require("../main/run/agent-run-steps.util");
 const task_plan_util_1 = require("../main/plan/task-plan.util");
 const turn_respond_util_1 = require("../turn/turn-respond.util");
 const run_aborted_error_1 = require("../../../session-run/run-aborted.error");
-const chat_approval_run_audit_util_1 = require("../../../approval/chat-approval-run-audit.util");
+const write_confirm_run_audit_util_1 = require("../../../approval/write-confirm-run-audit.util");
+const agent_run_steps_util_2 = require("../main/run/agent-run-steps.util");
 async function runWriteConfirmResume(input) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u;
     const { resumeInput, prepared, scope, deps } = input;
@@ -87,10 +88,8 @@ async function runWriteConfirmResume(input) {
     let workerLeadSteps = [];
     if (input.approvalAudit) {
         workerLeadSteps = [
-            (0, chat_approval_run_audit_util_1.buildChatApprovalConfirmedRunStep)(1, {
-                approvalRequestId: input.approvalAudit.approvalRequestId,
+            (0, write_confirm_run_audit_util_1.buildChatWriteConfirmConfirmedRunStep)(1, {
                 primaryRunId: suspendedPrimaryRunId,
-                resumeChannel: input.approvalAudit.resumeChannel,
                 decidedByUserId: input.approvalAudit.decidedByUserId,
                 nodeId: input.approvalAudit.nodeId,
             }),
@@ -137,7 +136,7 @@ async function runWriteConfirmResume(input) {
             deps.host.emitWriteConfirmationExpired(resumeInput.sessionId);
             return null;
         }
-        writeSteps = (0, chat_approval_run_audit_util_1.offsetRunSteps)(writeSteps, workerLeadSteps.length + 1);
+        writeSteps = (0, agent_run_steps_util_2.offsetRunSteps)(writeSteps, workerLeadSteps.length + 1);
         await deps.lifecycle.updateRun(resumeRun.id, [...workerLeadSteps, ...writeSteps], client_1.AgentRunStatus.running);
     }
     else if (workerLeadSteps.length > 0) {

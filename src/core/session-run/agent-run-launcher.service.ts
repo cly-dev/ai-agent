@@ -38,29 +38,17 @@ export class AgentRunLauncher {
 
     try {
       const run =
-        job.kind === 'write_confirm' && job.approvalInboxSnapshot
-          ? await this.agentEngine.resumeChatFromApprovalInboxSnapshot(
+        job.kind === 'write_confirm'
+          ? await this.agentEngine.resumeAfterWriteConfirm(
               {
                 userId: job.userId,
                 sessionId: job.sessionId,
                 userMessageId: job.userMessageId,
                 pageContext: job.pageContext ?? null,
-                snapshot: job.approvalInboxSnapshot,
-                approvalRequestId: job.approvalRequestId,
               },
               scope,
             )
-          : job.kind === 'write_confirm'
-            ? await this.agentEngine.resumeAfterWriteConfirm(
-                {
-                  userId: job.userId,
-                  sessionId: job.sessionId,
-                  userMessageId: job.userMessageId,
-                  pageContext: job.pageContext ?? null,
-                },
-                scope,
-              )
-            : await this.agentEngine.run(
+          : await this.agentEngine.run(
               {
                 userId: job.userId,
                 sessionId: job.sessionId,

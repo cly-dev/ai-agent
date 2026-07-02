@@ -5,6 +5,7 @@ export declare function maxRunStepNumber(steps: Array<{
 export declare function nextRunStepNumber(steps: Array<{
     step?: number | string;
 }>): number;
+export declare function offsetRunSteps(steps: AgentRunStep[], startStep: number): AgentRunStep[];
 export type TurnRunStepSlice = {
     runId: number;
     role: string;

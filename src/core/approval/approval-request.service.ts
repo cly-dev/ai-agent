@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  ApprovalSource,
   ApprovalStatus,
   type ApprovalRequest,
   type Prisma,
@@ -11,6 +12,12 @@ import type {
   ApprovalDecisionInput,
   CreateApprovalRequestInput,
 } from './approval.types';
+
+/** 收件箱可见的审批来源（chat 写确认走会话内路径，不进收件箱）。 */
+export const APPROVAL_INBOX_SOURCES = [
+  ApprovalSource.page_action,
+  ApprovalSource.webhook,
+] as const satisfies readonly ApprovalSource[];
 
 const APPROVAL_INBOX_INCLUDE = {
   workflow: { select: { workflowKey: true, name: true } },
@@ -65,79 +72,16 @@ export class ApprovalRequestService {
     });
   }
 
-  async findChatBySessionPrimaryRun(input: {
-    appClientId: number;
-    sessionId: string;
-    runId: number;
-  }): Promise<ApprovalRequest | null> {
-    return this.prisma.approvalRequest.findFirst({
-      where: {
-        appClientId: input.appClientId,
-        sessionId: input.sessionId,
-        source: 'chat',
-        resumeSnapshot: {
-          path: ['channel', 'runId'],
-          equals: input.runId,
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async findPendingChatBySessionRun(input: {
-    appClientId: number;
-    sessionId: string;
-    runId: number;
-  }): Promise<ApprovalRequest | null> {
-    return this.prisma.approvalRequest.findFirst({
-      where: {
-        appClientId: input.appClientId,
-        sessionId: input.sessionId,
-        source: 'chat',
-        status: ApprovalStatus.pending,
-        resumeSnapshot: {
-          path: ['channel', 'runId'],
-          equals: input.runId,
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async syncChatRealtimeDecision(input: {
-    appClientId: number;
-    sessionId: string;
-    runId: number;
-    decidedByUserId: number;
-    decision: 'approved' | 'rejected';
-    decisionNote?: string | null;
-  }): Promise<void> {
-    const row = await this.findPendingChatBySessionRun({
-      appClientId: input.appClientId,
-      sessionId: input.sessionId,
-      runId: input.runId,
-    });
-    if (!row) {
-      return;
-    }
-    const payload = {
-      approvalRequestId: row.id,
-      decidedByUserId: input.decidedByUserId,
-      decisionNote: input.decisionNote ?? null,
-    };
-    if (input.decision === 'approved') {
-      await this.markApproved(payload);
-      return;
-    }
-    await this.markRejected(payload);
-  }
-
   async findByIdForApprover(
     approvalRequestId: number,
     approverUserId: number,
   ): Promise<ApprovalRequest | null> {
     return this.prisma.approvalRequest.findFirst({
-      where: { id: approvalRequestId, approverUserId },
+      where: {
+        id: approvalRequestId,
+        approverUserId,
+        source: { in: [...APPROVAL_INBOX_SOURCES] },
+      },
     });
   }
 
@@ -152,6 +96,7 @@ export class ApprovalRequestService {
         appClientId: input.appClientId,
         approverUserId: input.approverUserId,
         status: ApprovalStatus.pending,
+        source: { in: [...APPROVAL_INBOX_SOURCES] },
       },
       orderBy: { createdAt: 'desc' },
       take: input.limit ?? 50,

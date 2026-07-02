@@ -8,6 +8,11 @@ export type PageWorkflowComposeOutput = {
     riskLevel: string;
 };
 export declare function buildPageComposeNodeOutput(output: PageWorkflowComposeOutput): Record<string, unknown>;
+export declare function resolvePageWorkflowPresentSummary(input: {
+    nodes: WorkflowNodeDef[];
+    nodeOutputs: Record<string, unknown>;
+    fillText: string;
+}): string | null;
 export declare function resolvePageWorkflowPendingWrite(input: {
     nodes: WorkflowNodeDef[];
     nodeOutputs: Record<string, unknown>;

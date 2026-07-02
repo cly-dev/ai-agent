@@ -20,6 +20,7 @@ import {
   applyHttpCors,
   handleHttpCorsPreflight,
 } from './middleware/client-public-cors.util';
+import { readHttpServerEnabled } from './core/session-run/session-run-bullmq.connection.util';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -78,7 +79,15 @@ async function bootstrap() {
     Logger.log('Swagger docs available at http://localhost:3030/docs');
   }
 
-  await app.listen(3030);
+  if (readHttpServerEnabled()) {
+    await app.listen(3030);
+    Logger.log('HTTP server listening on http://localhost:3030');
+  } else {
+    await app.init();
+    Logger.log(
+      'HTTP disabled (SESSION_RUN_HTTP_ENABLED=0); BullMQ worker / background only',
+    );
+  }
 }
 
 function registerProcessErrorHandlers(): void {

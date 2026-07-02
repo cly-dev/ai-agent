@@ -1,8 +1,4 @@
-import {
-  getWorkflowActionRegistryEntry,
-  isWorkflowActionKind,
-  workflowProfileAllowsAction,
-} from './workflow-action-registry';
+import { getWorkflowActionRegistryEntry, isWorkflowActionKind } from './workflow-action-registry';
 import type {
   WorkflowBindingRefs,
   WorkflowDefinition,
@@ -253,14 +249,6 @@ function validateNodeDef(
       `${path}.action`,
       'action_not_implemented',
       `action ${action} is not implemented yet`,
-    );
-  }
-  if (!workflowProfileAllowsAction(profile, action)) {
-    pushIssue(
-      issues,
-      `${path}.action`,
-      'action_not_allowed_for_profile',
-      `action ${action} is not allowed for profile ${profile}`,
     );
   }
 

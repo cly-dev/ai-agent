@@ -3,7 +3,7 @@ import type { WorkflowProfile } from '../../core/workflow/workflow.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { CreateWorkflowDto, QueryWorkflowDto, UpdateWorkflowDto } from './dto/workflow.dto';
 import type { WorkflowListItem, WorkflowResponse, WorkflowRevisionResponse } from './workflow.types';
-import { type WorkflowEntryKind } from './workflow-profile.util';
+import type { WorkflowEntryKind } from './workflow-profile.util';
 export declare class WorkflowService {
     private readonly prisma;
     constructor(prisma: PrismaService);
@@ -29,7 +29,7 @@ export declare class WorkflowService {
         workflowId: number;
         appClientId: number;
         workflowVersion?: number | null;
-        pageActionHostToolId: number;
+        pageActionHostToolId?: number | null;
     }): Promise<void>;
     private assertReferencingSkillsStillCompatible;
     private assertReferencingPageActionsStillCompatible;

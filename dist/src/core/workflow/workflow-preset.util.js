@@ -1,14 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseWorkflowPresetConfig = exports.expandWorkflowPreset = exports.validateWorkflowPresetInput = exports.isWorkflowPresetKind = exports.listWorkflowPresetCatalog = exports.WORKFLOW_PRESET_CATALOG = void 0;
-const workflow_action_registry_1 = require("./workflow-action-registry");
+const ALL_WORKFLOW_PROFILES = [
+    'page_action',
+    'chat_skill',
+    'shared',
+];
 const PRESET_PROFILES = {
-    page_auto_fill: ['page_action', 'chat_skill', 'shared'],
-    page_context_push: ['page_action', 'chat_skill', 'shared'],
-    fetch_push_summarize: ['page_action', 'chat_skill', 'shared'],
-    fetch_and_answer: ['chat_skill', 'shared'],
-    mutation_submit: ['chat_skill', 'shared'],
-    page_context_mutation_submit: ['chat_skill', 'shared'],
+    page_auto_fill: ALL_WORKFLOW_PROFILES,
+    page_context_push: ALL_WORKFLOW_PROFILES,
+    fetch_push_summarize: ALL_WORKFLOW_PROFILES,
+    fetch_and_answer: ALL_WORKFLOW_PROFILES,
+    mutation_submit: ALL_WORKFLOW_PROFILES,
+    page_context_mutation_submit: ALL_WORKFLOW_PROFILES,
 };
 const DEFAULT_OBJECTIVES = {
     loadPage: 'Load page context and materialize observations required for this turn.',
@@ -263,11 +267,8 @@ exports.WORKFLOW_PRESET_CATALOG = [
         ],
     },
 ];
-function listWorkflowPresetCatalog(profile) {
-    if (!profile) {
-        return exports.WORKFLOW_PRESET_CATALOG;
-    }
-    return exports.WORKFLOW_PRESET_CATALOG.filter((row) => row.profiles.includes(profile));
+function listWorkflowPresetCatalog(_profile) {
+    return exports.WORKFLOW_PRESET_CATALOG;
 }
 exports.listWorkflowPresetCatalog = listWorkflowPresetCatalog;
 function isWorkflowPresetKind(value) {
@@ -285,13 +286,6 @@ function validateWorkflowPresetInput(input) {
             message: `Unknown workflow preset: ${input.preset}`,
         });
         return issues;
-    }
-    if (!catalog.profiles.includes(input.profile)) {
-        issues.push({
-            path: 'preset',
-            code: 'preset_profile_incompatible',
-            message: `Preset ${input.preset} is not compatible with profile ${input.profile}`,
-        });
     }
     if (!input.config || typeof input.config !== 'object' || Array.isArray(input.config)) {
         issues.push({
@@ -369,11 +363,6 @@ function expandWorkflowPreset(input) {
             break;
         default:
             throw new Error(`Unsupported workflow preset: ${input.preset}`);
-    }
-    for (const node of nodes) {
-        if (!(0, workflow_action_registry_1.workflowProfileAllowsAction)(input.profile, node.action)) {
-            throw new Error(`Preset ${input.preset} expands to action ${node.action} which is not allowed for profile ${input.profile}`);
-        }
     }
     return nodes;
 }

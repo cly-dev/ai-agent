@@ -42,7 +42,7 @@ export const WORKFLOW_ACTION_REGISTRY: readonly WorkflowActionRegistryEntry[] = 
   {
     kind: 'present_mutation',
     implemented: true,
-    allowedProfiles: ['chat_skill', 'shared'],
+    allowedProfiles: ['page_action', 'chat_skill', 'shared'],
     batch: 'B',
   },
   {
@@ -75,15 +75,9 @@ export function isWorkflowActionKind(value: string): value is WorkflowActionKind
 }
 
 export function workflowProfileAllowsAction(
-  profile: WorkflowProfile,
+  _profile: WorkflowProfile,
   kind: WorkflowActionKind,
 ): boolean {
   const entry = getWorkflowActionRegistryEntry(kind);
-  if (!entry) {
-    return false;
-  }
-  if (profile === 'shared') {
-    return entry.allowedProfiles.includes('shared');
-  }
-  return entry.allowedProfiles.includes(profile);
+  return entry?.implemented === true;
 }

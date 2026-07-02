@@ -12,8 +12,6 @@ const prisma_module_1 = require("../../prisma/prisma.module");
 const runtime_cache_module_1 = require("../runtime-cache/runtime-cache.module");
 const llm_module_1 = require("../llm/llm.module");
 const tool_engine_module_1 = require("../tool-engine/tool-engine.module");
-const session_run_module_1 = require("../session-run/session-run.module");
-const chat_module_1 = require("../../modules/chat/chat.module");
 const approval_gate_service_1 = require("./approval-gate.service");
 const approval_request_service_1 = require("./approval-request.service");
 const approval_resume_service_1 = require("./approval-resume.service");
@@ -28,8 +26,6 @@ ApprovalModule = __decorate([
             runtime_cache_module_1.RuntimeCacheModule,
             llm_module_1.LlmModule,
             tool_engine_module_1.ToolEngineModule,
-            (0, common_1.forwardRef)(() => session_run_module_1.SessionRunModule),
-            (0, common_1.forwardRef)(() => chat_module_1.ChatModule),
         ],
         providers: [
             approval_request_service_1.ApprovalRequestService,

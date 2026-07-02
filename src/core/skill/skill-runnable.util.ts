@@ -1,7 +1,14 @@
 export type SkillRunnableCapabilities = {
   skillToolIds: number[];
   hostToolIds: number[];
+  workflowId?: number | null;
 };
+
+export function skillIsWorkflowBound(skill: {
+  workflowId?: number | null;
+}): boolean {
+  return skill.workflowId != null && skill.workflowId > 0;
+}
 
 export type SkillRunnableKind = 'http' | 'host' | 'both';
 
@@ -55,6 +62,9 @@ export function skillIsVisibleOnClientPage(
   skill: SkillRunnableCapabilities,
   scopedHostToolIds: ReadonlySet<number>,
 ): boolean {
+  if (skillIsWorkflowBound(skill)) {
+    return true;
+  }
   if (skill.hostToolIds.length === 0) {
     return skill.skillToolIds.length > 0;
   }
@@ -72,6 +82,9 @@ export function skillIsResolvableInScope(
   scopedToolIds: ReadonlySet<number>,
   scopedHostToolIds: ReadonlySet<number> = new Set(),
 ): boolean {
+  if (skillIsWorkflowBound(skill)) {
+    return true;
+  }
   const hasHttpMatch =
     scopedToolIds.size > 0 &&
     skill.skillToolIds.some((toolId) => scopedToolIds.has(toolId));
@@ -99,6 +112,9 @@ export function skillIsResolvableInScope(
 export function skillIsResolvableForRequested(
   skill: SkillRunnableCapabilities,
 ): boolean {
+  if (skillIsWorkflowBound(skill)) {
+    return true;
+  }
   if (skillIsHostOnlySkill(skill)) {
     return skill.hostToolIds.length > 0;
   }
@@ -110,9 +126,16 @@ export function skillIsResolvableForRequested(
  * 纯 Host Skill 不要求 HTTP 权限；HTTP Skill 需与用户 allowed Tool 有交集。
  */
 export function skillIsRunnableForUser(
-  skill: { toolIds: number[]; hostToolIds?: number[] },
+  skill: {
+    toolIds: number[];
+    hostToolIds?: number[];
+    workflowId?: number | null;
+  },
   allowedToolIds: ReadonlySet<number>,
 ): boolean {
+  if (skillIsWorkflowBound(skill)) {
+    return true;
+  }
   const caps = normalizeSkillRunnableCapabilities(skill);
   if (skillIsHostOnlySkill(caps)) {
     return caps.hostToolIds.length > 0;
@@ -140,7 +163,11 @@ export function skillHasRunnableToolIds(
 }
 
 export function filterRunnableSkills<
-  T extends { toolIds: number[]; hostToolIds?: number[] },
+  T extends {
+    toolIds: number[];
+    hostToolIds?: number[];
+    workflowId?: number | null;
+  },
 >(skills: T[], allowedToolIds: ReadonlySet<number>): T[] {
   return skills.filter((skill) => skillIsRunnableForUser(skill, allowedToolIds));
 }

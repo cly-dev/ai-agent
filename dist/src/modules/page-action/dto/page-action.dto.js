@@ -107,8 +107,8 @@ __decorate([
     __metadata("design:type", String)
 ], CreatePageActionDto.prototype, "description", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: '绑定的 HostTool ID；与 hostTool 二选一，均可省略（自动创建）' }),
-    (0, class_validator_1.ValidateIf)((dto) => dto.hostTool == null),
+    (0, swagger_1.ApiPropertyOptional)({ description: '绑定的 HostTool ID；绑定 workflowId 时可省略，由 Workflow 节点推导' }),
+    (0, class_validator_1.ValidateIf)((dto) => dto.hostTool == null && dto.workflowId == null),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
@@ -118,9 +118,9 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         type: CreatePageActionHostToolInlineDto,
-        description: '内联 HostTool 规格；省略 hostToolId 时服务端自动创建（默认 text 字段 schema）',
+        description: '内联 HostTool 规格；未绑定 workflow 且省略 hostToolId 时自动创建（默认 text 字段 schema）',
     }),
-    (0, class_validator_1.ValidateIf)((dto) => dto.hostToolId == null),
+    (0, class_validator_1.ValidateIf)((dto) => dto.hostToolId == null && dto.workflowId == null),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.ValidateNested)(),
     (0, class_transformer_1.Type)(() => CreatePageActionHostToolInlineDto),

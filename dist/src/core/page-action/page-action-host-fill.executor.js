@@ -247,44 +247,48 @@ async function replayPageActionInlineStream(input) {
         detail: { actionRunId: input.actionRunId },
     });
     const fillText = (_e = (_d = input.fillText) === null || _d === void 0 ? void 0 : _d.trim()) !== null && _e !== void 0 ? _e : '';
-    const fillTools = (0, host_tool_stream_target_util_1.resolvePlanReasonHostFillTools)({
-        hostTools: [input.hostTool.definition],
-        allowedToolNames: new Set([input.hostTool.definition.name]),
-    });
-    if (fillText && input.dslOutcome === 'dispatched' && fillTools.length > 0) {
-        const publish = (0, page_action_inline_sse_util_1.createInlineHostActionPublisher)(res, {
-            onPayload: (payload) => {
-                recorder.recordHostActionPayload(payload);
-            },
-        });
-        const streamSession = new host_tool_stream_session_util_1.HostToolStreamSession({
-            publish,
-            sessionId: `page-action:${input.actionRunId}`,
-            pageContext: (_f = input.pageContext) !== null && _f !== void 0 ? _f : {},
-            runId: input.actionRunId,
-            turnId: input.actionRunId,
-            reason: page_action_constants_1.PAGE_ACTION_STREAM_REASON,
-            generation: input.generation,
-        });
-        streamSession.begin({
-            streamId,
-            tools: fillTools,
-            reason: page_action_constants_1.PAGE_ACTION_STREAM_REASON,
-        });
-        streamSession.appendFillChunk(fillText);
-        const fills = (0, plan_reason_host_machine_layer_util_1.buildPlanHostFillsFromMachineText)({
-            text: fillText,
-            fillTools,
+    if (fillText &&
+        input.dslOutcome === 'dispatched' &&
+        input.hostTool) {
+        const fillTools = (0, host_tool_stream_target_util_1.resolvePlanReasonHostFillTools)({
+            hostTools: [input.hostTool.definition],
             allowedToolNames: new Set([input.hostTool.definition.name]),
         });
-        if (fills.length > 0) {
-            streamSession.finalize({
-                hostTools: toHostToolInvocations(fills),
+        if (fillTools.length > 0) {
+            const publish = (0, page_action_inline_sse_util_1.createInlineHostActionPublisher)(res, {
+                onPayload: (payload) => {
+                    recorder.recordHostActionPayload(payload);
+                },
+            });
+            const streamSession = new host_tool_stream_session_util_1.HostToolStreamSession({
+                publish,
+                sessionId: `page-action:${input.actionRunId}`,
+                pageContext: (_f = input.pageContext) !== null && _f !== void 0 ? _f : {},
+                runId: input.actionRunId,
+                turnId: input.actionRunId,
+                reason: page_action_constants_1.PAGE_ACTION_STREAM_REASON,
+                generation: input.generation,
+            });
+            streamSession.begin({
+                streamId,
+                tools: fillTools,
                 reason: page_action_constants_1.PAGE_ACTION_STREAM_REASON,
             });
-        }
-        else {
-            streamSession.abort({ emitSessionEnd: streamSession.hasBegun });
+            streamSession.appendFillChunk(fillText);
+            const fills = (0, plan_reason_host_machine_layer_util_1.buildPlanHostFillsFromMachineText)({
+                text: fillText,
+                fillTools,
+                allowedToolNames: new Set([input.hostTool.definition.name]),
+            });
+            if (fills.length > 0) {
+                streamSession.finalize({
+                    hostTools: toHostToolInvocations(fills),
+                    reason: page_action_constants_1.PAGE_ACTION_STREAM_REASON,
+                });
+            }
+            else {
+                streamSession.abort({ emitSessionEnd: streamSession.hasBegun });
+            }
         }
     }
     (0, page_action_inline_sse_util_1.writePageActionLifecycle)(res, Object.assign(Object.assign({ phase: 'completed' }, lifecycle), { text: fillText, dslOutcome: input.dslOutcome }), recorder);

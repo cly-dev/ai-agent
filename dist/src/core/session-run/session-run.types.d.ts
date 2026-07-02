@@ -1,5 +1,4 @@
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
-import type { ApprovalResumeSnapshot } from '../approval/approval-resume-snapshot.types';
 import type { RunCancellationToken } from './run-cancellation-token';
 export type RunJobKind = 'chat_turn' | 'write_confirm' | 'write_cancel';
 export type RunEnqueuePolicy = 'supersede' | 'queue';
@@ -14,8 +13,7 @@ export type RunJob = {
     input: string;
     requestedSkillId?: number;
     pageContext?: AgentChatPageContext | null;
-    approvalInboxSnapshot?: ApprovalResumeSnapshot;
-    approvalRequestId?: number;
+    enqueueGeneration?: number;
 };
 export type RunExecutionHandle = {
     generation: number;

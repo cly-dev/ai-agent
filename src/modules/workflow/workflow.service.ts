@@ -18,7 +18,6 @@ import {
   resolveWorkflowBindingsForSave,
 } from '../../core/workflow/derive-workflow-bindings-from-nodes.util';
 import { validateSkillWorkflowBinding } from '../../core/workflow/validate-skill-workflow-binding.util';
-import { validatePageActionWorkflowBinding } from '../../core/workflow/validate-page-action-workflow-binding.util';
 import { validateWorkflowDefinition } from '../../core/workflow/validate-workflow.util';
 import {
   expandWorkflowPreset,
@@ -50,10 +49,7 @@ import {
   WORKFLOW_DETAIL_INCLUDE,
   WORKFLOW_LIST_INCLUDE,
 } from './workflow.types';
-import {
-  isWorkflowProfileCompatibleWithEntry,
-  type WorkflowEntryKind,
-} from './workflow-profile.util';
+import type { WorkflowEntryKind } from './workflow-profile.util';
 
 @Injectable()
 export class WorkflowService {
@@ -411,18 +407,12 @@ export class WorkflowService {
         `Workflow ${input.workflowId} is not found or inactive for this AppClient`,
       );
     }
-    if (
-      !isWorkflowProfileCompatibleWithEntry(workflow.profile, input.entry)
-    ) {
-      throw new BadRequestException(
-        `Workflow profile ${workflow.profile} is not compatible with ${input.entry}`,
-      );
-    }
   }
 
   /**
-   * Skill 保存期：Workflow 节点与绑定表必须被 SkillTool / SkillHostTool 完全覆盖。
-   * 与运行时 scope 校验一致，避免 C 端 workflow_db 加载 scope_incompatible。
+   * Skill 保存期：校验 Workflow 引用有效。
+   * workflow-only Skill（无 SkillTool / SkillHostTool）不再要求绑定表覆盖 Workflow；
+   * 若配置了 SkillTool 叠加层，仍须覆盖 Workflow 节点引用。
    */
   async assertSkillWorkflowBindingsCompatible(input: {
     workflowId: number;
@@ -431,6 +421,18 @@ export class WorkflowService {
     skillToolIds: number[];
     skillHostToolIds: number[];
   }): Promise<void> {
+    if (
+      input.skillToolIds.length === 0 &&
+      input.skillHostToolIds.length === 0
+    ) {
+      await this.assertWorkflowReferenceCompatible({
+        workflowId: input.workflowId,
+        appClientId: input.appClientId,
+        entry: 'skill',
+      });
+      return;
+    }
+
     const workflow = await this.prisma.workflow.findFirst({
       where: {
         id: input.workflowId,
@@ -503,53 +505,40 @@ export class WorkflowService {
     workflowId: number;
     appClientId: number;
     workflowVersion?: number | null;
-    pageActionHostToolId: number;
+    pageActionHostToolId?: number | null;
   }): Promise<void> {
+    await this.assertWorkflowReferenceCompatible({
+      workflowId: input.workflowId,
+      appClientId: input.appClientId,
+      entry: 'page_action',
+    });
+    const pinVersion = input.workflowVersion ?? null;
+    if (pinVersion == null) {
+      return;
+    }
     const workflow = await this.prisma.workflow.findFirst({
       where: {
         id: input.workflowId,
         appClientId: input.appClientId,
         isActive: true,
       },
+      select: { id: true, version: true },
     });
-    if (!workflow) {
-      throw new BadRequestException(
-        `Workflow ${input.workflowId} is not found or inactive for this AppClient`,
-      );
+    if (!workflow || pinVersion === workflow.version) {
+      return;
     }
-
-    let nodesJson: unknown = workflow.nodes;
-    const pinVersion = input.workflowVersion ?? null;
-    if (pinVersion != null && pinVersion !== workflow.version) {
-      const revision = await this.prisma.workflowRevision.findUnique({
-        where: {
-          workflowId_version: {
-            workflowId: workflow.id,
-            version: pinVersion,
-          },
+    const revision = await this.prisma.workflowRevision.findUnique({
+      where: {
+        workflowId_version: {
+          workflowId: workflow.id,
+          version: pinVersion,
         },
-      });
-      if (!revision) {
-        throw new BadRequestException(
-          `Workflow ${input.workflowId} revision version=${pinVersion} not found`,
-        );
-      }
-      nodesJson = revision.nodes;
-    }
-
-    const nodes = parseWorkflowNodesJson(nodesJson);
-    const issues = validatePageActionWorkflowBinding({
-      pageActionHostToolId: input.pageActionHostToolId,
-      nodes,
+      },
     });
-    if (issues.length > 0) {
-      throw new BadRequestException({
-        code: 'PAGE_ACTION_WORKFLOW_BINDING_INCOMPATIBLE',
-        message:
-          'PageAction.hostToolId must match generate_and_push node input.hostToolId on the bound Workflow',
-        workflowId: input.workflowId,
-        issues,
-      });
+    if (!revision) {
+      throw new BadRequestException(
+        `Workflow ${input.workflowId} revision version=${pinVersion} not found`,
+      );
     }
   }
 
@@ -584,6 +573,14 @@ export class WorkflowService {
     });
 
     for (const skill of skills) {
+      const skillToolIds = skill.skillTools.map((row) => row.toolId);
+      const skillHostToolIds = skill.skillHostTools.map(
+        (row) => row.hostToolId,
+      );
+      if (skillToolIds.length === 0 && skillHostToolIds.length === 0) {
+        continue;
+      }
+
       let skillNodes = nodes;
       const pinVersion = skill.workflowVersion ?? null;
       if (pinVersion != null && pinVersion !== workflow.version) {
@@ -604,8 +601,8 @@ export class WorkflowService {
         nodes: skillNodes,
         workflowToolIds,
         workflowHostToolIds,
-        skillToolIds: skill.skillTools.map((row) => row.toolId),
-        skillHostToolIds: skill.skillHostTools.map((row) => row.hostToolId),
+        skillToolIds,
+        skillHostToolIds,
       });
       if (issues.length > 0) {
         throw new BadRequestException({
@@ -620,52 +617,9 @@ export class WorkflowService {
   }
 
   private async assertReferencingPageActionsStillCompatible(
-    workflowId: number,
+    _workflowId: number,
   ): Promise<void> {
-    const workflow = await this.findEntityOrThrow(workflowId);
-    const nodes = parseWorkflowNodesJson(workflow.nodes);
-
-    const pageActions = await this.prisma.pageAction.findMany({
-      where: { workflowId, isActive: true },
-      select: {
-        id: true,
-        name: true,
-        hostToolId: true,
-        workflowVersion: true,
-      },
-    });
-
-    for (const pageAction of pageActions) {
-      let actionNodes = nodes;
-      const pinVersion = pageAction.workflowVersion ?? null;
-      if (pinVersion != null && pinVersion !== workflow.version) {
-        const revision = await this.prisma.workflowRevision.findUnique({
-          where: {
-            workflowId_version: {
-              workflowId: workflow.id,
-              version: pinVersion,
-            },
-          },
-        });
-        if (revision) {
-          actionNodes = parseWorkflowNodesJson(revision.nodes);
-        }
-      }
-
-      const issues = validatePageActionWorkflowBinding({
-        pageActionHostToolId: pageAction.hostToolId,
-        nodes: actionNodes,
-      });
-      if (issues.length > 0) {
-        throw new BadRequestException({
-          code: 'WORKFLOW_CHANGE_BREAKS_PAGE_ACTION_REFERENCES',
-          message: `Workflow update is incompatible with PageAction id=${pageAction.id} (${pageAction.name})`,
-          workflowId,
-          pageActionId: pageAction.id,
-          issues,
-        });
-      }
-    }
+    // PageAction 仅引用 workflowId；不再校验 nodes 是否含 generate_and_push。
   }
 
   private resolveWorkflowNodes(input: {

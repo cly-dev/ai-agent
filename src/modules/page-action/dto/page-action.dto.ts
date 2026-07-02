@@ -95,8 +95,10 @@ export class CreatePageActionDto {
   @MaxLength(2000)
   description?: string;
 
-  @ApiPropertyOptional({ description: '绑定的 HostTool ID；与 hostTool 二选一，均可省略（自动创建）' })
-  @ValidateIf((dto: CreatePageActionDto) => dto.hostTool == null)
+  @ApiPropertyOptional({ description: '绑定的 HostTool ID；绑定 workflowId 时可省略，由 Workflow 节点推导' })
+  @ValidateIf(
+    (dto: CreatePageActionDto) => dto.hostTool == null && dto.workflowId == null,
+  )
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -106,9 +108,12 @@ export class CreatePageActionDto {
   @ApiPropertyOptional({
     type: CreatePageActionHostToolInlineDto,
     description:
-      '内联 HostTool 规格；省略 hostToolId 时服务端自动创建（默认 text 字段 schema）',
+      '内联 HostTool 规格；未绑定 workflow 且省略 hostToolId 时自动创建（默认 text 字段 schema）',
   })
-  @ValidateIf((dto: CreatePageActionDto) => dto.hostToolId == null)
+  @ValidateIf(
+    (dto: CreatePageActionDto) =>
+      dto.hostToolId == null && dto.workflowId == null,
+  )
   @IsOptional()
   @ValidateNested()
   @Type(() => CreatePageActionHostToolInlineDto)

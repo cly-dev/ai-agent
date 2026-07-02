@@ -59,11 +59,12 @@ function buildPageHarnessSensorPayload(action, outcome) {
                 agentMetadata: (_b = row.agentMetadata) !== null && _b !== void 0 ? _b : null,
             };
         }
-        case 'summarize': {
+        case 'summarize':
+        case 'present_mutation': {
             const row = (nodeOutput !== null && nodeOutput !== void 0 ? nodeOutput : {});
             return {
                 summaryText: (_c = row.summaryText) !== null && _c !== void 0 ? _c : '',
-                mode: (_d = row.mode) !== null && _d !== void 0 ? _d : 'final',
+                mode: (_d = row.mode) !== null && _d !== void 0 ? _d : (action === 'present_mutation' ? 'brief' : 'final'),
             };
         }
         default:

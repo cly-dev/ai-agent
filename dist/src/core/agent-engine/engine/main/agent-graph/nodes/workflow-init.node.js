@@ -70,7 +70,7 @@ function createWorkflowInitNode(bundle) {
         agentId: ctx.input.agentId,
     };
     return async (state) => {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g;
         const afterPlan = state.taskPlan ? state : await planNode(state);
         if (afterPlan.finished || !afterPlan.taskPlan) {
             (0, workflow_debug_util_1.logWorkflowDebug)('init_skipped', Object.assign(Object.assign({}, debugBase), { reason: afterPlan.finished ? 'finished' : 'no_task_plan', finished: afterPlan.finished }));
@@ -86,12 +86,12 @@ function createWorkflowInitNode(bundle) {
                     (0, workflow_resume_util_1.shouldAwaitReactOnWorkflowResume)(afterPlan.workflowRun, afterPlan.workflowNodeDefs) });
         }
         const scope = {
-            allowedToolIds: (_a = afterPlan.scopedAllowedToolIds) !== null && _a !== void 0 ? _a : [],
-            allowedHostToolIds: ((_b = afterPlan.scopedHostTools) !== null && _b !== void 0 ? _b : []).map((row) => row.id),
+            allowedToolIds: (_b = (_a = bundle.ctx.input.allowedToolIds) !== null && _a !== void 0 ? _a : afterPlan.scopedAllowedToolIds) !== null && _b !== void 0 ? _b : [],
+            allowedHostToolIds: ((_c = afterPlan.scopedHostTools) !== null && _c !== void 0 ? _c : []).map((row) => row.id),
         };
         const boundSkillId = (0, workflow_init_skill_util_1.resolveWorkflowBoundSkillId)(bundle, afterPlan);
         if (afterPlan.planRunContext === 'resume') {
-            const savedRun = (_d = (_c = bundle.ctx.getSessionGoa()) === null || _c === void 0 ? void 0 : _c.activeTask) === null || _d === void 0 ? void 0 : _d.workflowRun;
+            const savedRun = (_e = (_d = bundle.ctx.getSessionGoa()) === null || _d === void 0 ? void 0 : _d.activeTask) === null || _e === void 0 ? void 0 : _e.workflowRun;
             if ((0, workflow_resume_util_1.isResumableWorkflowRun)(savedRun)) {
                 const nodes = await (0, workflow_resume_util_1.resolveWorkflowDefsForResume)(deps.prisma, {
                     savedRun,
@@ -183,7 +183,7 @@ function createWorkflowInitNode(bundle) {
             skillId: boundSkillId,
         });
         await runHelpers.updateRun(ctx.input.runId, next.steps, client_1.AgentRunStatus.running);
-        (0, workflow_debug_util_1.logWorkflowDebug)('init_plan_compile', Object.assign(Object.assign({}, debugBase), { outcome: 'ok', skillId: boundSkillId, compiledFrom: (_f = (_e = next.workflowRun) === null || _e === void 0 ? void 0 : _e.compiledFrom) !== null && _f !== void 0 ? _f : null, workflowRun: next.workflowRun, source: 'plan_compile' }));
+        (0, workflow_debug_util_1.logWorkflowDebug)('init_plan_compile', Object.assign(Object.assign({}, debugBase), { outcome: 'ok', skillId: boundSkillId, compiledFrom: (_g = (_f = next.workflowRun) === null || _f === void 0 ? void 0 : _f.compiledFrom) !== null && _g !== void 0 ? _g : null, workflowRun: next.workflowRun, source: 'plan_compile' }));
         return next;
     };
 }

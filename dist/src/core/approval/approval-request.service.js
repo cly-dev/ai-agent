@@ -9,10 +9,14 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ApprovalRequestService = void 0;
+exports.ApprovalRequestService = exports.APPROVAL_INBOX_SOURCES = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("../../../generated/prisma/client");
 const prisma_service_1 = require("../../prisma/prisma.service");
+exports.APPROVAL_INBOX_SOURCES = [
+    client_1.ApprovalSource.page_action,
+    client_1.ApprovalSource.webhook,
+];
 const APPROVAL_INBOX_INCLUDE = {
     workflow: { select: { workflowKey: true, name: true } },
     initiator: { select: { id: true, username: true, employeeId: true } },
@@ -54,59 +58,13 @@ let ApprovalRequestService = class ApprovalRequestService {
             },
         });
     }
-    async findChatBySessionPrimaryRun(input) {
-        return this.prisma.approvalRequest.findFirst({
-            where: {
-                appClientId: input.appClientId,
-                sessionId: input.sessionId,
-                source: 'chat',
-                resumeSnapshot: {
-                    path: ['channel', 'runId'],
-                    equals: input.runId,
-                },
-            },
-            orderBy: { createdAt: 'desc' },
-        });
-    }
-    async findPendingChatBySessionRun(input) {
-        return this.prisma.approvalRequest.findFirst({
-            where: {
-                appClientId: input.appClientId,
-                sessionId: input.sessionId,
-                source: 'chat',
-                status: client_1.ApprovalStatus.pending,
-                resumeSnapshot: {
-                    path: ['channel', 'runId'],
-                    equals: input.runId,
-                },
-            },
-            orderBy: { createdAt: 'desc' },
-        });
-    }
-    async syncChatRealtimeDecision(input) {
-        var _a;
-        const row = await this.findPendingChatBySessionRun({
-            appClientId: input.appClientId,
-            sessionId: input.sessionId,
-            runId: input.runId,
-        });
-        if (!row) {
-            return;
-        }
-        const payload = {
-            approvalRequestId: row.id,
-            decidedByUserId: input.decidedByUserId,
-            decisionNote: (_a = input.decisionNote) !== null && _a !== void 0 ? _a : null,
-        };
-        if (input.decision === 'approved') {
-            await this.markApproved(payload);
-            return;
-        }
-        await this.markRejected(payload);
-    }
     async findByIdForApprover(approvalRequestId, approverUserId) {
         return this.prisma.approvalRequest.findFirst({
-            where: { id: approvalRequestId, approverUserId },
+            where: {
+                id: approvalRequestId,
+                approverUserId,
+                source: { in: [...exports.APPROVAL_INBOX_SOURCES] },
+            },
         });
     }
     async listPendingForApprover(input) {
@@ -116,6 +74,7 @@ let ApprovalRequestService = class ApprovalRequestService {
                 appClientId: input.appClientId,
                 approverUserId: input.approverUserId,
                 status: client_1.ApprovalStatus.pending,
+                source: { in: [...exports.APPROVAL_INBOX_SOURCES] },
             },
             orderBy: { createdAt: 'desc' },
             take: (_a = input.limit) !== null && _a !== void 0 ? _a : 50,

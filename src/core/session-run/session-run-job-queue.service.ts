@@ -13,11 +13,22 @@ import type { SessionRunCoordinator } from './session-run-coordinator.service';
 import type { RunJob } from './session-run.types';
 import {
   buildSessionRunBullMqConnection,
+  readSessionRunJobAttempts,
   readSessionRunWorkerConcurrency,
+  readSessionRunWorkerEnabled,
 } from './session-run-bullmq.connection.util';
+import { runWithSessionDrainLock } from './session-run-drain-lock.util';
 
 const BULLMQ_PREFIX = `${REDIS_KEY_PREFIX}bullmq`;
 const QUEUE_NAME = 'session-run';
+
+/** BullMQ 中尚未完成、且属于某 session 的 job 状态。 */
+const SESSION_PENDING_JOB_STATES = [
+  'wait',
+  'delayed',
+  'prioritized',
+  'active',
+] as const;
 
 export type SessionRunBullMqJobData = {
   runJob: RunJob;
@@ -55,26 +66,40 @@ export class SessionRunJobQueueService implements OnModuleInit, OnModuleDestroy 
       prefix: BULLMQ_PREFIX,
       defaultJobOptions: {
         removeOnComplete: true,
-        removeOnFail: 100,
-        attempts: 1,
+        removeOnFail: 500,
+        attempts: readSessionRunJobAttempts(),
+        backoff: { type: 'exponential', delay: 2000 },
       },
     });
+
+    if (!readSessionRunWorkerEnabled()) {
+      this.logger.log(
+        'Session run BullMQ queue ready (producer-only; SESSION_RUN_WORKER_ENABLED=0)',
+      );
+      return;
+    }
 
     const concurrency = readSessionRunWorkerConcurrency();
     this.worker = new Worker<SessionRunBullMqJobData>(
       QUEUE_NAME,
       async (bullJob) => {
         const runJob = bullJob.data.runJob;
+        if (await this.coordinator.shouldSkipQueuedJob(runJob)) {
+          return;
+        }
         const acquired = await this.runState.acquireDrainLock(runJob.sessionId);
         if (!acquired) {
           await bullJob.moveToDelayed(Date.now() + SESSION_LOCK_RETRY_MS);
           throw new DelayedError();
         }
-        try {
-          await this.coordinator.processQueuedJob(runJob);
-        } finally {
-          await this.runState.releaseDrainLock(runJob.sessionId);
-        }
+        await runWithSessionDrainLock(
+          this.runState,
+          runJob.sessionId,
+          async () => {
+            await this.coordinator.processQueuedJob(runJob);
+          },
+          { alreadyHeld: true },
+        );
       },
       {
         connection,
@@ -121,15 +146,31 @@ export class SessionRunJobQueueService implements OnModuleInit, OnModuleDestroy 
     );
   }
 
+  private async listSessionJobs(sessionId: string) {
+    if (!this.queue) {
+      return [];
+    }
+    const jobs = await this.queue.getJobs([...SESSION_PENDING_JOB_STATES]);
+    return jobs.filter((row) => row.data.runJob.sessionId === sessionId);
+  }
+
   async clearSession(sessionId: string): Promise<void> {
     if (!this.queue) {
       return;
     }
-    const jobs = await this.queue.getJobs(['wait', 'delayed', 'prioritized']);
+    const jobs = await this.listSessionJobs(sessionId);
     await Promise.all(
-      jobs
-        .filter((row) => row.data.runJob.sessionId === sessionId)
-        .map((row) => row.remove()),
+      jobs.map(async (row) => {
+        try {
+          await row.remove();
+        } catch (error) {
+          this.logger.debug(
+            `session run bullmq job remove skipped jobId=${row.id}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }),
     );
   }
 
@@ -137,7 +178,6 @@ export class SessionRunJobQueueService implements OnModuleInit, OnModuleDestroy 
     if (!this.queue) {
       return 0;
     }
-    const jobs = await this.queue.getJobs(['wait', 'delayed', 'prioritized']);
-    return jobs.filter((row) => row.data.runJob.sessionId === sessionId).length;
+    return (await this.listSessionJobs(sessionId)).length;
   }
 }

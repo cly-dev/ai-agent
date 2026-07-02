@@ -39,6 +39,6 @@ export declare function replayPageActionInlineStream(input: {
     dslOutcome: string | null;
     streamId: string | null;
     pageContext: AgentChatPageContext | null;
-    hostTool: ResolvedPageActionHostTool;
+    hostTool: ResolvedPageActionHostTool | null;
     stepRecorder?: PageActionRunStepRecorder;
 }): Promise<PageActionRunStep[]>;

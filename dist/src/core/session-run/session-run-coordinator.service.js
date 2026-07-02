@@ -22,6 +22,7 @@ const run_event_publisher_1 = require("./run-event.publisher");
 const run_aborted_error_1 = require("./run-aborted.error");
 const run_cancellation_token_1 = require("./run-cancellation-token");
 const run_execution_scope_1 = require("./run-execution.scope");
+const session_run_drain_lock_util_1 = require("./session-run-drain-lock.util");
 let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinator {
     constructor(runState, writeConfirmation, runEvents, launcher, jobQueue) {
         this.runState = runState;
@@ -177,9 +178,21 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
             pageContext: (_a = input.pageContext) !== null && _a !== void 0 ? _a : null,
         };
     }
+    async shouldSkipQueuedJob(job) {
+        await this.syncGenerationFromStore(job.sessionId);
+        const state = this.getState(job.sessionId);
+        if (job.enqueueGeneration != null &&
+            job.enqueueGeneration !== state.generation) {
+            this.logger.debug(`skip stale session run job sessionId=${job.sessionId} jobId=${job.jobId} enqueueGeneration=${job.enqueueGeneration} current=${state.generation}`);
+            return true;
+        }
+        return false;
+    }
     async processQueuedJob(job) {
         const sessionId = job.sessionId;
-        await this.syncGenerationFromStore(sessionId);
+        if (await this.shouldSkipQueuedJob(job)) {
+            return;
+        }
         const state = this.getState(sessionId);
         const generation = state.generation;
         const token = new run_cancellation_token_1.RunCancellationToken();
@@ -203,26 +216,13 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
             state.draining = null;
         }
     }
-    async enqueueApprovalInboxResumeFromSnapshot(input) {
-        var _a;
-        const job = this.buildJob({
-            kind: 'write_confirm',
-            sessionId: input.sessionId,
-            userId: input.userId,
-            appClientId: input.appClientId,
-            input: '',
-            pageContext: (_a = input.pageContext) !== null && _a !== void 0 ? _a : null,
-        });
-        job.approvalInboxSnapshot = input.snapshot;
-        job.approvalRequestId = input.approvalRequestId;
-        return this.enqueue(job, 'queue');
-    }
     async enqueue(job, policy) {
         await this.syncGenerationFromStore(job.sessionId);
         if (policy === 'supersede') {
             await this.supersede(job.sessionId, job.userId, 'user_message');
             await this.writeConfirmation.clear(job.sessionId);
         }
+        job.enqueueGeneration = this.getState(job.sessionId).generation;
         if (this.useBullMq()) {
             await this.jobQueue.enqueue(job);
         }
@@ -234,7 +234,7 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
         return this.getState(job.sessionId).generation;
     }
     async cancelRun(sessionId, userId, runId) {
-        var _a;
+        var _a, _b;
         await this.syncGenerationFromStore(sessionId);
         const state = this.getState(sessionId);
         const active = state.active;
@@ -245,13 +245,15 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
                 cancelledRunId: null,
             };
         }
+        const remoteActive = await this.runState.getActiveSnapshot(sessionId);
         const remoteQueueLen = this.useBullMq()
             ? await this.jobQueue.countSession(sessionId)
             : 0;
         const hadRunnableWork = active != null ||
             state.draining != null ||
             state.pending.length > 0 ||
-            remoteQueueLen > 0;
+            remoteQueueLen > 0 ||
+            remoteActive != null;
         if (!hadRunnableWork) {
             return {
                 superseded: false,
@@ -259,7 +261,7 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
                 cancelledRunId: null,
             };
         }
-        const cancelledRunId = (_a = active === null || active === void 0 ? void 0 : active.runId) !== null && _a !== void 0 ? _a : null;
+        const cancelledRunId = (_b = (_a = active === null || active === void 0 ? void 0 : active.runId) !== null && _a !== void 0 ? _a : remoteActive === null || remoteActive === void 0 ? void 0 : remoteActive.runId) !== null && _b !== void 0 ? _b : null;
         const generation = await this.supersede(sessionId, userId, 'cancel_api');
         await this.writeConfirmation.clear(sessionId);
         return {
@@ -280,6 +282,9 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
         state.generation = event.generation;
         state.lastSupersedeReason = event.reason;
         state.pending = [];
+        if (this.useBullMq()) {
+            void this.jobQueue.clearSession(event.sessionId);
+        }
         if (state.active) {
             state.active.token.abort(event.reason);
         }
@@ -391,12 +396,6 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
         if (state.drainingLock) {
             return;
         }
-        if (this.runState.isRedisBacked()) {
-            const acquired = await this.runState.acquireDrainLock(sessionId);
-            if (!acquired) {
-                return;
-            }
-        }
         state.drainingLock = true;
         void this.drain(sessionId).finally(() => {
             this.finishDrain(sessionId);
@@ -405,23 +404,7 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
     finishDrain(sessionId) {
         const state = this.getState(sessionId);
         state.drainingLock = false;
-        if (this.runState.isRedisBacked()) {
-            void this.runState.releaseDrainLock(sessionId).then(() => {
-                void this.retryDrainIfQueued(sessionId);
-            });
-            return;
-        }
         if (state.pending.length > 0) {
-            void this.scheduleDrain(sessionId);
-        }
-    }
-    async retryDrainIfQueued(sessionId) {
-        var _a, _b;
-        if (this.useBullMq()) {
-            return;
-        }
-        const localLen = (_b = (_a = this.sessions.get(sessionId)) === null || _a === void 0 ? void 0 : _a.pending.length) !== null && _b !== void 0 ? _b : 0;
-        if (localLen > 0) {
             void this.scheduleDrain(sessionId);
         }
     }
@@ -437,7 +420,24 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
             if (!job) {
                 break;
             }
-            await this.processQueuedJob(job);
+            if (this.runState.isRedisBacked()) {
+                try {
+                    await (0, session_run_drain_lock_util_1.runWithSessionDrainLock)(this.runState, sessionId, async () => {
+                        await this.processQueuedJob(job);
+                    });
+                }
+                catch (error) {
+                    if (error instanceof Error &&
+                        error.message === 'SESSION_DRAIN_LOCK_NOT_ACQUIRED') {
+                        state.pending.unshift(job);
+                        break;
+                    }
+                    throw error;
+                }
+            }
+            else {
+                await this.processQueuedJob(job);
+            }
         }
     }
 };

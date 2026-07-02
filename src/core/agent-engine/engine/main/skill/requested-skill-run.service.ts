@@ -9,7 +9,18 @@ import {
   deriveSkillRunnableKind,
   normalizeSkillRunnableCapabilities,
   skillIsRunnableForUser,
+  skillIsWorkflowBound,
 } from '../../../../skill/skill-runnable.util';
+import { loadAgentHostToolCandidateIds } from '../../../../runtime-cache/agent-capability-load.util';
+import {
+  loadWorkflowForRunDetailed,
+  parseWorkflowOverridesJson,
+} from '../../../../workflow/load-workflow-definition.util';
+import {
+  collectWorkflowScopedToolIds,
+  workflowNodeRefsRunnableForUser,
+} from '../../../../workflow/workflow-runtime-scope.util';
+import { PrismaService } from '../../../../../prisma/prisma.service';
 import {
   RequestedSkillRunError,
   type RequestedSkillRunErrorCode,
@@ -34,6 +45,7 @@ export class RequestedSkillRunService {
   constructor(
     private readonly skillService: SkillService,
     private readonly toolEngine: ToolEngineService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -129,6 +141,41 @@ export class RequestedSkillRunService {
     const skill = await this.resolveVisibleSkill(input);
     const allowedToolIds = new Set(input.allowedTools.map((tool) => tool.id));
     const capabilities = normalizeSkillRunnableCapabilities(skill);
+
+    if (skillIsWorkflowBound(skill)) {
+      const workflowCheck = await this.loadWorkflowRunnableContext({
+        skill,
+        allowedToolIds,
+        appClientId: input.appClientId,
+        agentId: input.agentId,
+      });
+      logHostToolResolve('requestedSkillResolveRunnable', {
+        runId: input.runId ?? null,
+        sessionId: input.sessionId ?? null,
+        agentId: input.agentId,
+        skillId: input.skillId,
+        skillName: skill.name,
+        skillToolIds: capabilities.skillToolIds,
+        hostToolIds: capabilities.hostToolIds,
+        runnableKind: deriveSkillRunnableKind(capabilities),
+        runnable: workflowCheck.runnable,
+        workflowId: skill.workflowId ?? null,
+        allowedToolIds: [...allowedToolIds],
+      });
+      if (!workflowCheck.runnable) {
+        throw new RequestedSkillRunError(
+          'SKILL_TOOLS_EMPTY',
+          `skill ${input.skillId} workflow is not runnable for the current user or agent binding`,
+        );
+      }
+      const skillTools = this.pickWorkflowSkillTools(
+        workflowCheck.workflowScopedToolIds,
+        skill,
+        input.allowedTools,
+      );
+      return { skill, skillTools };
+    }
+
     const runnable = skillIsRunnableForUser(skill, allowedToolIds);
     logHostToolResolve('requestedSkillResolveRunnable', {
       runId: input.runId ?? null,
@@ -179,6 +226,67 @@ export class RequestedSkillRunService {
   ): AgentEngineTool[] {
     const skillToolIdSet = new Set(skill.toolIds);
     return allowedTools.filter((tool) => skillToolIdSet.has(tool.id));
+  }
+
+  private pickWorkflowSkillTools(
+    workflowScopedToolIds: number[],
+    skill: AgentSkillWarmupRow,
+    allowedTools: AgentEngineTool[],
+  ): AgentEngineTool[] {
+    if (workflowScopedToolIds.length > 0) {
+      const scoped = new Set(workflowScopedToolIds);
+      return allowedTools.filter((tool) => scoped.has(tool.id));
+    }
+    return this.pickSkillToolsFromAllowed(skill, allowedTools);
+  }
+
+  private async loadWorkflowRunnableContext(input: {
+    skill: AgentSkillWarmupRow;
+    allowedToolIds: ReadonlySet<number>;
+    appClientId: number;
+    agentId: number;
+  }): Promise<{
+    runnable: boolean;
+    workflowScopedToolIds: number[];
+  }> {
+    const workflowId = input.skill.workflowId;
+    if (workflowId == null || workflowId <= 0) {
+      return { runnable: false, workflowScopedToolIds: [] };
+    }
+    const allowedHostToolIds = new Set(
+      await loadAgentHostToolCandidateIds(
+        this.prisma,
+        input.appClientId,
+        input.agentId,
+      ),
+    );
+    const loadResult = await loadWorkflowForRunDetailed(this.prisma, {
+      workflowId,
+      appClientId: input.appClientId,
+      workflowVersion: input.skill.workflowVersion ?? null,
+      workflowOverrides: parseWorkflowOverridesJson(
+        input.skill.workflowOverrides,
+      ),
+      scope: {
+        allowedToolIds: [...input.allowedToolIds],
+        allowedHostToolIds: [...allowedHostToolIds],
+      },
+    });
+    if (loadResult.status !== 'loaded') {
+      return { runnable: false, workflowScopedToolIds: [] };
+    }
+    const workflowScopedToolIds = collectWorkflowScopedToolIds(
+      loadResult.nodes,
+      input.allowedToolIds,
+    );
+    return {
+      runnable: workflowNodeRefsRunnableForUser({
+        nodes: loadResult.nodes,
+        userAllowedToolIds: input.allowedToolIds,
+        userAllowedHostToolIds: allowedHostToolIds,
+      }),
+      workflowScopedToolIds,
+    };
   }
 
   private rethrowAsBadRequest(error: unknown): never {

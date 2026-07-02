@@ -16,13 +16,11 @@ const pagination_1 = require("../../common/pagination");
 const load_workflow_definition_util_1 = require("../../core/workflow/load-workflow-definition.util");
 const derive_workflow_bindings_from_nodes_util_1 = require("../../core/workflow/derive-workflow-bindings-from-nodes.util");
 const validate_skill_workflow_binding_util_1 = require("../../core/workflow/validate-skill-workflow-binding.util");
-const validate_page_action_workflow_binding_util_1 = require("../../core/workflow/validate-page-action-workflow-binding.util");
 const validate_workflow_util_1 = require("../../core/workflow/validate-workflow.util");
 const workflow_preset_util_1 = require("../../core/workflow/workflow-preset.util");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const workflow_mapper_1 = require("./workflow.mapper");
 const workflow_types_1 = require("./workflow.types");
-const workflow_profile_util_1 = require("./workflow-profile.util");
 let WorkflowService = class WorkflowService {
     constructor(prisma) {
         this.prisma = prisma;
@@ -317,12 +315,18 @@ let WorkflowService = class WorkflowService {
         if (!workflow) {
             throw new common_1.BadRequestException(`Workflow ${input.workflowId} is not found or inactive for this AppClient`);
         }
-        if (!(0, workflow_profile_util_1.isWorkflowProfileCompatibleWithEntry)(workflow.profile, input.entry)) {
-            throw new common_1.BadRequestException(`Workflow profile ${workflow.profile} is not compatible with ${input.entry}`);
-        }
     }
     async assertSkillWorkflowBindingsCompatible(input) {
         var _a;
+        if (input.skillToolIds.length === 0 &&
+            input.skillHostToolIds.length === 0) {
+            await this.assertWorkflowReferenceCompatible({
+                workflowId: input.workflowId,
+                appClientId: input.appClientId,
+                entry: 'skill',
+            });
+            return;
+        }
         const workflow = await this.prisma.workflow.findFirst({
             where: {
                 id: input.workflowId,
@@ -385,44 +389,36 @@ let WorkflowService = class WorkflowService {
     }
     async assertPageActionWorkflowBindingsCompatible(input) {
         var _a;
+        await this.assertWorkflowReferenceCompatible({
+            workflowId: input.workflowId,
+            appClientId: input.appClientId,
+            entry: 'page_action',
+        });
+        const pinVersion = (_a = input.workflowVersion) !== null && _a !== void 0 ? _a : null;
+        if (pinVersion == null) {
+            return;
+        }
         const workflow = await this.prisma.workflow.findFirst({
             where: {
                 id: input.workflowId,
                 appClientId: input.appClientId,
                 isActive: true,
             },
+            select: { id: true, version: true },
         });
-        if (!workflow) {
-            throw new common_1.BadRequestException(`Workflow ${input.workflowId} is not found or inactive for this AppClient`);
+        if (!workflow || pinVersion === workflow.version) {
+            return;
         }
-        let nodesJson = workflow.nodes;
-        const pinVersion = (_a = input.workflowVersion) !== null && _a !== void 0 ? _a : null;
-        if (pinVersion != null && pinVersion !== workflow.version) {
-            const revision = await this.prisma.workflowRevision.findUnique({
-                where: {
-                    workflowId_version: {
-                        workflowId: workflow.id,
-                        version: pinVersion,
-                    },
+        const revision = await this.prisma.workflowRevision.findUnique({
+            where: {
+                workflowId_version: {
+                    workflowId: workflow.id,
+                    version: pinVersion,
                 },
-            });
-            if (!revision) {
-                throw new common_1.BadRequestException(`Workflow ${input.workflowId} revision version=${pinVersion} not found`);
-            }
-            nodesJson = revision.nodes;
-        }
-        const nodes = (0, load_workflow_definition_util_1.parseWorkflowNodesJson)(nodesJson);
-        const issues = (0, validate_page_action_workflow_binding_util_1.validatePageActionWorkflowBinding)({
-            pageActionHostToolId: input.pageActionHostToolId,
-            nodes,
+            },
         });
-        if (issues.length > 0) {
-            throw new common_1.BadRequestException({
-                code: 'PAGE_ACTION_WORKFLOW_BINDING_INCOMPATIBLE',
-                message: 'PageAction.hostToolId must match generate_and_push node input.hostToolId on the bound Workflow',
-                workflowId: input.workflowId,
-                issues,
-            });
+        if (!revision) {
+            throw new common_1.BadRequestException(`Workflow ${input.workflowId} revision version=${pinVersion} not found`);
         }
     }
     async assertReferencingSkillsStillCompatible(workflowId) {
@@ -453,6 +449,11 @@ let WorkflowService = class WorkflowService {
             },
         });
         for (const skill of skills) {
+            const skillToolIds = skill.skillTools.map((row) => row.toolId);
+            const skillHostToolIds = skill.skillHostTools.map((row) => row.hostToolId);
+            if (skillToolIds.length === 0 && skillHostToolIds.length === 0) {
+                continue;
+            }
             let skillNodes = nodes;
             const pinVersion = (_a = skill.workflowVersion) !== null && _a !== void 0 ? _a : null;
             if (pinVersion != null && pinVersion !== workflow.version) {
@@ -472,8 +473,8 @@ let WorkflowService = class WorkflowService {
                 nodes: skillNodes,
                 workflowToolIds,
                 workflowHostToolIds,
-                skillToolIds: skill.skillTools.map((row) => row.toolId),
-                skillHostToolIds: skill.skillHostTools.map((row) => row.hostToolId),
+                skillToolIds,
+                skillHostToolIds,
             });
             if (issues.length > 0) {
                 throw new common_1.BadRequestException({
@@ -486,49 +487,7 @@ let WorkflowService = class WorkflowService {
             }
         }
     }
-    async assertReferencingPageActionsStillCompatible(workflowId) {
-        var _a;
-        const workflow = await this.findEntityOrThrow(workflowId);
-        const nodes = (0, load_workflow_definition_util_1.parseWorkflowNodesJson)(workflow.nodes);
-        const pageActions = await this.prisma.pageAction.findMany({
-            where: { workflowId, isActive: true },
-            select: {
-                id: true,
-                name: true,
-                hostToolId: true,
-                workflowVersion: true,
-            },
-        });
-        for (const pageAction of pageActions) {
-            let actionNodes = nodes;
-            const pinVersion = (_a = pageAction.workflowVersion) !== null && _a !== void 0 ? _a : null;
-            if (pinVersion != null && pinVersion !== workflow.version) {
-                const revision = await this.prisma.workflowRevision.findUnique({
-                    where: {
-                        workflowId_version: {
-                            workflowId: workflow.id,
-                            version: pinVersion,
-                        },
-                    },
-                });
-                if (revision) {
-                    actionNodes = (0, load_workflow_definition_util_1.parseWorkflowNodesJson)(revision.nodes);
-                }
-            }
-            const issues = (0, validate_page_action_workflow_binding_util_1.validatePageActionWorkflowBinding)({
-                pageActionHostToolId: pageAction.hostToolId,
-                nodes: actionNodes,
-            });
-            if (issues.length > 0) {
-                throw new common_1.BadRequestException({
-                    code: 'WORKFLOW_CHANGE_BREAKS_PAGE_ACTION_REFERENCES',
-                    message: `Workflow update is incompatible with PageAction id=${pageAction.id} (${pageAction.name})`,
-                    workflowId,
-                    pageActionId: pageAction.id,
-                    issues,
-                });
-            }
-        }
+    async assertReferencingPageActionsStillCompatible(_workflowId) {
     }
     resolveWorkflowNodes(input) {
         var _a;

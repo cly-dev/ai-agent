@@ -1,7 +1,7 @@
 import type { WorkflowPresetCatalogEntry, WorkflowPresetConfig, WorkflowPresetKind, WorkflowPresetValidationIssue } from './workflow-preset.types';
 import type { WorkflowNodeDef, WorkflowProfile } from './workflow.types';
 export declare const WORKFLOW_PRESET_CATALOG: WorkflowPresetCatalogEntry[];
-export declare function listWorkflowPresetCatalog(profile?: WorkflowProfile): WorkflowPresetCatalogEntry[];
+export declare function listWorkflowPresetCatalog(_profile?: WorkflowProfile): WorkflowPresetCatalogEntry[];
 export declare function isWorkflowPresetKind(value: unknown): value is WorkflowPresetKind;
 export declare function validateWorkflowPresetInput(input: {
     preset: WorkflowPresetKind;

@@ -7,7 +7,6 @@ import { LlmService } from '../../llm/llm.service';
 import { PromptComposerService } from '../../prompt/prompt-composer.service';
 import { ToolEngineService } from '../../tool-engine/tool-engine.service';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { ApprovalRequestService } from '../../approval/approval-request.service';
 import { PendingWriteConfirmationStore } from '../../../modules/chat/pending-write-confirmation.store';
 import { AgentService } from '../../../modules/agent/agent.service';
 import { HostToolService } from '../../../modules/host-tool/host-tool.service';
@@ -56,7 +55,6 @@ import {
 import { AgentRunSseGateway } from '../../session-run/agent-run-sse.gateway';
 import type { RunExecutionScope } from '../../session-run/run-execution.scope';
 import {
-  prepareWriteConfirmFromApprovalSnapshot,
   prepareWriteConfirmFromRedis,
   releaseWriteConfirmGate,
 } from './write-confirm/prepare-write-confirm-resume.util';
@@ -64,9 +62,7 @@ import {
   buildWriteConfirmResumeDeps,
   runWriteConfirmResume,
 } from './write-confirm/run-write-confirm-resume.util';
-import type { ResumeChatFromApprovalInboxInput } from './write-confirm/write-confirm-resume.types';
-import { resolveChatApprovalResumeAudit } from '../../approval/chat-approval-run-audit.util';
-import { appendChatApprovalRejectedAuditToPrimaryRun } from '../../approval/chat-approval-run-audit.util';
+import { appendChatWriteConfirmRejectedAuditToPrimaryRun } from '../../approval/write-confirm-run-audit.util';
 
 /**
  * Agent 运行编排：新消息走 run()，写确认续跑走 resumeAfterWriteConfirm()。
@@ -93,7 +89,6 @@ export class AgentEngineService {
     private readonly goaService: SessionGoaService,
     private readonly requestedSkillRun: RequestedSkillRunService,
     private readonly runSse: AgentRunSseGateway,
-    private readonly approvalRequests: ApprovalRequestService,
   ) {}
 
   /**
@@ -138,35 +133,13 @@ export class AgentEngineService {
     if (!pending) {
       return;
     }
-    void this.approvalRequests
-      .syncChatRealtimeDecision({
-        appClientId: pending.appClientId,
-        sessionId,
-        runId: pending.runId,
-        decidedByUserId: userId,
-        decision: 'rejected',
-        decisionNote: 'cancelled in chat',
-      })
-      .catch((error) =>
-        this.logger.warn(
-          `chat approval sync on cancel failed sessionId=${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      );
-    const approvalRow = await this.approvalRequests.findChatBySessionPrimaryRun({
-      appClientId: pending.appClientId,
-      sessionId,
-      runId: pending.runId,
+    await appendChatWriteConfirmRejectedAuditToPrimaryRun({
+      prisma: this.prisma,
+      primaryRunId: pending.runId,
+      rejectChannel: 'session_cancel',
+      decidedByUserId: userId,
+      decisionNote: 'cancelled in chat',
     });
-    if (approvalRow) {
-      await appendChatApprovalRejectedAuditToPrimaryRun({
-        prisma: this.prisma,
-        primaryRunId: pending.runId,
-        approvalRequestId: approvalRow.id,
-        rejectChannel: 'session_cancel',
-        decidedByUserId: userId,
-        decisionNote: 'cancelled in chat',
-      });
-    }
     this.runSse.purgeWriteConfirmationGate(sessionId, pending.runId);
     const message = '已取消操作。';
     this.runSse.emitWriteConfirmationCancelled(sessionId, {
@@ -312,72 +285,14 @@ export class AgentEngineService {
       sessionId: input.sessionId,
       userId: input.userId,
       runId: prepared.suspendedPrimaryRunId,
-      appClientId: prepared.consumed.appClientId,
       pendingWriteConfirmationStore: this.pendingWriteConfirmationStore,
       runSse: this.runSse,
-      approvalRequests: this.approvalRequests,
     });
 
-    const approvalAudit = await resolveChatApprovalResumeAudit({
-      approvalRequests: this.approvalRequests,
-      appClientId: prepared.consumed.appClientId,
-      sessionId: input.sessionId,
-      primaryRunId: prepared.suspendedPrimaryRunId,
+    const approvalAudit = {
       decidedByUserId: input.userId,
-      resumeChannel: 'session_confirm',
       nodeId: prepared.consumed.resumeContext.workflowRun?.currentNodeId ?? null,
-    });
-
-    return runWriteConfirmResume({
-      resumeInput: input,
-      prepared,
-      scope,
-      deps: this.buildWriteConfirmResumeDeps(),
-      approvalAudit,
-    });
-  }
-
-  /** 收件箱 confirm：从 ApprovalRequest.resumeSnapshot 续跑，不依赖 Redis gate。 */
-  async resumeChatFromApprovalInboxSnapshot(
-    input: ResumeChatFromApprovalInboxInput,
-    scope: RunExecutionScope,
-  ): Promise<AgentRunResult | null> {
-    scope.assertActive();
-
-    const prepared = await prepareWriteConfirmFromApprovalSnapshot({
-      resumeInput: input,
-      snapshot: input.snapshot,
-      prisma: this.prisma,
-      agentService: this.agentService,
-    });
-    if (!prepared) {
-      this.emitWriteConfirmationExpired(input.sessionId);
-      return null;
-    }
-
-    await releaseWriteConfirmGate({
-      sessionId: input.sessionId,
-      userId: input.userId,
-      runId: prepared.suspendedPrimaryRunId,
-      appClientId: prepared.consumed.appClientId,
-      pendingWriteConfirmationStore: this.pendingWriteConfirmationStore,
-      runSse: this.runSse,
-      approvalRequests: this.approvalRequests,
-      skipChatApprovalSync: true,
-    });
-
-    const approvalAudit =
-      input.approvalAudit ??
-      (await resolveChatApprovalResumeAudit({
-        approvalRequests: this.approvalRequests,
-        appClientId: prepared.consumed.appClientId,
-        sessionId: input.sessionId,
-        primaryRunId: prepared.suspendedPrimaryRunId,
-        decidedByUserId: input.userId,
-        resumeChannel: 'inbox_confirm',
-        approvalRequestId: input.approvalRequestId,
-        nodeId: input.snapshot.workflowRun?.currentNodeId ?? null,
-      }));
+    };
 
     return runWriteConfirmResume({
       resumeInput: input,

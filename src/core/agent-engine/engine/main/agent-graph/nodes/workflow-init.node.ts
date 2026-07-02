@@ -177,7 +177,10 @@ export function createWorkflowInitNode(
     }
 
     const scope = {
-      allowedToolIds: afterPlan.scopedAllowedToolIds ?? [],
+      allowedToolIds:
+        bundle.ctx.input.allowedToolIds ??
+        afterPlan.scopedAllowedToolIds ??
+        [],
       allowedHostToolIds: (afterPlan.scopedHostTools ?? []).map((row) => row.id),
     };
 

@@ -25,7 +25,7 @@ import type {
   SessionRunSupersedeEvent,
   SupersedeReason,
 } from './session-run.types';
-import type { ApprovalResumeSnapshot } from '../approval/approval-resume-snapshot.types';
+import { runWithSessionDrainLock } from './session-run-drain-lock.util';
 
 type ActiveRunHandle = {
   runId: number;
@@ -267,10 +267,28 @@ export class SessionRunCoordinator implements OnModuleInit {
     };
   }
 
+  /** 入队 generation 已落后则跳过（在抢 drain lock 前调用，省 Worker 槽位）。 */
+  async shouldSkipQueuedJob(job: RunJob): Promise<boolean> {
+    await this.syncGenerationFromStore(job.sessionId);
+    const state = this.getState(job.sessionId);
+    if (
+      job.enqueueGeneration != null &&
+      job.enqueueGeneration !== state.generation
+    ) {
+      this.logger.debug(
+        `skip stale session run job sessionId=${job.sessionId} jobId=${job.jobId} enqueueGeneration=${job.enqueueGeneration} current=${state.generation}`,
+      );
+      return true;
+    }
+    return false;
+  }
+
   /** BullMQ worker 或本进程 drain 消费单条 job。 */
   async processQueuedJob(job: RunJob): Promise<void> {
     const sessionId = job.sessionId;
-    await this.syncGenerationFromStore(sessionId);
+    if (await this.shouldSkipQueuedJob(job)) {
+      return;
+    }
     const state = this.getState(sessionId);
     const generation = state.generation;
     const token = new RunCancellationToken();
@@ -297,34 +315,13 @@ export class SessionRunCoordinator implements OnModuleInit {
     }
   }
 
-  /** 收件箱 confirm：入队 write_confirm（携带快照），与会话内 confirm 共用队列语义。 */
-  async enqueueApprovalInboxResumeFromSnapshot(input: {
-    userId: number;
-    sessionId: string;
-    appClientId: number;
-    pageContext?: RunJob['pageContext'];
-    snapshot: ApprovalResumeSnapshot;
-    approvalRequestId: number;
-  }): Promise<number> {
-    const job = this.buildJob({
-      kind: 'write_confirm',
-      sessionId: input.sessionId,
-      userId: input.userId,
-      appClientId: input.appClientId,
-      input: '',
-      pageContext: input.pageContext ?? null,
-    });
-    job.approvalInboxSnapshot = input.snapshot;
-    job.approvalRequestId = input.approvalRequestId;
-    return this.enqueue(job, 'queue');
-  }
-
   async enqueue(job: RunJob, policy: RunEnqueuePolicy): Promise<number> {
     await this.syncGenerationFromStore(job.sessionId);
     if (policy === 'supersede') {
       await this.supersede(job.sessionId, job.userId, 'user_message');
       await this.writeConfirmation.clear(job.sessionId);
     }
+    job.enqueueGeneration = this.getState(job.sessionId).generation;
     if (this.useBullMq()) {
       await this.jobQueue!.enqueue(job);
     } else {
@@ -351,6 +348,7 @@ export class SessionRunCoordinator implements OnModuleInit {
       };
     }
 
+    const remoteActive = await this.runState.getActiveSnapshot(sessionId);
     const remoteQueueLen = this.useBullMq()
       ? await this.jobQueue!.countSession(sessionId)
       : 0;
@@ -358,7 +356,8 @@ export class SessionRunCoordinator implements OnModuleInit {
       active != null ||
       state.draining != null ||
       state.pending.length > 0 ||
-      remoteQueueLen > 0;
+      remoteQueueLen > 0 ||
+      remoteActive != null;
     if (!hadRunnableWork) {
       return {
         superseded: false,
@@ -367,7 +366,7 @@ export class SessionRunCoordinator implements OnModuleInit {
       };
     }
 
-    const cancelledRunId = active?.runId ?? null;
+    const cancelledRunId = active?.runId ?? remoteActive?.runId ?? null;
 
     const generation = await this.supersede(sessionId, userId, 'cancel_api');
     await this.writeConfirmation.clear(sessionId);
@@ -391,6 +390,9 @@ export class SessionRunCoordinator implements OnModuleInit {
     state.generation = event.generation;
     state.lastSupersedeReason = event.reason;
     state.pending = [];
+    if (this.useBullMq()) {
+      void this.jobQueue!.clearSession(event.sessionId);
+    }
     if (state.active) {
       state.active.token.abort(event.reason);
     }
@@ -529,12 +531,6 @@ export class SessionRunCoordinator implements OnModuleInit {
     if (state.drainingLock) {
       return;
     }
-    if (this.runState.isRedisBacked()) {
-      const acquired = await this.runState.acquireDrainLock(sessionId);
-      if (!acquired) {
-        return;
-      }
-    }
     state.drainingLock = true;
     void this.drain(sessionId).finally(() => {
       this.finishDrain(sessionId);
@@ -544,23 +540,7 @@ export class SessionRunCoordinator implements OnModuleInit {
   private finishDrain(sessionId: string): void {
     const state = this.getState(sessionId);
     state.drainingLock = false;
-    if (this.runState.isRedisBacked()) {
-      void this.runState.releaseDrainLock(sessionId).then(() => {
-        void this.retryDrainIfQueued(sessionId);
-      });
-      return;
-    }
     if (state.pending.length > 0) {
-      void this.scheduleDrain(sessionId);
-    }
-  }
-
-  private async retryDrainIfQueued(sessionId: string): Promise<void> {
-    if (this.useBullMq()) {
-      return;
-    }
-    const localLen = this.sessions.get(sessionId)?.pending.length ?? 0;
-    if (localLen > 0) {
       void this.scheduleDrain(sessionId);
     }
   }
@@ -577,7 +557,24 @@ export class SessionRunCoordinator implements OnModuleInit {
       if (!job) {
         break;
       }
-      await this.processQueuedJob(job);
+      if (this.runState.isRedisBacked()) {
+        try {
+          await runWithSessionDrainLock(this.runState, sessionId, async () => {
+            await this.processQueuedJob(job);
+          });
+        } catch (error) {
+          if (
+            error instanceof Error &&
+            error.message === 'SESSION_DRAIN_LOCK_NOT_ACQUIRED'
+          ) {
+            state.pending.unshift(job);
+            break;
+          }
+          throw error;
+        }
+      } else {
+        await this.processQueuedJob(job);
+      }
     }
   }
 }

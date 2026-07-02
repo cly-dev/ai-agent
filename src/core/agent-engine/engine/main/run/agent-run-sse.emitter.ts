@@ -8,6 +8,7 @@ import {
   filterLlmBlocksAvoidDuplicatingRule,
   looksLikeBlocksJsonOutput,
   mergeSummarizeBlocksForStorage,
+  mergeStreamedDeltaTextForStorage,
   messageBlocksToPlainText,
   normalizeMessageBlocks,
   planStructuredBlockStreaming,
@@ -670,14 +671,26 @@ export class AgentRunSseEmitter {
         }
       }
     } else {
-      const canonicalProse = sanitizeSummarizeUserFacingProse(
-        sanitizeLlmFinalOutput(
-          userMarkdown || routedMessage || rawLlmSource || fallbackPlainText,
-        ),
-      ).trim();
-      if (canonicalProse) {
+      let proseForStorage = '';
+      if (
+        proseSession.messageDeltaEmitted &&
+        proseSession.sanitizedEmitted.trim()
+      ) {
+        // 与 SSE delta 同源：避免终稿二次 sanitize 与用户已看到的流式正文不一致。
+        proseForStorage = sanitizeSummarizeUserFacingProse(
+          proseSession.sanitizedEmitted,
+        ).trim();
+      }
+      if (!proseForStorage) {
+        proseForStorage = sanitizeSummarizeUserFacingProse(
+          sanitizeLlmFinalOutput(
+            userMarkdown || routedMessage || rawLlmSource || fallbackPlainText,
+          ),
+        ).trim();
+      }
+      if (proseForStorage) {
         llmBlocksForStorage = filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
-          textBlock(canonicalProse, 'markdown'),
+          textBlock(proseForStorage, 'markdown'),
         ]);
       }
       if (proseSession.proseStreamSuperseded) {
@@ -685,6 +698,17 @@ export class AgentRunSseEmitter {
           `summarize prose stream superseded by blocks JSON runId=${runId}`,
         );
       }
+    }
+
+    if (
+      proseSession.messageDeltaEmitted &&
+      proseSession.sanitizedEmitted.trim()
+    ) {
+      llmBlocksForStorage = mergeStreamedDeltaTextForStorage(
+        ruleBlocks,
+        llmBlocksForStorage,
+        proseSession.sanitizedEmitted,
+      );
     }
 
     return this.finishSummarizeBlocks(

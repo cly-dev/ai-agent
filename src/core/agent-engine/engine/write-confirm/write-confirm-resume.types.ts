@@ -1,7 +1,6 @@
 import type { AgentRunResult, ResumeAfterWriteConfirmInput } from '../main/types/agent-engine.types';
 import type { PendingWriteConfirmationSnapshot } from '../../../../modules/chat/pending-write-confirmation.types';
-import type { ApprovalResumeSnapshot } from '../../../approval/approval-resume-snapshot.types';
-import type { ChatApprovalResumeAudit } from '../../../approval/chat-approval-run-audit.util';
+import type { ChatWriteConfirmResumeAudit } from '../../../approval/write-confirm-run-audit.util';
 import type { RunExecutionScope } from '../../../session-run/run-execution.scope';
 import type { AgentGraphState } from '../main/types/agent-engine.types';
 import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
@@ -17,19 +16,13 @@ export type WriteConfirmPrimaryRun = {
   turnId: number;
 };
 
-/** Redis gate 或 ApprovalRequest 快照解析后的统一续跑输入。 */
+/** Redis gate 解析后的续跑输入。 */
 export type WriteConfirmResumePrepared = {
   session: WriteConfirmSessionContext;
   consumed: PendingWriteConfirmationSnapshot;
   primaryRun: WriteConfirmPrimaryRun;
   /** 挂起时的 primary runId（审计日志用）。 */
   suspendedPrimaryRunId: number;
-};
-
-export type ResumeChatFromApprovalInboxInput = ResumeAfterWriteConfirmInput & {
-  snapshot: ApprovalResumeSnapshot;
-  approvalRequestId?: number;
-  approvalAudit?: ChatApprovalResumeAudit | null;
 };
 
 export type WriteConfirmResumeHost = {
@@ -83,5 +76,5 @@ export type RunWriteConfirmResumeInput = {
   prepared: WriteConfirmResumePrepared;
   scope: RunExecutionScope;
   deps: WriteConfirmResumeDeps;
-  approvalAudit?: ChatApprovalResumeAudit | null;
+  approvalAudit?: ChatWriteConfirmResumeAudit | null;
 };

@@ -1,31 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveApproverAllowedToolIds = void 0;
+const client_1 = require("../../../generated/prisma/client");
 async function resolveApproverAllowedToolIds(input) {
-    if (input.source === 'page_action' || input.source === 'webhook') {
+    if (input.source === client_1.ApprovalSource.page_action || input.source === client_1.ApprovalSource.webhook) {
         return input.triggerPermission.resolveUserAllowedToolIdsForApp({
             userId: input.approverUserId,
             appClientId: input.appClientId,
         });
     }
-    const sessionId = input.snapshot.channel.kind === 'chat'
-        ? input.snapshot.channel.sessionId
-        : input.sessionId;
-    if (!sessionId) {
-        return input.snapshot.scopedToolIds;
-    }
-    const session = await input.prisma.session.findFirst({
-        where: { id: sessionId, userId: input.approverUserId },
-        select: { agentId: true },
-    });
-    if (!(session === null || session === void 0 ? void 0 : session.agentId)) {
-        return [];
-    }
-    return input.triggerPermission.resolveUserAllowedToolIds({
-        userId: input.approverUserId,
-        appClientId: input.appClientId,
-        agentId: session.agentId,
-    });
+    return input.snapshot.scopedToolIds;
 }
 exports.resolveApproverAllowedToolIds = resolveApproverAllowedToolIds;
 //# sourceMappingURL=approval-resume-permission.util.js.map

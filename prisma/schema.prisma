@@ -782,7 +782,8 @@ model PageAction {
   actionKey     String
   name          String
   description   String?
-  hostToolId    Int
+  /// 轻量路径必填；绑定 workflowId 时可由 Workflow generate_and_push 节点推导
+  hostToolId    Int?
   /// 与 pageContext.page 对齐；空表示通用/不限页
   pageScope     String?
   systemPrompt  String             @db.Text
@@ -800,7 +801,7 @@ model PageAction {
   updatedAt     DateTime           @updatedAt
 
   appClient AppClient       @relation(fields: [appClientId], references: [id], onDelete: Cascade)
-  hostTool  HostTool        @relation(fields: [hostToolId], references: [id], onDelete: Restrict)
+  hostTool  HostTool?       @relation(fields: [hostToolId], references: [id], onDelete: Restrict)
   workflow  Workflow?       @relation(fields: [workflowId], references: [id], onDelete: SetNull)
   runs      PageActionRun[]
 

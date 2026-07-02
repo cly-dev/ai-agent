@@ -63,6 +63,9 @@ export type AgentSkillWarmupRow = {
   toolIds: number[];
   /** SkillHostTool ∩ AgentHostTool 且 HostTool.isActive */
   hostToolIds: number[];
+  workflowId?: number | null;
+  workflowVersion?: number | null;
+  workflowOverrides?: unknown;
 };
 
 export type SkillBindResult = {

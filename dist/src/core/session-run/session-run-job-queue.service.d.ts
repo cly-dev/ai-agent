@@ -16,6 +16,7 @@ export declare class SessionRunJobQueueService implements OnModuleInit, OnModule
     onModuleDestroy(): Promise<void>;
     isEnabled(): boolean;
     enqueue(job: RunJob): Promise<void>;
+    private listSessionJobs;
     clearSession(sessionId: string): Promise<void>;
     countSession(sessionId: string): Promise<number>;
 }

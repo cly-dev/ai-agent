@@ -31,8 +31,8 @@ flowchart LR
 | Tool | 后端 HTTP 接口能力 | 研发 / 平台 | 读接口、写接口 |
 | HostTool | 浏览器 DSL 推送 | 研发 / 平台 | fillText、fillReplyDraft 等 |
 | **Workflow** | 固定执行流程 | **运营 / 实施** | 选场景 Preset，绑 Tool ID |
-| Skill | Chat 技能包 | 运营 | 选 Workflow + 对齐 SkillTool |
-| PageAction | 页内一键动作 | 运营 | 选 Workflow + hostToolId 对齐 |
+| Skill | Chat 技能包 | 运营 | 选 Workflow（workflow-only 可不绑 SkillTool） |
+| PageAction | 页内一键动作 | 运营 | 选 Workflow（`hostToolId` 可省略） |
 
 **原则**：Workflow 是「怎么跑」；Skill / PageAction 是「谁在什么入口跑」。
 
@@ -123,13 +123,13 @@ POST /admin/workflow
 |------|-----|
 | `actionKey` | C 端 invoke 用，如 `review.autofill` |
 | `workflowId` | 上一步返回的 id |
-| `hostToolId` | **必须等于** Workflow 里 `generate_and_push` 节点的 `hostToolId`（即 preset 里的 12） |
+| `hostToolId` | **可省略**；若填写须等于 Workflow `generate_and_push` 节点的 `hostToolId`（preset 里一般为 12） |
 | `systemPrompt` | 页内角色说明 |
 | `pageScope` | 与 C 端 `pageContext.page` 一致 |
 
 **③ 校验**
 
-保存 PageAction 时服务端校验：`hostToolId` 与 push 节点一致，且 Workflow 含 push 节点。
+保存 PageAction 时：Workflow 须含 push 节点；若填写 `hostToolId` 则须与 push 节点一致。
 
 ---
 
@@ -158,7 +158,7 @@ POST /admin/workflow
 | 字段 | 说明 |
 |------|------|
 | `workflowId` | 上面创建的 Workflow |
-| SkillTool | **必须包含** `readToolId=101`（`PUT /admin/skill/:id/tools`） |
+| SkillTool | **可选**；workflow-only 可不绑；若配置须包含 `readToolId=101` |
 
 ---
 
@@ -186,7 +186,7 @@ POST /admin/workflow
 
 **绑定 Skill**
 
-- SkillTool 须同时包含 `101`（读）和 `102`（写）。
+- 若配置 SkillTool 叠加层，须同时包含 `101`（读）和 `102`（写）。
 - 运行时：组参 → 展示草稿 → **用户确认** → 执行写 → 总结。
 
 ---
@@ -246,15 +246,15 @@ Preset 适合 80% 场景。需要改单步 objective、调整顺序时：
 
 | code | 原因 |
 |------|------|
-| `SKILL_WORKFLOW_BINDING_INCOMPATIBLE` | SkillTool 未覆盖 Workflow 节点里的 toolId |
+| `SKILL_WORKFLOW_BINDING_INCOMPATIBLE` | 配置了 SkillTool 但未覆盖 Workflow 节点 toolId |
 
-**做法**：选 Workflow 后，对比节点所需 Tool 与 SkillTool 列表，缺的补上。
+**做法**：workflow-only 无需 SkillTool；叠加层模式下对比节点所需 Tool 与 SkillTool 列表，缺的补上。
 
 ### 6.3 PageAction 对齐
 
 | code | 原因 |
 |------|------|
-| `PAGE_ACTION_WORKFLOW_BINDING_INCOMPATIBLE` | hostToolId 与 push 节点不一致 |
+| `PAGE_ACTION_WORKFLOW_BINDING_INCOMPATIBLE` | 无 push 节点，或填写的 hostToolId 与 push 节点不一致 |
 | `missing_generate_and_push` | Workflow 无推送节点 |
 
 ### 6.4 修改 Workflow 影响下游
@@ -284,13 +284,13 @@ Preset 适合 80% 场景。需要改单步 objective、调整顺序时：
 
 - [ ] Workflow `profile=page_action`（或 shared）
 - [ ] Preset 含 `generate_and_push`（或手配 push 节点）
-- [ ] PageAction.hostToolId = push 节点 hostToolId
+- [ ] 若填写 PageAction.hostToolId，须与 push 节点一致（可省略，运行时推导）
 - [ ] C 端 pageContext 与 pageScope 一致
 
 ### Skill（Chat）上线前
 
 - [ ] Workflow profile 为 chat_skill 或 shared
-- [ ] SkillTool / SkillHostTool ⊇ Workflow 节点引用的全部 id
+- [ ] workflow-only 或 SkillTool / SkillHostTool 覆盖节点引用（叠加层）
 - [ ] mutation 场景 deliverable 建议 `mutation`
 - [ ] 写操作走 `mutation_submit` Preset 或含完整确认链
 

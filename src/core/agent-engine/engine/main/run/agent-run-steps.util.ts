@@ -18,6 +18,17 @@ export function nextRunStepNumber(
   return maxRunStepNumber(steps) + 1;
 }
 
+/** 将 steps 的 step 字段重编号为从 startStep 起连续递增。 */
+export function offsetRunSteps(
+  steps: AgentRunStep[],
+  startStep: number,
+): AgentRunStep[] {
+  return steps.map((step, index) => ({
+    ...step,
+    step: startStep + index,
+  }));
+}
+
 export type TurnRunStepSlice = {
   runId: number;
   role: string;

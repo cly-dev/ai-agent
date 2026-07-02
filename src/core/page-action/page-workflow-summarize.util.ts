@@ -17,6 +17,8 @@ import {
 import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
 import { logWorkflowDebug } from '../workflow/trace/workflow-debug.util';
 
+export type PageWorkflowSummarizeStreamLifecycle = 'terminal' | 'none';
+
 export type PageWorkflowSummarizeResult = {
   summaryText: string;
   model: string | null;
@@ -51,9 +53,12 @@ export async function executePageWorkflowSummarize(input: {
   clientActionId?: string | null;
   existingFillText: string;
   stepRecorder?: PageActionRunStepRecorder;
+  /** terminal：终态 summarize，发 lifecycle 并关闭 SSE；none：仅 LLM（present_mutation 等中间步） */
+  streamLifecycle?: PageWorkflowSummarizeStreamLifecycle;
 }): Promise<PageWorkflowSummarizeResult> {
   const recorder = input.stepRecorder;
   const mode = input.nodeInput.mode ?? 'final';
+  const streamLifecycle = input.streamLifecycle ?? 'terminal';
   const streamId = buildPageActionStreamId({
     actionRunId: input.actionRunId,
     actionKey: input.actionKey,
@@ -93,14 +98,16 @@ export async function executePageWorkflowSummarize(input: {
     completionTokens: usage?.completionTokens ?? null,
   });
 
-  const shouldEmit = shouldEmitPageSummarizeLifecycle({
-    mode,
-    existingFillText: input.existingFillText,
-    summaryText,
-    responseWritable: !input.res.writableEnded,
-  });
+  const shouldEmitTerminal =
+    streamLifecycle === 'terminal' &&
+    shouldEmitPageSummarizeLifecycle({
+      mode,
+      existingFillText: input.existingFillText,
+      summaryText,
+      responseWritable: !input.res.writableEnded,
+    });
 
-  if (shouldEmit) {
+  if (shouldEmitTerminal) {
     writePageActionLifecycle(
       input.res,
       { phase: 'started', ...lifecycleBase },
@@ -124,7 +131,7 @@ export async function executePageWorkflowSummarize(input: {
     actionKey: input.actionKey,
     mode,
     summaryTextLength: summaryText.length,
-    emittedLifecycle: shouldEmit,
+    emittedLifecycle: shouldEmitTerminal,
   });
 
   return {
@@ -132,6 +139,6 @@ export async function executePageWorkflowSummarize(input: {
     model: resolvedModel,
     promptTokens: usage?.promptTokens ?? null,
     completionTokens: usage?.completionTokens ?? null,
-    emittedLifecycle: shouldEmit,
+    emittedLifecycle: shouldEmitTerminal,
   };
 }

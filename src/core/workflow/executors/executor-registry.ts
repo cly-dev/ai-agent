@@ -1,5 +1,4 @@
-import { getWorkflowActionRegistryEntry, workflowProfileAllowsAction } from '../workflow-action-registry';
-import type { WorkflowProfile } from '../workflow.types';
+import { getWorkflowActionRegistryEntry } from '../workflow-action-registry';
 import type { WorkflowActionKind } from '../workflow.types';
 import { fetchDataExecutor, generateAndPushExecutor } from './delegate-react.executor';
 import { loadPageContextExecutor } from './load-page-context.executor';
@@ -15,6 +14,7 @@ import {
 } from './page/page-mutation-delegate.executor';
 import { pageFetchDataExecutor } from './page/page-fetch-data.executor';
 import { pageGenerateAndPushExecutor } from './page/page-generate-and-push.executor';
+import { pagePresentMutationExecutor } from './page/page-present-mutation.executor';
 import { pageSummarizeExecutor } from './page/page-summarize.executor';
 import { presentMutationExecutor } from './present-mutation.executor';
 import { summarizeActionExecutor } from './summarize-action.executor';
@@ -36,6 +36,7 @@ const PAGE_EXECUTORS: WorkflowExecutor[] = [
   pageFetchDataExecutor,
   pageGenerateAndPushExecutor,
   pageSummarizeExecutor,
+  pagePresentMutationExecutor,
   pageComposeMutationExecutor,
   pageWriteDataExecutor,
   pageAwaitUserConfirmExecutor,
@@ -49,19 +50,12 @@ const PAGE_EXECUTOR_BY_ACTION = new Map<WorkflowActionKind, WorkflowExecutor>(
   PAGE_EXECUTORS.map((executor) => [executor.action, executor]),
 );
 
-function profileForExecutorLookup(profile: 'chat' | 'page'): WorkflowProfile {
-  return profile === 'page' ? 'page_action' : 'chat_skill';
-}
-
 export function getWorkflowExecutor(
   action: WorkflowActionKind,
   profile: 'chat' | 'page' = 'chat',
 ): WorkflowExecutor | null {
   const entry = getWorkflowActionRegistryEntry(action);
   if (!entry?.implemented) {
-    return null;
-  }
-  if (!workflowProfileAllowsAction(profileForExecutorLookup(profile), action)) {
     return null;
   }
   const registry =

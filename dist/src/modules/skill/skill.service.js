@@ -133,18 +133,19 @@ let SkillService = class SkillService {
         await this.assertAgentInAppClient(agentId, appClientId);
         const allowedTools = await this.agentService.getAllowedTools(agentId, userId, appClientId);
         const allowedToolIds = new Set(allowedTools.map((tool) => tool.id));
-        const rows = (0, skill_runnable_util_1.filterRunnableSkills)(await this.skillRuntime.listAgentSkillsForUser({
+        const rows = (await this.skillRuntime.listAgentSkillsForUser({
             agentId,
             userId,
             appClientId,
-        }), allowedToolIds);
+        })).filter((skill) => (0, skill_runnable_util_1.skillIsWorkflowBound)(skill) ||
+            (0, skill_runnable_util_1.filterRunnableSkills)([skill], allowedToolIds).length > 0);
         const filtered = rows.filter((row) => this.matchesClientSkillQuery(row, query));
         const pageScope = (_b = (_a = query.page) === null || _a === void 0 ? void 0 : _a.trim()) !== null && _b !== void 0 ? _b : '';
         const pageHostToolIds = pageScope.length > 0
             ? await this.resolvePageScopedHostToolIds(appClientId, agentId, pageScope)
             : null;
         const pageFiltered = pageHostToolIds != null
-            ? filtered.filter((row) => (0, skill_runnable_util_1.skillIsVisibleOnClientPage)((0, skill_runnable_util_1.normalizeSkillRunnableCapabilities)(row), pageHostToolIds))
+            ? filtered.filter((row) => (0, skill_runnable_util_1.skillIsVisibleOnClientPage)(Object.assign(Object.assign({}, (0, skill_runnable_util_1.normalizeSkillRunnableCapabilities)(row)), { workflowId: row.workflowId }), pageHostToolIds))
             : filtered;
         return pageFiltered.map((row) => {
             const item = {

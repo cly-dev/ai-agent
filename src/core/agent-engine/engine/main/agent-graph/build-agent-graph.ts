@@ -150,7 +150,8 @@ export async function buildAndRunAgentGraph(
   };
 
   const State = createAgentGraphStateAnnotation();
-  const wrap = (node: AgentGraphNodeFn) => withRunCancellation(deps, input, node);
+  const wrap = (node: AgentGraphNodeFn) =>
+    withRunCancellation(deps, input, node);
   const graph = new StateGraph(State)
     .addNode('intent', wrap(createIntentNode(bundle)))
     .addNode('turnRoute', wrap(createTurnRouteNode(bundle)))
@@ -166,12 +167,12 @@ export async function buildAndRunAgentGraph(
         if (shouldRouteToRespond(s)) {
           return 'summarize';
         }
-        if (s.workflowRun?.status === 'running' && s.workflowRun.currentNodeId) {
+        if (
+          s.workflowRun?.status === 'running' &&
+          s.workflowRun.currentNodeId
+        ) {
           const current = getCurrentWorkflowNode(s);
-          if (
-            current?.status === 'pending' ||
-            current?.status === 'running'
-          ) {
+          if (current?.status === 'pending' || current?.status === 'running') {
             return 'execute_node';
           }
           return 'workflow_advance';
@@ -235,10 +236,7 @@ export async function buildAndRunAgentGraph(
         state.workflowRun.currentNodeId
       ) {
         const current = getCurrentWorkflowNode(state);
-        if (
-          current?.status === 'pending' ||
-          current?.status === 'running'
-        ) {
+        if (current?.status === 'pending' || current?.status === 'running') {
           return 'execute_node';
         }
         return 'workflow_advance';
@@ -278,9 +276,7 @@ export async function buildAndRunAgentGraph(
       if (state.pendingToolCalls.length > 0) {
         return 'tools';
       }
-      return resolveWorkflowEdge(
-        routeAfterSummarizeWorkflowAxis(state, false),
-      );
+      return resolveWorkflowEdge(routeAfterSummarizeWorkflowAxis(state, false));
     });
 
   const app = graph.compile();

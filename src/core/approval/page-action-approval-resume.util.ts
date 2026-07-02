@@ -44,7 +44,9 @@ export async function resumePageActionFromApprovalSnapshot(input: {
   }
 
   const pageContext = (run.pageContext ?? null) as AgentChatPageContext | null;
-  const hostTool = resolvePageActionHostTool(run.pageAction.hostTool, pageContext);
+  const hostTool = run.pageAction.hostTool
+    ? resolvePageActionHostTool(run.pageAction.hostTool, pageContext)
+    : null;
   const messages = buildPageActionLlmMessages({
     systemPrompt: run.pageAction.systemPrompt,
     instruction: run.instruction,

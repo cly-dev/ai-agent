@@ -81,8 +81,6 @@ function createMinimalAgentGraphBundle(inputOverrides = {}) {
             requestedSkillRun: {},
             hostToolService: {},
             runScopeCache: {},
-            approvalGate: {},
-            approvalRequests: {},
             approvalTriggerPermission: {
                 evaluateForNodes: () => ({ allowed: true, skipped: false }),
             },

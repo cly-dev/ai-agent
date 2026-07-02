@@ -127,9 +127,6 @@ function validateNodeDef(node, index, profile, bindings, issues) {
     if (!(registryEntry === null || registryEntry === void 0 ? void 0 : registryEntry.implemented)) {
         pushIssue(issues, `${path}.action`, 'action_not_implemented', `action ${action} is not implemented yet`);
     }
-    if (!(0, workflow_action_registry_1.workflowProfileAllowsAction)(profile, action)) {
-        pushIssue(issues, `${path}.action`, 'action_not_allowed_for_profile', `action ${action} is not allowed for profile ${profile}`);
-    }
     const typedNode = node;
     validateNodeInput(typedNode, issues);
     validateNodeBindings(typedNode, bindings, issues);

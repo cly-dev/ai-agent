@@ -1,51 +1,57 @@
-# Skill ↔ Workflow 绑定校验与运行时 Scope 对齐
+# Skill ↔ Workflow 绑定校验与运行时 Scope
 
-> 对应 V2 步序来源 `workflow_db` 与 C 端运行白名单（SkillTool / SkillHostTool）的一致性要求。  
-> 实现：`validate-skill-workflow-binding.util.ts`、`WorkflowService.assertSkillWorkflowBindingsCompatible`。
+> 对应 V2 步序来源 `workflow_db` 与 C 端运行权限的一致性要求。  
+> 实现：`validate-skill-workflow-binding.util.ts`、`workflow-runtime-scope.util.ts`、`WorkflowService.assertSkillWorkflowBindingsCompatible`。
 
 ---
 
-## 1. 问题背景
+## 1. 两种 Skill 绑定模式
 
-Skill 绑定 `workflowId` 后，`workflow_init` 从 DB 加载 Workflow 并做 **scope 校验**（`validate-workflow-against-scope`）：
+| 模式 | 配置 | 工具 SSOT | 保存期校验 | 运行时权限 |
+|------|------|-----------|------------|------------|
+| **workflow-only**（推荐） | `workflowId` + `prompt`，**可不绑** SkillTool / SkillHostTool | Workflow `nodes[].input` | 仅校验 Workflow 引用有效 | 节点 toolId / hostToolId ∩ 用户 Agent 权限 |
+| **轻量 + 叠加层** | `workflowId` + SkillTool / SkillHostTool | Workflow 节点 + 可选 Skill 白名单收窄 | 若配置了 SkillTool，须 **覆盖** Workflow 节点引用 | 同上；ReAct scopedTools 可取叠加层 |
 
-- 节点 `fetch_data.input.toolId` 须在 `scopedAllowedToolIds`（来自 **SkillTool**）
-- 节点 `generate_and_push.input.hostToolId` 须在 `scopedHostTools`（来自 **SkillHostTool** + 页面 scope）
-
-若 B 端只配了 WorkflowHostTool（如 `fillReplyDraft id=4`）但未在 Skill 上绑 `SkillHostTool`，或 C 端页面 scope 只有 `fillNoteDraft id=3`，会出现：
-
-| 阶段 | 旧行为 | 现行为 |
-|------|--------|--------|
-| B 端保存 | 无校验，配置可入库 | **拒绝保存**，返回 `SKILL_WORKFLOW_BINDING_INCOMPATIBLE` |
-| C 端 `workflow_init` | `db_load_failed` → 误导 summarize | **scope_incompatible** → 回退 `plan_compile`；资产缺失仍硬失败 |
-| summarize | step 名 `plan:step_0` + plan 上下文 | skip 时 step 名 `workflow_init_skipped:*`，专用引导语 |
+**原则：** 绑了 `workflowId` 后，Workflow 节点决定「执行哪些 toolId / hostToolId」；不再强制要求 SkillTool ⊇ Workflow。
 
 ---
 
 ## 2. 保存期校验规则
 
-### 2.1 校验函数
+### 2.1 workflow-only Skill
 
-`validateSkillWorkflowBinding()` 检查四类约束：
+`SkillTool` 与 `SkillHostTool` **均为空** 时：
+
+- `assertSkillWorkflowBindingsCompatible` 只校验 `workflowId` 存在、同 App、激活、profile 与 `skill` 入口兼容；
+- **不**调用 `validateSkillWorkflowBinding` 的四类覆盖检查；
+- Workflow 更新时，`assertReferencingSkillsStillCompatible` **跳过** 该 Skill。
+
+### 2.2 叠加层 Skill（显式 SkillTool / SkillHostTool）
+
+若 Skill 上配置了任意 SkillTool 或 SkillHostTool，保存期仍执行完整覆盖校验：
 
 1. 每个 **WorkflowTool** 的 `toolId` ∈ **SkillTool**
 2. 每个 **WorkflowHostTool** 的 `hostToolId` ∈ **SkillHostTool**
-3. 每个节点引用的 **toolId**（fetch / compose / write）∈ **SkillTool**
-4. 每个节点引用的 **hostToolId**（generate_and_push）∈ **SkillHostTool**
+3. 每个节点引用的 **toolId** ∈ **SkillTool**
+4. 每个节点引用的 **hostToolId** ∈ **SkillHostTool**
 
-与 Workflow 自身保存校验（节点引用须在 WorkflowTool/WorkflowHostTool 表内）互补：Workflow 管节点级绑定，Skill 管 C 端运行白名单。
+用于「Workflow 固定步序 + Skill 额外收窄 ReAct 范围」场景。
 
-### 2.2 触发入口
+### 2.3 触发入口
 
 | API | 时机 |
 |-----|------|
 | `POST /admin/.../skills` | 创建且带 `workflowId` |
 | `PATCH /admin/skill/:id` | 更新 `workflowId` / `workflowVersion` |
-| `PUT /admin/skill/:id/tools` | Skill 已绑 `workflowId` |
-| `PUT /admin/skill/:id/host-tools` | Skill 已绑 `workflowId` |
-| `PATCH /admin/workflow/:id` | 修改 nodes / tools / hostTools 后，检查所有引用该 Workflow 的 active Skill |
+| `PUT /admin/skill/:id/tools` | Skill 已绑 `workflowId` 且 tools 非空 |
+| `PUT /admin/skill/:id/host-tools` | Skill 已绑 `workflowId` 且 host-tools 非空 |
+| `PATCH /admin/workflow/:id` | 修改 nodes 后，检查引用该 Workflow 的 **有叠加层** active Skill |
 
-### 2.3 错误码
+### 2.4 错误码
+
+workflow-only Skill **不会**触发 `SKILL_WORKFLOW_BINDING_INCOMPATIBLE`（除非 Workflow 引用本身无效）。
+
+叠加层不匹配时：
 
 ```json
 {
@@ -62,7 +68,7 @@ Skill 绑定 `workflowId` 后，`workflow_init` 从 DB 加载 Workflow 并做 **
 }
 ```
 
-Workflow 更新破坏已有 Skill 时：
+Workflow 更新破坏 **有叠加层** Skill 时：
 
 ```json
 {
@@ -74,7 +80,15 @@ Workflow 更新破坏已有 Skill 时：
 
 ---
 
-## 3. 运行时加载（`loadWorkflowForRunDetailed`）
+## 3. 运行时加载与权限
+
+### 3.1 `workflow_init` scope
+
+`workflow_init` 对 workflow-bound Skill 使用 **Agent 级** `ctx.input.allowedToolIds`（用户在该 Agent 下的 HTTP Tool 权限），不再用可能为空的 skill-scoped 列表。
+
+Host Tool scope 仍来自当前页 `scopedHostTools`。
+
+### 3.2 `loadWorkflowForRunDetailed`
 
 | 失败原因 | 含义 | `workflow_init` 行为 |
 |----------|------|----------------------|
@@ -84,44 +98,65 @@ Workflow 更新破坏已有 Skill 时：
 | `scope_incompatible` | 节点 tool/host 不在当前 run scope | **回退 `plan_compile`** |
 | 加载成功 | — | `source=workflow_db` |
 
-`resolveSkillWorkflowForInit()` 三分支 + scope 细分，不再把 scope 问题与资产缺失混为同一 `load_failed`。
+### 3.3 C 端 requestedSkill / 列表
+
+| 阶段 | workflow-only Skill |
+|------|---------------------|
+| 技能列表 | 有 `workflowId` 即进入候选（不按空 SkillTool 过滤） |
+| 发消息前 | `RequestedSkillRunService` 加载 Workflow，校验节点引用 ∩ 用户 HTTP + Agent Host 权限 |
+| scopedTools | 取 Workflow 节点 toolId ∩ 用户 allowedTools（可为空，纯 Host Workflow） |
+
+失败码：`SKILL_TOOLS_EMPTY`（用户无 Workflow 所需 tool / host 权限）。
 
 ---
 
-## 4. B 端配置建议（Skill #3 类问题修复清单）
+## 4. PageAction ↔ Workflow（对照）
 
-1. **SkillHostTool** 包含 Workflow 所有 `generate_and_push` 用到的 hostTool（如 `fillReplyDraft`）。
-2. **SkillTool** 包含 Workflow 所有 `fetch_data` 用到的 HTTP tool。
-3. **WorkflowTool / WorkflowHostTool** 与节点 `input` 一致（Workflow 保存期已校验）。
-4. C 端页面 `pageContext` 须能解析到对应 Host Tool（页面 scope 是运行时第二层过滤，B 端 Skill 绑定是必要非充分条件）。
-5. 若 intentionally 只用 prompt 步序：不要绑 `workflowId`，或确保上述对齐后再绑。
+| 模式 | `hostToolId` | 保存期 | invoke |
+|------|--------------|--------|--------|
+| 轻量（无 Workflow） | 必填或自动创建 | — | 用 DB `hostToolId` |
+| **workflow-only** | **可省略** | Workflow 须含 `generate_and_push` | 从 push 节点 `input.hostToolId` 推导 |
+| 显式对齐 | 填写且须与 push 节点一致 | 同上 + hostToolId 匹配校验 | 优先 DB `hostToolId` |
+
+实现：`validate-page-action-workflow-binding.util.ts`、`page-action-workflow-host.util.ts`。
 
 ---
 
-## 5. 相关文件
+## 5. B 端配置建议
+
+### Skill
+
+1. **固定步序**：只绑 `workflowId` + 写好 `prompt`，无需再维护 SkillTool（权限由 Agent 角色 + Workflow 节点决定）。
+2. **需要收窄 ReAct**：额外配置 SkillTool / SkillHostTool 作为叠加层，保存时须覆盖 Workflow 节点引用。
+3. C 端页面 Host 召回：纯 Host Workflow 仍依赖页面 `pageContext` 与节点 `hostToolId` 可 dispatch。
+
+### PageAction
+
+1. 绑 Workflow 后，`hostToolId` 可留空；UI 可展示 push 节点 hostTool 为只读预览。
+2. 若手动填写 `hostToolId`，须与 push 节点一致。
+3. 无 Workflow 时行为不变：须 `hostToolId` 或内联 `hostTool` 自动创建。
+
+---
+
+## 6. 相关文件
 
 | 文件 | 职责 |
 |------|------|
-| `src/core/workflow/validate-skill-workflow-binding.util.ts` | 保存期纯函数校验 |
-| `src/core/workflow/load-workflow-definition.util.ts` | `loadWorkflowForRunDetailed` 失败原因 |
-| `src/core/workflow/workflow-init-skill.util.ts` | init 解析 `scope_incompatible` |
-| `src/core/agent-engine/.../workflow-init.node.ts` | scope 回退 plan_compile |
-| `src/core/workflow/workflow-init-skip.util.ts` | skip 原因与 summarize 引导语 |
-| `src/modules/workflow/workflow.service.ts` | Admin 保存入口 |
-| `src/modules/skill/skill.service.ts` | Skill CRUD / tools |
-| `src/modules/host-tool/host-tool.service.ts` | SkillHostTool 替换 |
+| `validate-skill-workflow-binding.util.ts` | 叠加层保存期校验 |
+| `workflow-runtime-scope.util.ts` | 节点权限交集、scoped tool 收集 |
+| `load-workflow-definition.util.ts` | `loadWorkflowForRunDetailed` |
+| `workflow-init-skill.util.ts` | init 解析 |
+| `workflow-init.node.ts` | Agent 级 allowedToolIds |
+| `requested-skill-run.service.ts` | C 端 workflow Skill 可运行性 |
+| `skill-runnable.util.ts` | 列表 / 召回 workflow 分支 |
+| `page-action-workflow-host.util.ts` | invoke 推导 hostTool |
+| `workflow.service.ts` | Admin 保存入口 |
 
 ---
 
-## 6. 测试
+## 7. 测试
 
 ```bash
 npm run build
 npx jest src/core/workflow --no-cache
 ```
-
-关键单测：
-
-- `validate-skill-workflow-binding.util.spec.ts`
-- `workflow-init-skill.util.spec.ts`（含 `scope_incompatible`）
-- `workflow-init-skip.util.spec.ts`

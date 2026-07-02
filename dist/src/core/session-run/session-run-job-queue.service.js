@@ -19,8 +19,15 @@ const bullmq_1 = require("bullmq");
 const memory_constants_1 = require("../memory/shared/memory.constants");
 const session_run_state_store_1 = require("../memory/session-run/session-run-state.store");
 const session_run_bullmq_connection_util_1 = require("./session-run-bullmq.connection.util");
+const session_run_drain_lock_util_1 = require("./session-run-drain-lock.util");
 const BULLMQ_PREFIX = `${memory_constants_1.REDIS_KEY_PREFIX}bullmq`;
 const QUEUE_NAME = 'session-run';
+const SESSION_PENDING_JOB_STATES = [
+    'wait',
+    'delayed',
+    'prioritized',
+    'active',
+];
 const SESSION_LOCK_RETRY_MS = 300;
 let SessionRunJobQueueService = SessionRunJobQueueService_1 = class SessionRunJobQueueService {
     constructor(runState, coordinator) {
@@ -41,24 +48,29 @@ let SessionRunJobQueueService = SessionRunJobQueueService_1 = class SessionRunJo
             prefix: BULLMQ_PREFIX,
             defaultJobOptions: {
                 removeOnComplete: true,
-                removeOnFail: 100,
-                attempts: 1,
+                removeOnFail: 500,
+                attempts: (0, session_run_bullmq_connection_util_1.readSessionRunJobAttempts)(),
+                backoff: { type: 'exponential', delay: 2000 },
             },
         });
+        if (!(0, session_run_bullmq_connection_util_1.readSessionRunWorkerEnabled)()) {
+            this.logger.log('Session run BullMQ queue ready (producer-only; SESSION_RUN_WORKER_ENABLED=0)');
+            return;
+        }
         const concurrency = (0, session_run_bullmq_connection_util_1.readSessionRunWorkerConcurrency)();
         this.worker = new bullmq_1.Worker(QUEUE_NAME, async (bullJob) => {
             const runJob = bullJob.data.runJob;
+            if (await this.coordinator.shouldSkipQueuedJob(runJob)) {
+                return;
+            }
             const acquired = await this.runState.acquireDrainLock(runJob.sessionId);
             if (!acquired) {
                 await bullJob.moveToDelayed(Date.now() + SESSION_LOCK_RETRY_MS);
                 throw new bullmq_1.DelayedError();
             }
-            try {
+            await (0, session_run_drain_lock_util_1.runWithSessionDrainLock)(this.runState, runJob.sessionId, async () => {
                 await this.coordinator.processQueuedJob(runJob);
-            }
-            finally {
-                await this.runState.releaseDrainLock(runJob.sessionId);
-            }
+            }, { alreadyHeld: true });
         }, {
             connection,
             prefix: BULLMQ_PREFIX,
@@ -89,21 +101,32 @@ let SessionRunJobQueueService = SessionRunJobQueueService_1 = class SessionRunJo
         }
         await this.queue.add('run', { runJob: job }, { jobId: job.jobId });
     }
+    async listSessionJobs(sessionId) {
+        if (!this.queue) {
+            return [];
+        }
+        const jobs = await this.queue.getJobs([...SESSION_PENDING_JOB_STATES]);
+        return jobs.filter((row) => row.data.runJob.sessionId === sessionId);
+    }
     async clearSession(sessionId) {
         if (!this.queue) {
             return;
         }
-        const jobs = await this.queue.getJobs(['wait', 'delayed', 'prioritized']);
-        await Promise.all(jobs
-            .filter((row) => row.data.runJob.sessionId === sessionId)
-            .map((row) => row.remove()));
+        const jobs = await this.listSessionJobs(sessionId);
+        await Promise.all(jobs.map(async (row) => {
+            try {
+                await row.remove();
+            }
+            catch (error) {
+                this.logger.debug(`session run bullmq job remove skipped jobId=${row.id}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }));
     }
     async countSession(sessionId) {
         if (!this.queue) {
             return 0;
         }
-        const jobs = await this.queue.getJobs(['wait', 'delayed', 'prioritized']);
-        return jobs.filter((row) => row.data.runJob.sessionId === sessionId).length;
+        return (await this.listSessionJobs(sessionId)).length;
     }
 };
 SessionRunJobQueueService = SessionRunJobQueueService_1 = __decorate([

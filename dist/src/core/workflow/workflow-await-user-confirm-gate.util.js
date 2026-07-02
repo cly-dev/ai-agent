@@ -8,11 +8,9 @@ const mutation_preview_before_gate_util_1 = require("../agent-engine/engine/muta
 const write_confirmation_gate_util_1 = require("../agent-engine/engine/write-confirmation-gate.util");
 const agent_run_steps_util_1 = require("../agent-engine/engine/main/run/agent-run-steps.util");
 const graph_tool_observations_util_1 = require("../agent-engine/engine/graph-tool-observations.util");
-const mirror_chat_approval_util_1 = require("../approval/mirror-chat-approval.util");
-const chat_approval_run_audit_util_1 = require("../approval/chat-approval-run-audit.util");
 const workflow_debug_util_1 = require("./trace/workflow-debug.util");
 async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const { deps, ctx, runHelpers } = bundle;
     const observations = (0, graph_tool_observations_util_1.allToolObservations)(state);
     const previewReady = (0, mutation_preview_before_gate_util_1.hasUserVisibleMutationPreview)({
@@ -61,29 +59,6 @@ async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
         resumeContext,
         createdAt: new Date().toISOString(),
     });
-    let approvalRequestId = null;
-    try {
-        approvalRequestId = await (0, mirror_chat_approval_util_1.mirrorChatApprovalRequest)({
-            approvalGate: deps.approvalGate,
-            approvalRequests: deps.approvalRequests,
-            appClientId: ctx.input.appClientId,
-            userId: ctx.input.userId,
-            sessionId: ctx.input.sessionId,
-            runId: ctx.input.runId,
-            turnId: ctx.input.turnId,
-            nodeId: input.nodeId,
-            workflowRun: input.workflowRun,
-            workflowNodeDefs: (_h = state.workflowNodeDefs) !== null && _h !== void 0 ? _h : [],
-            workflowNodeOutputs: (_j = state.workflowNodeOutputs) !== null && _j !== void 0 ? _j : {},
-            observations,
-            scopedTools: state.scopedTools,
-            pageContext: (_k = state.pageContext) !== null && _k !== void 0 ? _k : null,
-            resumeContext,
-        });
-    }
-    catch (error) {
-        deps.logger.warn(`chat approval mirror failed runId=${ctx.input.runId} nodeId=${input.nodeId}: ${error instanceof Error ? error.message : String(error)}`);
-    }
     (0, workflow_debug_util_1.logWorkflowDebug)('workflow_await_user_confirm_gate', {
         runId: ctx.input.runId,
         sessionId: ctx.input.sessionId,
@@ -113,25 +88,19 @@ async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
             ? { confirmedPreviewSerialized }
             : { reason: 'run_not_publishable' },
     });
-    const gateOutputBase = runHelpers.normalizeJsonLike({
-        status: 'awaiting_user',
-        source: 'workflow_await_user_confirm',
-        nodeId: input.nodeId,
-        pendingToolCallCount: 0,
-    });
     const gateStep = {
         step: (0, agent_run_steps_util_1.nextRunStepNumber)(input.steps),
         type: 'write_confirmation_gate',
-        output: approvalRequestId != null
-            ? (0, chat_approval_run_audit_util_1.enrichChatApprovalAwaitingGateOutput)(gateOutputBase, {
-                approvalRequestId,
-                nodeId: input.nodeId,
-            })
-            : gateOutputBase,
+        output: runHelpers.normalizeJsonLike({
+            status: 'awaiting_user',
+            source: 'workflow_await_user_confirm',
+            nodeId: input.nodeId,
+            pendingToolCallCount: 0,
+        }),
     };
     const nextSteps = [...input.steps, gateStep];
     await runHelpers.updateRun(ctx.input.runId, nextSteps, client_1.AgentRunStatus.success);
-    return Object.assign(Object.assign({}, state), { steps: nextSteps, workflowRun: input.workflowRun, taskPlan: input.taskPlan, pendingToolCalls: [], awaitingWriteConfirmation: true, finalOutput: (_l = deps.assistantArtifact.peekSerialized(ctx.input.sessionId, ctx.input.runId)) !== null && _l !== void 0 ? _l : '', status: client_1.AgentRunStatus.success, finished: true });
+    return Object.assign(Object.assign({}, state), { steps: nextSteps, workflowRun: input.workflowRun, taskPlan: input.taskPlan, pendingToolCalls: [], awaitingWriteConfirmation: true, finalOutput: (_h = deps.assistantArtifact.peekSerialized(ctx.input.sessionId, ctx.input.runId)) !== null && _h !== void 0 ? _h : '', status: client_1.AgentRunStatus.success, finished: true });
 }
 exports.applyWorkflowAwaitUserConfirmGate = applyWorkflowAwaitUserConfirmGate;
 //# sourceMappingURL=workflow-await-user-confirm-gate.util.js.map

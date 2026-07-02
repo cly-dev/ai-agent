@@ -320,20 +320,34 @@ type WorkflowNodeDef = {
 | `workflowId` | `POST/PATCH .../skills` | 可选 |
 | `workflowVersion` | 同上 | 可选 pin 历史 revision |
 | `workflowOverrides` | 同上 | `{ [nodeId]: { objective?: string } }` |
-| SkillTool | `PUT /admin/skill/:skillId/tools` | **全量替换** |
-| SkillHostTool | `PUT /admin/skill/:skillId/host-tools` | **全量替换** |
+| SkillTool | `PUT /admin/skill/:skillId/tools` | **可选**（workflow-only 可不绑）；全量替换 |
+| SkillHostTool | `PUT /admin/skill/:skillId/host-tools` | **可选**（workflow-only 可不绑）；全量替换 |
 
-### 4.2 选 Workflow 后的 UI 逻辑（必做）
+### 4.2 两种模式
+
+**workflow-only（默认推荐）**
+
+- 只 `PATCH` 设置 `workflowId` + `prompt`；
+- 保存期不校验 SkillTool 覆盖；
+- C 端权限由 Workflow 节点 + 用户 Agent 角色决定。
+
+**叠加层（可选）**
+
+- 用户开启「收窄 ReAct」时，走下方 diff 流程。
+
+### 4.3 选 Workflow 后的 UI 逻辑（叠加层模式）
 
 ```mermaid
 flowchart TD
   A[用户选择 workflowId] --> B[GET /admin/workflow/:id]
   B --> C[解析 nodes + workflowTools + workflowHostTools]
-  C --> D[GET skill tools / host-tools]
-  D --> E{Skill 白名单 ⊇ Workflow 引用?}
-  E -->|否| F[展示 diff + 一键补齐按钮]
-  E -->|是| G[允许保存 Skill]
-  F --> H[PUT tools / host-tools 补齐后再保存]
+  C --> D{启用 SkillTool 叠加层?}
+  D -->|否| G[直接 PATCH workflowId]
+  D -->|是| E[GET skill tools / host-tools]
+  E --> F{Skill 白名单 ⊇ Workflow 引用?}
+  F -->|否| H[展示 diff + 一键补齐]
+  F -->|是| G
+  H --> I[PUT tools / host-tools 后再保存]
 ```
 
 从 Workflow 收集所需 ID：
@@ -353,14 +367,21 @@ function collectRequiredBindings(workflow: WorkflowResponse) {
 
 也可直接用响应里的 `workflowTools[].toolId` / `workflowHostTools[].hostToolId`（与 nodes 一致）。
 
-### 4.3 保存顺序建议
+### 4.4 保存顺序建议
+
+**workflow-only：**
+
+1. 确保 Workflow 已创建且 `isActive`
+2. `PATCH /admin/skill/:id` 设置 `workflowId`
+
+**叠加层：**
 
 1. 先确保 Workflow 已创建且 `isActive`
 2. `PUT /admin/skill/:id/tools` 补齐 HTTP Tool
 3. `PUT /admin/skill/:id/host-tools` 补齐 HostTool（若 Workflow 有 push 节点）
 4. `PATCH /admin/skill/:id` 设置 `workflowId`
 
-任一步可能返回 `SKILL_WORKFLOW_BINDING_INCOMPATIBLE`：
+叠加层任一步可能返回 `SKILL_WORKFLOW_BINDING_INCOMPATIBLE`：
 
 ```json
 {
@@ -383,7 +404,7 @@ function collectRequiredBindings(workflow: WorkflowResponse) {
 | `node_tool_not_in_skill` | 同上 |
 | `node_host_tool_not_in_skill` | 同上 |
 
-### 4.4 SkillTool / HostTool 请求体
+### 4.5 SkillTool / HostTool 请求体
 
 ```typescript
 // PUT /admin/skill/:skillId/tools
@@ -410,7 +431,7 @@ Tool 须先绑定到 Agent（`AgentTool`）；HostTool 须先绑定到 Agent（`
 | 字段 | 说明 |
 |------|------|
 | `actionKey` | C 端 invoke 用 |
-| `hostToolId` | 流式填入目标 |
+| `hostToolId` | 无 Workflow 时必填；绑 Workflow 时可省略（invoke 从 push 节点推导） |
 | `systemPrompt` | 必填 |
 | `pageScope` | 与 C 端 `pageContext.page` 一致 |
 | `workflowId` | 推荐必配（多步 Workflow） |
@@ -421,7 +442,7 @@ Tool 须先绑定到 Agent（`AgentTool`）；HostTool 须先绑定到 Agent（`
 1. `GET /admin/workflow/:id`
 2. 校验 `profile` ∈ `{ page_action, shared }`
 3. 找 `action === 'generate_and_push'` 的节点，读 `input.hostToolId`
-4. **自动填充并锁定** PageAction 表单的 `hostToolId` 为该值
+4. **展示为只读预览**；可一键填入 `hostToolId`（非必填）
 
 ```typescript
 function findPushHostToolId(nodes: WorkflowNodeDef[]): number | null {
@@ -431,7 +452,7 @@ function findPushHostToolId(nodes: WorkflowNodeDef[]): number | null {
 }
 ```
 
-若无 push 节点 → **禁止保存**，提示换 Workflow 或改用 `page_auto_fill` 等 Preset。
+若无 push 节点 → **禁止保存**。若用户填写了 `hostToolId`，须与 push 节点一致。
 
 ### 5.3 推荐创建顺序（PageAction 全自动回填）
 
@@ -467,10 +488,11 @@ function findPushHostToolId(nodes: WorkflowNodeDef[]): number | null {
 | `missing_generate_and_push` | Workflow 无 push 节点 |
 | `page_action_host_tool_not_in_workflow_nodes` | hostToolId 与 push 节点不一致 |
 
-### 5.5 hostToolId 自动创建（可选）
+### 5.5 hostToolId 自动创建（无 Workflow）
 
-创建 PageAction 时可省略 `hostToolId`，传内联 `hostTool` 由服务端创建。  
-**若已绑 Workflow**，仍建议显式使用 Workflow push 节点的 `hostToolId`，避免后续校验失败。
+未绑 `workflowId` 时，创建 PageAction 可省略 `hostToolId`，传内联 `hostTool` 由服务端创建。
+
+绑 `workflowId` 时 `hostToolId` 可省略，invoke 从 push 节点推导；若填写须与 push 节点一致。
 
 ---
 
@@ -480,8 +502,8 @@ PATCH Workflow 的 `nodes` 或 Preset 重建时，若破坏已绑 Skill / PageAc
 
 | code | 含义 | UI |
 |------|------|-----|
-| `WORKFLOW_CHANGE_BREAKS_SKILL_REFERENCES` | 某 Skill 的 Tool 白名单不够 | 展示 `skillId` + issues，跳转 Skill 页 |
-| `WORKFLOW_CHANGE_BREAKS_PAGE_ACTION_REFERENCES` | PageAction hostToolId 对不上 | 展示 `pageActionId`，跳转 PageAction 页 |
+| `WORKFLOW_CHANGE_BREAKS_SKILL_REFERENCES` | 有 SkillTool 叠加层的 Skill 白名单不够 | 展示 `skillId` + issues，跳转 Skill 页 |
+| `WORKFLOW_CHANGE_BREAKS_PAGE_ACTION_REFERENCES` | PageAction 填写的 hostToolId 与 push 节点不一致 | 展示 `pageActionId`，跳转 PageAction 页 |
 
 ---
 
@@ -494,8 +516,8 @@ PATCH Workflow 的 `nodes` 或 Preset 重建时，若破坏已绑 Skill / PageAc
 | 3 | `POST` 同时传 `preset` + `nodes` | 二选一 |
 | 4 | `PATCH` Preset 重建时不传 `presetConfig` | 必须传完整 requiredConfig |
 | 5 | 编辑页用本地缓存的 `preset` 当真值 | GET 详情以 `nodes[]` 为准；DB 无 preset 字段 |
-| 6 | Skill 只绑 `workflowId`，不补 SkillTool | 选 Workflow 后 diff 并 PUT tools |
-| 7 | PageAction `hostToolId` 与 Workflow push 不一致 | 选 Workflow 后自动同步 hostToolId |
+| 6 | Skill 叠加层模式下 SkillTool 未覆盖节点 | 开启叠加层时 diff 并 PUT tools；workflow-only 无需 |
+| 7 | PageAction 填写了与 push 不一致的 hostToolId | 绑 Workflow 时可省略 hostToolId，或预览 push 节点后一键填入 |
 | 8 | 错误处理只看 HTTP 4xx | 解析 `{ status, data: { code, issues } }` |
 | 9 | B 端请求 C 端路径加了 `/admin` | invoke 用 `/page-action/invoke` |
 | 10 | `mutation_submit` 后又手加 `await_user_confirm` | Preset 已含确认链，禁止重复 |
@@ -684,14 +706,14 @@ X-App-Dsn: <dsn>
 
 ### Skill
 
-- [ ] 选 Workflow 后展示所需 Tool / HostTool 清单
-- [ ] SkillTool 不齐时保存被拦，一键补齐后可保存
-- [ ] `mutation_submit` Workflow 的 read/write tool 均在 SkillTool
+- [ ] workflow-only：只绑 workflowId 可保存
+- [ ] 叠加层：选 Workflow 后 diff Tool / HostTool，不齐时保存被拦
+- [ ] `mutation_submit`：叠加层时 read/write tool 均在 SkillTool
 
 ### PageAction
 
-- [ ] 选 Workflow 后 `hostToolId` 自动等于 push 节点
-- [ ] 换 Workflow 时 hostToolId 联动更新
+- [ ] 绑 Workflow 后可不填 hostToolId
+- [ ] 若填 hostToolId，须与 push 节点一致
 - [ ] `page_action` Workflow 不含 mutation 节点
 
 ### 错误解析

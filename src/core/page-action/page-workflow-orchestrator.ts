@@ -12,7 +12,7 @@ import {
   type PageWorkflowRunnerResult,
 } from './page-workflow-runtime.util';
 import { runPageWorkflowMutationReact } from './page-workflow-mutation-react.util';
-import { resolvePageWorkflowPendingWrite } from './page-workflow-pending-write.util';
+import { resolvePageWorkflowPendingWrite, resolvePageWorkflowPresentSummary } from './page-workflow-pending-write.util';
 import {
   advanceWorkflowRun,
   finalizeWorkflowRun,
@@ -205,7 +205,11 @@ export async function orchestratePageWorkflow(
         workflowVersion: input.version,
         nodeId,
         title: `${input.actionKey} · ${def.name}`,
-        summary: null,
+        summary: resolvePageWorkflowPresentSummary({
+          nodes: input.nodes,
+          nodeOutputs: runtime.nodeOutputs,
+          fillText: runtime.fillText,
+        }),
         workflowRun,
         workflowNodeDefs: input.nodes,
         workflowNodeOutputs: { ...runtime.nodeOutputs },

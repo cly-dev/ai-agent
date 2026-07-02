@@ -9,6 +9,7 @@ const page_await_user_confirm_executor_1 = require("./page/page-await-user-confi
 const page_mutation_delegate_executor_1 = require("./page/page-mutation-delegate.executor");
 const page_fetch_data_executor_1 = require("./page/page-fetch-data.executor");
 const page_generate_and_push_executor_1 = require("./page/page-generate-and-push.executor");
+const page_present_mutation_executor_1 = require("./page/page-present-mutation.executor");
 const page_summarize_executor_1 = require("./page/page-summarize.executor");
 const present_mutation_executor_1 = require("./present-mutation.executor");
 const summarize_action_executor_1 = require("./summarize-action.executor");
@@ -27,22 +28,17 @@ const PAGE_EXECUTORS = [
     page_fetch_data_executor_1.pageFetchDataExecutor,
     page_generate_and_push_executor_1.pageGenerateAndPushExecutor,
     page_summarize_executor_1.pageSummarizeExecutor,
+    page_present_mutation_executor_1.pagePresentMutationExecutor,
     page_mutation_delegate_executor_1.pageComposeMutationExecutor,
     page_mutation_delegate_executor_1.pageWriteDataExecutor,
     page_await_user_confirm_executor_1.pageAwaitUserConfirmExecutor,
 ];
 const CHAT_EXECUTOR_BY_ACTION = new Map(CHAT_EXECUTORS.map((executor) => [executor.action, executor]));
 const PAGE_EXECUTOR_BY_ACTION = new Map(PAGE_EXECUTORS.map((executor) => [executor.action, executor]));
-function profileForExecutorLookup(profile) {
-    return profile === 'page' ? 'page_action' : 'chat_skill';
-}
 function getWorkflowExecutor(action, profile = 'chat') {
     var _a;
     const entry = (0, workflow_action_registry_1.getWorkflowActionRegistryEntry)(action);
     if (!(entry === null || entry === void 0 ? void 0 : entry.implemented)) {
-        return null;
-    }
-    if (!(0, workflow_action_registry_1.workflowProfileAllowsAction)(profileForExecutorLookup(profile), action)) {
         return null;
     }
     const registry = profile === 'page' ? PAGE_EXECUTOR_BY_ACTION : CHAT_EXECUTOR_BY_ACTION;

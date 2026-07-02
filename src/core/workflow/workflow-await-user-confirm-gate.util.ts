@@ -12,10 +12,6 @@ import type { AgentGraphState } from '../agent-engine/engine/main/types/agent-en
 import type { TaskPlanSnapshot } from '../agent-engine/engine/main/plan/task-plan.types';
 import { nextRunStepNumber } from '../agent-engine/engine/main/run/agent-run-steps.util';
 import { allToolObservations } from '../agent-engine/engine/graph-tool-observations.util';
-import { ApprovalGateService } from '../approval/approval-gate.service';
-import { ApprovalRequestService } from '../approval/approval-request.service';
-import { mirrorChatApprovalRequest } from '../approval/mirror-chat-approval.util';
-import { enrichChatApprovalAwaitingGateOutput } from '../approval/chat-approval-run-audit.util';
 import { logWorkflowDebug } from './trace/workflow-debug.util';
 import type { WorkflowRunState } from './workflow.types';
 
@@ -95,31 +91,6 @@ export async function applyWorkflowAwaitUserConfirmGate(
     createdAt: new Date().toISOString(),
   });
 
-  let approvalRequestId: number | null = null;
-  try {
-    approvalRequestId = await mirrorChatApprovalRequest({
-      approvalGate: deps.approvalGate,
-      approvalRequests: deps.approvalRequests,
-      appClientId: ctx.input.appClientId,
-      userId: ctx.input.userId,
-      sessionId: ctx.input.sessionId,
-      runId: ctx.input.runId,
-      turnId: ctx.input.turnId,
-      nodeId: input.nodeId,
-      workflowRun: input.workflowRun,
-      workflowNodeDefs: state.workflowNodeDefs ?? [],
-      workflowNodeOutputs: state.workflowNodeOutputs ?? {},
-      observations,
-      scopedTools: state.scopedTools,
-      pageContext: state.pageContext ?? null,
-      resumeContext,
-    });
-  } catch (error) {
-    deps.logger.warn(
-      `chat approval mirror failed runId=${ctx.input.runId} nodeId=${input.nodeId}: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-
   logWorkflowDebug('workflow_await_user_confirm_gate', {
     runId: ctx.input.runId,
     sessionId: ctx.input.sessionId,
@@ -154,22 +125,15 @@ export async function applyWorkflowAwaitUserConfirmGate(
       : { reason: 'run_not_publishable' },
   });
 
-  const gateOutputBase = runHelpers.normalizeJsonLike({
-    status: 'awaiting_user',
-    source: 'workflow_await_user_confirm',
-    nodeId: input.nodeId,
-    pendingToolCallCount: 0,
-  }) as Record<string, unknown>;
   const gateStep = {
     step: nextRunStepNumber(input.steps),
     type: 'write_confirmation_gate' as const,
-    output:
-      approvalRequestId != null
-        ? enrichChatApprovalAwaitingGateOutput(gateOutputBase, {
-            approvalRequestId,
-            nodeId: input.nodeId,
-          })
-        : gateOutputBase,
+    output: runHelpers.normalizeJsonLike({
+      status: 'awaiting_user',
+      source: 'workflow_await_user_confirm',
+      nodeId: input.nodeId,
+      pendingToolCallCount: 0,
+    }),
   };
   const nextSteps = [...input.steps, gateStep];
   await runHelpers.updateRun(

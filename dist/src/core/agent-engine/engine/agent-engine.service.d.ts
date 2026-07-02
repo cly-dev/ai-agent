@@ -2,7 +2,6 @@ import { LlmService } from '../../llm/llm.service';
 import { PromptComposerService } from '../../prompt/prompt-composer.service';
 import { ToolEngineService } from '../../tool-engine/tool-engine.service';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { ApprovalRequestService } from '../../approval/approval-request.service';
 import { PendingWriteConfirmationStore } from '../../../modules/chat/pending-write-confirmation.store';
 import { AgentService } from '../../../modules/agent/agent.service';
 import { HostToolService } from '../../../modules/host-tool/host-tool.service';
@@ -17,7 +16,6 @@ import { AgentSessionScopeService } from './main/session/agent-session-scope.ser
 import { RequestedSkillRunService } from './main/skill/requested-skill-run.service';
 import { AgentRunSseGateway } from '../../session-run/agent-run-sse.gateway';
 import type { RunExecutionScope } from '../../session-run/run-execution.scope';
-import type { ResumeChatFromApprovalInboxInput } from './write-confirm/write-confirm-resume.types';
 export declare class AgentEngineService {
     private readonly prisma;
     private readonly llmService;
@@ -35,9 +33,8 @@ export declare class AgentEngineService {
     private readonly goaService;
     private readonly requestedSkillRun;
     private readonly runSse;
-    private readonly approvalRequests;
     private readonly logger;
-    constructor(prisma: PrismaService, llmService: LlmService, promptComposer: PromptComposerService, toolEngine: ToolEngineService, hostToolService: HostToolService, agentService: AgentService, pendingWriteConfirmationStore: PendingWriteConfirmationStore, sse: AgentRunSseEmitter, assistantArtifact: RunAssistantArtifactStore, messagePersist: RunAssistantMessagePersistService, lifecycle: AgentRunLifecycleService, langGraphRunner: AgentLangGraphRunner, sessionScope: AgentSessionScopeService, goaService: SessionGoaService, requestedSkillRun: RequestedSkillRunService, runSse: AgentRunSseGateway, approvalRequests: ApprovalRequestService);
+    constructor(prisma: PrismaService, llmService: LlmService, promptComposer: PromptComposerService, toolEngine: ToolEngineService, hostToolService: HostToolService, agentService: AgentService, pendingWriteConfirmationStore: PendingWriteConfirmationStore, sse: AgentRunSseEmitter, assistantArtifact: RunAssistantArtifactStore, messagePersist: RunAssistantMessagePersistService, lifecycle: AgentRunLifecycleService, langGraphRunner: AgentLangGraphRunner, sessionScope: AgentSessionScopeService, goaService: SessionGoaService, requestedSkillRun: RequestedSkillRunService, runSse: AgentRunSseGateway);
     assertRequestedSkillRunnable(input: {
         userId: number;
         appClientId: number;
@@ -50,7 +47,6 @@ export declare class AgentEngineService {
     private emitRunCompletion;
     private emitWriteConfirmationExpired;
     resumeAfterWriteConfirm(input: ResumeAfterWriteConfirmInput, scope: RunExecutionScope): Promise<AgentRunResult | null>;
-    resumeChatFromApprovalInboxSnapshot(input: ResumeChatFromApprovalInboxInput, scope: RunExecutionScope): Promise<AgentRunResult | null>;
     private buildWriteConfirmResumeDeps;
     run(input: AgentRunInput, scope: RunExecutionScope): Promise<AgentRunResult | null>;
     private handleRunAborted;

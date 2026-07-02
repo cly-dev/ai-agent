@@ -445,15 +445,26 @@ let AgentRunSseEmitter = AgentRunSseEmitter_1 = class AgentRunSseEmitter {
             }
         }
         else {
-            const canonicalProse = (0, message_blocks_util_1.sanitizeSummarizeUserFacingProse)((0, llm_output_sanitize_util_1.sanitizeLlmFinalOutput)(userMarkdown || routedMessage || rawLlmSource || fallbackPlainText)).trim();
-            if (canonicalProse) {
+            let proseForStorage = '';
+            if (proseSession.messageDeltaEmitted &&
+                proseSession.sanitizedEmitted.trim()) {
+                proseForStorage = (0, message_blocks_util_1.sanitizeSummarizeUserFacingProse)(proseSession.sanitizedEmitted).trim();
+            }
+            if (!proseForStorage) {
+                proseForStorage = (0, message_blocks_util_1.sanitizeSummarizeUserFacingProse)((0, llm_output_sanitize_util_1.sanitizeLlmFinalOutput)(userMarkdown || routedMessage || rawLlmSource || fallbackPlainText)).trim();
+            }
+            if (proseForStorage) {
                 llmBlocksForStorage = (0, message_blocks_util_1.filterLlmBlocksAvoidDuplicatingRule)(ruleBlocks, [
-                    (0, message_blocks_util_1.textBlock)(canonicalProse, 'markdown'),
+                    (0, message_blocks_util_1.textBlock)(proseForStorage, 'markdown'),
                 ]);
             }
             if (proseSession.proseStreamSuperseded) {
                 this.logger.warn(`summarize prose stream superseded by blocks JSON runId=${runId}`);
             }
+        }
+        if (proseSession.messageDeltaEmitted &&
+            proseSession.sanitizedEmitted.trim()) {
+            llmBlocksForStorage = (0, message_blocks_util_1.mergeStreamedDeltaTextForStorage)(ruleBlocks, llmBlocksForStorage, proseSession.sanitizedEmitted);
         }
         return this.finishSummarizeBlocks(sessionId, runId, ruleBlocks, llmBlocksForStorage, fallbackPlainText, patches, routedMessage || rawLlmSource, publishMode, turnId);
     }

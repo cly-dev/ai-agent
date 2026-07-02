@@ -121,8 +121,6 @@ export function createMinimalAgentGraphBundle(
       requestedSkillRun: {} as AgentGraphNodeBundle['deps']['requestedSkillRun'],
       hostToolService: {} as AgentGraphNodeBundle['deps']['hostToolService'],
       runScopeCache: {} as AgentGraphNodeBundle['deps']['runScopeCache'],
-      approvalGate: {} as AgentGraphNodeBundle['deps']['approvalGate'],
-      approvalRequests: {} as AgentGraphNodeBundle['deps']['approvalRequests'],
       approvalTriggerPermission: {
         evaluateForNodes: () => ({ allowed: true, skipped: false }),
       } as unknown as AgentGraphNodeBundle['deps']['approvalTriggerPermission'],

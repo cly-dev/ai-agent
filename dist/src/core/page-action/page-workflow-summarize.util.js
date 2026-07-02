@@ -17,9 +17,10 @@ function shouldEmitPageSummarizeLifecycle(input) {
 }
 exports.shouldEmitPageSummarizeLifecycle = shouldEmitPageSummarizeLifecycle;
 async function executePageWorkflowSummarize(input) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g;
     const recorder = input.stepRecorder;
     const mode = (_a = input.nodeInput.mode) !== null && _a !== void 0 ? _a : 'final';
+    const streamLifecycle = (_b = input.streamLifecycle) !== null && _b !== void 0 ? _b : 'terminal';
     const streamId = (0, page_action_constants_1.buildPageActionStreamId)({
         actionRunId: input.actionRunId,
         actionKey: input.actionKey,
@@ -30,7 +31,7 @@ async function executePageWorkflowSummarize(input) {
         delivery: 'inline_stream',
         generation: input.generation,
         streamId,
-        clientActionId: (_b = input.clientActionId) !== null && _b !== void 0 ? _b : null,
+        clientActionId: (_c = input.clientActionId) !== null && _c !== void 0 ? _c : null,
     };
     recorder === null || recorder === void 0 ? void 0 : recorder.recordLlm('summarize.start', {
         messageCount: input.messages.length,
@@ -47,16 +48,17 @@ async function executePageWorkflowSummarize(input) {
     recorder === null || recorder === void 0 ? void 0 : recorder.recordLlm('summarize.end', {
         summaryTextLength: summaryText.length,
         model: resolvedModel,
-        promptTokens: (_c = usage === null || usage === void 0 ? void 0 : usage.promptTokens) !== null && _c !== void 0 ? _c : null,
-        completionTokens: (_d = usage === null || usage === void 0 ? void 0 : usage.completionTokens) !== null && _d !== void 0 ? _d : null,
+        promptTokens: (_d = usage === null || usage === void 0 ? void 0 : usage.promptTokens) !== null && _d !== void 0 ? _d : null,
+        completionTokens: (_e = usage === null || usage === void 0 ? void 0 : usage.completionTokens) !== null && _e !== void 0 ? _e : null,
     });
-    const shouldEmit = shouldEmitPageSummarizeLifecycle({
-        mode,
-        existingFillText: input.existingFillText,
-        summaryText,
-        responseWritable: !input.res.writableEnded,
-    });
-    if (shouldEmit) {
+    const shouldEmitTerminal = streamLifecycle === 'terminal' &&
+        shouldEmitPageSummarizeLifecycle({
+            mode,
+            existingFillText: input.existingFillText,
+            summaryText,
+            responseWritable: !input.res.writableEnded,
+        });
+    if (shouldEmitTerminal) {
         (0, page_action_inline_sse_util_1.writePageActionLifecycle)(input.res, Object.assign({ phase: 'started' }, lifecycleBase), recorder);
         (0, page_action_inline_sse_util_1.writePageActionLifecycle)(input.res, Object.assign(Object.assign({ phase: 'completed' }, lifecycleBase), { text: summaryText, dslOutcome: null }), recorder);
         (0, page_action_inline_sse_util_1.endInlineSseResponse)(input.res);
@@ -66,14 +68,14 @@ async function executePageWorkflowSummarize(input) {
         actionKey: input.actionKey,
         mode,
         summaryTextLength: summaryText.length,
-        emittedLifecycle: shouldEmit,
+        emittedLifecycle: shouldEmitTerminal,
     });
     return {
         summaryText,
         model: resolvedModel,
-        promptTokens: (_e = usage === null || usage === void 0 ? void 0 : usage.promptTokens) !== null && _e !== void 0 ? _e : null,
-        completionTokens: (_f = usage === null || usage === void 0 ? void 0 : usage.completionTokens) !== null && _f !== void 0 ? _f : null,
-        emittedLifecycle: shouldEmit,
+        promptTokens: (_f = usage === null || usage === void 0 ? void 0 : usage.promptTokens) !== null && _f !== void 0 ? _f : null,
+        completionTokens: (_g = usage === null || usage === void 0 ? void 0 : usage.completionTokens) !== null && _g !== void 0 ? _g : null,
+        emittedLifecycle: shouldEmitTerminal,
     };
 }
 exports.executePageWorkflowSummarize = executePageWorkflowSummarize;

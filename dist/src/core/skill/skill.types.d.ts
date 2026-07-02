@@ -50,6 +50,9 @@ export type AgentSkillWarmupRow = {
     riskLevel: ToolLevel;
     toolIds: number[];
     hostToolIds: number[];
+    workflowId?: number | null;
+    workflowVersion?: number | null;
+    workflowOverrides?: unknown;
 };
 export type SkillBindResult = {
     scopedTools: AgentEngineTool[];

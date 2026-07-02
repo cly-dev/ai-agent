@@ -56,8 +56,8 @@ export type PageActionResponse = {
     actionKey: string;
     name: string;
     description: string | null;
-    hostToolId: number;
-    hostToolName: string;
+    hostToolId: number | null;
+    hostToolName: string | null;
     pageScope: string | null;
     systemPrompt: string;
     defaultDelivery: string;

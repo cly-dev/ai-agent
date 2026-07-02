@@ -1,7 +1,6 @@
 import type { AgentRunResult, ResumeAfterWriteConfirmInput } from '../main/types/agent-engine.types';
 import type { PendingWriteConfirmationSnapshot } from '../../../../modules/chat/pending-write-confirmation.types';
-import type { ApprovalResumeSnapshot } from '../../../approval/approval-resume-snapshot.types';
-import type { ChatApprovalResumeAudit } from '../../../approval/chat-approval-run-audit.util';
+import type { ChatWriteConfirmResumeAudit } from '../../../approval/write-confirm-run-audit.util';
 import type { RunExecutionScope } from '../../../session-run/run-execution.scope';
 import type { AgentGraphState } from '../main/types/agent-engine.types';
 import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
@@ -19,11 +18,6 @@ export type WriteConfirmResumePrepared = {
     consumed: PendingWriteConfirmationSnapshot;
     primaryRun: WriteConfirmPrimaryRun;
     suspendedPrimaryRunId: number;
-};
-export type ResumeChatFromApprovalInboxInput = ResumeAfterWriteConfirmInput & {
-    snapshot: ApprovalResumeSnapshot;
-    approvalRequestId?: number;
-    approvalAudit?: ChatApprovalResumeAudit | null;
 };
 export type WriteConfirmResumeHost = {
     emitWriteConfirmationExpired(sessionId: string): void;
@@ -71,5 +65,5 @@ export type RunWriteConfirmResumeInput = {
     prepared: WriteConfirmResumePrepared;
     scope: RunExecutionScope;
     deps: WriteConfirmResumeDeps;
-    approvalAudit?: ChatApprovalResumeAudit | null;
+    approvalAudit?: ChatWriteConfirmResumeAudit | null;
 };

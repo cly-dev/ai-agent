@@ -1,0 +1,44 @@
+---
+description: Chat write confirm vs ApprovalRequest inbox — separate paths, no chat mirror.
+globs:
+  - src/core/approval/**
+  - src/core/agent-engine/engine/write-confirm/**
+  - src/core/workflow/workflow-await-user-confirm-gate.util.ts
+  - src/modules/chat/**
+  - src/modules/approval/**
+alwaysApply: false
+---
+
+# Write Confirm vs Approval Inbox
+
+## Two paths (do not merge)
+
+| Trigger | User confirms via | Persistence | Resume |
+|---------|-------------------|-------------|--------|
+| **Chat / session** | In-session UI + `confirmWrite` | Redis `PendingWriteConfirmationStore` + SSE `confirmation_required` | `resumeAfterWriteConfirm` → BullMQ `write_confirm` |
+| **PageAction / webhook** | Approval inbox API | `ApprovalRequest` + `resumeSnapshot` | `ApprovalResumeService.confirm` → pageAction runner |
+
+## Chat rules
+
+- **Do not** create `ApprovalRequest` with `source: chat`.
+- **Do not** mirror chat gates into `/approval/inbox`.
+- **Do not** add inbox confirm/reject resume for chat (`approvalInboxSnapshot`, `enqueueApprovalInboxResumeFromSnapshot`, etc.).
+- Chat audit lives on **AgentRun steps** (`write_confirmation_gate`) via `write-confirm-run-audit.util.ts`.
+- Session cancel/confirm uses `releaseWriteConfirmGate` (Redis + SSE only).
+
+## Inbox rules
+
+- `listPendingForApprover` / `findByIdForApprover` only expose `page_action` and `webhook` (`APPROVAL_INBOX_SOURCES`).
+- `confirm` / `reject` on `source: chat` → `400 CHAT_APPROVAL_IN_SESSION_ONLY`.
+- PageAction suspend goes through `ApprovalGateService.suspend` with `channel.kind: page_action`.
+
+## Legacy
+
+- DB may still contain old `source: chat` `ApprovalRequest` rows; treat as read-only legacy, not an active path.
+- `ApprovalResumeChannelChat` in snapshot types is for parsing old rows only.
+
+## References
+
+- Chat gate: `workflow-await-user-confirm-gate.util.ts`, `tools.node.ts` (non-workflow gate)
+- Inbox API: `modules/approval/approval.controller.ts`
+- Run audit: `src/core/approval/write-confirm-run-audit.util.ts`

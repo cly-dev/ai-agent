@@ -29,12 +29,10 @@ const skill_service_1 = require("../../../../skill/skill.service");
 const requested_skill_run_service_1 = require("../skill/requested-skill-run.service");
 const host_tool_service_1 = require("../../../../../modules/host-tool/host-tool.service");
 const run_scope_cache_service_1 = require("../../../../runtime-cache/run-scope-cache.service");
-const approval_gate_service_1 = require("../../../../approval/approval-gate.service");
-const approval_request_service_1 = require("../../../../approval/approval-request.service");
 const approval_trigger_permission_service_1 = require("../../../../approval/approval-trigger-permission.service");
 const agent_graph_1 = require("../agent-graph");
 let AgentLangGraphRunner = AgentLangGraphRunner_1 = class AgentLangGraphRunner {
-    constructor(prisma, llmService, promptRegistry, toolEngine, sse, sessionRunCoordinator, runSseGateway, assistantArtifact, goaService, resumeGate, categoryIntentRecall, pendingWriteConfirmationStore, sessionScope, skillService, requestedSkillRun, hostToolService, runScopeCache, approvalGate, approvalRequests, approvalTriggerPermission) {
+    constructor(prisma, llmService, promptRegistry, toolEngine, sse, sessionRunCoordinator, runSseGateway, assistantArtifact, goaService, resumeGate, categoryIntentRecall, pendingWriteConfirmationStore, sessionScope, skillService, requestedSkillRun, hostToolService, runScopeCache, approvalTriggerPermission) {
         this.prisma = prisma;
         this.llmService = llmService;
         this.promptRegistry = promptRegistry;
@@ -52,8 +50,6 @@ let AgentLangGraphRunner = AgentLangGraphRunner_1 = class AgentLangGraphRunner {
         this.requestedSkillRun = requestedSkillRun;
         this.hostToolService = hostToolService;
         this.runScopeCache = runScopeCache;
-        this.approvalGate = approvalGate;
-        this.approvalRequests = approvalRequests;
         this.approvalTriggerPermission = approvalTriggerPermission;
         this.logger = new common_1.Logger(AgentLangGraphRunner_1.name);
         this.summarizeHelpers = null;
@@ -77,8 +73,6 @@ let AgentLangGraphRunner = AgentLangGraphRunner_1 = class AgentLangGraphRunner {
             requestedSkillRun: this.requestedSkillRun,
             hostToolService: this.hostToolService,
             runScopeCache: this.runScopeCache,
-            approvalGate: this.approvalGate,
-            approvalRequests: this.approvalRequests,
             approvalTriggerPermission: this.approvalTriggerPermission,
             logger: this.logger,
         };
@@ -118,8 +112,6 @@ AgentLangGraphRunner = AgentLangGraphRunner_1 = __decorate([
         requested_skill_run_service_1.RequestedSkillRunService,
         host_tool_service_1.HostToolService,
         run_scope_cache_service_1.RunScopeCacheService,
-        approval_gate_service_1.ApprovalGateService,
-        approval_request_service_1.ApprovalRequestService,
         approval_trigger_permission_service_1.ApprovalTriggerPermissionService])
 ], AgentLangGraphRunner);
 exports.AgentLangGraphRunner = AgentLangGraphRunner;

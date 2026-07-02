@@ -3,6 +3,7 @@ import { ToolEngineService } from '../../../../tool-engine/tool-engine.service';
 import type { ToolBuildContext } from '../../../../tool-engine/tool-engine.service';
 import type { AgentSkillWarmupRow } from '../../../../skill/skill.types';
 import type { AgentEngineTool } from '../types/agent-engine.types';
+import { PrismaService } from '../../../../../prisma/prisma.service';
 import { type RequestedSkillRunErrorCode } from './requested-skill-run.error';
 export type SkillScopedTools = {
     scopedTools: AgentEngineTool[];
@@ -19,7 +20,8 @@ export type RequestedSkillRunContext = {
 export declare class RequestedSkillRunService {
     private readonly skillService;
     private readonly toolEngine;
-    constructor(skillService: SkillService, toolEngine: ToolEngineService);
+    private readonly prisma;
+    constructor(skillService: SkillService, toolEngine: ToolEngineService, prisma: PrismaService);
     assertRunnableForMessage(input: {
         userId: number;
         appClientId: number;
@@ -44,6 +46,8 @@ export declare class RequestedSkillRunService {
     private resolveRunnable;
     private resolveVisibleSkill;
     private pickSkillToolsFromAllowed;
+    private pickWorkflowSkillTools;
+    private loadWorkflowRunnableContext;
     private rethrowAsBadRequest;
 }
 export declare function requestedSkillUserMessage(code: RequestedSkillRunErrorCode): string;

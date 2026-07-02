@@ -1,4 +1,3 @@
-import { workflowProfileAllowsAction } from './workflow-action-registry';
 import type {
   WorkflowPresetCatalogEntry,
   WorkflowPresetConfig,
@@ -7,13 +6,19 @@ import type {
 } from './workflow-preset.types';
 import type { WorkflowNodeDef, WorkflowProfile } from './workflow.types';
 
+const ALL_WORKFLOW_PROFILES: WorkflowProfile[] = [
+  'page_action',
+  'chat_skill',
+  'shared',
+];
+
 const PRESET_PROFILES: Record<WorkflowPresetKind, WorkflowProfile[]> = {
-  page_auto_fill: ['page_action', 'chat_skill', 'shared'],
-  page_context_push: ['page_action', 'chat_skill', 'shared'],
-  fetch_push_summarize: ['page_action', 'chat_skill', 'shared'],
-  fetch_and_answer: ['chat_skill', 'shared'],
-  mutation_submit: ['chat_skill', 'shared'],
-  page_context_mutation_submit: ['chat_skill', 'shared'],
+  page_auto_fill: ALL_WORKFLOW_PROFILES,
+  page_context_push: ALL_WORKFLOW_PROFILES,
+  fetch_push_summarize: ALL_WORKFLOW_PROFILES,
+  fetch_and_answer: ALL_WORKFLOW_PROFILES,
+  mutation_submit: ALL_WORKFLOW_PROFILES,
+  page_context_mutation_submit: ALL_WORKFLOW_PROFILES,
 };
 
 type MutationChainLabels = {
@@ -317,14 +322,9 @@ export const WORKFLOW_PRESET_CATALOG: WorkflowPresetCatalogEntry[] = [
 ];
 
 export function listWorkflowPresetCatalog(
-  profile?: WorkflowProfile,
+  _profile?: WorkflowProfile,
 ): WorkflowPresetCatalogEntry[] {
-  if (!profile) {
-    return WORKFLOW_PRESET_CATALOG;
-  }
-  return WORKFLOW_PRESET_CATALOG.filter((row) =>
-    row.profiles.includes(profile),
-  );
+  return WORKFLOW_PRESET_CATALOG;
 }
 
 export function isWorkflowPresetKind(value: unknown): value is WorkflowPresetKind {
@@ -348,13 +348,6 @@ export function validateWorkflowPresetInput(input: {
       message: `Unknown workflow preset: ${input.preset}`,
     });
     return issues;
-  }
-  if (!catalog.profiles.includes(input.profile)) {
-    issues.push({
-      path: 'preset',
-      code: 'preset_profile_incompatible',
-      message: `Preset ${input.preset} is not compatible with profile ${input.profile}`,
-    });
   }
   if (!input.config || typeof input.config !== 'object' || Array.isArray(input.config)) {
     issues.push({
@@ -441,13 +434,6 @@ export function expandWorkflowPreset(input: {
       throw new Error(`Unsupported workflow preset: ${input.preset satisfies never}`);
   }
 
-  for (const node of nodes) {
-    if (!workflowProfileAllowsAction(input.profile, node.action)) {
-      throw new Error(
-        `Preset ${input.preset} expands to action ${node.action} which is not allowed for profile ${input.profile}`,
-      );
-    }
-  }
   return nodes;
 }
 

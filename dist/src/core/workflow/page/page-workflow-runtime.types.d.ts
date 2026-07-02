@@ -22,7 +22,7 @@ export type PageWorkflowExecutorRuntime = {
     generation: number;
     clientActionId?: string | null;
     res: Response;
-    hostTool: ResolvedPageActionHostTool;
+    hostTool: ResolvedPageActionHostTool | null;
     stepRecorder: PageActionRunStepRecorder;
     fillText: string;
     dslOutcome: string | null;

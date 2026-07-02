@@ -1,6 +1,6 @@
-import { ApprovalStatus } from '../../../generated/prisma/client';
+import { ApprovalSource, ApprovalStatus } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ApprovalRequestService } from './approval-request.service';
+import { APPROVAL_INBOX_SOURCES, ApprovalRequestService } from './approval-request.service';
 
 describe('ApprovalRequestService', () => {
   let service: ApprovalRequestService;
@@ -84,31 +84,35 @@ describe('ApprovalRequestService', () => {
     expect(result).toEqual({ ok: false, reason: 'not_found' });
   });
 
-  it('syncChatRealtimeDecision marks approved by session run', async () => {
-    prisma.approvalRequest.findFirst.mockResolvedValue({ id: 12, approverUserId: 7 });
-    prisma.approvalRequest.findUnique.mockResolvedValue({
-      status: ApprovalStatus.pending,
+  it('listPendingForApprover excludes chat source', async () => {
+    prisma.approvalRequest.findMany.mockResolvedValue([]);
+
+    await service.listPendingForApprover({
+      appClientId: 1,
       approverUserId: 7,
     });
-    prisma.approvalRequest.updateMany.mockResolvedValue({ count: 1 });
 
-    await service.syncChatRealtimeDecision({
-      appClientId: 1,
-      sessionId: 'sess_a',
-      runId: 101,
-      decidedByUserId: 7,
-      decision: 'approved',
-    });
+    expect(prisma.approvalRequest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          source: { in: [...APPROVAL_INBOX_SOURCES] },
+        }),
+      }),
+    );
+    expect(APPROVAL_INBOX_SOURCES).not.toContain(ApprovalSource.chat);
+  });
+
+  it('findByIdForApprover excludes chat source', async () => {
+    prisma.approvalRequest.findFirst.mockResolvedValue(null);
+
+    await service.findByIdForApprover(12, 7);
 
     expect(prisma.approvalRequest.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          sessionId: 'sess_a',
-          source: 'chat',
-          status: ApprovalStatus.pending,
+          source: { in: [...APPROVAL_INBOX_SOURCES] },
         }),
       }),
     );
-    expect(prisma.approvalRequest.updateMany).toHaveBeenCalled();
   });
 });

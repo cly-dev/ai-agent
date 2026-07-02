@@ -407,7 +407,7 @@ load_page_context → generate_and_push
 |------|------|
 | `actionKey` | App 内唯一，如 `demo-playground.fill_draft`；C 端 invoke 用 |
 | `systemPrompt` | **运行时主真值**（等同 Page 场景的 system 指引） |
-| `hostToolId` | 必填（或可内联自动创建）；流式填入目标 |
+| `hostToolId` | 无 Workflow 时必填（或可内联自动创建）；绑 `workflowId` 时可省略，由 push 节点推导 |
 | `pageScope` | 与 `pageContext.page` 对齐；空表示不限页 |
 | `allowCustomInstruction` | 是否允许用户 invoke 时传 `instruction` 补充说明 |
 | `workflowId` | 可选；有则走 `runPageWorkflow` |
@@ -490,16 +490,16 @@ load_page_context → generate_and_push
 | **分拆资产** | `skill.xxx` + `page.xxx` 两条 Workflow | 步序可不同，维护更清晰 |
 | **从 Skill 导入 PageAction** | 创建 PageAction 时设 `sourceSkillId`（追溯） | 须另拷 `systemPrompt`、单独绑 `hostToolId` |
 
-### 7.2 工具绑定双层关系（Skill）
+### 7.2 工具绑定关系（Skill）
 
 | 绑定层 | 表 | 作用 |
 |--------|-----|------|
-| 运行白名单 | `SkillTool` / `SkillHostTool` | C 端能否看到 Skill、ReAct 可选工具范围 |
-| 节点级绑定 | `WorkflowTool` / `WorkflowHostTool` | 节点 `input.toolId` / `hostToolId` 校验与执行器解析 |
+| Workflow 节点 | `nodes[].input.toolId` / `hostToolId` | **workflow-only 时的 SSOT**；执行与 C 端权限校验 |
+| 可选叠加层 | `SkillTool` / `SkillHostTool` | 收窄 ReAct scopedTools；**非 workflow-only 时须覆盖节点引用** |
 
-**建议：** 绑了 Workflow 后，`SkillTool` 与 `WorkflowTool` 保持一致，避免「Plan 能选但节点执行器找不到 toolId」。
+**workflow-only（推荐）：** 只绑 `workflowId`，不维护 SkillTool；C 端按 Workflow 节点 ∩ 用户 Agent 权限判断是否可运行。
 
-**保存期强制校验（V2）：** Admin 在 Skill 绑 `workflowId`、改 `SkillTool` / `SkillHostTool`、或更新 Workflow 的 nodes/bindings 时，服务端会校验 `WorkflowTool ⊆ SkillTool` 且 `WorkflowHostTool ⊆ SkillHostTool`，以及节点 input 引用均在 Skill 白名单内。失败返回 `SKILL_WORKFLOW_BINDING_INCOMPATIBLE` 或 `WORKFLOW_CHANGE_BREAKS_SKILL_REFERENCES`。详见 [skill-workflow-binding-validation.md](./skill-workflow-binding-validation.md)。
+**叠加层：** 显式配置 SkillTool 时，保存期校验须覆盖 Workflow 节点引用。详见 [skill-workflow-binding-validation.md](./skill-workflow-binding-validation.md)。
 
 ### 7.3 `deliverable` 语义
 
@@ -606,13 +606,13 @@ DRY_RUN=0 STRIP_LEGACY_CONFIG_WORKFLOW=1 npm run db:migrate:skill-config-workflo
 不必填。Skill 可无 Workflow（prompt + Plan LLM）；PageAction 可无 Workflow（单步 HostFill 回退）。
 
 **Q：SkillTool 和 WorkflowTool 都要配吗？**  
-Skill 场景：SkillTool 管权限与 ReAct；若绑了 Workflow，WorkflowTool 管节点 `toolId` 校验。建议两边对齐。
+不必。workflow-only 只绑 `workflowId` 即可。若配置 SkillTool 作为叠加层，须覆盖 Workflow 节点 toolId。
 
 **Q：`workflowVersion` 什么时候 pin？**  
 Workflow 发版后若不想 Skill 立刻跟新版本，在 Skill 上 pin 旧 `workflowVersion`；省略则始终用当前版。
 
-**Q：PageAction 为什么必须 `hostToolId`？**  
-页内流式的最终写入目标；即使 Workflow 里 `generate_and_push` 也须在 `WorkflowHostTool` 中声明。
+**Q：PageAction 为什么需要 hostToolId？**  
+无 Workflow 时：流式填入目标，必填或自动创建。绑 Workflow 时：可省略，invoke 从 `generate_and_push` 节点推导。
 
 **Q：能否在 PageAction 跑写确认链？**  
 不能。`profile=page_action` 禁止 #5–8；写确认链仅 Chat（`chat_skill` / `shared` 的 Skill 入口）。
@@ -621,7 +621,7 @@ Workflow 发版后若不想 Skill 立刻跟新版本，在 Skill 上 pin 旧 `wo
 可以。已有 `workflowId` 的 Skill 会 `skipped_has_workflow`。
 
 **Q：校验失败怎么办？**  
-为 Skill 补 `SkillTool`；或在 nodes 上用 `definitionKey`；或手工建 Workflow 再 PATCH 绑定。
+workflow-only：检查用户 Agent 是否具备 Workflow 节点引用的 tool / host 权限。叠加层：为 Skill 补 `SkillTool` / `SkillHostTool` 覆盖节点引用。
 
 ---
 

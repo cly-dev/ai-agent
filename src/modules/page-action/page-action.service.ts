@@ -72,6 +72,10 @@ import type {
 import { PAGE_ACTION_DETAIL_INCLUDE, PAGE_ACTION_RUN_ADMIN_INCLUDE } from './page-action.types';
 import type { Response } from 'express';
 import { WorkflowService } from '../workflow/workflow.service';
+import {
+  resolvePageActionHostToolResolved,
+  resolvePageActionHostToolRow,
+} from '../../core/page-action/page-action-workflow-host.util';
 
 @Injectable()
 export class PageActionService {
@@ -87,30 +91,55 @@ export class PageActionService {
   async create(dto: CreatePageActionDto): Promise<PageActionResponse> {
     await this.assertAppClientExists(dto.appClientId);
     this.assertInlineStreamOnly(dto.defaultDelivery);
-    const hostTool = await resolveOrProvisionPageActionHostTool(this.prisma, {
-      appClientId: dto.appClientId,
-      actionKey: dto.actionKey,
-      pageActionName: dto.name,
-      pageActionDescription: dto.description,
-      pageScope: dto.pageScope,
-      hostToolId: dto.hostToolId,
-      hostTool: dto.hostTool,
-    });
     const actionKey = dto.actionKey.trim();
     this.assertPromptLimits(dto.systemPrompt, null);
-    if (dto.workflowId != null) {
+
+    const workflowBound = dto.workflowId != null && dto.workflowId > 0;
+    let hostToolId: number | null = null;
+
+    if (workflowBound) {
       await this.workflowService.assertWorkflowReferenceCompatible({
-        workflowId: dto.workflowId,
+        workflowId: dto.workflowId!,
         appClientId: dto.appClientId,
         entry: 'page_action',
       });
+      if (dto.hostToolId != null) {
+        await this.assertHostToolForApp(dto.appClientId, dto.hostToolId);
+        hostToolId = dto.hostToolId;
+      } else if (dto.hostTool != null) {
+        const hostTool = await resolveOrProvisionPageActionHostTool(
+          this.prisma,
+          {
+            appClientId: dto.appClientId,
+            actionKey: dto.actionKey,
+            pageActionName: dto.name,
+            pageActionDescription: dto.description,
+            pageScope: dto.pageScope,
+            hostToolId: undefined,
+            hostTool: dto.hostTool,
+          },
+        );
+        hostToolId = hostTool.id;
+      }
       await this.workflowService.assertPageActionWorkflowBindingsCompatible({
-        workflowId: dto.workflowId,
+        workflowId: dto.workflowId!,
         appClientId: dto.appClientId,
         workflowVersion: dto.workflowVersion,
-        pageActionHostToolId: hostTool.id,
+        pageActionHostToolId: hostToolId,
       });
+    } else {
+      const hostTool = await resolveOrProvisionPageActionHostTool(this.prisma, {
+        appClientId: dto.appClientId,
+        actionKey: dto.actionKey,
+        pageActionName: dto.name,
+        pageActionDescription: dto.description,
+        pageScope: dto.pageScope,
+        hostToolId: dto.hostToolId,
+        hostTool: dto.hostTool,
+      });
+      hostToolId = hostTool.id;
     }
+
     try {
       const row = await this.prisma.pageAction.create({
         data: {
@@ -118,7 +147,7 @@ export class PageActionService {
           actionKey,
           name: dto.name.trim(),
           description: dto.description?.trim() || null,
-          hostToolId: hostTool.id,
+          hostToolId,
           pageScope: dto.pageScope?.trim() || null,
           systemPrompt: dto.systemPrompt.trim(),
           defaultDelivery: PageActionDelivery.inline_stream,
@@ -345,17 +374,22 @@ export class PageActionService {
         message: `PageAction "${actionKey}" is not registered or inactive`,
       });
     }
-    if (!pageAction.hostTool.isActive) {
+
+    const hostToolRow = await resolvePageActionHostToolRow(
+      this.prisma,
+      pageAction,
+    );
+    if (hostToolRow && !hostToolRow.isActive) {
       throw new BadRequestException({
         code: 'HOST_TOOL_INACTIVE',
-        message: `Bound HostTool "${pageAction.hostTool.name}" is inactive`,
+        message: `Bound HostTool "${hostToolRow.name}" is inactive`,
       });
     }
 
     const pageContext = this.resolvePageContext(dto);
     assertPageActionScopeMatch({
       pageScope: pageAction.pageScope,
-      hostPageScope: pageAction.hostTool.hostPage?.scope ?? null,
+      hostPageScope: hostToolRow?.hostPage?.scope ?? null,
       pageContext,
     });
 
@@ -364,10 +398,9 @@ export class PageActionService {
       : null;
     this.assertPromptLimits(pageAction.systemPrompt, instruction, dto.context);
 
-    const hostToolResolved = resolvePageActionHostTool(
-      pageAction.hostTool,
-      pageContext,
-    );
+    const hostToolResolved = hostToolRow
+      ? resolvePageActionHostTool(hostToolRow, pageContext)
+      : null;
 
     if (dto.idempotencyKey?.trim()) {
       const prior = await this.prisma.pageActionRun.findFirst({
@@ -611,6 +644,13 @@ export class PageActionService {
       }
 
       initInlineSseResponse(res);
+      if (!hostToolResolved) {
+        throw new BadRequestException({
+          code: 'PAGE_ACTION_HOST_TOOL_MISSING',
+          message:
+            'Legacy PageAction invoke requires hostToolId when no Workflow is bound',
+        });
+      }
       const result = await executePageActionHostFill(this.llmService, {
         actionRunId: run.id,
         actionKey: pageAction.actionKey,

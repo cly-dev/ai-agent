@@ -1,26 +1,27 @@
-import { Injectable, NotFoundException, Inject, forwardRef, Logger } from '@nestjs/common';
-import { PageActionRunStatus, Prisma, type ApprovalSource } from '../../../generated/prisma/client';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  ApprovalSource,
+  PageActionRunStatus,
+  Prisma,
+} from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PageActionRunStepRecorder } from '../page-action/page-action-run-steps.util';
 import type { ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
-import { isChatApprovalSnapshot } from './approval-resume-snapshot.types';
 import { ApprovalGateService } from './approval-gate.service';
 import { ApprovalRequestService } from './approval-request.service';
 import { ApprovalTriggerPermissionService } from './approval-trigger-permission.service';
 import type { ApprovalDecisionInput } from './approval.types';
 import { resolveApproverAllowedToolIds } from './approval-resume-permission.util';
 import { resumePageActionFromApprovalSnapshot } from './page-action-approval-resume.util';
-import { appendChatApprovalRejectedAuditToPrimaryRun } from './chat-approval-run-audit.util';
-import { SessionRunCoordinator } from '../session-run/session-run-coordinator.service';
-import { AgentRunSseGateway } from '../session-run/agent-run-sse.gateway';
-import { PendingWriteConfirmationStore } from '../../modules/chat/pending-write-confirmation.store';
 import { LlmService } from '../llm/llm.service';
 import { ToolEngineService } from '../tool-engine/tool-engine.service';
 
 @Injectable()
 export class ApprovalResumeService {
-  private readonly logger = new Logger(ApprovalResumeService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly approvalRequests: ApprovalRequestService,
@@ -28,23 +29,25 @@ export class ApprovalResumeService {
     private readonly triggerPermission: ApprovalTriggerPermissionService,
     private readonly llmService: LlmService,
     private readonly toolEngine: ToolEngineService,
-    private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
-    private readonly runSse: AgentRunSseGateway,
-    @Inject(forwardRef(() => SessionRunCoordinator))
-    private readonly sessionRunCoordinator: SessionRunCoordinator,
   ) {}
 
   async confirm(input: ApprovalDecisionInput): Promise<{ resumed: boolean }> {
-    const cas = await this.approvalRequests.markApproved(input);
-    if (cas.ok === false) {
-      return { resumed: false };
-    }
-
     const row = await this.prisma.approvalRequest.findUnique({
       where: { id: input.approvalRequestId },
     });
-    if (!row) {
+    if (!row || row.approverUserId !== input.decidedByUserId) {
       throw new NotFoundException('Approval request not found');
+    }
+    if (row.source === ApprovalSource.chat) {
+      throw new BadRequestException({
+        code: 'CHAT_APPROVAL_IN_SESSION_ONLY',
+        message: 'Chat write confirmation must be completed in the session',
+      });
+    }
+
+    const cas = await this.approvalRequests.markApproved(input);
+    if (cas.ok === false) {
+      return { resumed: false };
     }
 
     const snapshot = this.approvalRequests.parseResumeSnapshot(row);
@@ -68,13 +71,6 @@ export class ApprovalResumeService {
         toolEngine: this.toolEngine,
         approvalGate: this.approvalGate,
       });
-    } else if (isChatApprovalSnapshot(snapshot)) {
-      await this.resumeChatFromInboxConfirm({
-        snapshot,
-        approvalRequestId: row.id,
-        appClientId: row.appClientId,
-        decidedByUserId: input.decidedByUserId,
-      });
     }
 
     return { resumed: true };
@@ -84,6 +80,16 @@ export class ApprovalResumeService {
     const rowBefore = await this.prisma.approvalRequest.findUnique({
       where: { id: input.approvalRequestId },
     });
+    if (
+      rowBefore?.source === ApprovalSource.chat &&
+      rowBefore.approverUserId === input.decidedByUserId
+    ) {
+      throw new BadRequestException({
+        code: 'CHAT_APPROVAL_IN_SESSION_ONLY',
+        message: 'Chat write confirmation must be completed in the session',
+      });
+    }
+
     const cas = await this.approvalRequests.markRejected(input);
     if (!cas.ok) {
       return;
@@ -93,19 +99,7 @@ export class ApprovalResumeService {
       (await this.prisma.approvalRequest.findUnique({
         where: { id: input.approvalRequestId },
       }));
-    if (!row) {
-      return;
-    }
-    const snapshot = this.approvalRequests.parseResumeSnapshot(row);
-    if (isChatApprovalSnapshot(snapshot)) {
-      await this.rejectChatFromInbox({
-        snapshot,
-        approvalRequestId: row.id,
-        decidedByUserId: input.decidedByUserId,
-        decisionNote: input.decisionNote ?? null,
-      });
-    }
-    if (!row.pageActionRunId) {
+    if (!row?.pageActionRunId) {
       return;
     }
     const recorder = PageActionRunStepRecorder.fromJson(
@@ -164,65 +158,5 @@ export class ApprovalResumeService {
         message: 'Approver no longer has write tool permission',
       });
     }
-  }
-
-  private async resumeChatFromInboxConfirm(input: {
-    snapshot: ApprovalResumeSnapshot;
-    approvalRequestId: number;
-    appClientId: number;
-    decidedByUserId: number;
-  }): Promise<void> {
-    if (!isChatApprovalSnapshot(input.snapshot)) {
-      return;
-    }
-    const { sessionId, runId } = input.snapshot.channel;
-    try {
-      await this.sessionRunCoordinator.enqueueApprovalInboxResumeFromSnapshot({
-        userId: input.decidedByUserId,
-        sessionId,
-        appClientId: input.appClientId,
-        pageContext: input.snapshot.pageContext ?? null,
-        snapshot: input.snapshot,
-        approvalRequestId: input.approvalRequestId,
-      });
-    } catch (error) {
-      this.logger.warn(
-        `chat inbox confirm resume failed sessionId=${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  private async rejectChatFromInbox(input: {
-    snapshot: ApprovalResumeSnapshot;
-    approvalRequestId: number;
-    decidedByUserId: number;
-    decisionNote?: string | null;
-  }): Promise<void> {
-    if (!isChatApprovalSnapshot(input.snapshot)) {
-      return;
-    }
-    const { sessionId, runId, turnId } = input.snapshot.channel;
-    await appendChatApprovalRejectedAuditToPrimaryRun({
-      prisma: this.prisma,
-      primaryRunId: runId,
-      approvalRequestId: input.approvalRequestId,
-      rejectChannel: 'inbox_reject',
-      decidedByUserId: input.decidedByUserId,
-      decisionNote: input.decisionNote,
-    });
-    const pending = await this.pendingWriteConfirmationStore.get(
-      sessionId,
-      input.decidedByUserId,
-    );
-    if (!pending || pending.runId !== runId) {
-      return;
-    }
-    await this.pendingWriteConfirmationStore.clear(sessionId);
-    this.runSse.purgeWriteConfirmationGate(sessionId, runId);
-    this.runSse.emitWriteConfirmationCancelled(sessionId, {
-      runId,
-      turnId,
-      message: '已拒绝操作。',
-    });
   }
 }

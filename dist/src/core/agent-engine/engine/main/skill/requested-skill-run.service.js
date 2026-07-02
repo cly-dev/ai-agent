@@ -15,11 +15,16 @@ const skill_service_1 = require("../../../../skill/skill.service");
 const tool_engine_service_1 = require("../../../../tool-engine/tool-engine.service");
 const host_tool_resolve_debug_util_1 = require("../../../../host-bridge/host-tool-resolve-debug.util");
 const skill_runnable_util_1 = require("../../../../skill/skill-runnable.util");
+const agent_capability_load_util_1 = require("../../../../runtime-cache/agent-capability-load.util");
+const load_workflow_definition_util_1 = require("../../../../workflow/load-workflow-definition.util");
+const workflow_runtime_scope_util_1 = require("../../../../workflow/workflow-runtime-scope.util");
+const prisma_service_1 = require("../../../../../prisma/prisma.service");
 const requested_skill_run_error_1 = require("./requested-skill-run.error");
 let RequestedSkillRunService = class RequestedSkillRunService {
-    constructor(skillService, toolEngine) {
+    constructor(skillService, toolEngine, prisma) {
         this.skillService = skillService;
         this.toolEngine = toolEngine;
+        this.prisma = prisma;
     }
     async assertRunnableForMessage(input) {
         try {
@@ -70,14 +75,40 @@ let RequestedSkillRunService = class RequestedSkillRunService {
         };
     }
     async resolveRunnable(input) {
-        var _a, _b;
+        var _a, _b, _c, _d, _e;
         const skill = await this.resolveVisibleSkill(input);
         const allowedToolIds = new Set(input.allowedTools.map((tool) => tool.id));
         const capabilities = (0, skill_runnable_util_1.normalizeSkillRunnableCapabilities)(skill);
+        if ((0, skill_runnable_util_1.skillIsWorkflowBound)(skill)) {
+            const workflowCheck = await this.loadWorkflowRunnableContext({
+                skill,
+                allowedToolIds,
+                appClientId: input.appClientId,
+                agentId: input.agentId,
+            });
+            (0, host_tool_resolve_debug_util_1.logHostToolResolve)('requestedSkillResolveRunnable', {
+                runId: (_a = input.runId) !== null && _a !== void 0 ? _a : null,
+                sessionId: (_b = input.sessionId) !== null && _b !== void 0 ? _b : null,
+                agentId: input.agentId,
+                skillId: input.skillId,
+                skillName: skill.name,
+                skillToolIds: capabilities.skillToolIds,
+                hostToolIds: capabilities.hostToolIds,
+                runnableKind: (0, skill_runnable_util_1.deriveSkillRunnableKind)(capabilities),
+                runnable: workflowCheck.runnable,
+                workflowId: (_c = skill.workflowId) !== null && _c !== void 0 ? _c : null,
+                allowedToolIds: [...allowedToolIds],
+            });
+            if (!workflowCheck.runnable) {
+                throw new requested_skill_run_error_1.RequestedSkillRunError('SKILL_TOOLS_EMPTY', `skill ${input.skillId} workflow is not runnable for the current user or agent binding`);
+            }
+            const skillTools = this.pickWorkflowSkillTools(workflowCheck.workflowScopedToolIds, skill, input.allowedTools);
+            return { skill, skillTools };
+        }
         const runnable = (0, skill_runnable_util_1.skillIsRunnableForUser)(skill, allowedToolIds);
         (0, host_tool_resolve_debug_util_1.logHostToolResolve)('requestedSkillResolveRunnable', {
-            runId: (_a = input.runId) !== null && _a !== void 0 ? _a : null,
-            sessionId: (_b = input.sessionId) !== null && _b !== void 0 ? _b : null,
+            runId: (_d = input.runId) !== null && _d !== void 0 ? _d : null,
+            sessionId: (_e = input.sessionId) !== null && _e !== void 0 ? _e : null,
             agentId: input.agentId,
             skillId: input.skillId,
             skillName: skill.name,
@@ -109,6 +140,43 @@ let RequestedSkillRunService = class RequestedSkillRunService {
         const skillToolIdSet = new Set(skill.toolIds);
         return allowedTools.filter((tool) => skillToolIdSet.has(tool.id));
     }
+    pickWorkflowSkillTools(workflowScopedToolIds, skill, allowedTools) {
+        if (workflowScopedToolIds.length > 0) {
+            const scoped = new Set(workflowScopedToolIds);
+            return allowedTools.filter((tool) => scoped.has(tool.id));
+        }
+        return this.pickSkillToolsFromAllowed(skill, allowedTools);
+    }
+    async loadWorkflowRunnableContext(input) {
+        var _a;
+        const workflowId = input.skill.workflowId;
+        if (workflowId == null || workflowId <= 0) {
+            return { runnable: false, workflowScopedToolIds: [] };
+        }
+        const allowedHostToolIds = new Set(await (0, agent_capability_load_util_1.loadAgentHostToolCandidateIds)(this.prisma, input.appClientId, input.agentId));
+        const loadResult = await (0, load_workflow_definition_util_1.loadWorkflowForRunDetailed)(this.prisma, {
+            workflowId,
+            appClientId: input.appClientId,
+            workflowVersion: (_a = input.skill.workflowVersion) !== null && _a !== void 0 ? _a : null,
+            workflowOverrides: (0, load_workflow_definition_util_1.parseWorkflowOverridesJson)(input.skill.workflowOverrides),
+            scope: {
+                allowedToolIds: [...input.allowedToolIds],
+                allowedHostToolIds: [...allowedHostToolIds],
+            },
+        });
+        if (loadResult.status !== 'loaded') {
+            return { runnable: false, workflowScopedToolIds: [] };
+        }
+        const workflowScopedToolIds = (0, workflow_runtime_scope_util_1.collectWorkflowScopedToolIds)(loadResult.nodes, input.allowedToolIds);
+        return {
+            runnable: (0, workflow_runtime_scope_util_1.workflowNodeRefsRunnableForUser)({
+                nodes: loadResult.nodes,
+                userAllowedToolIds: input.allowedToolIds,
+                userAllowedHostToolIds: allowedHostToolIds,
+            }),
+            workflowScopedToolIds,
+        };
+    }
     rethrowAsBadRequest(error) {
         if (error instanceof requested_skill_run_error_1.RequestedSkillRunError) {
             throw new common_1.BadRequestException({
@@ -122,7 +190,8 @@ let RequestedSkillRunService = class RequestedSkillRunService {
 RequestedSkillRunService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [skill_service_1.SkillService,
-        tool_engine_service_1.ToolEngineService])
+        tool_engine_service_1.ToolEngineService,
+        prisma_service_1.PrismaService])
 ], RequestedSkillRunService);
 exports.RequestedSkillRunService = RequestedSkillRunService;
 function requestedSkillUserMessage(code) {

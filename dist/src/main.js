@@ -12,6 +12,7 @@ const prisma_service_1 = require("./prisma/prisma.service");
 const runtime_env_util_1 = require("./core/security/runtime-env.util");
 const client_public_api_paths_1 = require("./middleware/client-public-api-paths");
 const client_public_cors_util_1 = require("./middleware/client-public-cors.util");
+const session_run_bullmq_connection_util_1 = require("./core/session-run/session-run-bullmq.connection.util");
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.use((req, res, next) => {
@@ -60,7 +61,14 @@ async function bootstrap() {
         swagger_1.SwaggerModule.setup('docs', app, document);
         common_1.Logger.log('Swagger docs available at http://localhost:3030/docs');
     }
-    await app.listen(3030);
+    if ((0, session_run_bullmq_connection_util_1.readHttpServerEnabled)()) {
+        await app.listen(3030);
+        common_1.Logger.log('HTTP server listening on http://localhost:3030');
+    }
+    else {
+        await app.init();
+        common_1.Logger.log('HTTP disabled (SESSION_RUN_HTTP_ENABLED=0); BullMQ worker / background only');
+    }
 }
 function registerProcessErrorHandlers() {
     process.on('uncaughtException', (error) => {

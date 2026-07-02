@@ -16,9 +16,10 @@ import type {
 import type { ToolBuildContext } from '../tool-engine/tool-engine.service';
 import {
   deriveSkillRunnableKind,
-  filterRunnableSkills,
   skillIsResolvableForRequested,
   skillIsResolvableInScope,
+  skillIsRunnableForUser,
+  skillIsWorkflowBound,
 } from './skill-runnable.util';
 import { buildAgentSkillVisibilityWhere } from '../runtime-cache/capability-candidate.util';
 import { loadAgentSkillVisibilityContext, loadAgentHostToolCandidateIds } from '../runtime-cache/agent-capability-load.util';
@@ -210,7 +211,11 @@ export class SkillService {
     allowedToolIds: ReadonlySet<number>,
   ): Promise<AgentSkillWarmupRow[]> {
     const rows = await this.listAgentSkillsForUser(input);
-    return filterRunnableSkills(rows, allowedToolIds);
+    return rows.filter(
+      (skill) =>
+        skillIsWorkflowBound(skill) ||
+        skillIsRunnableForUser(skill, allowedToolIds),
+    );
   }
 
   bindSkillToScopedTools(
@@ -360,7 +365,11 @@ export class SkillService {
       row,
       runnableHostToolIds,
     );
-    const caps = { skillToolIds, hostToolIds };
+    const caps = {
+      skillToolIds,
+      hostToolIds,
+      workflowId: row.workflowId,
+    };
     const resolvable = forRequestedSkill
       ? skillIsResolvableForRequested(caps)
       : skillIsResolvableInScope(caps, scopedToolIds, scopedHostToolIds);

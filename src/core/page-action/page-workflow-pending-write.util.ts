@@ -18,6 +18,31 @@ export function buildPageComposeNodeOutput(
   return { [COMPOSE_OUTPUT_KEY]: output };
 }
 
+export function resolvePageWorkflowPresentSummary(input: {
+  nodes: WorkflowNodeDef[];
+  nodeOutputs: Record<string, unknown>;
+  fillText: string;
+}): string | null {
+  for (const node of input.nodes) {
+    if (node.action !== 'present_mutation') {
+      continue;
+    }
+    const byRef = input.nodeOutputs[`obs:present_mutation:${node.id}`];
+    const byId = input.nodeOutputs[node.id];
+    for (const raw of [byRef, byId]) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        continue;
+      }
+      const text = (raw as { summaryText?: unknown }).summaryText;
+      if (typeof text === 'string' && text.trim()) {
+        return text.trim();
+      }
+    }
+  }
+  const fill = input.fillText.trim();
+  return fill.length > 0 ? fill : null;
+}
+
 export function resolvePageWorkflowPendingWrite(input: {
   nodes: WorkflowNodeDef[];
   nodeOutputs: Record<string, unknown>;

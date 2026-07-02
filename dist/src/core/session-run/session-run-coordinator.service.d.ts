@@ -7,7 +7,6 @@ import type { SessionRunJobQueueService } from './session-run-job-queue.service'
 import { RunCancellationToken } from './run-cancellation-token';
 import { RunExecutionScope } from './run-execution.scope';
 import type { CancelSessionRunResult, RunEnqueuePolicy, RunExecutionHandle, RunJob, RunJobKind, SessionRunStateSnapshot, SupersedeReason } from './session-run.types';
-import type { ApprovalResumeSnapshot } from '../approval/approval-resume-snapshot.types';
 export declare class SessionRunCoordinator implements OnModuleInit {
     private readonly runState;
     private readonly writeConfirmation;
@@ -48,15 +47,8 @@ export declare class SessionRunCoordinator implements OnModuleInit {
         requestedSkillId?: number;
         pageContext?: RunJob['pageContext'];
     }): RunJob;
+    shouldSkipQueuedJob(job: RunJob): Promise<boolean>;
     processQueuedJob(job: RunJob): Promise<void>;
-    enqueueApprovalInboxResumeFromSnapshot(input: {
-        userId: number;
-        sessionId: string;
-        appClientId: number;
-        pageContext?: RunJob['pageContext'];
-        snapshot: ApprovalResumeSnapshot;
-        approvalRequestId: number;
-    }): Promise<number>;
     enqueue(job: RunJob, policy: RunEnqueuePolicy): Promise<number>;
     cancelRun(sessionId: string, userId: number, runId?: number): Promise<CancelSessionRunResult>;
     private applyRemoteSupersede;
@@ -72,6 +64,5 @@ export declare class SessionRunCoordinator implements OnModuleInit {
     private scheduleDrain;
     private tryStartDrain;
     private finishDrain;
-    private retryDrainIfQueued;
     private drain;
 }

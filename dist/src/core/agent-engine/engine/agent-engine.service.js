@@ -17,7 +17,6 @@ const llm_service_1 = require("../../llm/llm.service");
 const prompt_composer_service_1 = require("../../prompt/prompt-composer.service");
 const tool_engine_service_1 = require("../../tool-engine/tool-engine.service");
 const prisma_service_1 = require("../../../prisma/prisma.service");
-const approval_request_service_1 = require("../../approval/approval-request.service");
 const pending_write_confirmation_store_1 = require("../../../modules/chat/pending-write-confirmation.store");
 const agent_service_1 = require("../../../modules/agent/agent.service");
 const host_tool_service_1 = require("../../../modules/host-tool/host-tool.service");
@@ -39,10 +38,9 @@ const run_aborted_error_1 = require("../../session-run/run-aborted.error");
 const agent_run_sse_gateway_1 = require("../../session-run/agent-run-sse.gateway");
 const prepare_write_confirm_resume_util_1 = require("./write-confirm/prepare-write-confirm-resume.util");
 const run_write_confirm_resume_util_1 = require("./write-confirm/run-write-confirm-resume.util");
-const chat_approval_run_audit_util_1 = require("../../approval/chat-approval-run-audit.util");
-const chat_approval_run_audit_util_2 = require("../../approval/chat-approval-run-audit.util");
+const write_confirm_run_audit_util_1 = require("../../approval/write-confirm-run-audit.util");
 let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
-    constructor(prisma, llmService, promptComposer, toolEngine, hostToolService, agentService, pendingWriteConfirmationStore, sse, assistantArtifact, messagePersist, lifecycle, langGraphRunner, sessionScope, goaService, requestedSkillRun, runSse, approvalRequests) {
+    constructor(prisma, llmService, promptComposer, toolEngine, hostToolService, agentService, pendingWriteConfirmationStore, sse, assistantArtifact, messagePersist, lifecycle, langGraphRunner, sessionScope, goaService, requestedSkillRun, runSse) {
         this.prisma = prisma;
         this.llmService = llmService;
         this.promptComposer = promptComposer;
@@ -59,7 +57,6 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
         this.goaService = goaService;
         this.requestedSkillRun = requestedSkillRun;
         this.runSse = runSse;
-        this.approvalRequests = approvalRequests;
         this.logger = new common_1.Logger(AgentEngineService_1.name);
     }
     async assertRequestedSkillRunnable(input) {
@@ -79,31 +76,13 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
         if (!pending) {
             return;
         }
-        void this.approvalRequests
-            .syncChatRealtimeDecision({
-            appClientId: pending.appClientId,
-            sessionId,
-            runId: pending.runId,
+        await (0, write_confirm_run_audit_util_1.appendChatWriteConfirmRejectedAuditToPrimaryRun)({
+            prisma: this.prisma,
+            primaryRunId: pending.runId,
+            rejectChannel: 'session_cancel',
             decidedByUserId: userId,
-            decision: 'rejected',
             decisionNote: 'cancelled in chat',
-        })
-            .catch((error) => this.logger.warn(`chat approval sync on cancel failed sessionId=${sessionId}: ${error instanceof Error ? error.message : String(error)}`));
-        const approvalRow = await this.approvalRequests.findChatBySessionPrimaryRun({
-            appClientId: pending.appClientId,
-            sessionId,
-            runId: pending.runId,
         });
-        if (approvalRow) {
-            await (0, chat_approval_run_audit_util_2.appendChatApprovalRejectedAuditToPrimaryRun)({
-                prisma: this.prisma,
-                primaryRunId: pending.runId,
-                approvalRequestId: approvalRow.id,
-                rejectChannel: 'session_cancel',
-                decidedByUserId: userId,
-                decisionNote: 'cancelled in chat',
-            });
-        }
         this.runSse.purgeWriteConfirmationGate(sessionId, pending.runId);
         const message = '已取消操作。';
         this.runSse.emitWriteConfirmationCancelled(sessionId, {
@@ -213,61 +192,13 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
             sessionId: input.sessionId,
             userId: input.userId,
             runId: prepared.suspendedPrimaryRunId,
-            appClientId: prepared.consumed.appClientId,
             pendingWriteConfirmationStore: this.pendingWriteConfirmationStore,
             runSse: this.runSse,
-            approvalRequests: this.approvalRequests,
         });
-        const approvalAudit = await (0, chat_approval_run_audit_util_1.resolveChatApprovalResumeAudit)({
-            approvalRequests: this.approvalRequests,
-            appClientId: prepared.consumed.appClientId,
-            sessionId: input.sessionId,
-            primaryRunId: prepared.suspendedPrimaryRunId,
+        const approvalAudit = {
             decidedByUserId: input.userId,
-            resumeChannel: 'session_confirm',
             nodeId: (_b = (_a = prepared.consumed.resumeContext.workflowRun) === null || _a === void 0 ? void 0 : _a.currentNodeId) !== null && _b !== void 0 ? _b : null,
-        });
-        return (0, run_write_confirm_resume_util_1.runWriteConfirmResume)({
-            resumeInput: input,
-            prepared,
-            scope,
-            deps: this.buildWriteConfirmResumeDeps(),
-            approvalAudit,
-        });
-    }
-    async resumeChatFromApprovalInboxSnapshot(input, scope) {
-        var _a, _b, _c;
-        scope.assertActive();
-        const prepared = await (0, prepare_write_confirm_resume_util_1.prepareWriteConfirmFromApprovalSnapshot)({
-            resumeInput: input,
-            snapshot: input.snapshot,
-            prisma: this.prisma,
-            agentService: this.agentService,
-        });
-        if (!prepared) {
-            this.emitWriteConfirmationExpired(input.sessionId);
-            return null;
-        }
-        await (0, prepare_write_confirm_resume_util_1.releaseWriteConfirmGate)({
-            sessionId: input.sessionId,
-            userId: input.userId,
-            runId: prepared.suspendedPrimaryRunId,
-            appClientId: prepared.consumed.appClientId,
-            pendingWriteConfirmationStore: this.pendingWriteConfirmationStore,
-            runSse: this.runSse,
-            approvalRequests: this.approvalRequests,
-            skipChatApprovalSync: true,
-        });
-        const approvalAudit = (_a = input.approvalAudit) !== null && _a !== void 0 ? _a : (await (0, chat_approval_run_audit_util_1.resolveChatApprovalResumeAudit)({
-            approvalRequests: this.approvalRequests,
-            appClientId: prepared.consumed.appClientId,
-            sessionId: input.sessionId,
-            primaryRunId: prepared.suspendedPrimaryRunId,
-            decidedByUserId: input.userId,
-            resumeChannel: 'inbox_confirm',
-            approvalRequestId: input.approvalRequestId,
-            nodeId: (_c = (_b = input.snapshot.workflowRun) === null || _b === void 0 ? void 0 : _b.currentNodeId) !== null && _c !== void 0 ? _c : null,
-        }));
+        };
         return (0, run_write_confirm_resume_util_1.runWriteConfirmResume)({
             resumeInput: input,
             prepared,
@@ -544,8 +475,7 @@ AgentEngineService = AgentEngineService_1 = __decorate([
         agent_session_scope_service_1.AgentSessionScopeService,
         session_goa_service_1.SessionGoaService,
         requested_skill_run_service_1.RequestedSkillRunService,
-        agent_run_sse_gateway_1.AgentRunSseGateway,
-        approval_request_service_1.ApprovalRequestService])
+        agent_run_sse_gateway_1.AgentRunSseGateway])
 ], AgentEngineService);
 exports.AgentEngineService = AgentEngineService;
 //# sourceMappingURL=agent-engine.service.js.map

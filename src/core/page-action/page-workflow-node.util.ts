@@ -92,14 +92,15 @@ export function buildPageHarnessSensorPayload(
         agentMetadata: row.agentMetadata ?? null,
       };
     }
-    case 'summarize': {
+    case 'summarize':
+    case 'present_mutation': {
       const row = (nodeOutput ?? {}) as {
         summaryText?: string;
-        mode?: WorkflowSummarizeMode;
+        mode?: WorkflowSummarizeMode | 'brief' | 'detailed';
       };
       return {
         summaryText: row.summaryText ?? '',
-        mode: row.mode ?? 'final',
+        mode: row.mode ?? (action === 'present_mutation' ? 'brief' : 'final'),
       };
     }
     default:

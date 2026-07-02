@@ -27,11 +27,10 @@ import type {
   RunWriteConfirmResumeInput,
   WriteConfirmResumeDeps,
 } from './write-confirm-resume.types';
-import type { ChatApprovalResumeAudit } from '../../../approval/chat-approval-run-audit.util';
 import {
-  buildChatApprovalConfirmedRunStep,
-  offsetRunSteps,
-} from '../../../approval/chat-approval-run-audit.util';
+  buildChatWriteConfirmConfirmedRunStep,
+} from '../../../approval/write-confirm-run-audit.util';
+import { offsetRunSteps } from '../main/run/agent-run-steps.util';
 
 export async function runWriteConfirmResume(
   input: RunWriteConfirmResumeInput,
@@ -143,10 +142,8 @@ export async function runWriteConfirmResume(
   let workerLeadSteps: AgentRunStep[] = [];
   if (input.approvalAudit) {
     workerLeadSteps = [
-      buildChatApprovalConfirmedRunStep(1, {
-        approvalRequestId: input.approvalAudit.approvalRequestId,
+      buildChatWriteConfirmConfirmedRunStep(1, {
         primaryRunId: suspendedPrimaryRunId,
-        resumeChannel: input.approvalAudit.resumeChannel,
         decidedByUserId: input.approvalAudit.decidedByUserId,
         nodeId: input.approvalAudit.nodeId,
       }),

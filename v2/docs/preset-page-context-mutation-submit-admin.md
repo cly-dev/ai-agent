@@ -172,7 +172,7 @@ PUT /admin/skill/:skillId/tools
 | 规则 | 说明 |
 |------|------|
 | `workflowId` | 必填，否则不会走 DB Workflow |
-| SkillTool ⊇ Workflow 节点 toolId | 缺一会保存/运行校验失败 |
+| SkillTool | **可选**（workflow-only 可不绑）；若配置则须覆盖 Workflow 节点 `readToolId` / `writeToolId` |
 | `deliverable` | Workflow 侧建议 `mutation`；Skill 写操作风险建议 L2+ |
 
 ### 4.3 配置角色写权限
@@ -265,7 +265,7 @@ PUT /admin/skill/:skillId/tools
 ```text
 □ POST /admin/workflow 使用 preset=page_context_mutation_submit 成功
 □ GET /admin/workflow/:id 节点链含 load_page_context … summarize
-□ Skill 已绑 workflowId，SkillTool 覆盖 writeToolId（及可选 readToolId）
+□ Skill 已绑 workflowId（workflow-only 可不绑 SkillTool；叠加层须覆盖 writeToolId / readToolId）
 □ 角色 RoleTool 含写 Tool
 □ C 端联调：skillId + pageContext → 出现 confirmation_required 或收件箱 pending
 □ 用户确认后 write_data 执行成功，会话有总结回复

@@ -25,7 +25,7 @@ let AgentRunLauncher = AgentRunLauncher_1 = class AgentRunLauncher {
         this.logger = new common_1.Logger(AgentRunLauncher_1.name);
     }
     async execute(job, scope) {
-        var _a, _b, _c, _d;
+        var _a, _b, _c;
         if (job.kind === 'write_cancel') {
             await this.agentEngine.cancelPendingWriteConfirmation(job.userId, job.sessionId);
             return;
@@ -35,30 +35,21 @@ let AgentRunLauncher = AgentRunLauncher_1 = class AgentRunLauncher {
             return;
         }
         try {
-            const run = job.kind === 'write_confirm' && job.approvalInboxSnapshot
-                ? await this.agentEngine.resumeChatFromApprovalInboxSnapshot({
+            const run = job.kind === 'write_confirm'
+                ? await this.agentEngine.resumeAfterWriteConfirm({
                     userId: job.userId,
                     sessionId: job.sessionId,
                     userMessageId: job.userMessageId,
                     pageContext: (_a = job.pageContext) !== null && _a !== void 0 ? _a : null,
-                    snapshot: job.approvalInboxSnapshot,
-                    approvalRequestId: job.approvalRequestId,
                 }, scope)
-                : job.kind === 'write_confirm'
-                    ? await this.agentEngine.resumeAfterWriteConfirm({
-                        userId: job.userId,
-                        sessionId: job.sessionId,
-                        userMessageId: job.userMessageId,
-                        pageContext: (_b = job.pageContext) !== null && _b !== void 0 ? _b : null,
-                    }, scope)
-                    : await this.agentEngine.run({
-                        userId: job.userId,
-                        sessionId: job.sessionId,
-                        input: content,
-                        userMessageId: job.userMessageId,
-                        requestedSkillId: job.requestedSkillId,
-                        pageContext: (_c = job.pageContext) !== null && _c !== void 0 ? _c : null,
-                    }, scope);
+                : await this.agentEngine.run({
+                    userId: job.userId,
+                    sessionId: job.sessionId,
+                    input: content,
+                    userMessageId: job.userMessageId,
+                    requestedSkillId: job.requestedSkillId,
+                    pageContext: (_b = job.pageContext) !== null && _b !== void 0 ? _b : null,
+                }, scope);
             if (!run) {
                 if (job.kind === 'write_confirm') {
                     return;
@@ -81,7 +72,7 @@ let AgentRunLauncher = AgentRunLauncher_1 = class AgentRunLauncher {
             this.logger.warn(`agent run failed for sessionId=${job.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
             this.runSse.emitRunError(scope.sessionId, {
                 message: userMessage,
-                code: (_d = (0, agent_run_user_messages_util_1.resolveAgentRunFailureCode)(error)) !== null && _d !== void 0 ? _d : 'LLM_TIMEOUT',
+                code: (_c = (0, agent_run_user_messages_util_1.resolveAgentRunFailureCode)(error)) !== null && _c !== void 0 ? _c : 'LLM_TIMEOUT',
                 generation: scope.generation,
             });
         }

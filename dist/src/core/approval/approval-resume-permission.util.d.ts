@@ -1,4 +1,4 @@
-import type { ApprovalSource } from '../../../generated/prisma/client';
+import { ApprovalSource } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
 import type { ApprovalTriggerPermissionService } from './approval-trigger-permission.service';

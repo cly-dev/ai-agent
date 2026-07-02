@@ -17,7 +17,7 @@ export function toPageActionResponse(row: PageActionDetailRow): PageActionRespon
     name: row.name,
     description: row.description,
     hostToolId: row.hostToolId,
-    hostToolName: row.hostTool.name,
+    hostToolName: row.hostTool?.name ?? null,
     pageScope: row.pageScope,
     systemPrompt: row.systemPrompt,
     defaultDelivery: row.defaultDelivery,

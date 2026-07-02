@@ -37,6 +37,3 @@ export type ApprovalResumeSnapshot = ApprovalResumeSnapshotBase & {
     channel: ApprovalResumeChannel;
 };
 export type ApprovalResumeChannelKind = ApprovalResumeChannel['kind'];
-export declare function isChatApprovalSnapshot(snapshot: ApprovalResumeSnapshot): snapshot is ApprovalResumeSnapshot & {
-    channel: ApprovalResumeChannelChat;
-};

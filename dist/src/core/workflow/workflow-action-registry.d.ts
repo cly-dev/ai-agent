@@ -9,4 +9,4 @@ export declare const WORKFLOW_ACTION_REGISTRY: readonly WorkflowActionRegistryEn
 export declare const WORKFLOW_ACTION_KINDS: readonly WorkflowActionKind[];
 export declare function getWorkflowActionRegistryEntry(kind: string): WorkflowActionRegistryEntry | null;
 export declare function isWorkflowActionKind(value: string): value is WorkflowActionKind;
-export declare function workflowProfileAllowsAction(profile: WorkflowProfile, kind: WorkflowActionKind): boolean;
+export declare function workflowProfileAllowsAction(_profile: WorkflowProfile, kind: WorkflowActionKind): boolean;

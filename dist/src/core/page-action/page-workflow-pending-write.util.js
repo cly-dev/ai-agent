@@ -1,11 +1,32 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.readWriteDataToolId = exports.readComposeMutationToolId = exports.resolvePageWorkflowPendingWrite = exports.buildPageComposeNodeOutput = void 0;
+exports.readWriteDataToolId = exports.readComposeMutationToolId = exports.resolvePageWorkflowPendingWrite = exports.resolvePageWorkflowPresentSummary = exports.buildPageComposeNodeOutput = void 0;
 const COMPOSE_OUTPUT_KEY = 'page_compose_mutation';
 function buildPageComposeNodeOutput(output) {
     return { [COMPOSE_OUTPUT_KEY]: output };
 }
 exports.buildPageComposeNodeOutput = buildPageComposeNodeOutput;
+function resolvePageWorkflowPresentSummary(input) {
+    for (const node of input.nodes) {
+        if (node.action !== 'present_mutation') {
+            continue;
+        }
+        const byRef = input.nodeOutputs[`obs:present_mutation:${node.id}`];
+        const byId = input.nodeOutputs[node.id];
+        for (const raw of [byRef, byId]) {
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+                continue;
+            }
+            const text = raw.summaryText;
+            if (typeof text === 'string' && text.trim()) {
+                return text.trim();
+            }
+        }
+    }
+    const fill = input.fillText.trim();
+    return fill.length > 0 ? fill : null;
+}
+exports.resolvePageWorkflowPresentSummary = resolvePageWorkflowPresentSummary;
 function resolvePageWorkflowPendingWrite(input) {
     var _a, _b, _c;
     for (const node of input.nodes) {

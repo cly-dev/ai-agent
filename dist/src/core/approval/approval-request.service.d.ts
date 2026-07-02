@@ -2,6 +2,7 @@ import { ApprovalStatus, type ApprovalRequest, type Prisma } from '../../../gene
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
 import type { ApprovalCasResult, ApprovalDecisionInput, CreateApprovalRequestInput } from './approval.types';
+export declare const APPROVAL_INBOX_SOURCES: readonly ["page_action", "webhook"];
 declare const APPROVAL_INBOX_INCLUDE: {
     workflow: {
         select: {
@@ -28,24 +29,6 @@ export declare class ApprovalRequestService {
         appClientId: number;
         idempotencyKey: string;
     }): Promise<ApprovalRequest | null>;
-    findChatBySessionPrimaryRun(input: {
-        appClientId: number;
-        sessionId: string;
-        runId: number;
-    }): Promise<ApprovalRequest | null>;
-    findPendingChatBySessionRun(input: {
-        appClientId: number;
-        sessionId: string;
-        runId: number;
-    }): Promise<ApprovalRequest | null>;
-    syncChatRealtimeDecision(input: {
-        appClientId: number;
-        sessionId: string;
-        runId: number;
-        decidedByUserId: number;
-        decision: 'approved' | 'rejected';
-        decisionNote?: string | null;
-    }): Promise<void>;
     findByIdForApprover(approvalRequestId: number, approverUserId: number): Promise<ApprovalRequest | null>;
     listPendingForApprover(input: {
         appClientId: number;

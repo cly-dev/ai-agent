@@ -141,7 +141,11 @@ async function orchestratePageWorkflow(input) {
                 workflowVersion: input.version,
                 nodeId,
                 title: `${input.actionKey} · ${def.name}`,
-                summary: null,
+                summary: (0, page_workflow_pending_write_util_1.resolvePageWorkflowPresentSummary)({
+                    nodes: input.nodes,
+                    nodeOutputs: runtime.nodeOutputs,
+                    fillText: runtime.fillText,
+                }),
                 workflowRun,
                 workflowNodeDefs: input.nodes,
                 workflowNodeOutputs: Object.assign({}, runtime.nodeOutputs),

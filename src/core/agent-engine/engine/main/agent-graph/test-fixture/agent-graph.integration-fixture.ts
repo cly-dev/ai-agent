@@ -124,13 +124,6 @@ export function createMockAgentGraphDeps(
       getHostToolsForRun: jest.fn().mockReturnValue(null),
       setHostToolsForRun: jest.fn(),
     } as unknown as AgentGraphDeps['runScopeCache'],
-    approvalGate: {
-      suspend: jest.fn(),
-      buildPendingWriteFromTool: jest.fn(),
-    } as unknown as AgentGraphDeps['approvalGate'],
-    approvalRequests: {
-      findPendingByIdempotencyKey: jest.fn().mockResolvedValue(null),
-    } as unknown as AgentGraphDeps['approvalRequests'],
     approvalTriggerPermission: {
       evaluateForNodes: jest.fn().mockReturnValue({ allowed: true, skipped: false }),
     } as unknown as AgentGraphDeps['approvalTriggerPermission'],

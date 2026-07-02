@@ -29,7 +29,9 @@ async function resumePageActionFromApprovalSnapshot(input) {
         throw new common_1.NotFoundException('PageActionRun not found for resume');
     }
     const pageContext = ((_a = run.pageContext) !== null && _a !== void 0 ? _a : null);
-    const hostTool = (0, page_action_host_tool_util_1.resolvePageActionHostTool)(run.pageAction.hostTool, pageContext);
+    const hostTool = run.pageAction.hostTool
+        ? (0, page_action_host_tool_util_1.resolvePageActionHostTool)(run.pageAction.hostTool, pageContext)
+        : null;
     const messages = (0, page_action_prompt_util_1.buildPageActionLlmMessages)({
         systemPrompt: run.pageAction.systemPrompt,
         instruction: run.instruction,

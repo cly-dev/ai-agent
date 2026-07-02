@@ -1,6 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.filterSkillsWithRunnableToolIds = exports.filterRunnableSkills = exports.skillHasRunnableToolIds = exports.skillIsRunnable = exports.skillIsRunnableForUser = exports.skillIsResolvableForRequested = exports.skillIsResolvableInScope = exports.skillIsVisibleOnClientPage = exports.skillMatchesPageHostTools = exports.skillIsHostOnlySkill = exports.deriveSkillRunnableKind = exports.normalizeSkillRunnableCapabilities = void 0;
+exports.filterSkillsWithRunnableToolIds = exports.filterRunnableSkills = exports.skillHasRunnableToolIds = exports.skillIsRunnable = exports.skillIsRunnableForUser = exports.skillIsResolvableForRequested = exports.skillIsResolvableInScope = exports.skillIsVisibleOnClientPage = exports.skillMatchesPageHostTools = exports.skillIsHostOnlySkill = exports.deriveSkillRunnableKind = exports.normalizeSkillRunnableCapabilities = exports.skillIsWorkflowBound = void 0;
+function skillIsWorkflowBound(skill) {
+    return skill.workflowId != null && skill.workflowId > 0;
+}
+exports.skillIsWorkflowBound = skillIsWorkflowBound;
 function normalizeSkillRunnableCapabilities(skill) {
     var _a, _b, _c;
     return {
@@ -31,6 +35,9 @@ function skillMatchesPageHostTools(skill, scopedHostToolIds) {
 }
 exports.skillMatchesPageHostTools = skillMatchesPageHostTools;
 function skillIsVisibleOnClientPage(skill, scopedHostToolIds) {
+    if (skillIsWorkflowBound(skill)) {
+        return true;
+    }
     if (skill.hostToolIds.length === 0) {
         return skill.skillToolIds.length > 0;
     }
@@ -41,6 +48,9 @@ function skillIsVisibleOnClientPage(skill, scopedHostToolIds) {
 }
 exports.skillIsVisibleOnClientPage = skillIsVisibleOnClientPage;
 function skillIsResolvableInScope(skill, scopedToolIds, scopedHostToolIds = new Set()) {
+    if (skillIsWorkflowBound(skill)) {
+        return true;
+    }
     const hasHttpMatch = scopedToolIds.size > 0 &&
         skill.skillToolIds.some((toolId) => scopedToolIds.has(toolId));
     const hasHostMatch = scopedHostToolIds.size > 0 &&
@@ -61,6 +71,9 @@ function skillIsResolvableInScope(skill, scopedToolIds, scopedHostToolIds = new 
 }
 exports.skillIsResolvableInScope = skillIsResolvableInScope;
 function skillIsResolvableForRequested(skill) {
+    if (skillIsWorkflowBound(skill)) {
+        return true;
+    }
     if (skillIsHostOnlySkill(skill)) {
         return skill.hostToolIds.length > 0;
     }
@@ -68,6 +81,9 @@ function skillIsResolvableForRequested(skill) {
 }
 exports.skillIsResolvableForRequested = skillIsResolvableForRequested;
 function skillIsRunnableForUser(skill, allowedToolIds) {
+    if (skillIsWorkflowBound(skill)) {
+        return true;
+    }
     const caps = normalizeSkillRunnableCapabilities(skill);
     if (skillIsHostOnlySkill(caps)) {
         return caps.hostToolIds.length > 0;

@@ -58,6 +58,8 @@ export class AgentSkillCatalogService {
       hostToolIds: row.skillHostToolIds.filter((hostToolId) =>
         runnableHostToolIds.has(hostToolId),
       ),
+      workflowId: row.workflowId,
+      workflowVersion: row.workflowVersion,
     }));
   }
 
@@ -176,6 +178,8 @@ export class AgentSkillCatalogService {
       skillHostToolIds: row.skillHostTools.map(
         (binding) => binding.hostToolId,
       ),
+      workflowId: row.workflowId,
+      workflowVersion: row.workflowVersion,
     }));
     return {
       appClientId: input.appClientId,
@@ -218,6 +222,8 @@ export class AgentSkillCatalogService {
         capabilityKey: true,
         riskLevel: true,
         updatedAt: true,
+        workflowId: true,
+        workflowVersion: true,
         skillTools: { select: { toolId: true } },
         skillHostTools: { select: { hostToolId: true } },
       },

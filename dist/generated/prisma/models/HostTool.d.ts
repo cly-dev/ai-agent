@@ -466,6 +466,10 @@ export type HostToolScalarRelationFilter = {
     is?: Prisma.HostToolWhereInput;
     isNot?: Prisma.HostToolWhereInput;
 };
+export type HostToolNullableScalarRelationFilter = {
+    is?: Prisma.HostToolWhereInput | null;
+    isNot?: Prisma.HostToolWhereInput | null;
+};
 export type HostToolCreateNestedManyWithoutAppClientInput = {
     create?: Prisma.XOR<Prisma.HostToolCreateWithoutAppClientInput, Prisma.HostToolUncheckedCreateWithoutAppClientInput> | Prisma.HostToolCreateWithoutAppClientInput[] | Prisma.HostToolUncheckedCreateWithoutAppClientInput[];
     connectOrCreate?: Prisma.HostToolCreateOrConnectWithoutAppClientInput | Prisma.HostToolCreateOrConnectWithoutAppClientInput[];
@@ -583,10 +587,12 @@ export type HostToolCreateNestedOneWithoutPageActionsInput = {
     connectOrCreate?: Prisma.HostToolCreateOrConnectWithoutPageActionsInput;
     connect?: Prisma.HostToolWhereUniqueInput;
 };
-export type HostToolUpdateOneRequiredWithoutPageActionsNestedInput = {
+export type HostToolUpdateOneWithoutPageActionsNestedInput = {
     create?: Prisma.XOR<Prisma.HostToolCreateWithoutPageActionsInput, Prisma.HostToolUncheckedCreateWithoutPageActionsInput>;
     connectOrCreate?: Prisma.HostToolCreateOrConnectWithoutPageActionsInput;
     upsert?: Prisma.HostToolUpsertWithoutPageActionsInput;
+    disconnect?: Prisma.HostToolWhereInput | boolean;
+    delete?: Prisma.HostToolWhereInput | boolean;
     connect?: Prisma.HostToolWhereUniqueInput;
     update?: Prisma.XOR<Prisma.XOR<Prisma.HostToolUpdateToOneWithWhereWithoutPageActionsInput, Prisma.HostToolUpdateWithoutPageActionsInput>, Prisma.HostToolUncheckedUpdateWithoutPageActionsInput>;
 };

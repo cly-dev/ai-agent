@@ -89,11 +89,6 @@ function createMockAgentGraphDeps(overrides = {}) {
         }, runScopeCache: {
             getHostToolsForRun: jest.fn().mockReturnValue(null),
             setHostToolsForRun: jest.fn(),
-        }, approvalGate: {
-            suspend: jest.fn(),
-            buildPendingWriteFromTool: jest.fn(),
-        }, approvalRequests: {
-            findPendingByIdempotencyKey: jest.fn().mockResolvedValue(null),
         }, approvalTriggerPermission: {
             evaluateForNodes: jest.fn().mockReturnValue({ allowed: true, skipped: false }),
         }, logger: logger }, overrides);

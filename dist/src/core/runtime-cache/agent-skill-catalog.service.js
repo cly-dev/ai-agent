@@ -47,6 +47,8 @@ let AgentSkillCatalogService = AgentSkillCatalogService_1 = class AgentSkillCata
             riskLevel: row.riskLevel,
             toolIds: row.toolIds,
             hostToolIds: row.skillHostToolIds.filter((hostToolId) => runnableHostToolIds.has(hostToolId)),
+            workflowId: row.workflowId,
+            workflowVersion: row.workflowVersion,
         }));
     }
     async loadOrWarm(input) {
@@ -119,6 +121,8 @@ let AgentSkillCatalogService = AgentSkillCatalogService_1 = class AgentSkillCata
             updatedAt: (0, runtime_revision_util_1.toRevisionIso)(row.updatedAt),
             toolIds: row.skillTools.map((skillTool) => skillTool.toolId),
             skillHostToolIds: row.skillHostTools.map((binding) => binding.hostToolId),
+            workflowId: row.workflowId,
+            workflowVersion: row.workflowVersion,
         }));
         return {
             appClientId: input.appClientId,
@@ -148,6 +152,8 @@ let AgentSkillCatalogService = AgentSkillCatalogService_1 = class AgentSkillCata
                 capabilityKey: true,
                 riskLevel: true,
                 updatedAt: true,
+                workflowId: true,
+                workflowVersion: true,
                 skillTools: { select: { toolId: true } },
                 skillHostTools: { select: { hostToolId: true } },
             },

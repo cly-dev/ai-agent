@@ -107,7 +107,8 @@ let SkillService = class SkillService {
     }
     async listRunnableAgentSkillsForUser(input, allowedToolIds) {
         const rows = await this.listAgentSkillsForUser(input);
-        return (0, skill_runnable_util_1.filterRunnableSkills)(rows, allowedToolIds);
+        return rows.filter((skill) => (0, skill_runnable_util_1.skillIsWorkflowBound)(skill) ||
+            (0, skill_runnable_util_1.skillIsRunnableForUser)(skill, allowedToolIds));
     }
     bindSkillToScopedTools(skill, scopedTools, toolBuildCtx) {
         const skillToolIds = new Set('skillToolIds' in skill
@@ -193,7 +194,11 @@ let SkillService = class SkillService {
     toAvailableSkillRowIfResolvable(row, runnableHostToolIds, scopedToolIds, scopedHostToolIds, forRequestedSkill) {
         const skillToolIds = row.skillTools.map((skillTool) => skillTool.toolId);
         const hostToolIds = this.resolveRunnableHostToolIds(row, runnableHostToolIds);
-        const caps = { skillToolIds, hostToolIds };
+        const caps = {
+            skillToolIds,
+            hostToolIds,
+            workflowId: row.workflowId,
+        };
         const resolvable = forRequestedSkill
             ? (0, skill_runnable_util_1.skillIsResolvableForRequested)(caps)
             : (0, skill_runnable_util_1.skillIsResolvableInScope)(caps, scopedToolIds, scopedHostToolIds);

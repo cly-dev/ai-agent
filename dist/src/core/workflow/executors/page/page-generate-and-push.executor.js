@@ -6,12 +6,23 @@ const page_workflow_messages_util_1 = require("../../../page-action/page-workflo
 const page_workflow_node_util_1 = require("../../../page-action/page-workflow-node.util");
 const workflow_run_util_1 = require("../../workflow-run.util");
 const workflow_node_output_util_1 = require("../../workflow-node-output.util");
+const page_action_workflow_host_util_1 = require("../../../page-action/page-action-workflow-host.util");
 const executor_host_util_1 = require("../executor-host.util");
+function isRecord(value) {
+    return value != null && typeof value === 'object' && !Array.isArray(value);
+}
 exports.pageGenerateAndPushExecutor = {
     action: 'generate_and_push',
     async run(ctx) {
         var _a;
         const { runtime } = (0, executor_host_util_1.requirePageExecutorHost)(ctx.host);
+        const nodeInput = (isRecord(ctx.def.input) ? ctx.def.input : {});
+        const hostTool = await (0, page_action_workflow_host_util_1.resolvePageActionHostToolForPushNode)(runtime.prisma, {
+            appClientId: runtime.appClientId,
+            hostToolId: nodeInput.hostToolId,
+            pageContext: runtime.pageContext,
+            fallbackHostTool: runtime.hostTool,
+        });
         const messages = (0, page_workflow_messages_util_1.injectWorkflowNodeObjective)((0, page_workflow_messages_util_1.appendWorkflowNodeOutputsToMessages)(runtime.messages, runtime.nodeOutputs), ctx.def.objective, runtime.objectivePrefix);
         const fillResult = await (0, page_action_host_fill_executor_1.executePageActionHostFill)(runtime.llmService, {
             actionRunId: runtime.actionRunId,
@@ -21,7 +32,7 @@ exports.pageGenerateAndPushExecutor = {
             systemPrompt: runtime.systemPrompt,
             messages,
             pageContext: runtime.pageContext,
-            hostTool: runtime.hostTool,
+            hostTool,
             res: runtime.res,
             stepRecorder: runtime.stepRecorder,
         });

@@ -35,7 +35,7 @@ exports.WORKFLOW_ACTION_REGISTRY = [
     {
         kind: 'present_mutation',
         implemented: true,
-        allowedProfiles: ['chat_skill', 'shared'],
+        allowedProfiles: ['page_action', 'chat_skill', 'shared'],
         batch: 'B',
     },
     {
@@ -61,15 +61,9 @@ function isWorkflowActionKind(value) {
     return getWorkflowActionRegistryEntry(value) != null;
 }
 exports.isWorkflowActionKind = isWorkflowActionKind;
-function workflowProfileAllowsAction(profile, kind) {
+function workflowProfileAllowsAction(_profile, kind) {
     const entry = getWorkflowActionRegistryEntry(kind);
-    if (!entry) {
-        return false;
-    }
-    if (profile === 'shared') {
-        return entry.allowedProfiles.includes('shared');
-    }
-    return entry.allowedProfiles.includes(profile);
+    return (entry === null || entry === void 0 ? void 0 : entry.implemented) === true;
 }
 exports.workflowProfileAllowsAction = workflowProfileAllowsAction;
 //# sourceMappingURL=workflow-action-registry.js.map

@@ -14,6 +14,7 @@ import {
   filterRunnableSkills,
   normalizeSkillRunnableCapabilities,
   skillIsVisibleOnClientPage,
+  skillIsWorkflowBound,
   skillMatchesPageHostTools,
 } from '../../core/skill/skill-runnable.util';
 import { SkillService as SkillRuntimeService } from '../../core/skill/skill.service';
@@ -211,13 +212,16 @@ export class SkillService {
       appClientId,
     );
     const allowedToolIds = new Set(allowedTools.map((tool) => tool.id));
-    const rows = filterRunnableSkills(
+    const rows = (
       await this.skillRuntime.listAgentSkillsForUser({
         agentId,
         userId,
         appClientId,
-      }),
-      allowedToolIds,
+      })
+    ).filter(
+      (skill) =>
+        skillIsWorkflowBound(skill) ||
+        filterRunnableSkills([skill], allowedToolIds).length > 0,
     );
     const filtered = rows.filter((row) =>
       this.matchesClientSkillQuery(row, query),
@@ -235,7 +239,10 @@ export class SkillService {
       pageHostToolIds != null
         ? filtered.filter((row) =>
             skillIsVisibleOnClientPage(
-              normalizeSkillRunnableCapabilities(row),
+              {
+                ...normalizeSkillRunnableCapabilities(row),
+                workflowId: row.workflowId,
+              },
               pageHostToolIds,
             ),
           )

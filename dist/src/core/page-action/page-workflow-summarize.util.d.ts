@@ -3,6 +3,7 @@ import type { LlmService } from '../llm/llm.service';
 import type { LlmChatMessage } from '../llm/llm.types';
 import type { SummarizeNodeInput } from '../workflow/workflow-node-input.types';
 import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
+export type PageWorkflowSummarizeStreamLifecycle = 'terminal' | 'none';
 export type PageWorkflowSummarizeResult = {
     summaryText: string;
     model: string | null;
@@ -27,4 +28,5 @@ export declare function executePageWorkflowSummarize(input: {
     clientActionId?: string | null;
     existingFillText: string;
     stepRecorder?: PageActionRunStepRecorder;
+    streamLifecycle?: PageWorkflowSummarizeStreamLifecycle;
 }): Promise<PageWorkflowSummarizeResult>;

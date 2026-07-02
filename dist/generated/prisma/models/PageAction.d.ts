@@ -199,7 +199,7 @@ export type PageActionGroupByOutputType = {
     actionKey: string;
     name: string;
     description: string | null;
-    hostToolId: number;
+    hostToolId: number | null;
     pageScope: string | null;
     systemPrompt: string;
     defaultDelivery: $Enums.PageActionDelivery;
@@ -231,7 +231,7 @@ export type PageActionWhereInput = {
     actionKey?: Prisma.StringFilter<"PageAction"> | string;
     name?: Prisma.StringFilter<"PageAction"> | string;
     description?: Prisma.StringNullableFilter<"PageAction"> | string | null;
-    hostToolId?: Prisma.IntFilter<"PageAction"> | number;
+    hostToolId?: Prisma.IntNullableFilter<"PageAction"> | number | null;
     pageScope?: Prisma.StringNullableFilter<"PageAction"> | string | null;
     systemPrompt?: Prisma.StringFilter<"PageAction"> | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryFilter<"PageAction"> | $Enums.PageActionDelivery;
@@ -246,7 +246,7 @@ export type PageActionWhereInput = {
     createdAt?: Prisma.DateTimeFilter<"PageAction"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"PageAction"> | Date | string;
     appClient?: Prisma.XOR<Prisma.AppClientScalarRelationFilter, Prisma.AppClientWhereInput>;
-    hostTool?: Prisma.XOR<Prisma.HostToolScalarRelationFilter, Prisma.HostToolWhereInput>;
+    hostTool?: Prisma.XOR<Prisma.HostToolNullableScalarRelationFilter, Prisma.HostToolWhereInput> | null;
     workflow?: Prisma.XOR<Prisma.WorkflowNullableScalarRelationFilter, Prisma.WorkflowWhereInput> | null;
     runs?: Prisma.PageActionRunListRelationFilter;
 };
@@ -256,7 +256,7 @@ export type PageActionOrderByWithRelationInput = {
     actionKey?: Prisma.SortOrder;
     name?: Prisma.SortOrder;
     description?: Prisma.SortOrderInput | Prisma.SortOrder;
-    hostToolId?: Prisma.SortOrder;
+    hostToolId?: Prisma.SortOrderInput | Prisma.SortOrder;
     pageScope?: Prisma.SortOrderInput | Prisma.SortOrder;
     systemPrompt?: Prisma.SortOrder;
     defaultDelivery?: Prisma.SortOrder;
@@ -285,7 +285,7 @@ export type PageActionWhereUniqueInput = Prisma.AtLeast<{
     actionKey?: Prisma.StringFilter<"PageAction"> | string;
     name?: Prisma.StringFilter<"PageAction"> | string;
     description?: Prisma.StringNullableFilter<"PageAction"> | string | null;
-    hostToolId?: Prisma.IntFilter<"PageAction"> | number;
+    hostToolId?: Prisma.IntNullableFilter<"PageAction"> | number | null;
     pageScope?: Prisma.StringNullableFilter<"PageAction"> | string | null;
     systemPrompt?: Prisma.StringFilter<"PageAction"> | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryFilter<"PageAction"> | $Enums.PageActionDelivery;
@@ -300,7 +300,7 @@ export type PageActionWhereUniqueInput = Prisma.AtLeast<{
     createdAt?: Prisma.DateTimeFilter<"PageAction"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"PageAction"> | Date | string;
     appClient?: Prisma.XOR<Prisma.AppClientScalarRelationFilter, Prisma.AppClientWhereInput>;
-    hostTool?: Prisma.XOR<Prisma.HostToolScalarRelationFilter, Prisma.HostToolWhereInput>;
+    hostTool?: Prisma.XOR<Prisma.HostToolNullableScalarRelationFilter, Prisma.HostToolWhereInput> | null;
     workflow?: Prisma.XOR<Prisma.WorkflowNullableScalarRelationFilter, Prisma.WorkflowWhereInput> | null;
     runs?: Prisma.PageActionRunListRelationFilter;
 }, "id" | "appClientId_actionKey">;
@@ -310,7 +310,7 @@ export type PageActionOrderByWithAggregationInput = {
     actionKey?: Prisma.SortOrder;
     name?: Prisma.SortOrder;
     description?: Prisma.SortOrderInput | Prisma.SortOrder;
-    hostToolId?: Prisma.SortOrder;
+    hostToolId?: Prisma.SortOrderInput | Prisma.SortOrder;
     pageScope?: Prisma.SortOrderInput | Prisma.SortOrder;
     systemPrompt?: Prisma.SortOrder;
     defaultDelivery?: Prisma.SortOrder;
@@ -339,7 +339,7 @@ export type PageActionScalarWhereWithAggregatesInput = {
     actionKey?: Prisma.StringWithAggregatesFilter<"PageAction"> | string;
     name?: Prisma.StringWithAggregatesFilter<"PageAction"> | string;
     description?: Prisma.StringNullableWithAggregatesFilter<"PageAction"> | string | null;
-    hostToolId?: Prisma.IntWithAggregatesFilter<"PageAction"> | number;
+    hostToolId?: Prisma.IntNullableWithAggregatesFilter<"PageAction"> | number | null;
     pageScope?: Prisma.StringNullableWithAggregatesFilter<"PageAction"> | string | null;
     systemPrompt?: Prisma.StringWithAggregatesFilter<"PageAction"> | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryWithAggregatesFilter<"PageAction"> | $Enums.PageActionDelivery;
@@ -371,7 +371,7 @@ export type PageActionCreateInput = {
     createdAt?: Date | string;
     updatedAt?: Date | string;
     appClient: Prisma.AppClientCreateNestedOneWithoutPageActionsInput;
-    hostTool: Prisma.HostToolCreateNestedOneWithoutPageActionsInput;
+    hostTool?: Prisma.HostToolCreateNestedOneWithoutPageActionsInput;
     workflow?: Prisma.WorkflowCreateNestedOneWithoutPageActionsInput;
     runs?: Prisma.PageActionRunCreateNestedManyWithoutPageActionInput;
 };
@@ -381,7 +381,7 @@ export type PageActionUncheckedCreateInput = {
     actionKey: string;
     name: string;
     description?: string | null;
-    hostToolId: number;
+    hostToolId?: number | null;
     pageScope?: string | null;
     systemPrompt: string;
     defaultDelivery?: $Enums.PageActionDelivery;
@@ -414,7 +414,7 @@ export type PageActionUpdateInput = {
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     appClient?: Prisma.AppClientUpdateOneRequiredWithoutPageActionsNestedInput;
-    hostTool?: Prisma.HostToolUpdateOneRequiredWithoutPageActionsNestedInput;
+    hostTool?: Prisma.HostToolUpdateOneWithoutPageActionsNestedInput;
     workflow?: Prisma.WorkflowUpdateOneWithoutPageActionsNestedInput;
     runs?: Prisma.PageActionRunUpdateManyWithoutPageActionNestedInput;
 };
@@ -424,7 +424,7 @@ export type PageActionUncheckedUpdateInput = {
     actionKey?: Prisma.StringFieldUpdateOperationsInput | string;
     name?: Prisma.StringFieldUpdateOperationsInput | string;
     description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
-    hostToolId?: Prisma.IntFieldUpdateOperationsInput | number;
+    hostToolId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     pageScope?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     systemPrompt?: Prisma.StringFieldUpdateOperationsInput | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryFieldUpdateOperationsInput | $Enums.PageActionDelivery;
@@ -446,7 +446,7 @@ export type PageActionCreateManyInput = {
     actionKey: string;
     name: string;
     description?: string | null;
-    hostToolId: number;
+    hostToolId?: number | null;
     pageScope?: string | null;
     systemPrompt: string;
     defaultDelivery?: $Enums.PageActionDelivery;
@@ -484,7 +484,7 @@ export type PageActionUncheckedUpdateManyInput = {
     actionKey?: Prisma.StringFieldUpdateOperationsInput | string;
     name?: Prisma.StringFieldUpdateOperationsInput | string;
     description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
-    hostToolId?: Prisma.IntFieldUpdateOperationsInput | number;
+    hostToolId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     pageScope?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     systemPrompt?: Prisma.StringFieldUpdateOperationsInput | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryFieldUpdateOperationsInput | $Enums.PageActionDelivery;
@@ -737,7 +737,7 @@ export type PageActionCreateWithoutAppClientInput = {
     workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Date | string;
     updatedAt?: Date | string;
-    hostTool: Prisma.HostToolCreateNestedOneWithoutPageActionsInput;
+    hostTool?: Prisma.HostToolCreateNestedOneWithoutPageActionsInput;
     workflow?: Prisma.WorkflowCreateNestedOneWithoutPageActionsInput;
     runs?: Prisma.PageActionRunCreateNestedManyWithoutPageActionInput;
 };
@@ -746,7 +746,7 @@ export type PageActionUncheckedCreateWithoutAppClientInput = {
     actionKey: string;
     name: string;
     description?: string | null;
-    hostToolId: number;
+    hostToolId?: number | null;
     pageScope?: string | null;
     systemPrompt: string;
     defaultDelivery?: $Enums.PageActionDelivery;
@@ -792,7 +792,7 @@ export type PageActionScalarWhereInput = {
     actionKey?: Prisma.StringFilter<"PageAction"> | string;
     name?: Prisma.StringFilter<"PageAction"> | string;
     description?: Prisma.StringNullableFilter<"PageAction"> | string | null;
-    hostToolId?: Prisma.IntFilter<"PageAction"> | number;
+    hostToolId?: Prisma.IntNullableFilter<"PageAction"> | number | null;
     pageScope?: Prisma.StringNullableFilter<"PageAction"> | string | null;
     systemPrompt?: Prisma.StringFilter<"PageAction"> | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryFilter<"PageAction"> | $Enums.PageActionDelivery;
@@ -886,7 +886,7 @@ export type PageActionCreateWithoutRunsInput = {
     createdAt?: Date | string;
     updatedAt?: Date | string;
     appClient: Prisma.AppClientCreateNestedOneWithoutPageActionsInput;
-    hostTool: Prisma.HostToolCreateNestedOneWithoutPageActionsInput;
+    hostTool?: Prisma.HostToolCreateNestedOneWithoutPageActionsInput;
     workflow?: Prisma.WorkflowCreateNestedOneWithoutPageActionsInput;
 };
 export type PageActionUncheckedCreateWithoutRunsInput = {
@@ -895,7 +895,7 @@ export type PageActionUncheckedCreateWithoutRunsInput = {
     actionKey: string;
     name: string;
     description?: string | null;
-    hostToolId: number;
+    hostToolId?: number | null;
     pageScope?: string | null;
     systemPrompt: string;
     defaultDelivery?: $Enums.PageActionDelivery;
@@ -940,7 +940,7 @@ export type PageActionUpdateWithoutRunsInput = {
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     appClient?: Prisma.AppClientUpdateOneRequiredWithoutPageActionsNestedInput;
-    hostTool?: Prisma.HostToolUpdateOneRequiredWithoutPageActionsNestedInput;
+    hostTool?: Prisma.HostToolUpdateOneWithoutPageActionsNestedInput;
     workflow?: Prisma.WorkflowUpdateOneWithoutPageActionsNestedInput;
 };
 export type PageActionUncheckedUpdateWithoutRunsInput = {
@@ -949,7 +949,7 @@ export type PageActionUncheckedUpdateWithoutRunsInput = {
     actionKey?: Prisma.StringFieldUpdateOperationsInput | string;
     name?: Prisma.StringFieldUpdateOperationsInput | string;
     description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
-    hostToolId?: Prisma.IntFieldUpdateOperationsInput | number;
+    hostToolId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     pageScope?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     systemPrompt?: Prisma.StringFieldUpdateOperationsInput | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryFieldUpdateOperationsInput | $Enums.PageActionDelivery;
@@ -981,7 +981,7 @@ export type PageActionCreateWithoutWorkflowInput = {
     createdAt?: Date | string;
     updatedAt?: Date | string;
     appClient: Prisma.AppClientCreateNestedOneWithoutPageActionsInput;
-    hostTool: Prisma.HostToolCreateNestedOneWithoutPageActionsInput;
+    hostTool?: Prisma.HostToolCreateNestedOneWithoutPageActionsInput;
     runs?: Prisma.PageActionRunCreateNestedManyWithoutPageActionInput;
 };
 export type PageActionUncheckedCreateWithoutWorkflowInput = {
@@ -990,7 +990,7 @@ export type PageActionUncheckedCreateWithoutWorkflowInput = {
     actionKey: string;
     name: string;
     description?: string | null;
-    hostToolId: number;
+    hostToolId?: number | null;
     pageScope?: string | null;
     systemPrompt: string;
     defaultDelivery?: $Enums.PageActionDelivery;
@@ -1031,7 +1031,7 @@ export type PageActionCreateManyAppClientInput = {
     actionKey: string;
     name: string;
     description?: string | null;
-    hostToolId: number;
+    hostToolId?: number | null;
     pageScope?: string | null;
     systemPrompt: string;
     defaultDelivery?: $Enums.PageActionDelivery;
@@ -1062,7 +1062,7 @@ export type PageActionUpdateWithoutAppClientInput = {
     workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
-    hostTool?: Prisma.HostToolUpdateOneRequiredWithoutPageActionsNestedInput;
+    hostTool?: Prisma.HostToolUpdateOneWithoutPageActionsNestedInput;
     workflow?: Prisma.WorkflowUpdateOneWithoutPageActionsNestedInput;
     runs?: Prisma.PageActionRunUpdateManyWithoutPageActionNestedInput;
 };
@@ -1071,7 +1071,7 @@ export type PageActionUncheckedUpdateWithoutAppClientInput = {
     actionKey?: Prisma.StringFieldUpdateOperationsInput | string;
     name?: Prisma.StringFieldUpdateOperationsInput | string;
     description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
-    hostToolId?: Prisma.IntFieldUpdateOperationsInput | number;
+    hostToolId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     pageScope?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     systemPrompt?: Prisma.StringFieldUpdateOperationsInput | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryFieldUpdateOperationsInput | $Enums.PageActionDelivery;
@@ -1092,7 +1092,7 @@ export type PageActionUncheckedUpdateManyWithoutAppClientInput = {
     actionKey?: Prisma.StringFieldUpdateOperationsInput | string;
     name?: Prisma.StringFieldUpdateOperationsInput | string;
     description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
-    hostToolId?: Prisma.IntFieldUpdateOperationsInput | number;
+    hostToolId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     pageScope?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     systemPrompt?: Prisma.StringFieldUpdateOperationsInput | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryFieldUpdateOperationsInput | $Enums.PageActionDelivery;
@@ -1194,7 +1194,7 @@ export type PageActionCreateManyWorkflowInput = {
     actionKey: string;
     name: string;
     description?: string | null;
-    hostToolId: number;
+    hostToolId?: number | null;
     pageScope?: string | null;
     systemPrompt: string;
     defaultDelivery?: $Enums.PageActionDelivery;
@@ -1225,7 +1225,7 @@ export type PageActionUpdateWithoutWorkflowInput = {
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     appClient?: Prisma.AppClientUpdateOneRequiredWithoutPageActionsNestedInput;
-    hostTool?: Prisma.HostToolUpdateOneRequiredWithoutPageActionsNestedInput;
+    hostTool?: Prisma.HostToolUpdateOneWithoutPageActionsNestedInput;
     runs?: Prisma.PageActionRunUpdateManyWithoutPageActionNestedInput;
 };
 export type PageActionUncheckedUpdateWithoutWorkflowInput = {
@@ -1234,7 +1234,7 @@ export type PageActionUncheckedUpdateWithoutWorkflowInput = {
     actionKey?: Prisma.StringFieldUpdateOperationsInput | string;
     name?: Prisma.StringFieldUpdateOperationsInput | string;
     description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
-    hostToolId?: Prisma.IntFieldUpdateOperationsInput | number;
+    hostToolId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     pageScope?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     systemPrompt?: Prisma.StringFieldUpdateOperationsInput | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryFieldUpdateOperationsInput | $Enums.PageActionDelivery;
@@ -1255,7 +1255,7 @@ export type PageActionUncheckedUpdateManyWithoutWorkflowInput = {
     actionKey?: Prisma.StringFieldUpdateOperationsInput | string;
     name?: Prisma.StringFieldUpdateOperationsInput | string;
     description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
-    hostToolId?: Prisma.IntFieldUpdateOperationsInput | number;
+    hostToolId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     pageScope?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     systemPrompt?: Prisma.StringFieldUpdateOperationsInput | string;
     defaultDelivery?: Prisma.EnumPageActionDeliveryFieldUpdateOperationsInput | $Enums.PageActionDelivery;
@@ -1302,7 +1302,7 @@ export type PageActionSelect<ExtArgs extends runtime.Types.Extensions.InternalAr
     createdAt?: boolean;
     updatedAt?: boolean;
     appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>;
-    hostTool?: boolean | Prisma.HostToolDefaultArgs<ExtArgs>;
+    hostTool?: boolean | Prisma.PageAction$hostToolArgs<ExtArgs>;
     workflow?: boolean | Prisma.PageAction$workflowArgs<ExtArgs>;
     runs?: boolean | Prisma.PageAction$runsArgs<ExtArgs>;
     _count?: boolean | Prisma.PageActionCountOutputTypeDefaultArgs<ExtArgs>;
@@ -1328,7 +1328,7 @@ export type PageActionSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Ex
     createdAt?: boolean;
     updatedAt?: boolean;
     appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>;
-    hostTool?: boolean | Prisma.HostToolDefaultArgs<ExtArgs>;
+    hostTool?: boolean | Prisma.PageAction$hostToolArgs<ExtArgs>;
     workflow?: boolean | Prisma.PageAction$workflowArgs<ExtArgs>;
 }, ExtArgs["result"]["pageAction"]>;
 export type PageActionSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1352,7 +1352,7 @@ export type PageActionSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Ex
     createdAt?: boolean;
     updatedAt?: boolean;
     appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>;
-    hostTool?: boolean | Prisma.HostToolDefaultArgs<ExtArgs>;
+    hostTool?: boolean | Prisma.PageAction$hostToolArgs<ExtArgs>;
     workflow?: boolean | Prisma.PageAction$workflowArgs<ExtArgs>;
 }, ExtArgs["result"]["pageAction"]>;
 export type PageActionSelectScalar = {
@@ -1379,26 +1379,26 @@ export type PageActionSelectScalar = {
 export type PageActionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "appClientId" | "actionKey" | "name" | "description" | "hostToolId" | "pageScope" | "systemPrompt" | "defaultDelivery" | "allowCustomInstruction" | "isActive" | "sortOrder" | "config" | "sourceSkillId" | "workflowId" | "workflowVersion" | "workflowOverrides" | "createdAt" | "updatedAt", ExtArgs["result"]["pageAction"]>;
 export type PageActionInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>;
-    hostTool?: boolean | Prisma.HostToolDefaultArgs<ExtArgs>;
+    hostTool?: boolean | Prisma.PageAction$hostToolArgs<ExtArgs>;
     workflow?: boolean | Prisma.PageAction$workflowArgs<ExtArgs>;
     runs?: boolean | Prisma.PageAction$runsArgs<ExtArgs>;
     _count?: boolean | Prisma.PageActionCountOutputTypeDefaultArgs<ExtArgs>;
 };
 export type PageActionIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>;
-    hostTool?: boolean | Prisma.HostToolDefaultArgs<ExtArgs>;
+    hostTool?: boolean | Prisma.PageAction$hostToolArgs<ExtArgs>;
     workflow?: boolean | Prisma.PageAction$workflowArgs<ExtArgs>;
 };
 export type PageActionIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>;
-    hostTool?: boolean | Prisma.HostToolDefaultArgs<ExtArgs>;
+    hostTool?: boolean | Prisma.PageAction$hostToolArgs<ExtArgs>;
     workflow?: boolean | Prisma.PageAction$workflowArgs<ExtArgs>;
 };
 export type $PageActionPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     name: "PageAction";
     objects: {
         appClient: Prisma.$AppClientPayload<ExtArgs>;
-        hostTool: Prisma.$HostToolPayload<ExtArgs>;
+        hostTool: Prisma.$HostToolPayload<ExtArgs> | null;
         workflow: Prisma.$WorkflowPayload<ExtArgs> | null;
         runs: Prisma.$PageActionRunPayload<ExtArgs>[];
     };
@@ -1408,7 +1408,7 @@ export type $PageActionPayload<ExtArgs extends runtime.Types.Extensions.Internal
         actionKey: string;
         name: string;
         description: string | null;
-        hostToolId: number;
+        hostToolId: number | null;
         pageScope: string | null;
         systemPrompt: string;
         defaultDelivery: $Enums.PageActionDelivery;
@@ -1475,7 +1475,7 @@ export interface PageActionDelegate<ExtArgs extends runtime.Types.Extensions.Int
 export interface Prisma__PageActionClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
     readonly [Symbol.toStringTag]: "PrismaPromise";
     appClient<T extends Prisma.AppClientDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClientDefaultArgs<ExtArgs>>): Prisma.Prisma__AppClientClient<runtime.Types.Result.GetResult<Prisma.$AppClientPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>;
-    hostTool<T extends Prisma.HostToolDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.HostToolDefaultArgs<ExtArgs>>): Prisma.Prisma__HostToolClient<runtime.Types.Result.GetResult<Prisma.$HostToolPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>;
+    hostTool<T extends Prisma.PageAction$hostToolArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PageAction$hostToolArgs<ExtArgs>>): Prisma.Prisma__HostToolClient<runtime.Types.Result.GetResult<Prisma.$HostToolPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>;
     workflow<T extends Prisma.PageAction$workflowArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PageAction$workflowArgs<ExtArgs>>): Prisma.Prisma__WorkflowClient<runtime.Types.Result.GetResult<Prisma.$WorkflowPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>;
     runs<T extends Prisma.PageAction$runsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PageAction$runsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PageActionRunPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): runtime.Types.Utils.JsPromise<TResult1 | TResult2>;
@@ -1602,6 +1602,12 @@ export type PageActionDeleteArgs<ExtArgs extends runtime.Types.Extensions.Intern
 export type PageActionDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     where?: Prisma.PageActionWhereInput;
     limit?: number;
+};
+export type PageAction$hostToolArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    select?: Prisma.HostToolSelect<ExtArgs> | null;
+    omit?: Prisma.HostToolOmit<ExtArgs> | null;
+    include?: Prisma.HostToolInclude<ExtArgs> | null;
+    where?: Prisma.HostToolWhereInput;
 };
 export type PageAction$workflowArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.WorkflowSelect<ExtArgs> | null;

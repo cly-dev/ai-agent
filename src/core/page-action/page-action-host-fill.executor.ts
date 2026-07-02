@@ -340,7 +340,7 @@ export async function replayPageActionInlineStream(input: {
   dslOutcome: string | null;
   streamId: string | null;
   pageContext: AgentChatPageContext | null;
-  hostTool: ResolvedPageActionHostTool;
+  hostTool: ResolvedPageActionHostTool | null;
   stepRecorder?: PageActionRunStepRecorder;
 }): Promise<PageActionRunStep[]> {
   const recorder = input.stepRecorder ?? new PageActionRunStepRecorder();
@@ -373,12 +373,17 @@ export async function replayPageActionInlineStream(input: {
   });
 
   const fillText = input.fillText?.trim() ?? '';
-  const fillTools = resolvePlanReasonHostFillTools({
-    hostTools: [input.hostTool.definition],
-    allowedToolNames: new Set([input.hostTool.definition.name]),
-  });
 
-  if (fillText && input.dslOutcome === 'dispatched' && fillTools.length > 0) {
+  if (
+    fillText &&
+    input.dslOutcome === 'dispatched' &&
+    input.hostTool
+  ) {
+    const fillTools = resolvePlanReasonHostFillTools({
+      hostTools: [input.hostTool.definition],
+      allowedToolNames: new Set([input.hostTool.definition.name]),
+    });
+    if (fillTools.length > 0) {
     const publish = createInlineHostActionPublisher(res, {
       onPayload: (payload) => {
         recorder.recordHostActionPayload(payload);
@@ -411,6 +416,7 @@ export async function replayPageActionInlineStream(input: {
       });
     } else {
       streamSession.abort({ emitSessionEnd: streamSession.hasBegun });
+    }
     }
   }
 

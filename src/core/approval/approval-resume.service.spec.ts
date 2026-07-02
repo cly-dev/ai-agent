@@ -1,19 +1,20 @@
-import { NotFoundException } from '@nestjs/common';
-import { ApprovalStatus } from '../../../generated/prisma/client';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ApprovalResumeService } from './approval-resume.service';
+import { resumePageActionFromApprovalSnapshot } from './page-action-approval-resume.util';
 import type { ApprovalRequestService } from './approval-request.service';
 import type { ApprovalGateService } from './approval-gate.service';
 import type { ApprovalTriggerPermissionService } from './approval-trigger-permission.service';
 import type { PrismaService } from '../../prisma/prisma.service';
-import type { PendingWriteConfirmationStore } from '../../modules/chat/pending-write-confirmation.store';
-import type { SessionRunCoordinator } from '../session-run/session-run-coordinator.service';
-import type { AgentRunSseGateway } from '../session-run/agent-run-sse.gateway';
 
 jest.mock('../page-action/page-workflow-orchestrator', () => ({
   orchestratePageWorkflow: jest.fn().mockResolvedValue({
     workflowRun: { status: 'completed' },
     suspended: false,
   }),
+}));
+
+jest.mock('./page-action-approval-resume.util', () => ({
+  resumePageActionFromApprovalSnapshot: jest.fn().mockResolvedValue(undefined),
 }));
 
 describe('ApprovalResumeService', () => {
@@ -27,21 +28,13 @@ describe('ApprovalResumeService', () => {
   let triggerPermission: {
     evaluateForNodes: jest.Mock;
     resolveUserAllowedToolIdsForApp: jest.Mock;
-    resolveUserAllowedToolIds: jest.Mock;
   };
   let prisma: {
     approvalRequest: { findUnique: jest.Mock };
-    session: { findFirst: jest.Mock };
     pageActionRun: { findUnique: jest.Mock; update: jest.Mock };
-    agentRun: { findFirst: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
   };
-  let pendingStore: { get: jest.Mock; clear: jest.Mock; set: jest.Mock };
-  let sessionRunCoordinator: {
-    enqueueApprovalInboxResumeFromSnapshot: jest.Mock;
-  };
-  let runSse: { purgeWriteConfirmationGate: jest.Mock; emitWriteConfirmationCancelled: jest.Mock };
 
-  const chatSnapshot = {
+  const pageActionSnapshot = {
     version: 1 as const,
     workflowRun: {
       workflowId: 1,
@@ -63,13 +56,7 @@ describe('ApprovalResumeService', () => {
     workflowNodeOutputs: {},
     pendingWrite: { name: 'tool', arguments: {}, riskLevel: 'L2' as const },
     scopedToolIds: [10],
-    channel: {
-      kind: 'chat' as const,
-      sessionId: 'sess_1',
-      runId: 101,
-      turnId: 55,
-      resume: { steps: [], iteration: 0, toolObservations: [], scopedToolIds: [10], intentKind: 'task' as const, hasExpandedOnce: false },
-    },
+    channel: { kind: 'page_action' as const, pageActionRunId: 88 },
   };
 
   beforeEach(() => {
@@ -82,30 +69,13 @@ describe('ApprovalResumeService', () => {
     triggerPermission = {
       evaluateForNodes: jest.fn().mockReturnValue({ allowed: true, skipped: false }),
       resolveUserAllowedToolIdsForApp: jest.fn().mockResolvedValue([10]),
-      resolveUserAllowedToolIds: jest.fn().mockResolvedValue([10]),
     };
     prisma = {
       approvalRequest: { findUnique: jest.fn() },
-      session: { findFirst: jest.fn().mockResolvedValue({ agentId: 2 }) },
       pageActionRun: {
         findUnique: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
       },
-      agentRun: { findFirst: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
-    };
-    pendingStore = {
-      get: jest.fn(),
-      clear: jest.fn(),
-      set: jest.fn(),
-    };
-    sessionRunCoordinator = {
-      enqueueApprovalInboxResumeFromSnapshot: jest
-        .fn()
-        .mockResolvedValue(1),
-    };
-    runSse = {
-      purgeWriteConfirmationGate: jest.fn(),
-      emitWriteConfirmationCancelled: jest.fn(),
     };
 
     service = new ApprovalResumeService(
@@ -115,13 +85,15 @@ describe('ApprovalResumeService', () => {
       triggerPermission as unknown as ApprovalTriggerPermissionService,
       {} as never,
       {} as never,
-      pendingStore as unknown as PendingWriteConfirmationStore,
-      runSse as unknown as AgentRunSseGateway,
-      sessionRunCoordinator as unknown as SessionRunCoordinator,
     );
   });
 
   it('confirm returns resumed false when already decided', async () => {
+    prisma.approvalRequest.findUnique.mockResolvedValue({
+      id: 1,
+      approverUserId: 7,
+      source: 'page_action',
+    });
     approvalRequests.markApproved.mockResolvedValue({
       ok: false,
       reason: 'already_decided',
@@ -135,17 +107,30 @@ describe('ApprovalResumeService', () => {
     expect(result).toEqual({ resumed: false });
   });
 
-  it('confirm chat triggers snapshot-based inbox resume', async () => {
+  it('confirm chat is rejected before CAS', async () => {
+    prisma.approvalRequest.findUnique.mockResolvedValue({
+      id: 1,
+      approverUserId: 7,
+      source: 'chat',
+    });
+
+    await expect(
+      service.confirm({ approvalRequestId: 1, decidedByUserId: 7 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(approvalRequests.markApproved).not.toHaveBeenCalled();
+  });
+
+  it('confirm page_action resumes after permission check', async () => {
     approvalRequests.markApproved.mockResolvedValue({ ok: true });
     prisma.approvalRequest.findUnique.mockResolvedValue({
       id: 1,
       approverUserId: 7,
       appClientId: 1,
-      source: 'chat',
-      sessionId: 'sess_1',
-      resumeSnapshot: chatSnapshot,
+      source: 'page_action',
+      sessionId: null,
+      resumeSnapshot: pageActionSnapshot,
     });
-    approvalRequests.parseResumeSnapshot.mockReturnValue(chatSnapshot);
+    approvalRequests.parseResumeSnapshot.mockReturnValue(pageActionSnapshot);
 
     const result = await service.confirm({
       approvalRequestId: 1,
@@ -153,41 +138,8 @@ describe('ApprovalResumeService', () => {
     });
 
     expect(result).toEqual({ resumed: true });
-    expect(triggerPermission.resolveUserAllowedToolIds).toHaveBeenCalled();
-    expect(
-      sessionRunCoordinator.enqueueApprovalInboxResumeFromSnapshot,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: 'sess_1',
-        userId: 7,
-        snapshot: chatSnapshot,
-        approvalRequestId: 1,
-      }),
-    );
-  });
-
-  it('confirm chat resumes from snapshot without redis gate', async () => {
-    approvalRequests.markApproved.mockResolvedValue({ ok: true });
-    prisma.approvalRequest.findUnique.mockResolvedValue({
-      id: 1,
-      approverUserId: 7,
-      appClientId: 1,
-      source: 'chat',
-      sessionId: 'sess_1',
-      resumeSnapshot: chatSnapshot,
-    });
-    approvalRequests.parseResumeSnapshot.mockReturnValue(chatSnapshot);
-    pendingStore.get.mockResolvedValue(null);
-
-    await service.confirm({
-      approvalRequestId: 1,
-      decidedByUserId: 7,
-    });
-
-    expect(pendingStore.set).not.toHaveBeenCalled();
-    expect(
-      sessionRunCoordinator.enqueueApprovalInboxResumeFromSnapshot,
-    ).toHaveBeenCalled();
+    expect(triggerPermission.resolveUserAllowedToolIdsForApp).toHaveBeenCalled();
+    expect(resumePageActionFromApprovalSnapshot).toHaveBeenCalled();
   });
 
   it('confirm cancels when approver lost write permission', async () => {
@@ -198,9 +150,9 @@ describe('ApprovalResumeService', () => {
       appClientId: 1,
       source: 'page_action',
       sessionId: null,
-      resumeSnapshot: chatSnapshot,
+      resumeSnapshot: pageActionSnapshot,
     });
-    approvalRequests.parseResumeSnapshot.mockReturnValue(chatSnapshot);
+    approvalRequests.parseResumeSnapshot.mockReturnValue(pageActionSnapshot);
     triggerPermission.evaluateForNodes.mockReturnValue({
       allowed: false,
       missingToolIds: [10],
@@ -213,48 +165,30 @@ describe('ApprovalResumeService', () => {
     expect(approvalRequests.markCancelled).toHaveBeenCalled();
   });
 
-  it('reject chat clears redis gate and emits cancellation', async () => {
+  it('reject chat is rejected before CAS', async () => {
     prisma.approvalRequest.findUnique.mockResolvedValue({
       id: 1,
       approverUserId: 7,
+      source: 'chat',
       pageActionRunId: null,
-      resumeSnapshot: chatSnapshot,
-    });
-    approvalRequests.markRejected.mockResolvedValue({ ok: true });
-    approvalRequests.parseResumeSnapshot.mockReturnValue(chatSnapshot);
-    prisma.agentRun.findUnique.mockResolvedValue({ steps: [] });
-    prisma.agentRun.update.mockResolvedValue({});
-    pendingStore.get.mockResolvedValue({
-      runId: 101,
-      sessionId: 'sess_1',
-      turnId: 55,
     });
 
-    await service.reject({
-      approvalRequestId: 1,
-      decidedByUserId: 7,
-    });
-
-    expect(pendingStore.clear).toHaveBeenCalledWith('sess_1');
-    expect(runSse.purgeWriteConfirmationGate).toHaveBeenCalledWith('sess_1', 101);
-    expect(runSse.emitWriteConfirmationCancelled).toHaveBeenCalled();
+    await expect(
+      service.reject({ approvalRequestId: 1, decidedByUserId: 7 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(approvalRequests.markRejected).not.toHaveBeenCalled();
   });
 
   it('reject page_action cancels run with audit step', async () => {
     prisma.approvalRequest.findUnique.mockResolvedValue({
       id: 1,
       approverUserId: 7,
+      source: 'page_action',
       pageActionRunId: 88,
-      resumeSnapshot: {
-        ...chatSnapshot,
-        channel: { kind: 'page_action', pageActionRunId: 88 },
-      },
+      resumeSnapshot: pageActionSnapshot,
     });
     approvalRequests.markRejected.mockResolvedValue({ ok: true });
-    approvalRequests.parseResumeSnapshot.mockReturnValue({
-      ...chatSnapshot,
-      channel: { kind: 'page_action', pageActionRunId: 88 },
-    });
+    approvalRequests.parseResumeSnapshot.mockReturnValue(pageActionSnapshot);
     prisma.pageActionRun.findUnique.mockResolvedValue({ steps: [] });
 
     await service.reject({

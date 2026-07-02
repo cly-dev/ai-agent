@@ -20,7 +20,7 @@ export type PageWorkflowRunnerInput = {
   objectivePrefix?: string | null;
   messages: LlmChatMessage[];
   pageContext: AgentChatPageContext | null;
-  hostTool: ResolvedPageActionHostTool;
+  hostTool: ResolvedPageActionHostTool | null;
   llmService: LlmService;
   prisma: PrismaService;
   toolEngine: ToolEngineService;
