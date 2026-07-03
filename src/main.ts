@@ -1,6 +1,10 @@
 import './core/env/load-env';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import {
+  logStartupInfo,
+  resolveNestBootstrapLogger,
+} from './core/security/nest-bootstrap.util';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
@@ -23,7 +27,10 @@ import {
 import { readHttpServerEnabled } from './core/session-run/session-run-bullmq.connection.util';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: resolveNestBootstrapLogger(),
+    bufferLogs: true,
+  });
   app.use((req: Request, res: Response, next) => {
     applyHttpCors(req, res);
     if (handleHttpCorsPreflight(req, res)) {
@@ -43,7 +50,7 @@ async function bootstrap() {
   }
   if (isDevStaticAssetsEnabled()) {
     app.useStaticAssets(join(process.cwd(), 'www'));
-    Logger.log('Dev static assets enabled at /index.html (www/)');
+    logStartupInfo('Dev static assets enabled at /index.html (www/)');
   }
   app.useGlobalInterceptors(new ReqInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
@@ -76,15 +83,15 @@ async function bootstrap() {
       .build();
     const document = SwaggerModule.createDocument(app, swaggerConfig);
     SwaggerModule.setup('docs', app, document);
-    Logger.log('Swagger docs available at http://localhost:3030/docs');
+    logStartupInfo('Swagger docs available at http://localhost:3030/docs');
   }
 
   if (readHttpServerEnabled()) {
     await app.listen(3030);
-    Logger.log('HTTP server listening on http://localhost:3030');
+    logStartupInfo('HTTP server listening on http://localhost:3030');
   } else {
     await app.init();
-    Logger.log(
+    logStartupInfo(
       'HTTP disabled (SESSION_RUN_HTTP_ENABLED=0); BullMQ worker / background only',
     );
   }

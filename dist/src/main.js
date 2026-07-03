@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 require("./core/env/load-env");
 const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
+const nest_bootstrap_util_1 = require("./core/security/nest-bootstrap.util");
 const swagger_1 = require("@nestjs/swagger");
 const path_1 = require("path");
 const app_module_1 = require("./app.module");
@@ -14,7 +15,10 @@ const client_public_api_paths_1 = require("./middleware/client-public-api-paths"
 const client_public_cors_util_1 = require("./middleware/client-public-cors.util");
 const session_run_bullmq_connection_util_1 = require("./core/session-run/session-run-bullmq.connection.util");
 async function bootstrap() {
-    const app = await core_1.NestFactory.create(app_module_1.AppModule);
+    const app = await core_1.NestFactory.create(app_module_1.AppModule, {
+        logger: (0, nest_bootstrap_util_1.resolveNestBootstrapLogger)(),
+        bufferLogs: true,
+    });
     app.use((req, res, next) => {
         (0, client_public_cors_util_1.applyHttpCors)(req, res);
         if ((0, client_public_cors_util_1.handleHttpCorsPreflight)(req, res)) {
@@ -32,7 +36,7 @@ async function bootstrap() {
     }
     if ((0, runtime_env_util_1.isDevStaticAssetsEnabled)()) {
         app.useStaticAssets((0, path_1.join)(process.cwd(), 'www'));
-        common_1.Logger.log('Dev static assets enabled at /index.html (www/)');
+        (0, nest_bootstrap_util_1.logStartupInfo)('Dev static assets enabled at /index.html (www/)');
     }
     app.useGlobalInterceptors(new req_interceptor_1.ReqInterceptor());
     app.useGlobalFilters(new http_exception_1.HttpExceptionFilter());
@@ -59,15 +63,15 @@ async function bootstrap() {
             .build();
         const document = swagger_1.SwaggerModule.createDocument(app, swaggerConfig);
         swagger_1.SwaggerModule.setup('docs', app, document);
-        common_1.Logger.log('Swagger docs available at http://localhost:3030/docs');
+        (0, nest_bootstrap_util_1.logStartupInfo)('Swagger docs available at http://localhost:3030/docs');
     }
     if ((0, session_run_bullmq_connection_util_1.readHttpServerEnabled)()) {
         await app.listen(3030);
-        common_1.Logger.log('HTTP server listening on http://localhost:3030');
+        (0, nest_bootstrap_util_1.logStartupInfo)('HTTP server listening on http://localhost:3030');
     }
     else {
         await app.init();
-        common_1.Logger.log('HTTP disabled (SESSION_RUN_HTTP_ENABLED=0); BullMQ worker / background only');
+        (0, nest_bootstrap_util_1.logStartupInfo)('HTTP disabled (SESSION_RUN_HTTP_ENABLED=0); BullMQ worker / background only');
     }
 }
 function registerProcessErrorHandlers() {

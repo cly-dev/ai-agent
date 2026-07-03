@@ -14,11 +14,14 @@ function readTriStateEnv(name) {
     return undefined;
 }
 function isAgentEngineDebugEnabled() {
+    if ((0, runtime_env_util_1.isProductionRuntime)()) {
+        return false;
+    }
     const explicit = readTriStateEnv('AGENT_ENGINE_DEBUG');
     if (explicit !== undefined) {
         return explicit;
     }
-    return !(0, runtime_env_util_1.isProductionRuntime)();
+    return true;
 }
 exports.isAgentEngineDebugEnabled = isAgentEngineDebugEnabled;
 function isFileDebugLogEnabled() {
@@ -40,6 +43,9 @@ function isToolEngineFileDebugEnabled() {
 }
 exports.isToolEngineFileDebugEnabled = isToolEngineFileDebugEnabled;
 function isWorkflowDebugEnabled() {
+    if ((0, runtime_env_util_1.isProductionRuntime)()) {
+        return false;
+    }
     const explicit = readTriStateEnv('WORKFLOW_DEBUG');
     if (explicit !== undefined) {
         return explicit;

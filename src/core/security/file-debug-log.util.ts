@@ -13,14 +13,17 @@ function readTriStateEnv(name: string): boolean | undefined {
 
 /**
  * Agent 引擎调试（控制台 + 非生产默认可开）。
- * 生产环境（`NODE_ENV=prod|production`）默认关闭，除非 `AGENT_ENGINE_DEBUG=1`。
+ * 生产环境（`NODE_ENV=prod|production`）一律关闭。
  */
 export function isAgentEngineDebugEnabled(): boolean {
+  if (isProductionRuntime()) {
+    return false;
+  }
   const explicit = readTriStateEnv('AGENT_ENGINE_DEBUG');
   if (explicit !== undefined) {
     return explicit;
   }
-  return !isProductionRuntime();
+  return true;
 }
 
 /**
@@ -46,8 +49,11 @@ export function isToolEngineFileDebugEnabled(): boolean {
   return isAgentEngineDebugEnabled();
 }
 
-/** Workflow / LangGraph V2 追溯；默认跟随 AGENT_ENGINE_DEBUG。 */
+/** Workflow / LangGraph V2 追溯；生产一律关闭。 */
 export function isWorkflowDebugEnabled(): boolean {
+  if (isProductionRuntime()) {
+    return false;
+  }
   const explicit = readTriStateEnv('WORKFLOW_DEBUG');
   if (explicit !== undefined) {
     return explicit;
