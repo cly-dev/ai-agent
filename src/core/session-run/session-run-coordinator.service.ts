@@ -253,6 +253,7 @@ export class SessionRunCoordinator implements OnModuleInit {
     input: string;
     requestedSkillId?: number;
     pageContext?: RunJob['pageContext'];
+    writeGateDecision?: RunJob['writeGateDecision'];
   }): RunJob {
     return {
       jobId: randomUUID(),
@@ -264,6 +265,7 @@ export class SessionRunCoordinator implements OnModuleInit {
       input: input.input,
       requestedSkillId: input.requestedSkillId,
       pageContext: input.pageContext ?? null,
+      writeGateDecision: input.writeGateDecision ?? null,
     };
   }
 

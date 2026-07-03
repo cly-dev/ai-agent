@@ -1,3 +1,4 @@
+import type { WriteDraftPublic } from '../../core/draft-review/write-draft.types';
 import type { HostActionSsePayload } from '../../core/host-bridge/host-action.types';
 import { Injectable } from '@nestjs/common';
 import { RunEventPublisher } from '../../core/session-run/run-event.publisher';
@@ -69,6 +70,11 @@ export class ChatRunEventPublisher extends RunEventPublisher {
       turnId?: number;
       message: string;
       generation?: number;
+      draftRetryCount?: number;
+      draftRetryMax?: number;
+      canRetry?: boolean;
+      writeDraft?: WriteDraftPublic;
+      writeDrafts?: WriteDraftPublic[];
     },
   ): void {
     this.chatEvents.emit(sessionId, {
@@ -80,6 +86,11 @@ export class ChatRunEventPublisher extends RunEventPublisher {
         turnId: input.turnId,
         message: input.message,
         generation: input.generation,
+        draftRetryCount: input.draftRetryCount,
+        draftRetryMax: input.draftRetryMax,
+        canRetry: input.canRetry,
+        writeDraft: input.writeDraft,
+        writeDrafts: input.writeDrafts,
       },
     });
   }

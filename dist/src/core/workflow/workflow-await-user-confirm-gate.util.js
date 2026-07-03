@@ -9,8 +9,9 @@ const write_confirmation_gate_util_1 = require("../agent-engine/engine/write-con
 const agent_run_steps_util_1 = require("../agent-engine/engine/main/run/agent-run-steps.util");
 const graph_tool_observations_util_1 = require("../agent-engine/engine/graph-tool-observations.util");
 const workflow_debug_util_1 = require("./trace/workflow-debug.util");
+const draft_review_1 = require("../draft-review");
 async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     const { deps, ctx, runHelpers } = bundle;
     const observations = (0, graph_tool_observations_util_1.allToolObservations)(state);
     const previewReady = (0, mutation_preview_before_gate_util_1.hasUserVisibleMutationPreview)({
@@ -24,6 +25,15 @@ async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
     }
     const message = (0, write_confirmation_gate_util_1.buildWriteConfirmationUserMessage)();
     const confirmedPreviewSerialized = deps.assistantArtifact.peekSerialized(ctx.input.sessionId, ctx.input.runId);
+    const draftRetryCount = (0, draft_review_1.resolveDraftRetryCountAfterRegeneration)({
+        previousCount: state.draftRetryCount,
+        regeneratedFromRetry: ctx.input.resumeFromWriteGateRetry === true,
+    });
+    const draftRetryBudget = (0, draft_review_1.resolveDraftRetryBudget)(draftRetryCount);
+    const existingPending = await deps.pendingWriteConfirmationStore.get(ctx.input.sessionId, ctx.input.userId);
+    if (existingPending && existingPending.runId !== ctx.input.runId) {
+        deps.runSseGateway.purgeWriteConfirmationGate(ctx.input.sessionId, existingPending.runId);
+    }
     const resumeContext = {
         steps: input.steps,
         iteration: state.iteration,
@@ -46,7 +56,28 @@ async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
         workflowNodeDefs: state.workflowNodeDefs,
         workflowNodeOutputs: state.workflowNodeOutputs,
         workflowAwaitingReact: false,
+        draftRetryCount,
     };
+    const serializedObservations = (0, agent_write_confirmation_util_1.serializeObservationsForPending)(observations);
+    const writeDraft = (0, draft_review_1.resolveWriteDraftFromChatGate)({
+        toolCalls: [],
+        observations: serializedObservations,
+        confirmedPreviewSerialized,
+        draftRetryCount,
+    });
+    const toolCallsForGate = (0, draft_review_1.syncChatGateToolCallsFromWriteDraft)({
+        toolCalls: [],
+        writeDraft,
+    });
+    const writeDraftList = (0, draft_review_1.buildWriteDraftListFromChatGate)({
+        toolCalls: [],
+        writeDraft,
+        observations: serializedObservations,
+        confirmedPreviewSerialized,
+        draftRetryCount,
+    });
+    const primaryWriteDraft = (_h = writeDraftList[0]) !== null && _h !== void 0 ? _h : writeDraft;
+    const publicDraftList = writeDraftList.map((draft) => (0, draft_review_1.toWriteDraftPublic)(draft));
     await deps.pendingWriteConfirmationStore.set({
         runId: ctx.input.runId,
         turnId: ctx.input.turnId,
@@ -55,7 +86,9 @@ async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
         appClientId: ctx.input.appClientId,
         agentId: ctx.input.agentId,
         latestUserMessage: ctx.input.latestUserMessage,
-        toolCalls: [],
+        toolCalls: toolCallsForGate,
+        writeDraft: primaryWriteDraft,
+        writeDrafts: writeDraftList.length > 1 ? writeDraftList : undefined,
         resumeContext,
         createdAt: new Date().toISOString(),
     });
@@ -77,6 +110,11 @@ async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
         runId: ctx.input.runId,
         turnId: ctx.input.turnId,
         message,
+        draftRetryCount: draftRetryBudget.used,
+        draftRetryMax: draftRetryBudget.max,
+        canRetry: draftRetryBudget.canRetry,
+        writeDraft: publicDraftList[0],
+        writeDrafts: publicDraftList.length > 1 ? publicDraftList : undefined,
     });
     (0, message_blocks_debug_util_1.emitAgentMessageSseDebug)({
         tag: published ? 'confirmation_required' : 'confirmation_required_suppressed',
@@ -95,12 +133,12 @@ async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
             status: 'awaiting_user',
             source: 'workflow_await_user_confirm',
             nodeId: input.nodeId,
-            pendingToolCallCount: 0,
+            pendingToolCallCount: toolCallsForGate.length,
         }),
     };
     const nextSteps = [...input.steps, gateStep];
     await runHelpers.updateRun(ctx.input.runId, nextSteps, client_1.AgentRunStatus.success);
-    return Object.assign(Object.assign({}, state), { steps: nextSteps, workflowRun: input.workflowRun, taskPlan: input.taskPlan, pendingToolCalls: [], awaitingWriteConfirmation: true, finalOutput: (_h = deps.assistantArtifact.peekSerialized(ctx.input.sessionId, ctx.input.runId)) !== null && _h !== void 0 ? _h : '', status: client_1.AgentRunStatus.success, finished: true });
+    return Object.assign(Object.assign({}, state), { steps: nextSteps, workflowRun: input.workflowRun, taskPlan: input.taskPlan, pendingToolCalls: [], draftRetryCount, awaitingWriteConfirmation: true, finalOutput: (_j = deps.assistantArtifact.peekSerialized(ctx.input.sessionId, ctx.input.runId)) !== null && _j !== void 0 ? _j : '', status: client_1.AgentRunStatus.success, finished: true });
 }
 exports.applyWorkflowAwaitUserConfirmGate = applyWorkflowAwaitUserConfirmGate;
 //# sourceMappingURL=workflow-await-user-confirm-gate.util.js.map

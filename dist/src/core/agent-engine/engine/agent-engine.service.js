@@ -22,6 +22,7 @@ const agent_service_1 = require("../../../modules/agent/agent.service");
 const host_tool_service_1 = require("../../../modules/host-tool/host-tool.service");
 const run_metrics_util_1 = require("./run-metrics.util");
 const agent_run_user_messages_util_1 = require("./agent-run-user-messages.util");
+const draft_review_1 = require("../../draft-review");
 const agent_lang_graph_runner_1 = require("./main/runner/agent-lang-graph.runner");
 const agent_run_lifecycle_service_1 = require("./main/run/agent-run-lifecycle.service");
 const session_goa_service_1 = require("../../memory/goa/session-goa.service");
@@ -38,6 +39,8 @@ const run_aborted_error_1 = require("../../session-run/run-aborted.error");
 const agent_run_sse_gateway_1 = require("../../session-run/agent-run-sse.gateway");
 const prepare_write_confirm_resume_util_1 = require("./write-confirm/prepare-write-confirm-resume.util");
 const run_write_confirm_resume_util_1 = require("./write-confirm/run-write-confirm-resume.util");
+const run_write_gate_retry_util_1 = require("./write-confirm/run-write-gate-retry.util");
+const validate_write_gate_edited_tool_calls_util_1 = require("./write-confirm/validate-write-gate-edited-tool-calls.util");
 const write_confirm_run_audit_util_1 = require("../../approval/write-confirm-run-audit.util");
 let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
     constructor(prisma, llmService, promptComposer, toolEngine, hostToolService, agentService, pendingWriteConfirmationStore, sse, assistantArtifact, messagePersist, lifecycle, langGraphRunner, sessionScope, goaService, requestedSkillRun, runSse) {
@@ -69,6 +72,25 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
             skillId: input.skillId,
             allowedTools: tools,
         });
+    }
+    async applyWriteGateDecision(input, scope) {
+        const decision = (0, draft_review_1.normalizeDraftReviewDecision)(input.decision);
+        if (!decision) {
+            this.runSse.emitRunError(input.sessionId, {
+                message: '无效的写确认决策，请重试。',
+                code: 'INVALID_DRAFT_REVIEW_DECISION',
+                generation: scope.generation,
+            });
+            return null;
+        }
+        if (decision.action === 'cancel') {
+            await this.cancelPendingWriteConfirmation(input.userId, input.sessionId);
+            return null;
+        }
+        if (decision.action === 'retry') {
+            return this.resumeAfterWriteGateRetry(input, scope, decision);
+        }
+        return this.resumeAfterWriteConfirm(input, scope, decision);
     }
     async cancelPendingWriteConfirmation(userId, sessionId) {
         const pending = await this.pendingWriteConfirmationStore.get(sessionId, userId);
@@ -174,8 +196,8 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
     emitWriteConfirmationExpired(sessionId) {
         this.runSse.emitWriteConfirmationExpired(sessionId);
     }
-    async resumeAfterWriteConfirm(input, scope) {
-        var _a, _b;
+    async resumeAfterWriteConfirm(input, scope, decision) {
+        var _a, _b, _c;
         scope.assertActive();
         const prepared = await (0, prepare_write_confirm_resume_util_1.prepareWriteConfirmFromRedis)({
             resumeInput: input,
@@ -188,6 +210,16 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
             this.emitWriteConfirmationExpired(input.sessionId);
             return null;
         }
+        const normalizedDecision = (_a = (0, draft_review_1.normalizeDraftReviewDecision)(decision)) !== null && _a !== void 0 ? _a : { action: 'confirm' };
+        if (normalizedDecision.action === 'confirm_with_edits') {
+            await (0, validate_write_gate_edited_tool_calls_util_1.validateWriteGateEditedToolCalls)({
+                consumed: prepared.consumed,
+                decision: normalizedDecision,
+                userId: input.userId,
+                agentService: this.agentService,
+                toolEngine: this.toolEngine,
+            });
+        }
         await (0, prepare_write_confirm_resume_util_1.releaseWriteConfirmGate)({
             sessionId: input.sessionId,
             userId: input.userId,
@@ -197,7 +229,7 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
         });
         const approvalAudit = {
             decidedByUserId: input.userId,
-            nodeId: (_b = (_a = prepared.consumed.resumeContext.workflowRun) === null || _a === void 0 ? void 0 : _a.currentNodeId) !== null && _b !== void 0 ? _b : null,
+            nodeId: (_c = (_b = prepared.consumed.resumeContext.workflowRun) === null || _b === void 0 ? void 0 : _b.currentNodeId) !== null && _c !== void 0 ? _c : null,
         };
         return (0, run_write_confirm_resume_util_1.runWriteConfirmResume)({
             resumeInput: input,
@@ -205,6 +237,37 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
             scope,
             deps: this.buildWriteConfirmResumeDeps(),
             approvalAudit,
+            decision: normalizedDecision,
+        });
+    }
+    async resumeAfterWriteGateRetry(input, scope, decision) {
+        scope.assertActive();
+        const prepared = await (0, prepare_write_confirm_resume_util_1.prepareWriteConfirmFromRedis)({
+            resumeInput: input,
+            prisma: this.prisma,
+            agentService: this.agentService,
+            pendingWriteConfirmationStore: this.pendingWriteConfirmationStore,
+            emitWriteConfirmationExpired: (sessionId) => this.emitWriteConfirmationExpired(sessionId),
+        });
+        if (!prepared) {
+            this.emitWriteConfirmationExpired(input.sessionId);
+            return null;
+        }
+        if (!(0, draft_review_1.canRequestDraftRetry)(prepared.consumed.resumeContext.draftRetryCount)) {
+            const budget = (0, draft_review_1.resolveDraftRetryBudget)(prepared.consumed.resumeContext.draftRetryCount);
+            this.runSse.emitRunError(input.sessionId, {
+                message: `已达到草稿重试上限（${budget.max} 次），请确认、编辑后提交或取消。`,
+                code: 'DRAFT_RETRY_LIMIT_EXCEEDED',
+                generation: scope.generation,
+            });
+            return null;
+        }
+        return (0, run_write_gate_retry_util_1.runWriteGateRetry)({
+            resumeInput: input,
+            prepared,
+            scope,
+            deps: this.buildWriteConfirmResumeDeps(),
+            decision,
         });
     }
     buildWriteConfirmResumeDeps() {

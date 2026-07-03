@@ -13,6 +13,14 @@ import type { TaskPlanSnapshot } from '../agent-engine/engine/main/plan/task-pla
 import { nextRunStepNumber } from '../agent-engine/engine/main/run/agent-run-steps.util';
 import { allToolObservations } from '../agent-engine/engine/graph-tool-observations.util';
 import { logWorkflowDebug } from './trace/workflow-debug.util';
+import {
+  buildWriteDraftListFromChatGate,
+  resolveDraftRetryBudget,
+  resolveDraftRetryCountAfterRegeneration,
+  resolveWriteDraftFromChatGate,
+  syncChatGateToolCallsFromWriteDraft,
+  toWriteDraftPublic,
+} from '../draft-review';
 import type { WorkflowRunState } from './workflow.types';
 
 export async function applyWorkflowAwaitUserConfirmGate(
@@ -55,6 +63,21 @@ export async function applyWorkflowAwaitUserConfirmGate(
     ctx.input.sessionId,
     ctx.input.runId,
   );
+  const draftRetryCount = resolveDraftRetryCountAfterRegeneration({
+    previousCount: state.draftRetryCount,
+    regeneratedFromRetry: ctx.input.resumeFromWriteGateRetry === true,
+  });
+  const draftRetryBudget = resolveDraftRetryBudget(draftRetryCount);
+  const existingPending = await deps.pendingWriteConfirmationStore.get(
+    ctx.input.sessionId,
+    ctx.input.userId,
+  );
+  if (existingPending && existingPending.runId !== ctx.input.runId) {
+    deps.runSseGateway.purgeWriteConfirmationGate(
+      ctx.input.sessionId,
+      existingPending.runId,
+    );
+  }
   const resumeContext: PendingWriteResumeContext = {
     steps: input.steps as PendingWriteResumeContext['steps'],
     iteration: state.iteration,
@@ -77,7 +100,28 @@ export async function applyWorkflowAwaitUserConfirmGate(
     workflowNodeDefs: state.workflowNodeDefs,
     workflowNodeOutputs: state.workflowNodeOutputs,
     workflowAwaitingReact: false,
+    draftRetryCount,
   };
+  const serializedObservations = serializeObservationsForPending(observations);
+  const writeDraft = resolveWriteDraftFromChatGate({
+    toolCalls: [],
+    observations: serializedObservations,
+    confirmedPreviewSerialized,
+    draftRetryCount,
+  });
+  const toolCallsForGate = syncChatGateToolCallsFromWriteDraft({
+    toolCalls: [],
+    writeDraft,
+  });
+  const writeDraftList = buildWriteDraftListFromChatGate({
+    toolCalls: [],
+    writeDraft,
+    observations: serializedObservations,
+    confirmedPreviewSerialized,
+    draftRetryCount,
+  });
+  const primaryWriteDraft = writeDraftList[0] ?? writeDraft;
+  const publicDraftList = writeDraftList.map((draft) => toWriteDraftPublic(draft));
   await deps.pendingWriteConfirmationStore.set({
     runId: ctx.input.runId,
     turnId: ctx.input.turnId,
@@ -86,7 +130,9 @@ export async function applyWorkflowAwaitUserConfirmGate(
     appClientId: ctx.input.appClientId,
     agentId: ctx.input.agentId,
     latestUserMessage: ctx.input.latestUserMessage,
-    toolCalls: [],
+    toolCalls: toolCallsForGate,
+    writeDraft: primaryWriteDraft,
+    writeDrafts: writeDraftList.length > 1 ? writeDraftList : undefined,
     resumeContext,
     createdAt: new Date().toISOString(),
   });
@@ -112,6 +158,11 @@ export async function applyWorkflowAwaitUserConfirmGate(
       runId: ctx.input.runId,
       turnId: ctx.input.turnId,
       message,
+      draftRetryCount: draftRetryBudget.used,
+      draftRetryMax: draftRetryBudget.max,
+      canRetry: draftRetryBudget.canRetry,
+      writeDraft: publicDraftList[0],
+      writeDrafts: publicDraftList.length > 1 ? publicDraftList : undefined,
     },
   );
   emitAgentMessageSseDebug({
@@ -132,7 +183,7 @@ export async function applyWorkflowAwaitUserConfirmGate(
       status: 'awaiting_user',
       source: 'workflow_await_user_confirm',
       nodeId: input.nodeId,
-      pendingToolCallCount: 0,
+      pendingToolCallCount: toolCallsForGate.length,
     }),
   };
   const nextSteps = [...input.steps, gateStep];
@@ -148,6 +199,7 @@ export async function applyWorkflowAwaitUserConfirmGate(
     workflowRun: input.workflowRun,
     taskPlan: input.taskPlan,
     pendingToolCalls: [],
+    draftRetryCount,
     awaitingWriteConfirmation: true,
     finalOutput:
       deps.assistantArtifact.peekSerialized(

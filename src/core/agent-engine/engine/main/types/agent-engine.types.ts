@@ -18,6 +18,7 @@ import type { TurnExecutionContract } from '../../turn/turn-execution-contract.t
 import type { TurnScopedToolsBundle } from '../../turn/turn-scoped-tools.util';
 import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-tool-decision.types';
 import type { AgentChatPageContext } from '../../../../host-bridge/page-context.types';
+import type { DraftReviewDecision } from '../../../../draft-review';
 import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
 
 export type AgentRunInput = {
@@ -37,6 +38,10 @@ export type ResumeAfterWriteConfirmInput = {
   userMessageId?: number;
   /** 写确认消息可附带最新 pageContext（优先于 gate 时缓存）。 */
   pageContext?: AgentChatPageContext | null;
+};
+
+export type ResumeAfterWriteGateInput = ResumeAfterWriteConfirmInput & {
+  decision: DraftReviewDecision;
 };
 
 export type AgentRunStepType =
@@ -215,6 +220,8 @@ export type AgentGraphState = {
   workflowNodeOutputs?: Record<string, unknown>;
   /** 当前节点委托旧 ReAct 环（readiness → llm → tools → resultCheck）。 */
   workflowAwaitingReact?: boolean;
+  /** 写确认门：本 turn 已消耗的重试次数（续跑 / 重试时带入）。 */
+  draftRetryCount?: number;
 };
 
 export type AgentLangGraphRunInput = {
@@ -237,6 +244,8 @@ export type AgentLangGraphRunInput = {
   turnId: number;
   /** 写确认续跑：从 resultCheck / workflow 节点接续 */
   resumeFromWriteConfirm?: boolean;
+  /** 写确认门重试：从 present/compose/summarize 重新生成草稿 */
+  resumeFromWriteGateRetry?: boolean;
   graphInitialState?: Partial<AgentGraphState>;
   approvedWriteToolNames?: string[];
   /** C 端用户指定的 Skill；外层 Plan 固定进入该 Skill。 */

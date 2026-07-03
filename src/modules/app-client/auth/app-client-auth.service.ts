@@ -42,7 +42,7 @@ export class AppClientAuthService {
     accountToken: string,
   ): Promise<ExternalAccountProfile> {
     const config = await this.loadResolvedAuthConfig(appClientId);
-    return this.verifyWithConfig(config, accountToken);
+    return this.verifyWithConfig(config, appClientId, accountToken);
   }
 
   async testAccountToken(
@@ -50,7 +50,7 @@ export class AppClientAuthService {
     accountToken: string,
   ): Promise<AppClientAuthTestResult> {
     const config = await this.loadResolvedAuthConfig(appClientId);
-    const profile = await this.verifyWithConfig(config, accountToken);
+    const profile = await this.verifyWithConfig(config, appClientId, accountToken);
     return {
       ok: true,
       source: config.source,
@@ -67,6 +67,7 @@ export class AppClientAuthService {
 
   private async verifyWithConfig(
     config: ResolvedAppClientAuthConfig,
+    appClientId: number,
     accountToken: string,
   ): Promise<ExternalAccountProfile> {
     const token = accountToken.trim();
@@ -78,7 +79,7 @@ export class AppClientAuthService {
         if (!config.http) {
           throw new BadRequestException('http_profile auth missing http config');
         }
-        return fetchHttpProfileAccount(config.http, token);
+        return fetchHttpProfileAccount(config.http, token, appClientId);
       case 'jwt_shared_secret':
         throw new BadRequestException(
           'jwt_shared_secret provider is not implemented yet',

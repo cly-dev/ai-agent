@@ -19,6 +19,7 @@ const redis_keys_1 = require("../../core/memory/redis/redis-keys");
 const redis_connection_service_1 = require("../../core/memory/redis/redis-connection.service");
 const host_tool_stream_replay_util_1 = require("../../core/host-bridge/host-tool-stream-replay.util");
 const write_confirmation_gate_util_1 = require("../../core/agent-engine/engine/write-confirmation-gate.util");
+const chat_pending_write_gate_mapper_1 = require("./chat-pending-write-gate.mapper");
 const pending_write_confirmation_store_1 = require("./pending-write-confirmation.store");
 let ChatEventsService = ChatEventsService_1 = class ChatEventsService {
     constructor(pendingWriteConfirmationStore, redis) {
@@ -205,15 +206,10 @@ let ChatEventsService = ChatEventsService_1 = class ChatEventsService {
         return evt.payload.runId === runId;
     }
     buildPendingWriteConfirmationEvent(pending) {
+        const gate = (0, chat_pending_write_gate_mapper_1.buildPendingWriteGatePublicState)(pending);
         return {
             event: 'message',
-            payload: {
-                source: 'agent-run',
-                action: 'confirmation_required',
-                runId: pending.runId,
-                turnId: pending.turnId,
-                message: (0, write_confirmation_gate_util_1.buildWriteConfirmationUserMessage)(),
-            },
+            payload: Object.assign({ source: 'agent-run', action: 'confirmation_required', message: (0, write_confirmation_gate_util_1.buildWriteConfirmationUserMessage)() }, gate),
         };
     }
     normalizeSessionId(sessionId) {

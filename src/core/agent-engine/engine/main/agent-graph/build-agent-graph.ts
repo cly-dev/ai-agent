@@ -104,10 +104,12 @@ export async function buildAndRunAgentGraph(
         })
       : null;
 
-  let sessionGoa: SessionGoaPayload | null = input.resumeFromWriteConfirm
+  let sessionGoa: SessionGoaPayload | null =
+    input.resumeFromWriteConfirm || input.resumeFromWriteGateRetry
     ? null
     : await deps.goaService.ensurePayload(input.sessionId);
-  const sessionPriorObservations = input.resumeFromWriteConfirm
+  const sessionPriorObservations =
+    input.resumeFromWriteConfirm || input.resumeFromWriteGateRetry
     ? []
     : deps.goaService.buildPriorToolObservationsForGraph(sessionGoa);
 
@@ -163,6 +165,19 @@ export async function buildAndRunAgentGraph(
     .addNode('resultCheck', wrap(createResultCheckNode(bundle)))
     .addNode('summarize', wrap(createSummarizeNode(bundle)))
     .addConditionalEdges(START, (s: AgentGraphState) => {
+      if (input.resumeFromWriteGateRetry) {
+        if (
+          s.workflowRun?.status === 'running' &&
+          s.workflowRun.currentNodeId
+        ) {
+          const current = getCurrentWorkflowNode(s);
+          if (current?.status === 'pending' || current?.status === 'running') {
+            return 'execute_node';
+          }
+          return 'workflow_advance';
+        }
+        return 'resultCheck';
+      }
       if (input.resumeFromWriteConfirm) {
         if (shouldRouteToRespond(s)) {
           return 'summarize';
@@ -280,7 +295,8 @@ export async function buildAndRunAgentGraph(
     });
 
   const app = graph.compile();
-  const skipTurnRouteContract = input.resumeFromWriteConfirm
+  const skipTurnRouteContract =
+    input.resumeFromWriteConfirm || input.resumeFromWriteGateRetry
     ? buildWriteConfirmResumeContract('resume_from_write_confirm')
     : null;
   const allowedToolsBundle = bundleFromAllowedRunInput({

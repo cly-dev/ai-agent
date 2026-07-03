@@ -11,7 +11,7 @@ const tokenPlacementSchema = zod_1.z.enum([
 const profileFieldMappingSchema = zod_1.z
     .object({
     employeeId: zod_1.z.string().min(1).optional(),
-    email: zod_1.z.string().min(1),
+    email: zod_1.z.string().min(1).optional(),
     username: zod_1.z.string().min(1).optional(),
     nickName: zod_1.z.string().min(1).optional(),
     cnName: zod_1.z.string().min(1).optional(),
@@ -25,7 +25,7 @@ const httpAuthConfigSchema = zod_1.z
     method: zod_1.z.enum(['GET', 'POST']).optional(),
     tokenPlacement: tokenPlacementSchema.optional(),
     responseRoot: zod_1.z.string().min(1).optional(),
-    mapping: profileFieldMappingSchema,
+    mapping: profileFieldMappingSchema.optional(),
     extraHeaders: zod_1.z.record(zod_1.z.string(), zod_1.z.string()).optional(),
 })
     .strict();

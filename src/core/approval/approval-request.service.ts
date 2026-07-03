@@ -12,6 +12,7 @@ import type {
   ApprovalDecisionInput,
   CreateApprovalRequestInput,
 } from './approval.types';
+import { canRequestDraftRetry, resolveDraftReviewMaxRetries } from '../draft-review';
 
 /** 收件箱可见的审批来源（chat 写确认走会话内路径，不进收件箱）。 */
 export const APPROVAL_INBOX_SOURCES = [
@@ -164,5 +165,78 @@ export class ApprovalRequestService {
       ApprovalStatus.cancelled,
       input,
     );
+  }
+
+  async updatePendingSnapshot(input: {
+    approvalRequestId: number;
+    approverUserId: number;
+    resumeSnapshot: ApprovalResumeSnapshot;
+    previewBlocks?: unknown;
+    summary?: string | null;
+  }): Promise<boolean> {
+    const updated = await this.prisma.approvalRequest.updateMany({
+      where: {
+        id: input.approvalRequestId,
+        approverUserId: input.approverUserId,
+        status: ApprovalStatus.pending,
+      },
+      data: {
+        resumeSnapshot: input.resumeSnapshot as unknown as Prisma.InputJsonValue,
+        ...(input.previewBlocks !== undefined
+          ? { previewBlocks: input.previewBlocks as Prisma.InputJsonValue }
+          : {}),
+        ...(input.summary !== undefined ? { summary: input.summary } : {}),
+      },
+    });
+    return updated.count > 0;
+  }
+
+  /**
+   * 原子预留一次草稿重试槽位（递增 resumeSnapshot.draftRetryCount）。
+   */
+  async reserveDraftRetrySlot(input: {
+    approvalRequestId: number;
+    approverUserId: number;
+  }): Promise<
+    | { ok: true; draftRetryCount: number }
+    | { ok: false; reason: 'not_found' | 'not_pending' | 'limit_exceeded' }
+  > {
+    const maxRetries = resolveDraftReviewMaxRetries();
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.approvalRequest.findFirst({
+        where: {
+          id: input.approvalRequestId,
+          approverUserId: input.approverUserId,
+          status: ApprovalStatus.pending,
+        },
+      });
+      if (!row) {
+        return { ok: false as const, reason: 'not_found' as const };
+      }
+      const snapshot = row.resumeSnapshot as unknown as ApprovalResumeSnapshot;
+      const used = snapshot.draftRetryCount ?? 0;
+      if (!canRequestDraftRetry(used)) {
+        return { ok: false as const, reason: 'limit_exceeded' as const };
+      }
+      const nextCount = used + 1;
+      const nextSnapshot: ApprovalResumeSnapshot = {
+        ...snapshot,
+        draftRetryCount: nextCount,
+      };
+      const updated = await tx.approvalRequest.updateMany({
+        where: {
+          id: input.approvalRequestId,
+          approverUserId: input.approverUserId,
+          status: ApprovalStatus.pending,
+        },
+        data: {
+          resumeSnapshot: nextSnapshot as unknown as Prisma.InputJsonValue,
+        },
+      });
+      if (updated.count === 0) {
+        return { ok: false as const, reason: 'not_pending' as const };
+      }
+      return { ok: true as const, draftRetryCount: nextCount };
+    });
   }
 }

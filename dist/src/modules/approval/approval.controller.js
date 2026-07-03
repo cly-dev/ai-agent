@@ -18,6 +18,9 @@ const app_client_dsn_guard_1 = require("../../auth/app-client-dsn.guard");
 const user_jwt_auth_guard_1 = require("../../auth/user-jwt-auth.guard");
 const approval_request_service_1 = require("../../core/approval/approval-request.service");
 const approval_resume_service_1 = require("../../core/approval/approval-resume.service");
+const draft_review_1 = require("../../core/draft-review");
+const approval_decide_dto_1 = require("./dto/approval-decide.dto");
+const approval_write_draft_mapper_1 = require("./approval-write-draft.mapper");
 let ApprovalController = class ApprovalController {
     constructor(approvalRequests, approvalResume) {
         this.approvalRequests = approvalRequests;
@@ -36,7 +39,8 @@ let ApprovalController = class ApprovalController {
         return {
             items: rows.map((row) => {
                 var _a, _b, _c, _d;
-                return ({
+                const writeDraft = (0, approval_write_draft_mapper_1.extractWriteDraftPublicFromApprovalRow)(row);
+                return {
                     id: row.id,
                     source: row.source,
                     status: row.status,
@@ -57,9 +61,14 @@ let ApprovalController = class ApprovalController {
                         }
                         : null,
                     createdAt: row.createdAt,
+                    writeDraft,
                     previewBlocks: row.previewBlocks,
-                    pendingWrite: this.extractPendingWritePreview(row),
-                });
+                    pendingWrite: {
+                        tool: writeDraft.tool.name,
+                        riskLevel: writeDraft.tool.riskLevel,
+                    },
+                    draftReview: this.extractDraftReviewBudget(row),
+                };
             }),
         };
     }
@@ -68,6 +77,7 @@ let ApprovalController = class ApprovalController {
         if (!row) {
             throw new common_1.NotFoundException('Approval request not found');
         }
+        const writeDraft = (0, approval_write_draft_mapper_1.extractWriteDraftPublicFromApprovalRow)(row);
         return {
             id: row.id,
             source: row.source,
@@ -81,36 +91,48 @@ let ApprovalController = class ApprovalController {
             pageActionRunId: row.pageActionRunId,
             createdAt: row.createdAt,
             decidedAt: row.decidedAt,
+            writeDraft,
             previewBlocks: row.previewBlocks,
-            pendingWrite: this.extractPendingWritePreview(row),
+            pendingWrite: {
+                tool: writeDraft.tool.name,
+                riskLevel: writeDraft.tool.riskLevel,
+            },
+            draftReview: this.extractDraftReviewBudget(row),
         };
     }
-    async confirm(req, id) {
-        return this.approvalResume.confirm({
+    async decide(req, id, body) {
+        var _a;
+        return this.approvalResume.decide({
             approvalRequestId: id,
             decidedByUserId: this.userId(req),
+            decisionNote: (_a = body.reason) !== null && _a !== void 0 ? _a : null,
+            decision: body.decision,
+        });
+    }
+    async confirm(req, id) {
+        return this.approvalResume.decide({
+            approvalRequestId: id,
+            decidedByUserId: this.userId(req),
+            decision: { action: 'confirm' },
         });
     }
     async reject(req, id, body) {
         var _a;
-        await this.approvalResume.reject({
+        await this.approvalResume.decide({
             approvalRequestId: id,
             decidedByUserId: this.userId(req),
             decisionNote: (_a = body === null || body === void 0 ? void 0 : body.reason) !== null && _a !== void 0 ? _a : null,
+            decision: { action: 'cancel' },
         });
         return { ok: true };
     }
-    extractPendingWritePreview(row) {
-        var _a, _b;
+    extractDraftReviewBudget(row) {
         const snapshot = row.resumeSnapshot;
-        const pending = snapshot === null || snapshot === void 0 ? void 0 : snapshot.pendingWrite;
-        const tool = (_a = pending === null || pending === void 0 ? void 0 : pending.name) === null || _a === void 0 ? void 0 : _a.trim();
-        if (!tool) {
-            return null;
-        }
+        const budget = (0, draft_review_1.resolveDraftRetryBudget)(snapshot === null || snapshot === void 0 ? void 0 : snapshot.draftRetryCount);
         return {
-            tool,
-            riskLevel: (_b = pending === null || pending === void 0 ? void 0 : pending.riskLevel) !== null && _b !== void 0 ? _b : 'L2',
+            retryCount: budget.used,
+            retryMax: budget.max,
+            canRetry: budget.canRetry,
         };
     }
 };
@@ -131,6 +153,15 @@ __decorate([
     __metadata("design:paramtypes", [Object, Number]),
     __metadata("design:returntype", Promise)
 ], ApprovalController.prototype, "getOne", null);
+__decorate([
+    (0, common_1.Post)(':id/decide'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Number, approval_decide_dto_1.ApprovalDecideDto]),
+    __metadata("design:returntype", Promise)
+], ApprovalController.prototype, "decide", null);
 __decorate([
     (0, common_1.Post)(':id/confirm'),
     __param(0, (0, common_1.Req)()),

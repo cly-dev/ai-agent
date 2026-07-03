@@ -18,6 +18,7 @@ import type { TurnExecutionContract } from '../../turn/turn-execution-contract.t
 import type { TurnScopedToolsBundle } from '../../turn/turn-scoped-tools.util';
 import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-tool-decision.types';
 import type { AgentChatPageContext } from '../../../../host-bridge/page-context.types';
+import type { DraftReviewDecision } from '../../../../draft-review';
 import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
 export type AgentRunInput = {
     userId: number;
@@ -32,6 +33,9 @@ export type ResumeAfterWriteConfirmInput = {
     sessionId: string;
     userMessageId?: number;
     pageContext?: AgentChatPageContext | null;
+};
+export type ResumeAfterWriteGateInput = ResumeAfterWriteConfirmInput & {
+    decision: DraftReviewDecision;
 };
 export type AgentRunStepType = 'skill' | 'plan' | 'plan_sync' | 'workflow' | 'route_plan' | 'intent' | 'readiness' | 'llm' | 'tool' | 'write_confirmation_gate' | 'gather' | 'result_check' | 'summarize' | 'host_tool';
 export type AgentRunStep = {
@@ -156,6 +160,7 @@ export type AgentGraphState = {
     workflowNodeDefs?: WorkflowNodeDef[];
     workflowNodeOutputs?: Record<string, unknown>;
     workflowAwaitingReact?: boolean;
+    draftRetryCount?: number;
 };
 export type AgentLangGraphRunInput = {
     promptMessages: LlmChatMessage[];
@@ -176,6 +181,7 @@ export type AgentLangGraphRunInput = {
     toolProfilesByName: Record<string, ToolResponseProfile | null>;
     turnId: number;
     resumeFromWriteConfirm?: boolean;
+    resumeFromWriteGateRetry?: boolean;
     graphInitialState?: Partial<AgentGraphState>;
     approvedWriteToolNames?: string[];
     requestedSkillId?: number;

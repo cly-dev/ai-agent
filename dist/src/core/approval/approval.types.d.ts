@@ -1,3 +1,4 @@
+import type { DraftReviewDecision } from '../draft-review';
 import type { ApprovalSource, ApprovalStatus } from '../../../generated/prisma/client';
 import type { ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
 export type CreateApprovalRequestInput = {
@@ -20,6 +21,7 @@ export type ApprovalDecisionInput = {
     approvalRequestId: number;
     decidedByUserId: number;
     decisionNote?: string | null;
+    decision?: DraftReviewDecision | null;
 };
 export type ApprovalCasResult = {
     ok: true;

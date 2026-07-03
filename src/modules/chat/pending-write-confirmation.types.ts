@@ -1,3 +1,4 @@
+import type { WriteDraft } from '../../core/draft-review/write-draft.types';
 import type { ToolLevel } from '../../../generated/prisma/client';
 import type { TaskPlanSnapshot } from '../../core/agent-engine/engine/main/plan/task-plan.types';
 import type { AgentChatPageContext } from '../../core/host-bridge/page-context.types';
@@ -58,6 +59,8 @@ export type PendingWriteResumeContext = {
   workflowNodeDefs?: WorkflowNodeDef[];
   workflowNodeOutputs?: Record<string, unknown>;
   workflowAwaitingReact?: boolean;
+  /** 本 gate 已完成的重试次数（再生草稿后递增）。 */
+  draftRetryCount?: number;
 };
 
 export type PendingWriteConfirmationSnapshot = {
@@ -69,6 +72,10 @@ export type PendingWriteConfirmationSnapshot = {
   agentId: number;
   latestUserMessage: string;
   toolCalls: PendingWriteToolCall[];
+  /** 写草稿机器层真值（与 toolCalls 同步；workflow gate 可能仅填此项）。 */
+  writeDraft?: WriteDraft | null;
+  /** 多写工具时全部草稿真值（与 toolCalls 一一对应；单写时可省略）。 */
+  writeDrafts?: WriteDraft[] | null;
   resumeContext: PendingWriteResumeContext;
   createdAt: string;
 };

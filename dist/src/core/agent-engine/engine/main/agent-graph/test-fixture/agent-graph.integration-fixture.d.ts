@@ -30,6 +30,7 @@ export declare function buildFetchReactGraphRunInput(graphInitialState: Partial<
     runMetrics: import("../../../run-metrics.util").RunMetricsAccumulator;
     toolProfilesByName: Record<string, import("../../../../../tool-engine").ToolResponseProfile>;
     turnId: number;
+    resumeFromWriteGateRetry?: boolean;
     approvedWriteToolNames?: string[];
     requestedSkillId?: number;
     pageContext?: import("../../../../../host-bridge").AgentChatPageContext;
@@ -59,6 +60,7 @@ export declare function buildWorkflowGraphRunInput(graphInitialState: Partial<Ag
     runMetrics: import("../../../run-metrics.util").RunMetricsAccumulator;
     toolProfilesByName: Record<string, import("../../../../../tool-engine").ToolResponseProfile>;
     turnId: number;
+    resumeFromWriteGateRetry?: boolean;
     approvedWriteToolNames?: string[];
     requestedSkillId?: number;
     pageContext?: import("../../../../../host-bridge").AgentChatPageContext;

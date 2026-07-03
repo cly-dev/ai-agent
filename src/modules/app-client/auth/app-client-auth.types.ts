@@ -6,9 +6,9 @@ export type AppClientTokenPlacement =
   | 'query_token';
 
 export type AppClientProfileFieldMapping = {
-  /** 外部账号工号路径；未配置时不从响应读取，建档按 email 或合成 employeeId。 */
+  /** 各字段均为可选点路径；未配置或响应无该字段时由服务端按 token 合成身份。 */
   employeeId?: string;
-  email: string;
+  email?: string;
   username?: string;
   nickName?: string;
   cnName?: string;
@@ -25,7 +25,8 @@ export type AppClientHttpAuthConfig = {
    * 例：本服务 `/admin/*` 经 ReqInterceptor 包装为 `{ data: {...} }` → `"data"`。
    */
   responseRoot?: string;
-  mapping: AppClientProfileFieldMapping;
+  /** 可选；不配或为空时仅以 HTTP 2xx 认定 token 有效，身份由 token 合成。 */
+  mapping?: AppClientProfileFieldMapping;
   extraHeaders?: Record<string, string>;
 };
 

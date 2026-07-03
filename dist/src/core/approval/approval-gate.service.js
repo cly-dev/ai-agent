@@ -12,22 +12,66 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ApprovalGateService = void 0;
 const common_1 = require("@nestjs/common");
 const approval_request_service_1 = require("./approval-request.service");
+const write_draft_util_1 = require("../draft-review/write-draft.util");
 let ApprovalGateService = class ApprovalGateService {
     constructor(approvalRequests) {
         this.approvalRequests = approvalRequests;
     }
     async suspend(input) {
-        var _a, _b, _c, _d, _e, _f;
-        const resumeSnapshot = {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        const writeDraft = (0, write_draft_util_1.syncWriteDraftPresentation)(Object.assign(Object.assign({}, input.writeDraft), { provenance: Object.assign(Object.assign({}, input.writeDraft.provenance), { lastEvent: 'suspended' }) }));
+        const pendingWrite = (0, write_draft_util_1.writeDraftToPendingWrite)(writeDraft);
+        const previewBlocks = writeDraft.presentation.previewBlocks;
+        const summary = (_a = writeDraft.presentation.summaryText) !== null && _a !== void 0 ? _a : null;
+        let resumeSnapshot = {
             version: 1,
             workflowRun: input.workflowRun,
             workflowNodeDefs: input.workflowNodeDefs,
             workflowNodeOutputs: input.workflowNodeOutputs,
-            pendingWrite: input.pendingWrite,
+            pendingWrite,
+            writeDraft,
             scopedToolIds: input.scopedToolIds,
-            pageContext: (_a = input.pageContext) !== null && _a !== void 0 ? _a : null,
+            pageContext: (_b = input.pageContext) !== null && _b !== void 0 ? _b : null,
             channel: input.channel,
+            draftRetryCount: writeDraft.provenance.draftRetryCount,
         };
+        if (input.existingApprovalRequestId != null) {
+            const existing = await this.approvalRequests.findByIdForApprover(input.existingApprovalRequestId, input.approverUserId);
+            const previousSnapshot = existing
+                ? this.approvalRequests.parseResumeSnapshot(existing)
+                : null;
+            const previousRetry = (_c = previousSnapshot === null || previousSnapshot === void 0 ? void 0 : previousSnapshot.draftRetryCount) !== null && _c !== void 0 ? _c : 0;
+            const mergedRetryCount = Math.max(previousRetry, (_d = writeDraft.provenance.draftRetryCount) !== null && _d !== void 0 ? _d : 0);
+            resumeSnapshot = (0, write_draft_util_1.attachWriteDraftToApprovalSnapshot)(Object.assign(Object.assign({}, resumeSnapshot), { draftRetryCount: mergedRetryCount }), Object.assign(Object.assign({}, writeDraft), { provenance: Object.assign(Object.assign({}, writeDraft.provenance), { draftRetryCount: mergedRetryCount, lastEvent: 'suspended' }) }));
+            const updated = await this.approvalRequests.updatePendingSnapshot({
+                approvalRequestId: input.existingApprovalRequestId,
+                approverUserId: input.approverUserId,
+                resumeSnapshot,
+                previewBlocks,
+                summary,
+            });
+            if (!updated) {
+                throw new Error(`failed to refresh approval request ${input.existingApprovalRequestId}`);
+            }
+            const approval = await this.approvalRequests.findByIdForApprover(input.existingApprovalRequestId, input.approverUserId);
+            if (!approval) {
+                throw new Error(`approval request not found after refresh: ${input.existingApprovalRequestId}`);
+            }
+            (_e = input.stepRecorder) === null || _e === void 0 ? void 0 : _e.record({
+                type: 'lifecycle',
+                name: 'awaiting_approval',
+                detail: {
+                    approvalRequestId: approval.id,
+                    nodeId: input.nodeId,
+                    workflowId: input.workflowId,
+                    pendingWriteTool: pendingWrite.name,
+                    pendingWriteRiskLevel: pendingWrite.riskLevel,
+                    writeDraftVersion: writeDraft.version,
+                    refreshed: true,
+                },
+            });
+            return approval;
+        }
         const approval = await this.approvalRequests.createPending({
             appClientId: input.appClientId,
             source: input.source,
@@ -37,32 +81,26 @@ let ApprovalGateService = class ApprovalGateService {
             workflowVersion: input.workflowVersion,
             nodeId: input.nodeId,
             title: input.title,
-            summary: (_b = input.summary) !== null && _b !== void 0 ? _b : null,
-            previewBlocks: input.previewBlocks,
+            summary,
+            previewBlocks,
             resumeSnapshot,
-            pageActionRunId: (_c = input.pageActionRunId) !== null && _c !== void 0 ? _c : null,
-            sessionId: (_d = input.sessionId) !== null && _d !== void 0 ? _d : null,
-            idempotencyKey: (_e = input.idempotencyKey) !== null && _e !== void 0 ? _e : null,
+            pageActionRunId: (_f = input.pageActionRunId) !== null && _f !== void 0 ? _f : null,
+            sessionId: (_g = input.sessionId) !== null && _g !== void 0 ? _g : null,
+            idempotencyKey: (_h = input.idempotencyKey) !== null && _h !== void 0 ? _h : null,
         });
-        (_f = input.stepRecorder) === null || _f === void 0 ? void 0 : _f.record({
+        (_j = input.stepRecorder) === null || _j === void 0 ? void 0 : _j.record({
             type: 'lifecycle',
             name: 'awaiting_approval',
             detail: {
                 approvalRequestId: approval.id,
                 nodeId: input.nodeId,
                 workflowId: input.workflowId,
-                pendingWriteTool: input.pendingWrite.name,
-                pendingWriteRiskLevel: input.pendingWrite.riskLevel,
+                pendingWriteTool: pendingWrite.name,
+                pendingWriteRiskLevel: pendingWrite.riskLevel,
+                writeDraftVersion: writeDraft.version,
             },
         });
         return approval;
-    }
-    buildPendingWriteFromTool(input) {
-        return {
-            name: input.name.trim(),
-            arguments: input.arguments,
-            riskLevel: input.riskLevel,
-        };
     }
 };
 ApprovalGateService = __decorate([

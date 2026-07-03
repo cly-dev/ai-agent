@@ -159,7 +159,8 @@ export class ChatController {
 
   @Get(':sessionId/run-state')
   @ApiOperation({
-    summary: '获取 session run 状态（generation / active run，用于多 Tab 与 SSE 重连对齐）',
+    summary:
+      '获取 session run 状态（generation / active run / pendingWriteGate，用于多 Tab 与页面刷新对齐）',
   })
   @ApiParam({ name: 'sessionId', type: String })
   @ApiResponse({ status: 200, type: SessionRunStateResponseDto })

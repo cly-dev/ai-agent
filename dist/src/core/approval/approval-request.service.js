@@ -13,6 +13,7 @@ exports.ApprovalRequestService = exports.APPROVAL_INBOX_SOURCES = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("../../../generated/prisma/client");
 const prisma_service_1 = require("../../prisma/prisma.service");
+const draft_review_1 = require("../draft-review");
 exports.APPROVAL_INBOX_SOURCES = [
     client_1.ApprovalSource.page_action,
     client_1.ApprovalSource.webhook,
@@ -126,6 +127,56 @@ let ApprovalRequestService = class ApprovalRequestService {
     }
     async markCancelled(input) {
         return this.casDecide(input.approvalRequestId, client_1.ApprovalStatus.cancelled, input);
+    }
+    async updatePendingSnapshot(input) {
+        const updated = await this.prisma.approvalRequest.updateMany({
+            where: {
+                id: input.approvalRequestId,
+                approverUserId: input.approverUserId,
+                status: client_1.ApprovalStatus.pending,
+            },
+            data: Object.assign(Object.assign({ resumeSnapshot: input.resumeSnapshot }, (input.previewBlocks !== undefined
+                ? { previewBlocks: input.previewBlocks }
+                : {})), (input.summary !== undefined ? { summary: input.summary } : {})),
+        });
+        return updated.count > 0;
+    }
+    async reserveDraftRetrySlot(input) {
+        const maxRetries = (0, draft_review_1.resolveDraftReviewMaxRetries)();
+        return this.prisma.$transaction(async (tx) => {
+            var _a;
+            const row = await tx.approvalRequest.findFirst({
+                where: {
+                    id: input.approvalRequestId,
+                    approverUserId: input.approverUserId,
+                    status: client_1.ApprovalStatus.pending,
+                },
+            });
+            if (!row) {
+                return { ok: false, reason: 'not_found' };
+            }
+            const snapshot = row.resumeSnapshot;
+            const used = (_a = snapshot.draftRetryCount) !== null && _a !== void 0 ? _a : 0;
+            if (!(0, draft_review_1.canRequestDraftRetry)(used)) {
+                return { ok: false, reason: 'limit_exceeded' };
+            }
+            const nextCount = used + 1;
+            const nextSnapshot = Object.assign(Object.assign({}, snapshot), { draftRetryCount: nextCount });
+            const updated = await tx.approvalRequest.updateMany({
+                where: {
+                    id: input.approvalRequestId,
+                    approverUserId: input.approverUserId,
+                    status: client_1.ApprovalStatus.pending,
+                },
+                data: {
+                    resumeSnapshot: nextSnapshot,
+                },
+            });
+            if (updated.count === 0) {
+                return { ok: false, reason: 'not_pending' };
+            }
+            return { ok: true, draftRetryCount: nextCount };
+        });
     }
 };
 ApprovalRequestService = __decorate([

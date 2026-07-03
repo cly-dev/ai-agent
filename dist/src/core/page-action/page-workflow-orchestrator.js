@@ -10,9 +10,10 @@ const workflow_resume_util_1 = require("../workflow/workflow-resume.util");
 const workflow_debug_util_1 = require("../workflow/trace/workflow-debug.util");
 const page_workflow_node_runner_util_1 = require("../workflow/page/page-workflow-node-runner.util");
 const page_workflow_node_util_1 = require("./page-workflow-node.util");
+const draft_review_1 = require("../draft-review");
 const resolve_approval_parties_util_1 = require("../approval/resolve-approval-parties.util");
 async function orchestratePageWorkflow(input) {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const recorder = (_a = input.stepRecorder) !== null && _a !== void 0 ? _a : new page_action_run_steps_util_1.PageActionRunStepRecorder();
     const runtime = (0, page_workflow_runtime_util_1.createPageWorkflowExecutorRuntime)(input, recorder);
     if (input.resumeFrom) {
@@ -132,6 +133,25 @@ async function orchestratePageWorkflow(input) {
                     errorMessage: `Cannot resolve approval parties: ${parties.code}`,
                 });
             }
+            const presentSummary = (0, page_workflow_pending_write_util_1.resolvePageWorkflowPresentSummary)({
+                nodes: input.nodes,
+                nodeOutputs: runtime.nodeOutputs,
+                fillText: runtime.fillText,
+            });
+            const writeDraft = (0, draft_review_1.buildPageWriteDraft)({
+                tool: {
+                    name: pendingWrite.tool,
+                    toolId: pendingWrite.toolId,
+                    riskLevel: pendingWrite.riskLevel,
+                    arguments: pendingWrite.arguments,
+                },
+                summaryText: presentSummary,
+                fillText: runtime.fillText,
+                draftRetryCount: input.existingApprovalRequestId != null
+                    ? undefined
+                    : 0,
+                lastEvent: 'composed',
+            });
             const approval = await input.approvalGate.suspend({
                 appClientId: input.appClientId,
                 source: 'page_action',
@@ -141,24 +161,16 @@ async function orchestratePageWorkflow(input) {
                 workflowVersion: input.version,
                 nodeId,
                 title: `${input.actionKey} · ${def.name}`,
-                summary: (0, page_workflow_pending_write_util_1.resolvePageWorkflowPresentSummary)({
-                    nodes: input.nodes,
-                    nodeOutputs: runtime.nodeOutputs,
-                    fillText: runtime.fillText,
-                }),
+                writeDraft,
                 workflowRun,
                 workflowNodeDefs: input.nodes,
                 workflowNodeOutputs: Object.assign({}, runtime.nodeOutputs),
-                pendingWrite: input.approvalGate.buildPendingWriteFromTool({
-                    name: pendingWrite.tool,
-                    arguments: pendingWrite.arguments,
-                    riskLevel: pendingWrite.riskLevel,
-                }),
                 scopedToolIds: input.allowedToolIds,
                 pageContext: input.pageContext,
                 pageActionRunId: input.actionRunId,
                 channel: { kind: 'page_action', pageActionRunId: input.actionRunId },
                 stepRecorder: recorder,
+                existingApprovalRequestId: (_h = input.existingApprovalRequestId) !== null && _h !== void 0 ? _h : null,
             });
             (0, workflow_debug_util_1.logWorkflowDebug)('page_workflow_suspended', {
                 actionRunId: input.actionRunId,

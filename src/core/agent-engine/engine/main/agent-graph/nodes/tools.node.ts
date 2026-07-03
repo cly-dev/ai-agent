@@ -52,6 +52,14 @@ import { applyComposeMutationProgress, applyPlanAdvanceAsWorkflowProgress } from
 import { resolveWriteConfirmationPolicy } from '../../../../../workflow/workflow-mutation-write-gate.util';
 import { toolRequiresWriteConfirmation } from '../../../../../risk/risk-level.util';
 import { logWorkflowDebug } from '../../../../../workflow/trace/workflow-debug.util';
+import {
+  buildWriteDraftListFromChatGate,
+  resolveDraftRetryBudget,
+  resolveDraftRetryCountAfterRegeneration,
+  resolveWriteDraftFromChatGate,
+  syncChatGateToolCallsFromWriteDraft,
+  toWriteDraftPublic,
+} from '../../../../../draft-review';
 import type { AgentRunStep, GraphToolCall, ToolObservation } from '../../types/agent-engine.types';
 
 export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
@@ -468,6 +476,54 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
             const message = buildWriteConfirmationUserMessage();
             const confirmedPreviewSerialized =
               deps.assistantArtifact.peekSerialized(ctx.input.sessionId, ctx.input.runId);
+            const draftRetryCount = resolveDraftRetryCountAfterRegeneration({
+              previousCount: state.draftRetryCount,
+              regeneratedFromRetry: ctx.input.resumeFromWriteGateRetry === true,
+            });
+            const draftRetryBudget = resolveDraftRetryBudget(draftRetryCount);
+            const existingPending =
+              await deps.pendingWriteConfirmationStore.get(
+                ctx.input.sessionId,
+                ctx.input.userId,
+              );
+            if (
+              existingPending &&
+              existingPending.runId !== ctx.input.runId
+            ) {
+              deps.runSseGateway.purgeWriteConfirmationGate(
+                ctx.input.sessionId,
+                existingPending.runId,
+              );
+            }
+            const serializedObservations =
+              serializeObservationsForPending(observations);
+            const writeDraft = resolveWriteDraftFromChatGate({
+              toolCalls: writeCallsForGate,
+              observations: serializedObservations,
+              confirmedPreviewSerialized,
+              draftRetryCount,
+            });
+            const toolCallsForGate = syncChatGateToolCallsFromWriteDraft({
+              toolCalls: writeCallsForGate,
+              writeDraft,
+            });
+            const previewBlocksForGate =
+              deps.assistantArtifact.peekBlocks(
+                ctx.input.sessionId,
+                ctx.input.runId,
+              ) ?? undefined;
+            const writeDraftList = buildWriteDraftListFromChatGate({
+              toolCalls: writeCallsForGate,
+              writeDraft,
+              observations: serializedObservations,
+              confirmedPreviewSerialized,
+              draftRetryCount,
+              previewBlocks: previewBlocksForGate,
+            });
+            const primaryWriteDraft = writeDraftList[0] ?? writeDraft;
+            const publicDraftList = writeDraftList.map((draft) =>
+              toWriteDraftPublic(draft),
+            );
             await deps.pendingWriteConfirmationStore.set({
               runId: ctx.input.runId,
               turnId: ctx.input.turnId,
@@ -476,11 +532,14 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
               appClientId: ctx.input.appClientId,
               agentId: ctx.input.agentId,
               latestUserMessage: ctx.input.latestUserMessage,
-              toolCalls: writeCallsForGate,
+              toolCalls: toolCallsForGate,
+              writeDraft: primaryWriteDraft,
+              writeDrafts:
+                writeDraftList.length > 1 ? writeDraftList : undefined,
               resumeContext: {
                 steps: nextSteps as PendingWriteResumeContext['steps'],
                 iteration: state.iteration,
-                toolObservations: serializeObservationsForPending(observations),
+                toolObservations: serializedObservations,
                 scopedToolIds: state.scopedTools.map((tool) => tool.id),
                 intentKind: state.intentKind,
                 hasExpandedOnce: state.hasExpandedOnce,
@@ -499,6 +558,7 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
                 workflowNodeDefs: state.workflowNodeDefs,
                 workflowNodeOutputs: state.workflowNodeOutputs,
                 workflowAwaitingReact: workflowAwaitingReactForContext === true,
+                draftRetryCount,
               },
               createdAt: new Date().toISOString(),
             });
@@ -506,7 +566,7 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
               runId: ctx.input.runId,
               sessionId: ctx.input.sessionId,
               turnId: ctx.input.turnId,
-              toolNames: writeCallsForGate.map((call) => call.name),
+              toolNames: toolCallsForGate.map((call) => call.name),
               workflowRun: state.workflowRun ?? null,
               hasWorkflowNodeDefs: (state.workflowNodeDefs?.length ?? 0) > 0,
             });
@@ -523,6 +583,12 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
                 runId: ctx.input.runId,
                 turnId: ctx.input.turnId,
                 message,
+                draftRetryCount: draftRetryBudget.used,
+                draftRetryMax: draftRetryBudget.max,
+                canRetry: draftRetryBudget.canRetry,
+                writeDraft: publicDraftList[0],
+                writeDrafts:
+                  publicDraftList.length > 1 ? publicDraftList : undefined,
               },
             );
             if (!published) {
@@ -555,8 +621,8 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
               type: 'write_confirmation_gate',
               output: runHelpers.normalizeJsonLike({
                 status: 'awaiting_user',
-                pendingToolCallCount: writeCallsForGate.length,
-                toolNames: writeCallsForGate.map((call) => call.name),
+                pendingToolCallCount: toolCallsForGate.length,
+                toolNames: toolCallsForGate.map((call) => call.name),
               }),
             };
             nextSteps = [...nextSteps, gateStep];
@@ -573,6 +639,7 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
               workflowRun: workflowRunForContext,
               workflowAwaitingReact: workflowAwaitingReactForContext,
               pendingToolCalls: [],
+              draftRetryCount,
               awaitingWriteConfirmation: true,
               finalOutput:
                 deps.assistantArtifact.peekSerialized(

@@ -57,10 +57,10 @@ async function buildAndRunAgentGraph(deps, input) {
             sessionId: input.sessionId,
         })
         : null;
-    let sessionGoa = input.resumeFromWriteConfirm
+    let sessionGoa = input.resumeFromWriteConfirm || input.resumeFromWriteGateRetry
         ? null
         : await deps.goaService.ensurePayload(input.sessionId);
-    const sessionPriorObservations = input.resumeFromWriteConfirm
+    const sessionPriorObservations = input.resumeFromWriteConfirm || input.resumeFromWriteGateRetry
         ? []
         : deps.goaService.buildPriorToolObservationsForGraph(sessionGoa);
     const ctx = {
@@ -102,12 +102,23 @@ async function buildAndRunAgentGraph(deps, input) {
         .addNode('resultCheck', wrap((0, result_check_node_1.createResultCheckNode)(bundle)))
         .addNode('summarize', wrap((0, summarize_node_1.createSummarizeNode)(bundle)))
         .addConditionalEdges(langgraph_1.START, (s) => {
-        var _a;
+        var _a, _b;
+        if (input.resumeFromWriteGateRetry) {
+            if (((_a = s.workflowRun) === null || _a === void 0 ? void 0 : _a.status) === 'running' &&
+                s.workflowRun.currentNodeId) {
+                const current = (0, workflow_graph_routing_util_1.getCurrentWorkflowNode)(s);
+                if ((current === null || current === void 0 ? void 0 : current.status) === 'pending' || (current === null || current === void 0 ? void 0 : current.status) === 'running') {
+                    return 'execute_node';
+                }
+                return 'workflow_advance';
+            }
+            return 'resultCheck';
+        }
         if (input.resumeFromWriteConfirm) {
             if ((0, turn_graph_util_1.shouldRouteToRespond)(s)) {
                 return 'summarize';
             }
-            if (((_a = s.workflowRun) === null || _a === void 0 ? void 0 : _a.status) === 'running' &&
+            if (((_b = s.workflowRun) === null || _b === void 0 ? void 0 : _b.status) === 'running' &&
                 s.workflowRun.currentNodeId) {
                 const current = (0, workflow_graph_routing_util_1.getCurrentWorkflowNode)(s);
                 if ((current === null || current === void 0 ? void 0 : current.status) === 'pending' || (current === null || current === void 0 ? void 0 : current.status) === 'running') {
@@ -201,7 +212,7 @@ async function buildAndRunAgentGraph(deps, input) {
         return resolveWorkflowEdge((0, workflow_graph_routing_util_1.routeAfterSummarizeWorkflowAxis)(state, false));
     });
     const app = graph.compile();
-    const skipTurnRouteContract = input.resumeFromWriteConfirm
+    const skipTurnRouteContract = input.resumeFromWriteConfirm || input.resumeFromWriteGateRetry
         ? (0, turn_execution_contract_util_1.buildWriteConfirmResumeContract)('resume_from_write_confirm')
         : null;
     const allowedToolsBundle = (0, turn_scoped_tools_util_1.bundleFromAllowedRunInput)({

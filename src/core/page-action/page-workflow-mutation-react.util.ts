@@ -18,6 +18,7 @@ import {
   type PageWorkflowComposeOutput,
 } from './page-workflow-pending-write.util';
 import type { ApprovalPendingWrite } from '../approval/approval-resume-snapshot.types';
+import { executePageWorkflowComposeMutation } from './page-workflow-compose-mutation.util';
 
 export type PageWorkflowReactResult =
   | {
@@ -100,10 +101,15 @@ export async function runPageWorkflowMutationReact(input: {
       );
       const composedArgs =
         input.pendingWrite?.arguments ??
-        (await buildComposeArgumentsFromFetchOutputs({
-          runtime,
-          toolName: tool.name,
-        }));
+        (
+          await executePageWorkflowComposeMutation({
+            runtime,
+            def,
+            writeToolId: tool.id,
+            allowedToolIds: input.allowedToolIds,
+            stepRecorder: runtime.stepRecorder,
+          })
+        ).arguments;
 
       const composeOutput: PageWorkflowComposeOutput = {
         tool: tool.name,
@@ -228,26 +234,6 @@ export async function runPageWorkflowMutationReact(input: {
     workflowRun: failed,
     errorCode: 'REACT_UNSUPPORTED_ACTION',
     errorMessage: `Page react does not support action ${def.action}`,
-  };
-}
-
-async function buildComposeArgumentsFromFetchOutputs(input: {
-  runtime: PageWorkflowExecutorRuntime;
-  toolName: string;
-}): Promise<Record<string, unknown>> {
-  const fetchOutputs = Object.values(input.runtime.nodeOutputs).filter(
-    (row) => row && typeof row === 'object' && !Array.isArray(row),
-  );
-  const lastFetch = fetchOutputs[fetchOutputs.length - 1] as
-    | Record<string, unknown>
-    | undefined;
-  const fetchBody =
-    lastFetch?.output && typeof lastFetch.output === 'object'
-      ? (lastFetch.output as Record<string, unknown>)
-      : {};
-  return {
-    ...fetchBody,
-    _composedFor: input.toolName,
   };
 }
 

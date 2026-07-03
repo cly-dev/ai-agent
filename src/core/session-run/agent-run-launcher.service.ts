@@ -8,6 +8,15 @@ import { isAgentRunAbortedError } from './run-aborted.error';
 import type { AgentRunSseGateway } from './agent-run-sse.gateway';
 import { RunExecutionScope } from './run-execution.scope';
 import type { RunJob } from './session-run.types';
+import { WriteGateDecisionRejectedError } from '../agent-engine/engine/write-confirm/write-gate-decision.error';
+
+const WRITE_GATE_JOB_KINDS = new Set<RunJob['kind']>([
+  'write_gate_confirm',
+  'write_gate_cancel',
+  'write_gate_retry',
+  'write_confirm',
+  'write_cancel',
+]);
 
 @Injectable()
 export class AgentRunLauncher {
@@ -23,11 +32,49 @@ export class AgentRunLauncher {
   ) {}
 
   async execute(job: RunJob, scope: RunExecutionScope): Promise<void> {
-    if (job.kind === 'write_cancel') {
-      await this.agentEngine.cancelPendingWriteConfirmation(
-        job.userId,
-        job.sessionId,
-      );
+    if (WRITE_GATE_JOB_KINDS.has(job.kind)) {
+      try {
+        await this.agentEngine.applyWriteGateDecision(
+          {
+            userId: job.userId,
+            sessionId: job.sessionId,
+            userMessageId: job.userMessageId,
+            pageContext: job.pageContext ?? null,
+            decision:
+              job.writeGateDecision ?? this.legacyDecisionFromJobKind(job),
+          },
+          scope,
+        );
+      } catch (error) {
+        if (isAgentRunAbortedError(error)) {
+          return;
+        }
+        if (error instanceof WriteGateDecisionRejectedError) {
+          this.logger.warn(
+            `write gate decision rejected sessionId=${job.sessionId}: ${error.message}`,
+          );
+          this.runSse.emitRunError(scope.sessionId, {
+            message: error.message,
+            code: error.code,
+            generation: scope.generation,
+          });
+          return;
+        }
+        const userMessage = resolveAgentRunFailureUserMessage(error);
+        if (userMessage == null) {
+          throw error;
+        }
+        this.logger.warn(
+          `write gate job failed sessionId=${job.sessionId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        this.runSse.emitRunError(scope.sessionId, {
+          message: userMessage,
+          code: resolveAgentRunFailureCode(error) ?? 'WRITE_GATE_FAILED',
+          generation: scope.generation,
+        });
+      }
       return;
     }
 
@@ -37,33 +84,19 @@ export class AgentRunLauncher {
     }
 
     try {
-      const run =
-        job.kind === 'write_confirm'
-          ? await this.agentEngine.resumeAfterWriteConfirm(
-              {
-                userId: job.userId,
-                sessionId: job.sessionId,
-                userMessageId: job.userMessageId,
-                pageContext: job.pageContext ?? null,
-              },
-              scope,
-            )
-          : await this.agentEngine.run(
-              {
-                userId: job.userId,
-                sessionId: job.sessionId,
-                input: content,
-                userMessageId: job.userMessageId!,
-                requestedSkillId: job.requestedSkillId,
-                pageContext: job.pageContext ?? null,
-              },
-              scope,
-            );
+      const run = await this.agentEngine.run(
+        {
+          userId: job.userId,
+          sessionId: job.sessionId,
+          input: content,
+          userMessageId: job.userMessageId!,
+          requestedSkillId: job.requestedSkillId,
+          pageContext: job.pageContext ?? null,
+        },
+        scope,
+      );
 
       if (!run) {
-        if (job.kind === 'write_confirm') {
-          return;
-        }
         this.runSse.emitRunError(scope.sessionId, {
           message:
             '当前会话未绑定 Agent，无法执行智能回复。请确认 agentId=1 存在且属于当前 AppClient。',
@@ -90,5 +123,20 @@ export class AgentRunLauncher {
         generation: scope.generation,
       });
     }
+  }
+
+  private legacyDecisionFromJobKind(
+    job: RunJob,
+  ): import('../draft-review').DraftReviewDecision {
+    if (job.kind === 'write_cancel' || job.kind === 'write_gate_cancel') {
+      return { action: 'cancel' };
+    }
+    if (job.kind === 'write_gate_retry') {
+      return {
+        action: 'retry',
+        retryInstruction: job.writeGateDecision?.retryInstruction ?? '',
+      };
+    }
+    return { action: 'confirm' };
   }
 }

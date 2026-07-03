@@ -16,10 +16,18 @@ import { HOST_TOOL_DETAIL_INCLUDE } from '../../modules/host-tool/host-tool.type
 import type { LlmService } from '../llm/llm.service';
 import type { ToolEngineService } from '../tool-engine/tool-engine.service';
 import type { Response } from 'express';
+import {
+  buildRetryUserMessage,
+  rewindWorkflowForDraftRetry,
+  stripNodeOutputsForRetry,
+} from '../draft-review';
+import type { DraftReviewDecision } from '../draft-review';
+import { resolveApprovalSnapshotForDecision } from './validate-approval-edited-pending-write.util';
 
 export async function resumePageActionFromApprovalSnapshot(input: {
   snapshot: ApprovalResumeSnapshot;
   approvalRequestId: number;
+  decision?: DraftReviewDecision | null;
   prisma: PrismaService;
   llmService: LlmService;
   toolEngine: ToolEngineService;
@@ -43,6 +51,14 @@ export async function resumePageActionFromApprovalSnapshot(input: {
     throw new NotFoundException('PageActionRun not found for resume');
   }
 
+  const effectiveSnapshot = await resolveApprovalSnapshotForDecision({
+    snapshot,
+    decision: input.decision ?? null,
+    userId: run.userId,
+    prisma: input.prisma,
+    toolEngine: input.toolEngine,
+  });
+
   const pageContext = (run.pageContext ?? null) as AgentChatPageContext | null;
   const hostTool = run.pageAction.hostTool
     ? resolvePageActionHostTool(run.pageAction.hostTool, pageContext)
@@ -57,12 +73,13 @@ export async function resumePageActionFromApprovalSnapshot(input: {
   const recorder = PageActionRunStepRecorder.fromJson(run.steps);
   recorder.recordLifecycle('approval_confirmed', {
     approvalRequestId: input.approvalRequestId,
+    edited: input.decision?.action === 'confirm_with_edits',
   });
 
   const loadResult = await loadWorkflowForRunDetailed(input.prisma, {
-    workflowId: snapshot.workflowRun.workflowId,
+    workflowId: effectiveSnapshot.workflowRun.workflowId,
     appClientId: run.appClientId,
-    workflowVersion: snapshot.workflowRun.version,
+    workflowVersion: effectiveSnapshot.workflowRun.version,
     workflowOverrides: parseWorkflowOverridesJson(
       run.pageAction.workflowOverrides,
     ),
@@ -93,12 +110,12 @@ export async function resumePageActionFromApprovalSnapshot(input: {
     clientActionId: run.clientActionId,
     res: noopRes,
     stepRecorder: recorder,
-    allowedToolIds: snapshot.scopedToolIds,
+    allowedToolIds: effectiveSnapshot.scopedToolIds,
     approvalGate: input.approvalGate,
     resumeFrom: {
-      workflowRun: snapshot.workflowRun,
-      nodeOutputs: snapshot.workflowNodeOutputs,
-      pendingWrite: snapshot.pendingWrite,
+      workflowRun: effectiveSnapshot.workflowRun,
+      nodeOutputs: effectiveSnapshot.workflowNodeOutputs,
+      pendingWrite: effectiveSnapshot.pendingWrite,
       advancePastAwait: true,
     },
   });
@@ -137,4 +154,142 @@ export async function resumePageActionFromApprovalSnapshot(input: {
         : {}),
     },
   });
+}
+
+export async function retryPageActionFromApprovalSnapshot(input: {
+  snapshot: ApprovalResumeSnapshot;
+  approvalRequestId: number;
+  retryInstruction: string;
+  prisma: PrismaService;
+  llmService: LlmService;
+  toolEngine: ToolEngineService;
+  approvalGate: ApprovalGateService;
+}): Promise<boolean> {
+  const { snapshot } = input;
+  if (snapshot.channel.kind !== 'page_action') {
+    return false;
+  }
+  const run = await input.prisma.pageActionRun.findUnique({
+    where: { id: snapshot.channel.pageActionRunId },
+    include: {
+      pageAction: {
+        include: {
+          hostTool: { include: HOST_TOOL_DETAIL_INCLUDE },
+        },
+      },
+    },
+  });
+  if (!run?.pageAction) {
+    throw new NotFoundException('PageActionRun not found for retry');
+  }
+
+  const rewind = rewindWorkflowForDraftRetry({
+    workflowRun: snapshot.workflowRun,
+    workflowNodeDefs: snapshot.workflowNodeDefs,
+    nodeOutputs: snapshot.workflowNodeOutputs,
+  });
+  const retrySnapshot: ApprovalResumeSnapshot = {
+    ...snapshot,
+    workflowRun: rewind.workflowRun,
+    workflowNodeOutputs: stripNodeOutputsForRetry(
+      snapshot.workflowNodeOutputs,
+      rewind.clearedOutputKeys,
+    ),
+    draftRetryCount: snapshot.draftRetryCount ?? 0,
+  };
+
+  const pageContext = (run.pageContext ?? null) as AgentChatPageContext | null;
+  const hostTool = run.pageAction.hostTool
+    ? resolvePageActionHostTool(run.pageAction.hostTool, pageContext)
+    : null;
+  const retryObjective = buildRetryUserMessage({
+    baseUserMessage: run.instruction,
+    retryInstruction: input.retryInstruction,
+  });
+  const messages = buildPageActionLlmMessages({
+    systemPrompt: run.pageAction.systemPrompt,
+    instruction: retryObjective,
+    context: run.context as Record<string, unknown> | null,
+    pageContext,
+  });
+
+  const recorder = PageActionRunStepRecorder.fromJson(run.steps);
+  recorder.recordLifecycle('approval_retry_requested', {
+    approvalRequestId: input.approvalRequestId,
+    retryInstruction: input.retryInstruction,
+    retryNodeId: rewind.retryNodeId,
+  });
+
+  const loadResult = await loadWorkflowForRunDetailed(input.prisma, {
+    workflowId: retrySnapshot.workflowRun.workflowId,
+    appClientId: run.appClientId,
+    workflowVersion: retrySnapshot.workflowRun.version,
+    workflowOverrides: parseWorkflowOverridesJson(
+      run.pageAction.workflowOverrides,
+    ),
+  });
+  if (loadResult.status !== 'loaded') {
+    throw new NotFoundException('Workflow not loadable for retry');
+  }
+
+  const noopRes = { write: () => undefined, end: () => undefined } as unknown as Response;
+
+  const result = await orchestratePageWorkflow({
+    workflowId: loadResult.workflowId,
+    version: loadResult.version,
+    nodes: loadResult.nodes,
+    systemPrompt: run.pageAction.systemPrompt,
+    objectivePrefix: retryObjective,
+    messages,
+    pageContext,
+    hostTool,
+    llmService: input.llmService,
+    prisma: input.prisma,
+    toolEngine: input.toolEngine,
+    userId: run.userId,
+    appClientId: run.appClientId,
+    actionRunId: run.id,
+    actionKey: run.pageAction.actionKey,
+    generation: run.generation,
+    clientActionId: run.clientActionId,
+    res: noopRes,
+    stepRecorder: recorder,
+    allowedToolIds: retrySnapshot.scopedToolIds,
+    approvalGate: input.approvalGate,
+    existingApprovalRequestId: input.approvalRequestId,
+    retryInstruction: input.retryInstruction,
+    resumeFrom: {
+      workflowRun: retrySnapshot.workflowRun,
+      nodeOutputs: retrySnapshot.workflowNodeOutputs,
+      pendingWrite: retrySnapshot.pendingWrite,
+      advancePastAwait: false,
+    },
+  });
+
+  await input.prisma.pageActionRun.update({
+    where: { id: run.id },
+    data: {
+      status: result.suspended
+        ? PageActionRunStatus.awaiting_approval
+        : result.errorCode
+          ? PageActionRunStatus.failed
+          : PageActionRunStatus.running,
+      workflowRun: result.workflowRun as object,
+      fillText: result.fillText || null,
+      dslOutcome: result.dslOutcome,
+      model: result.model,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      finishedAt: result.suspended || result.errorCode ? null : new Date(),
+      steps: recorder.toJson() as Prisma.InputJsonValue,
+      ...(result.errorCode
+        ? {
+            errorCode: result.errorCode,
+            errorMessage: result.errorMessage ?? result.errorCode,
+          }
+        : {}),
+    },
+  });
+
+  return result.suspended === true;
 }

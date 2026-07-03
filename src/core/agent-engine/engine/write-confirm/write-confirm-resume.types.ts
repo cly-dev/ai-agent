@@ -1,3 +1,4 @@
+import type { DraftReviewDecision } from '../../../draft-review';
 import type { AgentRunResult, ResumeAfterWriteConfirmInput } from '../main/types/agent-engine.types';
 import type { PendingWriteConfirmationSnapshot } from '../../../../modules/chat/pending-write-confirmation.types';
 import type { ChatWriteConfirmResumeAudit } from '../../../approval/write-confirm-run-audit.util';
@@ -77,4 +78,5 @@ export type RunWriteConfirmResumeInput = {
   scope: RunExecutionScope;
   deps: WriteConfirmResumeDeps;
   approvalAudit?: ChatWriteConfirmResumeAudit | null;
+  decision?: DraftReviewDecision | null;
 };

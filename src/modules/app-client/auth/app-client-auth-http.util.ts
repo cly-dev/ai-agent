@@ -8,6 +8,7 @@ import type {
   AppClientProfileFieldMapping,
   AppClientTokenPlacement,
 } from './app-client-auth.types';
+import { normalizeExternalAccountProfile } from './app-client-auth-profile.util';
 
 export function pickMappedField(
   source: Record<string, unknown>,
@@ -62,17 +63,23 @@ export function resolveProfilePayloadRoot(
 
 export function mapHttpProfileResponse(
   payload: unknown,
-  mapping: AppClientProfileFieldMapping,
+  mapping: AppClientProfileFieldMapping | undefined,
   responseRoot?: string,
-): ExternalAccountProfile {
-  const row = resolveProfilePayloadRoot(payload, responseRoot);
+): Partial<ExternalAccountProfile> & { active: boolean } {
+  if (!mapping || Object.keys(mapping).length === 0) {
+    return { active: true };
+  }
+
+  const row =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? resolveProfilePayloadRoot(payload, responseRoot)
+      : ({} as Record<string, unknown>);
   const employeeId = mapping.employeeId
     ? asTrimmedString(pickMappedField(row, mapping.employeeId))
     : undefined;
-  const email = asTrimmedString(pickMappedField(row, mapping.email));
-  if (!email) {
-    throw new UnauthorizedException('external account missing email');
-  }
+  const email = mapping.email
+    ? asTrimmedString(pickMappedField(row, mapping.email))
+    : undefined;
   const nickName = mapping.nickName
     ? asTrimmedString(pickMappedField(row, mapping.nickName))
     : undefined;
@@ -87,9 +94,8 @@ export function mapHttpProfileResponse(
     : undefined;
   return {
     ...(employeeId ? { employeeId } : {}),
-    email,
-    username:
-      usernameFromMapping || nickName || cnName || employeeId || email,
+    ...(email ? { email } : {}),
+    ...(usernameFromMapping ? { username: usernameFromMapping } : {}),
     nickName,
     cnName,
     active: activeRaw !== false,
@@ -175,6 +181,7 @@ function joinProfileUrl(baseUrl: string, profilePath: string): URL {
 export async function fetchHttpProfileAccount(
   http: AppClientHttpAuthConfig,
   accountToken: string,
+  appClientId: number,
 ): Promise<ExternalAccountProfile> {
   const accountUrl = joinProfileUrl(http.baseUrl, http.profilePath);
   const headers = buildBrowserLikeHeaders(
@@ -207,5 +214,10 @@ export async function fetchHttpProfileAccount(
       `external account verification failed: ${accountResponse.status}`,
     );
   }
-  return mapHttpProfileResponse(account, http.mapping, http.responseRoot);
+  const partial = mapHttpProfileResponse(
+    account,
+    http.mapping,
+    http.responseRoot,
+  );
+  return normalizeExternalAccountProfile(partial, { appClientId, accountToken });
 }

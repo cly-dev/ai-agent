@@ -16,7 +16,9 @@ import type {
   MessageBlock,
   MessageBlockPatch,
 } from '../../core/agent-engine/engine/message/message-blocks.types';
+import type { WriteDraftPublic } from '../../core/draft-review/write-draft.types';
 import { buildWriteConfirmationUserMessage } from '../../core/agent-engine/engine/write-confirmation-gate.util';
+import { buildPendingWriteGatePublicState } from './chat-pending-write-gate.mapper';
 import { PendingWriteConfirmationStore } from './pending-write-confirmation.store';
 import type { PendingWriteConfirmationSnapshot } from './pending-write-confirmation.types';
 import type { ChatSseRelayMessage } from './chat-sse-relay.types';
@@ -65,6 +67,11 @@ export type ChatSseEvent =
             turnId?: number;
             message: string;
             generation?: number;
+            draftRetryCount?: number;
+            draftRetryMax?: number;
+            canRetry?: boolean;
+            writeDraft?: WriteDraftPublic;
+            writeDrafts?: WriteDraftPublic[];
           }
         | {
             source: 'agent-run';
@@ -320,14 +327,14 @@ export class ChatEventsService implements OnModuleInit, OnModuleDestroy {
   private buildPendingWriteConfirmationEvent(
     pending: PendingWriteConfirmationSnapshot,
   ): ChatSseEvent {
+    const gate = buildPendingWriteGatePublicState(pending);
     return {
       event: 'message',
       payload: {
         source: 'agent-run',
         action: 'confirmation_required',
-        runId: pending.runId,
-        turnId: pending.turnId,
         message: buildWriteConfirmationUserMessage(),
+        ...gate,
       },
     };
   }

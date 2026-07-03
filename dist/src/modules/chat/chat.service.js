@@ -26,8 +26,10 @@ const session_prepare_service_1 = require("./session-prepare.service");
 const session_prepare_store_1 = require("./session-prepare.store");
 const runtime_cache_invalidator_service_1 = require("../../core/runtime-cache/runtime-cache-invalidator.service");
 const session_run_coordinator_service_1 = require("../../core/session-run/session-run-coordinator.service");
+const pending_write_confirmation_store_1 = require("./pending-write-confirmation.store");
+const chat_pending_write_gate_mapper_1 = require("./chat-pending-write-gate.mapper");
 let ChatService = ChatService_1 = class ChatService {
-    constructor(prisma, chatEvents, sessionContextStore, sessionGoaStore, sessionPrepareStore, sessionPrepareService, runtimeCacheInvalidator, messageService, sessionRunCoordinator) {
+    constructor(prisma, chatEvents, sessionContextStore, sessionGoaStore, sessionPrepareStore, sessionPrepareService, runtimeCacheInvalidator, messageService, sessionRunCoordinator, pendingWriteConfirmationStore) {
         this.prisma = prisma;
         this.chatEvents = chatEvents;
         this.sessionContextStore = sessionContextStore;
@@ -37,6 +39,7 @@ let ChatService = ChatService_1 = class ChatService {
         this.runtimeCacheInvalidator = runtimeCacheInvalidator;
         this.messageService = messageService;
         this.sessionRunCoordinator = sessionRunCoordinator;
+        this.pendingWriteConfirmationStore = pendingWriteConfirmationStore;
     }
     async cancelSessionRun(sessionId, userId, appClientId, runId) {
         await this.assertSessionOwnedByUser(sessionId, userId, appClientId);
@@ -44,7 +47,13 @@ let ChatService = ChatService_1 = class ChatService {
     }
     async getSessionRunState(sessionId, userId, appClientId) {
         await this.assertSessionOwnedByUser(sessionId, userId, appClientId);
-        return this.sessionRunCoordinator.getRunState(sessionId);
+        const [runState, pending] = await Promise.all([
+            this.sessionRunCoordinator.getRunState(sessionId),
+            this.pendingWriteConfirmationStore.get(sessionId, userId),
+        ]);
+        return Object.assign(Object.assign({}, runState), { pendingWriteGate: pending
+                ? (0, chat_pending_write_gate_mapper_1.buildPendingWriteGatePublicState)(pending)
+                : null });
     }
     async create(userId, appClientId, dto) {
         const agentId = await this.resolveAgentId(dto.agentId, appClientId);
@@ -219,7 +228,8 @@ ChatService = ChatService_1 = __decorate([
         session_prepare_service_1.SessionPrepareService,
         runtime_cache_invalidator_service_1.RuntimeCacheInvalidator,
         message_service_1.MessageService,
-        session_run_coordinator_service_1.SessionRunCoordinator])
+        session_run_coordinator_service_1.SessionRunCoordinator,
+        pending_write_confirmation_store_1.PendingWriteConfirmationStore])
 ], ChatService);
 exports.ChatService = ChatService;
 //# sourceMappingURL=chat.service.js.map

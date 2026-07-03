@@ -14,6 +14,7 @@ import { SessionPrepareStore } from './session-prepare.store';
 import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { SessionRunCoordinator } from '../../core/session-run/session-run-coordinator.service';
 import type { CancelSessionRunResult } from '../../core/session-run/session-run.types';
+import { PendingWriteConfirmationStore } from './pending-write-confirmation.store';
 export declare class ChatService {
     private readonly prisma;
     private readonly chatEvents;
@@ -24,11 +25,19 @@ export declare class ChatService {
     private readonly runtimeCacheInvalidator;
     private readonly messageService;
     private readonly sessionRunCoordinator;
+    private readonly pendingWriteConfirmationStore;
     static readonly DEFAULT_AGENT_ID = 1;
     private static readonly SESSION_ID_HEX;
-    constructor(prisma: PrismaService, chatEvents: ChatEventsService, sessionContextStore: SessionContextStore, sessionGoaStore: SessionGoaStore, sessionPrepareStore: SessionPrepareStore, sessionPrepareService: SessionPrepareService, runtimeCacheInvalidator: RuntimeCacheInvalidator, messageService: MessageService, sessionRunCoordinator: SessionRunCoordinator);
+    constructor(prisma: PrismaService, chatEvents: ChatEventsService, sessionContextStore: SessionContextStore, sessionGoaStore: SessionGoaStore, sessionPrepareStore: SessionPrepareStore, sessionPrepareService: SessionPrepareService, runtimeCacheInvalidator: RuntimeCacheInvalidator, messageService: MessageService, sessionRunCoordinator: SessionRunCoordinator, pendingWriteConfirmationStore: PendingWriteConfirmationStore);
     cancelSessionRun(sessionId: string, userId: number, appClientId: number, runId?: number): Promise<CancelSessionRunResult>;
-    getSessionRunState(sessionId: string, userId: number, appClientId: number): Promise<import("../../core/session-run/session-run.types").SessionRunStateSnapshot>;
+    getSessionRunState(sessionId: string, userId: number, appClientId: number): Promise<{
+        pendingWriteGate: import("./chat-pending-write-gate.mapper").PendingWriteGatePublicState;
+        generation: number;
+        activeRunId: number;
+        activeTurnId: number;
+        pendingJobCount: number;
+        redisBacked: boolean;
+    }>;
     create(userId: number, appClientId: number, dto: CreateChatDto): Promise<{
         sessionId: string;
     }>;

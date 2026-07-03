@@ -9,8 +9,46 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SessionRunStateResponseDto = void 0;
+exports.SessionRunStateResponseDto = exports.PendingWriteGatePublicStateDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
+const write_draft_public_dto_1 = require("../../../common/dto/write-draft-public.dto");
+class PendingWriteGatePublicStateDto {
+}
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: '挂起时的 Agent Run ID' }),
+    __metadata("design:type", Number)
+], PendingWriteGatePublicStateDto.prototype, "runId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: '本轮对话 turn ID' }),
+    __metadata("design:type", Number)
+], PendingWriteGatePublicStateDto.prototype, "turnId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: '已消耗的重试次数' }),
+    __metadata("design:type", Number)
+], PendingWriteGatePublicStateDto.prototype, "draftRetryCount", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: '重试上限' }),
+    __metadata("design:type", Number)
+], PendingWriteGatePublicStateDto.prototype, "draftRetryMax", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: '是否仍可发起 retry' }),
+    __metadata("design:type", Boolean)
+], PendingWriteGatePublicStateDto.prototype, "canRetry", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: write_draft_public_dto_1.WriteDraftPublicDto,
+        description: '主写草稿（机器层真值，arguments 为执行依据）',
+    }),
+    __metadata("design:type", write_draft_public_dto_1.WriteDraftPublicDto)
+], PendingWriteGatePublicStateDto.prototype, "writeDraft", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: [write_draft_public_dto_1.WriteDraftPublicDto],
+        description: '多写工具时全部草稿（含 writeDraft 本身）',
+    }),
+    __metadata("design:type", Array)
+], PendingWriteGatePublicStateDto.prototype, "writeDrafts", void 0);
+exports.PendingWriteGatePublicStateDto = PendingWriteGatePublicStateDto;
 class SessionRunStateResponseDto {
 }
 __decorate([
@@ -45,5 +83,13 @@ __decorate([
     }),
     __metadata("design:type", Boolean)
 ], SessionRunStateResponseDto.prototype, "redisBacked", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        type: PendingWriteGatePublicStateDto,
+        description: '挂起中的 Chat 写确认门（含 writeDraft）；无 gate 时为 null。页面刷新时可与 SSE 重放互补使用。',
+    }),
+    __metadata("design:type", PendingWriteGatePublicStateDto)
+], SessionRunStateResponseDto.prototype, "pendingWriteGate", void 0);
 exports.SessionRunStateResponseDto = SessionRunStateResponseDto;
 //# sourceMappingURL=session-run-state.dto.js.map

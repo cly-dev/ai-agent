@@ -165,7 +165,7 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
         }
     }
     buildJob(input) {
-        var _a;
+        var _a, _b;
         return {
             jobId: (0, node_crypto_1.randomUUID)(),
             kind: input.kind,
@@ -176,6 +176,7 @@ let SessionRunCoordinator = SessionRunCoordinator_1 = class SessionRunCoordinato
             input: input.input,
             requestedSkillId: input.requestedSkillId,
             pageContext: (_a = input.pageContext) !== null && _a !== void 0 ? _a : null,
+            writeGateDecision: (_b = input.writeGateDecision) !== null && _b !== void 0 ? _b : null,
         };
     }
     async shouldSkipQueuedJob(job) {

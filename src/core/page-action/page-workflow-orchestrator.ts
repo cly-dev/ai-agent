@@ -1,6 +1,5 @@
-import type { ToolLevel } from '../../../generated/prisma/client';
-import type { ApprovalGateService } from '../approval/approval-gate.service';
 import type { ApprovalPendingWrite } from '../approval/approval-resume-snapshot.types';
+import type { ApprovalGateService } from '../approval/approval-gate.service';
 import {
   PageActionRunStepRecorder,
   type PageActionRunStep,
@@ -26,6 +25,7 @@ import {
   recordPageWorkflowNodeStart,
 } from '../workflow/page/page-workflow-node-runner.util';
 import { applyPageWorkflowNodeOutput } from './page-workflow-node.util';
+import { buildPageWriteDraft } from '../draft-review';
 import type { ApprovalTriggerBinding } from '../approval/resolve-approval-parties.util';
 import { resolveApprovalParties } from '../approval/resolve-approval-parties.util';
 import type { WorkflowRunState } from '../workflow/workflow.types';
@@ -42,6 +42,10 @@ export type PageWorkflowOrchestratorInput = PageWorkflowRunnerInput & {
     pendingWrite: ApprovalPendingWrite;
     advancePastAwait?: boolean;
   };
+  /** 重试挂起时刷新既有审批单。 */
+  existingApprovalRequestId?: number | null;
+  /** 重试时附加到 objective 的补充说明。 */
+  retryInstruction?: string | null;
 };
 
 export type PageWorkflowOrchestratorResult = PageWorkflowRunnerResult & {
@@ -196,6 +200,27 @@ export async function orchestratePageWorkflow(
         });
       }
 
+      const presentSummary = resolvePageWorkflowPresentSummary({
+        nodes: input.nodes,
+        nodeOutputs: runtime.nodeOutputs,
+        fillText: runtime.fillText,
+      });
+      const writeDraft = buildPageWriteDraft({
+        tool: {
+          name: pendingWrite.tool,
+          toolId: pendingWrite.toolId,
+          riskLevel: pendingWrite.riskLevel,
+          arguments: pendingWrite.arguments,
+        },
+        summaryText: presentSummary,
+        fillText: runtime.fillText,
+        draftRetryCount:
+          input.existingApprovalRequestId != null
+            ? undefined
+            : 0,
+        lastEvent: 'composed',
+      });
+
       const approval = await input.approvalGate.suspend({
         appClientId: input.appClientId,
         source: 'page_action',
@@ -205,24 +230,16 @@ export async function orchestratePageWorkflow(
         workflowVersion: input.version,
         nodeId,
         title: `${input.actionKey} · ${def.name}`,
-        summary: resolvePageWorkflowPresentSummary({
-          nodes: input.nodes,
-          nodeOutputs: runtime.nodeOutputs,
-          fillText: runtime.fillText,
-        }),
+        writeDraft,
         workflowRun,
         workflowNodeDefs: input.nodes,
         workflowNodeOutputs: { ...runtime.nodeOutputs },
-        pendingWrite: input.approvalGate.buildPendingWriteFromTool({
-          name: pendingWrite.tool,
-          arguments: pendingWrite.arguments,
-          riskLevel: pendingWrite.riskLevel as ToolLevel,
-        }),
         scopedToolIds: input.allowedToolIds,
         pageContext: input.pageContext,
         pageActionRunId: input.actionRunId,
         channel: { kind: 'page_action', pageActionRunId: input.actionRunId },
         stepRecorder: recorder,
+        existingApprovalRequestId: input.existingApprovalRequestId ?? null,
       });
 
       logWorkflowDebug('page_workflow_suspended', {

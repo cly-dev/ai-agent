@@ -19,8 +19,11 @@ const approval_request_service_1 = require("./approval-request.service");
 const approval_trigger_permission_service_1 = require("./approval-trigger-permission.service");
 const approval_resume_permission_util_1 = require("./approval-resume-permission.util");
 const page_action_approval_resume_util_1 = require("./page-action-approval-resume.util");
+const validate_approval_edited_pending_write_util_1 = require("./validate-approval-edited-pending-write.util");
+const write_draft_util_1 = require("../draft-review/write-draft.util");
 const llm_service_1 = require("../llm/llm.service");
 const tool_engine_service_1 = require("../tool-engine/tool-engine.service");
+const draft_review_1 = require("../draft-review");
 let ApprovalResumeService = class ApprovalResumeService {
     constructor(prisma, approvalRequests, approvalGate, triggerPermission, llmService, toolEngine) {
         this.prisma = prisma;
@@ -30,7 +33,33 @@ let ApprovalResumeService = class ApprovalResumeService {
         this.llmService = llmService;
         this.toolEngine = toolEngine;
     }
+    async decide(input) {
+        var _a;
+        const decision = (0, draft_review_1.normalizeDraftReviewDecision)(input.decision);
+        if (!decision) {
+            throw new common_1.BadRequestException({
+                code: 'INVALID_DRAFT_REVIEW_DECISION',
+                message: 'Invalid draft review decision',
+            });
+        }
+        switch (decision.action) {
+            case 'cancel':
+                await this.reject(Object.assign(Object.assign({}, input), { decisionNote: (_a = input.decisionNote) !== null && _a !== void 0 ? _a : 'cancelled by approver', decision }));
+                return { resumed: false };
+            case 'retry':
+                return this.retryPageAction(Object.assign(Object.assign({}, input), { decision }));
+            case 'confirm':
+            case 'confirm_with_edits':
+                return this.confirm(Object.assign(Object.assign({}, input), { decision }));
+            default:
+                throw new common_1.BadRequestException({
+                    code: 'INVALID_DRAFT_REVIEW_DECISION',
+                    message: 'Unsupported draft review action',
+                });
+        }
+    }
     async confirm(input) {
+        var _a;
         const row = await this.prisma.approvalRequest.findUnique({
             where: { id: input.approvalRequestId },
         });
@@ -43,11 +72,29 @@ let ApprovalResumeService = class ApprovalResumeService {
                 message: 'Chat write confirmation must be completed in the session',
             });
         }
+        const decision = (0, draft_review_1.normalizeDraftReviewDecision)(input.decision);
+        let snapshot = this.approvalRequests.parseResumeSnapshot(row);
+        if ((decision === null || decision === void 0 ? void 0 : decision.action) === 'confirm_with_edits') {
+            snapshot = await (0, validate_approval_edited_pending_write_util_1.resolveApprovalSnapshotForDecision)({
+                snapshot,
+                decision,
+                userId: input.decidedByUserId,
+                prisma: this.prisma,
+                toolEngine: this.toolEngine,
+            });
+            const editedDraft = (0, write_draft_util_1.resolveWriteDraftFromApprovalSnapshot)(snapshot);
+            await this.prisma.approvalRequest.update({
+                where: { id: row.id },
+                data: {
+                    previewBlocks: editedDraft.presentation.previewBlocks,
+                    summary: (_a = editedDraft.presentation.summaryText) !== null && _a !== void 0 ? _a : row.summary,
+                },
+            });
+        }
         const cas = await this.approvalRequests.markApproved(input);
         if (cas.ok === false) {
             return { resumed: false };
         }
-        const snapshot = this.approvalRequests.parseResumeSnapshot(row);
         await this.assertResumePermission(row.approverUserId, snapshot, row.id, {
             appClientId: row.appClientId,
             source: row.source,
@@ -57,6 +104,7 @@ let ApprovalResumeService = class ApprovalResumeService {
             await (0, page_action_approval_resume_util_1.resumePageActionFromApprovalSnapshot)({
                 snapshot,
                 approvalRequestId: row.id,
+                decision: (0, draft_review_1.normalizeDraftReviewDecision)(input.decision),
                 prisma: this.prisma,
                 llmService: this.llmService,
                 toolEngine: this.toolEngine,
@@ -103,6 +151,60 @@ let ApprovalResumeService = class ApprovalResumeService {
                 steps: recorder.toJson(),
             },
         });
+    }
+    async retryPageAction(input) {
+        const row = await this.prisma.approvalRequest.findUnique({
+            where: { id: input.approvalRequestId },
+        });
+        if (!row || row.approverUserId !== input.decidedByUserId) {
+            throw new common_1.NotFoundException('Approval request not found');
+        }
+        if (row.source !== client_1.ApprovalSource.page_action) {
+            throw new common_1.BadRequestException({
+                code: 'RETRY_UNSUPPORTED',
+                message: 'Retry is only supported for page_action approvals',
+            });
+        }
+        if (row.status !== 'pending') {
+            return { resumed: false, suspended: false };
+        }
+        const decision = (0, draft_review_1.normalizeDraftReviewDecision)(input.decision);
+        if (!decision || decision.action !== 'retry' || !decision.retryInstruction) {
+            throw new common_1.BadRequestException({
+                code: 'INVALID_DRAFT_REVIEW_DECISION',
+                message: 'Retry requires retryInstruction',
+            });
+        }
+        const snapshot = this.approvalRequests.parseResumeSnapshot(row);
+        const reserved = await this.approvalRequests.reserveDraftRetrySlot({
+            approvalRequestId: row.id,
+            approverUserId: input.decidedByUserId,
+        });
+        if (reserved.ok === false && reserved.reason === 'limit_exceeded') {
+            throw new common_1.BadRequestException({
+                code: 'DRAFT_RETRY_LIMIT_EXCEEDED',
+                message: `Draft retry limit reached (${(0, draft_review_1.resolveDraftRetryBudget)(snapshot.draftRetryCount).max})`,
+            });
+        }
+        if (reserved.ok === false) {
+            return { resumed: false, suspended: false };
+        }
+        const rowAfter = await this.prisma.approvalRequest.findUnique({
+            where: { id: row.id },
+        });
+        const snapshotAfter = rowAfter
+            ? this.approvalRequests.parseResumeSnapshot(rowAfter)
+            : snapshot;
+        const suspended = await (0, page_action_approval_resume_util_1.retryPageActionFromApprovalSnapshot)({
+            snapshot: snapshotAfter,
+            approvalRequestId: row.id,
+            retryInstruction: decision.retryInstruction,
+            prisma: this.prisma,
+            llmService: this.llmService,
+            toolEngine: this.toolEngine,
+            approvalGate: this.approvalGate,
+        });
+        return { resumed: true, suspended };
     }
     async assertResumePermission(userId, snapshot, approvalRequestId, context) {
         var _a;

@@ -2,7 +2,7 @@ export type AppClientAuthProvider = 'http_profile' | 'jwt_shared_secret';
 export type AppClientTokenPlacement = 'authorization_bearer' | 'header_x_account_token' | 'query_token';
 export type AppClientProfileFieldMapping = {
     employeeId?: string;
-    email: string;
+    email?: string;
     username?: string;
     nickName?: string;
     cnName?: string;
@@ -14,7 +14,7 @@ export type AppClientHttpAuthConfig = {
     method?: 'GET' | 'POST';
     tokenPlacement?: AppClientTokenPlacement;
     responseRoot?: string;
-    mapping: AppClientProfileFieldMapping;
+    mapping?: AppClientProfileFieldMapping;
     extraHeaders?: Record<string, string>;
 };
 export type AppClientJwtAuthConfig = {

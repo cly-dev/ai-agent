@@ -14,7 +14,7 @@ const tokenPlacementSchema = z.enum([
 const profileFieldMappingSchema = z
   .object({
     employeeId: z.string().min(1).optional(),
-    email: z.string().min(1),
+    email: z.string().min(1).optional(),
     username: z.string().min(1).optional(),
     nickName: z.string().min(1).optional(),
     cnName: z.string().min(1).optional(),
@@ -29,7 +29,7 @@ const httpAuthConfigSchema = z
     method: z.enum(['GET', 'POST']).optional(),
     tokenPlacement: tokenPlacementSchema.optional(),
     responseRoot: z.string().min(1).optional(),
-    mapping: profileFieldMappingSchema,
+    mapping: profileFieldMappingSchema.optional(),
     extraHeaders: z.record(z.string(), z.string()).optional(),
   })
   .strict();

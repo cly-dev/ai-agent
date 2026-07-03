@@ -8,4 +8,5 @@ export declare class AgentRunLauncher {
     private readonly logger;
     constructor(agentEngine: AgentEngineService, runSse: AgentRunSseGateway);
     execute(job: RunJob, scope: RunExecutionScope): Promise<void>;
+    private legacyDecisionFromJobKind;
 }

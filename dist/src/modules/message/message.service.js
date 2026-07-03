@@ -23,6 +23,7 @@ const chat_service_1 = require("../chat/chat.service");
 const pending_write_confirmation_store_1 = require("../chat/pending-write-confirmation.store");
 const host_bridge_1 = require("../../core/host-bridge");
 const write_confirm_action_message_util_1 = require("../../core/agent-engine/engine/write-confirm-action-message.util");
+const draft_review_1 = require("../../core/draft-review");
 const session_run_coordinator_service_1 = require("../../core/session-run/session-run-coordinator.service");
 let MessageService = MessageService_1 = class MessageService {
     constructor(prisma, chatService, chatEvents, pendingWriteConfirmationStore, sessionMessageContext, agentEngine, sessionRunCoordinator) {
@@ -36,17 +37,25 @@ let MessageService = MessageService_1 = class MessageService {
         this.logger = new common_1.Logger(MessageService_1.name);
     }
     async create(userId, sessionId, dto, appClientId) {
-        var _a, _b, _c, _d;
+        var _a, _b, _c, _d, _e;
         const session = await this.chatService.assertSessionOwnedByUser(sessionId, userId, appClientId);
-        const confirmWrite = dto.confirmWrite === true;
-        const cancelWrite = dto.cancelWrite === true;
-        const isWriteConfirmAction = dto.role === 'user' &&
-            (confirmWrite || cancelWrite) &&
-            !String((_a = dto.content) !== null && _a !== void 0 ? _a : '').trim();
+        const writeGateDecision = (_a = (0, draft_review_1.normalizeDraftReviewDecision)(dto.writeGate)) !== null && _a !== void 0 ? _a : (0, draft_review_1.draftReviewDecisionFromLegacyFlags)({
+            confirmWrite: dto.confirmWrite === true,
+            cancelWrite: dto.cancelWrite === true,
+        });
+        if (dto.writeGate != null && writeGateDecision == null) {
+            throw new common_1.BadRequestException({
+                code: 'INVALID_DRAFT_REVIEW_DECISION',
+                message: 'Invalid writeGate decision (confirm_with_edits requires edits; retry requires retryInstruction)',
+            });
+        }
+        const isWriteGateAction = dto.role === 'user' &&
+            writeGateDecision != null &&
+            !String((_b = dto.content) !== null && _b !== void 0 ? _b : '').trim();
         let boundSession = session;
         if (dto.role === 'user') {
             boundSession = await this.chatService.ensureSessionAgent(session, dto.agentId, appClientId);
-            if (dto.skillId != null && !confirmWrite && !cancelWrite) {
+            if (dto.skillId != null && !writeGateDecision) {
                 await this.agentEngine.assertRequestedSkillRunnable({
                     userId,
                     appClientId,
@@ -57,23 +66,23 @@ let MessageService = MessageService_1 = class MessageService {
             }
         }
         const pageContext = (0, host_bridge_1.parsePageContextFromMessageFields)(dto);
-        let messageContent = isWriteConfirmAction
+        let messageContent = isWriteGateAction
             ? null
             : this.normalizeMessageContentForStorage(dto.content);
-        let messageToolName = (_b = dto.toolName) !== null && _b !== void 0 ? _b : null;
+        let messageToolName = (_c = dto.toolName) !== null && _c !== void 0 ? _c : null;
         let messageToolInput = this.toJson(dto.toolInput);
         let messagePageContext = pageContext;
-        if (isWriteConfirmAction) {
+        if (isWriteGateAction && writeGateDecision) {
             const pending = await this.pendingWriteConfirmationStore.get(session.id, userId);
             const persisted = (0, write_confirm_action_message_util_1.buildWriteConfirmActionMessagePersistence)({
-                action: cancelWrite ? 'cancel_write' : 'confirm_write',
+                decision: writeGateDecision,
                 pending,
                 incomingPageContext: pageContext,
             });
             messageContent = persisted.content;
             messageToolName = persisted.toolName;
             messageToolInput = persisted.toolInput;
-            messagePageContext = (_c = persisted.pageContext) !== null && _c !== void 0 ? _c : pageContext;
+            messagePageContext = (_d = persisted.pageContext) !== null && _d !== void 0 ? _d : pageContext;
         }
         const message = await this.prisma.message.create({
             data: {
@@ -93,11 +102,7 @@ let MessageService = MessageService_1 = class MessageService {
             await this.linkAssistantOutputToTurn(userId, session.id, dto.turnId, message.id);
         }
         if (message.role === 'user') {
-            const kind = cancelWrite
-                ? 'write_cancel'
-                : confirmWrite
-                    ? 'write_confirm'
-                    : 'chat_turn';
+            const kind = this.resolveWriteGateJobKind(writeGateDecision);
             const policy = kind === 'chat_turn' ? 'supersede' : 'queue';
             const job = this.sessionRunCoordinator.buildJob({
                 kind,
@@ -105,9 +110,10 @@ let MessageService = MessageService_1 = class MessageService {
                 userId,
                 appClientId,
                 userMessageId: message.id,
-                input: (_d = message.content) !== null && _d !== void 0 ? _d : '',
+                input: (_e = message.content) !== null && _e !== void 0 ? _e : '',
                 requestedSkillId: dto.skillId,
                 pageContext: messagePageContext,
+                writeGateDecision,
             });
             const runGeneration = await this.sessionRunCoordinator.enqueue(job, policy);
             return Object.assign(Object.assign({}, message), { runGeneration });
@@ -213,6 +219,22 @@ let MessageService = MessageService_1 = class MessageService {
             pageContextJson: row.pageContextJson,
             createdAt: row.createdAt,
         };
+    }
+    resolveWriteGateJobKind(decision) {
+        if (!decision) {
+            return 'chat_turn';
+        }
+        switch (decision.action) {
+            case 'cancel':
+                return 'write_gate_cancel';
+            case 'retry':
+                return 'write_gate_retry';
+            case 'confirm':
+            case 'confirm_with_edits':
+                return 'write_gate_confirm';
+            default:
+                return 'chat_turn';
+        }
     }
 };
 MessageService = MessageService_1 = __decorate([

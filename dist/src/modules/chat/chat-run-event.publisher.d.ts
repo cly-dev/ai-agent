@@ -1,3 +1,4 @@
+import type { WriteDraftPublic } from '../../core/draft-review/write-draft.types';
 import type { HostActionSsePayload } from '../../core/host-bridge/host-action.types';
 import { RunEventPublisher } from '../../core/session-run/run-event.publisher';
 import { ChatEventsService } from './chat-events.service';
@@ -29,6 +30,11 @@ export declare class ChatRunEventPublisher extends RunEventPublisher {
         turnId?: number;
         message: string;
         generation?: number;
+        draftRetryCount?: number;
+        draftRetryMax?: number;
+        canRetry?: boolean;
+        writeDraft?: WriteDraftPublic;
+        writeDrafts?: WriteDraftPublic[];
     }): void;
     emitWriteConfirmationCancelled(sessionId: string, input: {
         runId: number;

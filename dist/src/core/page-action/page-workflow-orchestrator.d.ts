@@ -1,5 +1,5 @@
-import type { ApprovalGateService } from '../approval/approval-gate.service';
 import type { ApprovalPendingWrite } from '../approval/approval-resume-snapshot.types';
+import type { ApprovalGateService } from '../approval/approval-gate.service';
 import { type PageWorkflowRunnerInput, type PageWorkflowRunnerResult } from './page-workflow-runtime.util';
 import type { ApprovalTriggerBinding } from '../approval/resolve-approval-parties.util';
 import type { WorkflowRunState } from '../workflow/workflow.types';
@@ -13,6 +13,8 @@ export type PageWorkflowOrchestratorInput = PageWorkflowRunnerInput & {
         pendingWrite: ApprovalPendingWrite;
         advancePastAwait?: boolean;
     };
+    existingApprovalRequestId?: number | null;
+    retryInstruction?: string | null;
 };
 export type PageWorkflowOrchestratorResult = PageWorkflowRunnerResult & {
     suspended?: boolean;

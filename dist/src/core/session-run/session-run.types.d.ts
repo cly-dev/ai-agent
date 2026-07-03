@@ -1,6 +1,7 @@
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
+import type { DraftReviewDecision } from '../draft-review';
 import type { RunCancellationToken } from './run-cancellation-token';
-export type RunJobKind = 'chat_turn' | 'write_confirm' | 'write_cancel';
+export type RunJobKind = 'chat_turn' | 'write_confirm' | 'write_cancel' | 'write_gate_confirm' | 'write_gate_cancel' | 'write_gate_retry';
 export type RunEnqueuePolicy = 'supersede' | 'queue';
 export type SupersedeReason = 'user_message' | 'cancel_api';
 export type RunJob = {
@@ -14,6 +15,7 @@ export type RunJob = {
     requestedSkillId?: number;
     pageContext?: AgentChatPageContext | null;
     enqueueGeneration?: number;
+    writeGateDecision?: DraftReviewDecision | null;
 };
 export type RunExecutionHandle = {
     generation: number;

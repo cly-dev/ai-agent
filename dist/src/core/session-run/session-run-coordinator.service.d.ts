@@ -46,6 +46,7 @@ export declare class SessionRunCoordinator implements OnModuleInit {
         input: string;
         requestedSkillId?: number;
         pageContext?: RunJob['pageContext'];
+        writeGateDecision?: RunJob['writeGateDecision'];
     }): RunJob;
     shouldSkipQueuedJob(job: RunJob): Promise<boolean>;
     processQueuedJob(job: RunJob): Promise<void>;

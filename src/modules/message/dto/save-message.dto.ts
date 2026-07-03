@@ -10,6 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { PageContextMessageFieldsDto } from '../../chat/dto/page-context-fields.dto';
+import { DraftReviewDecisionDto } from './draft-review-decision.dto';
 
 const MESSAGE_ROLES = ['user', 'assistant', 'tool', 'system'] as const;
 
@@ -64,7 +65,16 @@ export class SaveMessageDto extends PageContextMessageFieldsDto {
 
   @ApiPropertyOptional({
     description:
-      '为 true 时确认并执行上一轮缓存的写操作（见 SSE confirmation_required）；content 可为空',
+      '写确认门结构化决策（confirm / confirm_with_edits / retry / cancel）；优先于 confirmWrite / cancelWrite',
+  })
+  @IsOptional()
+  @Type(() => DraftReviewDecisionDto)
+  writeGate?: DraftReviewDecisionDto;
+
+  @ApiPropertyOptional({
+    description:
+      '（已废弃）为 true 时确认并执行上一轮缓存的写操作；请改用 writeGate.action=confirm',
+    deprecated: true,
   })
   @IsOptional()
   @Type(() => Boolean)
@@ -72,7 +82,8 @@ export class SaveMessageDto extends PageContextMessageFieldsDto {
 
   @ApiPropertyOptional({
     description:
-      '为 true 时取消上一轮待确认的写操作，不执行 Tool；与 confirmWrite 同时为 true 时仅取消',
+      '（已废弃）为 true 时取消待确认写操作；请改用 writeGate.action=cancel',
+    deprecated: true,
   })
   @IsOptional()
   @Type(() => Boolean)

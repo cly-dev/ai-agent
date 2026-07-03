@@ -5,6 +5,7 @@ import type {
   WorkflowRunState,
 } from '../workflow/workflow.types';
 import type { PendingWriteResumeContext } from '../../modules/chat/pending-write-confirmation.types';
+import type { WriteDraft } from '../draft-review/write-draft.types';
 
 /** 挂起点待执行的写工具调用（与展示层解耦，写入以此为准）。 */
 export type ApprovalPendingWrite = {
@@ -25,6 +26,10 @@ export type ApprovalResumeSnapshotBase = {
   pendingWrite: ApprovalPendingWrite;
   scopedToolIds: number[];
   pageContext?: AgentChatPageContext | null;
+  /** 审批挂起点的重试次数（再生草稿后递增）。 */
+  draftRetryCount?: number;
+  /** 写草稿机器层真值（与 pendingWrite 同步；旧快照可能缺失）。 */
+  writeDraft?: WriteDraft;
 };
 
 /**

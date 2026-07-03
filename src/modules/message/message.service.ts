@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
   Logger,
@@ -16,6 +17,10 @@ import { PendingWriteConfirmationStore } from '../chat/pending-write-confirmatio
 import type { QueryChatListDto } from '../chat/dto/query-chat-list.dto';
 import { parsePageContextFromMessageFields } from '../../core/host-bridge';
 import { buildWriteConfirmActionMessagePersistence } from '../../core/agent-engine/engine/write-confirm-action-message.util';
+import {
+  draftReviewDecisionFromLegacyFlags,
+  normalizeDraftReviewDecision,
+} from '../../core/draft-review';
 import { SessionRunCoordinator } from '../../core/session-run/session-run-coordinator.service';
 import { SaveMessageDto } from './dto/save-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
@@ -46,11 +51,22 @@ export class MessageService {
       userId,
       appClientId,
     );
-    const confirmWrite = dto.confirmWrite === true;
-    const cancelWrite = dto.cancelWrite === true;
-    const isWriteConfirmAction =
+    const writeGateDecision =
+      normalizeDraftReviewDecision(dto.writeGate) ??
+      draftReviewDecisionFromLegacyFlags({
+        confirmWrite: dto.confirmWrite === true,
+        cancelWrite: dto.cancelWrite === true,
+      });
+    if (dto.writeGate != null && writeGateDecision == null) {
+      throw new BadRequestException({
+        code: 'INVALID_DRAFT_REVIEW_DECISION',
+        message:
+          'Invalid writeGate decision (confirm_with_edits requires edits; retry requires retryInstruction)',
+      });
+    }
+    const isWriteGateAction =
       dto.role === 'user' &&
-      (confirmWrite || cancelWrite) &&
+      writeGateDecision != null &&
       !String(dto.content ?? '').trim();
     let boundSession = session;
     if (dto.role === 'user') {
@@ -59,7 +75,7 @@ export class MessageService {
         dto.agentId,
         appClientId,
       );
-      if (dto.skillId != null && !confirmWrite && !cancelWrite) {
+      if (dto.skillId != null && !writeGateDecision) {
         await this.agentEngine.assertRequestedSkillRunnable({
           userId,
           appClientId,
@@ -70,19 +86,19 @@ export class MessageService {
       }
     }
     const pageContext = parsePageContextFromMessageFields(dto);
-    let messageContent: string | null = isWriteConfirmAction
+    let messageContent: string | null = isWriteGateAction
       ? null
       : this.normalizeMessageContentForStorage(dto.content);
     let messageToolName: string | null = dto.toolName ?? null;
     let messageToolInput = this.toJson(dto.toolInput);
     let messagePageContext = pageContext;
-    if (isWriteConfirmAction) {
+    if (isWriteGateAction && writeGateDecision) {
       const pending = await this.pendingWriteConfirmationStore.get(
         session.id,
         userId,
       );
       const persisted = buildWriteConfirmActionMessagePersistence({
-        action: cancelWrite ? 'cancel_write' : 'confirm_write',
+        decision: writeGateDecision,
         pending,
         incomingPageContext: pageContext,
       });
@@ -114,11 +130,7 @@ export class MessageService {
       );
     }
     if (message.role === 'user') {
-      const kind = cancelWrite
-        ? 'write_cancel'
-        : confirmWrite
-          ? 'write_confirm'
-          : 'chat_turn';
+      const kind = this.resolveWriteGateJobKind(writeGateDecision);
       const policy = kind === 'chat_turn' ? 'supersede' : 'queue';
       const job = this.sessionRunCoordinator.buildJob({
         kind,
@@ -129,6 +141,7 @@ export class MessageService {
         input: message.content ?? '',
         requestedSkillId: dto.skillId,
         pageContext: messagePageContext,
+        writeGateDecision,
       });
       const runGeneration = await this.sessionRunCoordinator.enqueue(
         job,
@@ -270,5 +283,24 @@ export class MessageService {
       pageContextJson: row.pageContextJson,
       createdAt: row.createdAt,
     };
+  }
+
+  private resolveWriteGateJobKind(
+    decision: ReturnType<typeof normalizeDraftReviewDecision>,
+  ): import('../../core/session-run/session-run.types').RunJobKind {
+    if (!decision) {
+      return 'chat_turn';
+    }
+    switch (decision.action) {
+      case 'cancel':
+        return 'write_gate_cancel';
+      case 'retry':
+        return 'write_gate_retry';
+      case 'confirm':
+      case 'confirm_with_edits':
+        return 'write_gate_confirm';
+      default:
+        return 'chat_turn';
+    }
   }
 }

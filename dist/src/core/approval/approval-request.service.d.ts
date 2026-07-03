@@ -41,5 +41,22 @@ export declare class ApprovalRequestService {
     markApproved(input: ApprovalDecisionInput): Promise<ApprovalCasResult>;
     markRejected(input: ApprovalDecisionInput): Promise<ApprovalCasResult>;
     markCancelled(input: ApprovalDecisionInput): Promise<ApprovalCasResult>;
+    updatePendingSnapshot(input: {
+        approvalRequestId: number;
+        approverUserId: number;
+        resumeSnapshot: ApprovalResumeSnapshot;
+        previewBlocks?: unknown;
+        summary?: string | null;
+    }): Promise<boolean>;
+    reserveDraftRetrySlot(input: {
+        approvalRequestId: number;
+        approverUserId: number;
+    }): Promise<{
+        ok: true;
+        draftRetryCount: number;
+    } | {
+        ok: false;
+        reason: 'not_found' | 'not_pending' | 'limit_exceeded';
+    }>;
 }
 export {};

@@ -37,11 +37,11 @@ let AppClientAuthService = class AppClientAuthService {
     }
     async verifyAccountToken(appClientId, accountToken) {
         const config = await this.loadResolvedAuthConfig(appClientId);
-        return this.verifyWithConfig(config, accountToken);
+        return this.verifyWithConfig(config, appClientId, accountToken);
     }
     async testAccountToken(appClientId, accountToken) {
         const config = await this.loadResolvedAuthConfig(appClientId);
-        const profile = await this.verifyWithConfig(config, accountToken);
+        const profile = await this.verifyWithConfig(config, appClientId, accountToken);
         return {
             ok: true,
             source: config.source,
@@ -55,7 +55,7 @@ let AppClientAuthService = class AppClientAuthService {
             },
         };
     }
-    async verifyWithConfig(config, accountToken) {
+    async verifyWithConfig(config, appClientId, accountToken) {
         const token = accountToken.trim();
         if (!token) {
             throw new common_1.BadRequestException('accountToken is required');
@@ -65,7 +65,7 @@ let AppClientAuthService = class AppClientAuthService {
                 if (!config.http) {
                     throw new common_1.BadRequestException('http_profile auth missing http config');
                 }
-                return (0, app_client_auth_http_util_1.fetchHttpProfileAccount)(config.http, token);
+                return (0, app_client_auth_http_util_1.fetchHttpProfileAccount)(config.http, token, appClientId);
             case 'jwt_shared_secret':
                 throw new common_1.BadRequestException('jwt_shared_secret provider is not implemented yet');
             default:

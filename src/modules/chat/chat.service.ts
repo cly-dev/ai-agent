@@ -26,6 +26,8 @@ import { SessionPrepareStore } from './session-prepare.store';
 import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { SessionRunCoordinator } from '../../core/session-run/session-run-coordinator.service';
 import type { CancelSessionRunResult } from '../../core/session-run/session-run.types';
+import { PendingWriteConfirmationStore } from './pending-write-confirmation.store';
+import { buildPendingWriteGatePublicState } from './chat-pending-write-gate.mapper';
 
 @Injectable()
 export class ChatService {
@@ -43,6 +45,7 @@ export class ChatService {
     @Inject(forwardRef(() => MessageService))
     private readonly messageService: MessageService,
     private readonly sessionRunCoordinator: SessionRunCoordinator,
+    private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
   ) {}
 
   async cancelSessionRun(
@@ -61,7 +64,16 @@ export class ChatService {
     appClientId: number,
   ) {
     await this.assertSessionOwnedByUser(sessionId, userId, appClientId);
-    return this.sessionRunCoordinator.getRunState(sessionId);
+    const [runState, pending] = await Promise.all([
+      this.sessionRunCoordinator.getRunState(sessionId),
+      this.pendingWriteConfirmationStore.get(sessionId, userId),
+    ]);
+    return {
+      ...runState,
+      pendingWriteGate: pending
+        ? buildPendingWriteGatePublicState(pending)
+        : null,
+    };
   }
 
   async create(

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchHttpProfileAccount = exports.buildBrowserLikeHeaders = exports.formatFetchError = exports.parseFetchBody = exports.mapHttpProfileResponse = exports.resolveProfilePayloadRoot = exports.pickMappedField = void 0;
 const common_1 = require("@nestjs/common");
+const app_client_auth_profile_util_1 = require("./app-client-auth-profile.util");
 function pickMappedField(source, path) {
     const trimmed = path.trim();
     if (!trimmed) {
@@ -44,14 +45,18 @@ function resolveProfilePayloadRoot(payload, responseRoot) {
 }
 exports.resolveProfilePayloadRoot = resolveProfilePayloadRoot;
 function mapHttpProfileResponse(payload, mapping, responseRoot) {
-    const row = resolveProfilePayloadRoot(payload, responseRoot);
+    if (!mapping || Object.keys(mapping).length === 0) {
+        return { active: true };
+    }
+    const row = payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? resolveProfilePayloadRoot(payload, responseRoot)
+        : {};
     const employeeId = mapping.employeeId
         ? asTrimmedString(pickMappedField(row, mapping.employeeId))
         : undefined;
-    const email = asTrimmedString(pickMappedField(row, mapping.email));
-    if (!email) {
-        throw new common_1.UnauthorizedException('external account missing email');
-    }
+    const email = mapping.email
+        ? asTrimmedString(pickMappedField(row, mapping.email))
+        : undefined;
     const nickName = mapping.nickName
         ? asTrimmedString(pickMappedField(row, mapping.nickName))
         : undefined;
@@ -64,7 +69,7 @@ function mapHttpProfileResponse(payload, mapping, responseRoot) {
     const activeRaw = mapping.active
         ? pickMappedField(row, mapping.active)
         : undefined;
-    return Object.assign(Object.assign({}, (employeeId ? { employeeId } : {})), { email, username: usernameFromMapping || nickName || cnName || employeeId || email, nickName,
+    return Object.assign(Object.assign(Object.assign(Object.assign({}, (employeeId ? { employeeId } : {})), (email ? { email } : {})), (usernameFromMapping ? { username: usernameFromMapping } : {})), { nickName,
         cnName, active: activeRaw !== false });
 }
 exports.mapHttpProfileResponse = mapHttpProfileResponse;
@@ -128,7 +133,7 @@ function joinProfileUrl(baseUrl, profilePath) {
     const path = profilePath.startsWith('/') ? profilePath : `/${profilePath}`;
     return new URL(`${base}${path}`);
 }
-async function fetchHttpProfileAccount(http, accountToken) {
+async function fetchHttpProfileAccount(http, accountToken, appClientId) {
     var _a, _b, _c;
     const accountUrl = joinProfileUrl(http.baseUrl, http.profilePath);
     const headers = buildBrowserLikeHeaders(accountUrl.origin, (_a = http.extraHeaders) !== null && _a !== void 0 ? _a : {});
@@ -148,7 +153,8 @@ async function fetchHttpProfileAccount(http, accountToken) {
     if (!accountResponse.ok) {
         throw new common_1.UnauthorizedException(`external account verification failed: ${accountResponse.status}`);
     }
-    return mapHttpProfileResponse(account, http.mapping, http.responseRoot);
+    const partial = mapHttpProfileResponse(account, http.mapping, http.responseRoot);
+    return (0, app_client_auth_profile_util_1.normalizeExternalAccountProfile)(partial, { appClientId, accountToken });
 }
 exports.fetchHttpProfileAccount = fetchHttpProfileAccount;
 //# sourceMappingURL=app-client-auth-http.util.js.map

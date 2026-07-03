@@ -3,9 +3,11 @@ description: Chat write confirm vs ApprovalRequest inbox — separate paths, no 
 globs:
   - src/core/approval/**
   - src/core/agent-engine/engine/write-confirm/**
+  - src/core/draft-review/**
   - src/core/workflow/workflow-await-user-confirm-gate.util.ts
   - src/modules/chat/**
   - src/modules/approval/**
+  - src/modules/message/**
 alwaysApply: false
 ---
 
@@ -15,22 +17,34 @@ alwaysApply: false
 
 | Trigger | User confirms via | Persistence | Resume |
 |---------|-------------------|-------------|--------|
-| **Chat / session** | In-session UI + `confirmWrite` | Redis `PendingWriteConfirmationStore` + SSE `confirmation_required` | `resumeAfterWriteConfirm` → BullMQ `write_confirm` |
-| **PageAction / webhook** | Approval inbox API | `ApprovalRequest` + `resumeSnapshot` | `ApprovalResumeService.confirm` → pageAction runner |
+| **Chat / session** | In-session UI + `writeGate` on `POST /message` | Redis `PendingWriteConfirmationStore` + SSE `confirmation_required` | `applyWriteGateDecision` → `write_gate_*` jobs |
+| **PageAction / webhook** | Approval inbox + `POST /approval/:id/decide` | `ApprovalRequest` + `resumeSnapshot` | `ApprovalResumeService.decide` → pageAction runner |
+
+## Draft review protocol
+
+Both paths share `DraftReviewDecision` (`src/core/draft-review/`):
+
+- `confirm` / `confirm_with_edits` / `retry` / `cancel`
+- Retry budget: `DRAFT_REVIEW_MAX_RETRIES` (default 3), tracked as `draftRetryCount`
+- **Write truth**: `WriteDraft.arguments` (Chat: Redis gate + SSE; Inbox: `resumeSnapshot.writeDraft`)
+
+API reference: `docs/draft-review-api.md` · C 端主文档: `docs/c-end-write-draft-integration.md`
 
 ## Chat rules
 
 - **Do not** create `ApprovalRequest` with `source: chat`.
 - **Do not** mirror chat gates into `/approval/inbox`.
-- **Do not** add inbox confirm/reject resume for chat (`approvalInboxSnapshot`, `enqueueApprovalInboxResumeFromSnapshot`, etc.).
+- **Do not** add inbox confirm/reject resume for chat.
 - Chat audit lives on **AgentRun steps** (`write_confirmation_gate`) via `write-confirm-run-audit.util.ts`.
-- Session cancel/confirm uses `releaseWriteConfirmGate` (Redis + SSE only).
+- Session decisions use `releaseWriteConfirmGate` (Redis + SSE only) before resume/retry worker runs.
+- Legacy `confirmWrite` / `cancelWrite` map to `writeGate`; prefer structured `writeGate`.
 
 ## Inbox rules
 
 - `listPendingForApprover` / `findByIdForApprover` only expose `page_action` and `webhook` (`APPROVAL_INBOX_SOURCES`).
-- `confirm` / `reject` on `source: chat` → `400 CHAT_APPROVAL_IN_SESSION_ONLY`.
-- PageAction suspend goes through `ApprovalGateService.suspend` with `channel.kind: page_action`.
+- `decide` / legacy `confirm` / `reject` on `source: chat` → `400 CHAT_APPROVAL_IN_SESSION_ONLY`.
+- PageAction suspend goes through `ApprovalGateService.suspend` with `channel.kind: page_action` and `writeDraft` (preview/summary derived).
+- Retry refreshes the **same** pending `ApprovalRequest` (`existingApprovalRequestId`), not a new row.
 
 ## Legacy
 
@@ -40,5 +54,5 @@ alwaysApply: false
 ## References
 
 - Chat gate: `workflow-await-user-confirm-gate.util.ts`, `tools.node.ts` (non-workflow gate)
-- Inbox API: `modules/approval/approval.controller.ts`
+- Inbox API: `modules/approval/approval.controller.ts` (`decide`)
 - Run audit: `src/core/approval/write-confirm-run-audit.util.ts`

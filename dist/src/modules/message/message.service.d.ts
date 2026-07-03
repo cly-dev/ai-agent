@@ -40,4 +40,5 @@ export declare class MessageService {
     private toJson;
     private normalizeMessageContentForStorage;
     private stripSession;
+    private resolveWriteGateJobKind;
 }

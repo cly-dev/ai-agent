@@ -13,9 +13,14 @@ export declare class ApprovalResumeService {
     private readonly llmService;
     private readonly toolEngine;
     constructor(prisma: PrismaService, approvalRequests: ApprovalRequestService, approvalGate: ApprovalGateService, triggerPermission: ApprovalTriggerPermissionService, llmService: LlmService, toolEngine: ToolEngineService);
+    decide(input: ApprovalDecisionInput): Promise<{
+        resumed: boolean;
+        suspended?: boolean;
+    }>;
     confirm(input: ApprovalDecisionInput): Promise<{
         resumed: boolean;
     }>;
     reject(input: ApprovalDecisionInput): Promise<void>;
+    private retryPageAction;
     private assertResumePermission;
 }

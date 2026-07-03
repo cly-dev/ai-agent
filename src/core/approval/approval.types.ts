@@ -1,3 +1,4 @@
+import type { DraftReviewDecision } from '../draft-review';
 import type {
   ApprovalSource,
   ApprovalStatus,
@@ -25,6 +26,7 @@ export type ApprovalDecisionInput = {
   approvalRequestId: number;
   decidedByUserId: number;
   decisionNote?: string | null;
+  decision?: DraftReviewDecision | null;
 };
 
 export type ApprovalCasResult =

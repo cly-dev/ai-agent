@@ -1,5 +1,7 @@
 import type { HostActionSsePayload } from '../host-bridge/host-action.types';
 
+import type { WriteDraftPublic } from '../draft-review/write-draft.types';
+
 /** Session Run 相关 SSE 推送抽象，避免 core 直接依赖 modules/chat。 */
 export abstract class RunEventPublisher {
   abstract purgeReplayForSession(sessionId: string): void;
@@ -43,6 +45,11 @@ export abstract class RunEventPublisher {
       turnId?: number;
       message: string;
       generation?: number;
+      draftRetryCount?: number;
+      draftRetryMax?: number;
+      canRetry?: boolean;
+      writeDraft?: WriteDraftPublic;
+      writeDrafts?: WriteDraftPublic[];
     },
   ): void;
 

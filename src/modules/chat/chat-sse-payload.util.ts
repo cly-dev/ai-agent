@@ -32,6 +32,20 @@ export function serializeChatSseData(evt: ChatSseEvent): string {
       ...(evt.payload.generation != null
         ? { generation: evt.payload.generation }
         : {}),
+      ...(evt.payload.draftRetryCount != null
+        ? { draftRetryCount: evt.payload.draftRetryCount }
+        : {}),
+      ...(evt.payload.draftRetryMax != null
+        ? { draftRetryMax: evt.payload.draftRetryMax }
+        : {}),
+      ...(evt.payload.canRetry != null ? { canRetry: evt.payload.canRetry } : {}),
+      ...(evt.payload.writeDraft != null
+        ? { writeDraft: evt.payload.writeDraft }
+        : {}),
+      ...(Array.isArray(evt.payload.writeDrafts) &&
+      evt.payload.writeDrafts.length > 0
+        ? { writeDrafts: evt.payload.writeDrafts }
+        : {}),
     });
   }
   if (

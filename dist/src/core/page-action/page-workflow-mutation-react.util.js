@@ -5,6 +5,7 @@ const common_1 = require("@nestjs/common");
 const workflow_run_util_1 = require("../workflow/workflow-run.util");
 const workflow_node_output_util_1 = require("../workflow/workflow-node-output.util");
 const page_workflow_pending_write_util_1 = require("./page-workflow-pending-write.util");
+const page_workflow_compose_mutation_util_1 = require("./page-workflow-compose-mutation.util");
 async function resolveWriteTool(prisma, appClientId, toolId) {
     const tool = await prisma.tool.findFirst({
         where: { id: toolId, appClientId, isActive: true },
@@ -49,10 +50,13 @@ async function runPageWorkflowMutationReact(input) {
         }
         try {
             const tool = await resolveWriteTool(runtime.prisma, runtime.appClientId, toolId);
-            const composedArgs = (_b = (_a = input.pendingWrite) === null || _a === void 0 ? void 0 : _a.arguments) !== null && _b !== void 0 ? _b : (await buildComposeArgumentsFromFetchOutputs({
+            const composedArgs = (_b = (_a = input.pendingWrite) === null || _a === void 0 ? void 0 : _a.arguments) !== null && _b !== void 0 ? _b : (await (0, page_workflow_compose_mutation_util_1.executePageWorkflowComposeMutation)({
                 runtime,
-                toolName: tool.name,
-            }));
+                def,
+                writeToolId: tool.id,
+                allowedToolIds: input.allowedToolIds,
+                stepRecorder: runtime.stepRecorder,
+            })).arguments;
             const composeOutput = {
                 tool: tool.name,
                 toolId: tool.id,
@@ -169,14 +173,6 @@ async function runPageWorkflowMutationReact(input) {
     };
 }
 exports.runPageWorkflowMutationReact = runPageWorkflowMutationReact;
-async function buildComposeArgumentsFromFetchOutputs(input) {
-    const fetchOutputs = Object.values(input.runtime.nodeOutputs).filter((row) => row && typeof row === 'object' && !Array.isArray(row));
-    const lastFetch = fetchOutputs[fetchOutputs.length - 1];
-    const fetchBody = (lastFetch === null || lastFetch === void 0 ? void 0 : lastFetch.output) && typeof lastFetch.output === 'object'
-        ? lastFetch.output
-        : {};
-    return Object.assign(Object.assign({}, fetchBody), { _composedFor: input.toolName });
-}
 function resolvePendingWriteFromRuntime(runtime, allowedToolIds) {
     var _a;
     for (const output of Object.values(runtime.nodeOutputs)) {

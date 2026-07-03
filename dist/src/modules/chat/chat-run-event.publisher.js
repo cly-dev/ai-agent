@@ -49,6 +49,11 @@ let ChatRunEventPublisher = class ChatRunEventPublisher extends run_event_publis
                 turnId: input.turnId,
                 message: input.message,
                 generation: input.generation,
+                draftRetryCount: input.draftRetryCount,
+                draftRetryMax: input.draftRetryMax,
+                canRetry: input.canRetry,
+                writeDraft: input.writeDraft,
+                writeDrafts: input.writeDrafts,
             },
         });
     }

@@ -1,9 +1,9 @@
-import type { ToolLevel } from '../../../generated/prisma/client';
 import type { ApprovalSource } from '../../../generated/prisma/client';
 import type { PageActionRunStepRecorder } from '../page-action/page-action-run-steps.util';
 import { ApprovalRequestService } from './approval-request.service';
-import type { ApprovalPendingWrite, ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
+import type { ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
 import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
+import type { WriteDraft } from '../draft-review/write-draft.types';
 export type SuspendForApprovalInput = {
     appClientId: number;
     source: ApprovalSource;
@@ -13,12 +13,10 @@ export type SuspendForApprovalInput = {
     workflowVersion: number;
     nodeId: string;
     title: string;
-    summary?: string | null;
-    previewBlocks?: unknown;
+    writeDraft: WriteDraft;
     workflowRun: WorkflowRunState;
     workflowNodeDefs: WorkflowNodeDef[];
     workflowNodeOutputs: Record<string, unknown>;
-    pendingWrite: ApprovalPendingWrite;
     scopedToolIds: number[];
     pageContext?: unknown | null;
     pageActionRunId?: number | null;
@@ -26,6 +24,7 @@ export type SuspendForApprovalInput = {
     idempotencyKey?: string | null;
     channel: ApprovalResumeSnapshot['channel'];
     stepRecorder?: PageActionRunStepRecorder;
+    existingApprovalRequestId?: number | null;
 };
 export declare class ApprovalGateService {
     private readonly approvalRequests;
@@ -54,9 +53,4 @@ export declare class ApprovalGateService {
         decisionNote: string;
         expiresAt: Date;
     }>;
-    buildPendingWriteFromTool(input: {
-        name: string;
-        arguments: Record<string, unknown>;
-        riskLevel: ToolLevel;
-    }): ApprovalPendingWrite;
 }

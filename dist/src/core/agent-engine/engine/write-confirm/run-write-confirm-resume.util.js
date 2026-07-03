@@ -16,9 +16,10 @@ const task_plan_util_1 = require("../main/plan/task-plan.util");
 const turn_respond_util_1 = require("../turn/turn-respond.util");
 const run_aborted_error_1 = require("../../../session-run/run-aborted.error");
 const write_confirm_run_audit_util_1 = require("../../../approval/write-confirm-run-audit.util");
+const draft_review_1 = require("../../../draft-review");
 const agent_run_steps_util_2 = require("../main/run/agent-run-steps.util");
 async function runWriteConfirmResume(input) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v;
     const { resumeInput, prepared, scope, deps } = input;
     const { session, consumed, primaryRun, suspendedPrimaryRunId } = prepared;
     const agent = await deps.agentService.getRuntimeAgent(session.appClientId, session.agentId);
@@ -54,6 +55,22 @@ async function runWriteConfirmResume(input) {
         : tools;
     const scopedAllowedToolIds = resolvedScopedTools.map((tool) => tool.id);
     const scopedToolBundle = deps.toolEngine.buildLangChainTools(resolvedScopedTools, Object.assign(Object.assign({}, toolBuildCtx), { allowedToolIds: scopedAllowedToolIds }));
+    let toolCallsForWrite = (0, draft_review_1.resolveChatGateToolCalls)(consumed);
+    if (((_a = input.decision) === null || _a === void 0 ? void 0 : _a.action) === 'confirm_with_edits') {
+        toolCallsForWrite = (0, draft_review_1.applyDraftReviewToChatGateToolCalls)({
+            pending: consumed,
+            decision: input.decision,
+            scopedTools: resolvedScopedTools,
+        });
+        (0, draft_review_1.assertDraftReviewToolCallsValid)({
+            toolCalls: toolCallsForWrite,
+            scopedTools: resolvedScopedTools,
+        });
+    }
+    const confirmedPreviewForResume = (0, draft_review_1.resolveConfirmedPreviewSerialized)({
+        decision: (_b = input.decision) !== null && _b !== void 0 ? _b : { action: 'confirm' },
+        gatePreviewSerialized: consumed.resumeContext.confirmedPreviewSerialized,
+    });
     let priorObservations = (0, agent_write_confirmation_util_1.deserializePendingObservations)(consumed.resumeContext.toolObservations);
     if (priorObservations.length === 0) {
         const goa = await deps.goaService.ensurePayload(resumeInput.sessionId);
@@ -95,10 +112,10 @@ async function runWriteConfirmResume(input) {
             }),
         ];
     }
-    const approvedWriteToolNamesFromPending = consumed.toolCalls.map((call) => call.name);
+    const approvedWriteToolNamesFromPending = toolCallsForWrite.map((call) => call.name);
     const isWorkflowAwaitResume = (0, workflow_mutation_write_gate_util_1.isWorkflowAwaitUserConfirmResume)({
-        pendingToolCalls: consumed.toolCalls,
-        workflowRun: (_a = consumed.resumeContext.workflowRun) !== null && _a !== void 0 ? _a : null,
+        pendingToolCalls: toolCallsForWrite,
+        workflowRun: (_c = consumed.resumeContext.workflowRun) !== null && _c !== void 0 ? _c : null,
     });
     let writeObservations = [];
     let writeSteps = [];
@@ -111,7 +128,7 @@ async function runWriteConfirmResume(input) {
     if (!isWorkflowAwaitResume) {
         const writeResult = await (0, agent_tool_runtime_util_1.executePendingWriteToolCalls)({
             latestUserMessage: consumed.latestUserMessage,
-            toolCalls: consumed.toolCalls,
+            toolCalls: toolCallsForWrite,
             tools: resolvedScopedTools,
             langChainBundle: scopedToolBundle,
             priorSteps: [],
@@ -155,34 +172,34 @@ async function runWriteConfirmResume(input) {
     deps.sse.clearThinkBuffer(resumeInput.sessionId, resumeRun.id);
     scope.assertActive(resumeRun.id);
     const iterationAfterWrites = isWorkflowAwaitResume
-        ? (0, agent_run_steps_util_1.maxRunStepNumber)((_b = consumed.resumeContext.steps) !== null && _b !== void 0 ? _b : [])
+        ? (0, agent_run_steps_util_1.maxRunStepNumber)((_d = consumed.resumeContext.steps) !== null && _d !== void 0 ? _d : [])
         : (0, agent_run_steps_util_1.maxRunStepNumber)(combinedWorkerSteps);
     const allObservations = [
         ...priorObservations,
         ...writeObservations,
     ];
-    let taskPlan = (_c = consumed.resumeContext.taskPlan) !== null && _c !== void 0 ? _c : null;
-    if (taskPlan && ((_d = consumed.resumeContext.workflowNodeDefs) === null || _d === void 0 ? void 0 : _d.length)) {
+    let taskPlan = (_e = consumed.resumeContext.taskPlan) !== null && _e !== void 0 ? _e : null;
+    if (taskPlan && ((_f = consumed.resumeContext.workflowNodeDefs) === null || _f === void 0 ? void 0 : _f.length)) {
         taskPlan =
-            (_e = (0, workflow_resume_util_1.hydrateTaskPlanWithWorkflowDefs)({
+            (_g = (0, workflow_resume_util_1.hydrateTaskPlanWithWorkflowDefs)({
                 taskPlan,
                 workflowNodeDefs: consumed.resumeContext.workflowNodeDefs,
-            })) !== null && _e !== void 0 ? _e : taskPlan;
+            })) !== null && _g !== void 0 ? _g : taskPlan;
     }
     let pendingRespond = null;
-    let workflowRun = (_f = consumed.resumeContext.workflowRun) !== null && _f !== void 0 ? _f : null;
+    let workflowRun = (_h = consumed.resumeContext.workflowRun) !== null && _h !== void 0 ? _h : null;
     const workflowRunBeforeAdvance = workflowRun;
     if (workflowRun) {
         workflowRun = (0, workflow_resume_util_1.advanceWorkflowRunAfterWriteConfirm)(workflowRun);
     }
     if (taskPlan && isWorkflowAwaitResume && workflowRunBeforeAdvance) {
         taskPlan =
-            (_g = (0, workflow_resume_util_1.prepareTaskPlanForWorkflowWriteConfirmResume)({
+            (_j = (0, workflow_resume_util_1.prepareTaskPlanForWorkflowWriteConfirmResume)({
                 taskPlan,
                 workflowRunBeforeAdvance,
                 workflowNodeDefs: consumed.resumeContext.workflowNodeDefs,
                 workflowRunAfterAdvance: workflowRun,
-            })) !== null && _g !== void 0 ? _g : taskPlan;
+            })) !== null && _j !== void 0 ? _j : taskPlan;
     }
     const workflowContinues = (0, workflow_resume_util_1.workflowRunHasPendingNodes)(workflowRun);
     (0, workflow_debug_util_1.logWorkflowDebug)('write_confirm_resume', {
@@ -213,7 +230,7 @@ async function runWriteConfirmResume(input) {
                     planBefore: taskPlan,
                     planAdvance,
                 });
-                taskPlan = (_h = progressed.taskPlan) !== null && _h !== void 0 ? _h : taskPlan;
+                taskPlan = (_k = progressed.taskPlan) !== null && _k !== void 0 ? _k : taskPlan;
                 if (progressed.workflowRun) {
                     workflowRun = progressed.workflowRun;
                 }
@@ -233,18 +250,18 @@ async function runWriteConfirmResume(input) {
     }
     const graphInitialState = Object.assign({ iteration: iterationAfterWrites, steps: combinedWorkerSteps, preloadedToolObservations: priorObservations, toolObservations: writeObservations, pendingToolCalls: [], pendingRespond, lastToolRoundMeta: writeRoundMeta, intentKind: consumed.resumeContext.intentKind, scopedTools: resolvedScopedTools, scopedLangChainTools: scopedToolBundle.tools, scopedToolBundle,
         scopedAllowedToolIds,
-        toolProfilesByName, hasExpandedOnce: consumed.resumeContext.hasExpandedOnce, skillApplied: consumed.resumeContext.skillApplied === true, activeSkillId: (_j = consumed.resumeContext.activeSkillId) !== null && _j !== void 0 ? _j : null, activeSkillPrompt: (_k = consumed.resumeContext.activeSkillPrompt) !== null && _k !== void 0 ? _k : null, activeSkillName: (_l = consumed.resumeContext.activeSkillName) !== null && _l !== void 0 ? _l : null, activeSkillDescription: (_m = consumed.resumeContext.activeSkillDescription) !== null && _m !== void 0 ? _m : null, activeSkillConfig: (_o = consumed.resumeContext.activeSkillConfig) !== null && _o !== void 0 ? _o : null, activeSkillRiskLevel: (_p = consumed.resumeContext.activeSkillRiskLevel) !== null && _p !== void 0 ? _p : null, taskPlan, pagedListHttpUsed: (_q = consumed.resumeContext.pagedListHttpUsed) !== null && _q !== void 0 ? _q : 0, confirmedPreviewSerialized: ((_r = consumed.resumeContext.confirmedPreviewSerialized) === null || _r === void 0 ? void 0 : _r.trim()) ||
-            ((_s = (await deps.prisma.agentRun.findUnique({
+        toolProfilesByName, hasExpandedOnce: consumed.resumeContext.hasExpandedOnce, skillApplied: consumed.resumeContext.skillApplied === true, activeSkillId: (_l = consumed.resumeContext.activeSkillId) !== null && _l !== void 0 ? _l : null, activeSkillPrompt: (_m = consumed.resumeContext.activeSkillPrompt) !== null && _m !== void 0 ? _m : null, activeSkillName: (_o = consumed.resumeContext.activeSkillName) !== null && _o !== void 0 ? _o : null, activeSkillDescription: (_p = consumed.resumeContext.activeSkillDescription) !== null && _p !== void 0 ? _p : null, activeSkillConfig: (_q = consumed.resumeContext.activeSkillConfig) !== null && _q !== void 0 ? _q : null, activeSkillRiskLevel: (_r = consumed.resumeContext.activeSkillRiskLevel) !== null && _r !== void 0 ? _r : null, taskPlan, pagedListHttpUsed: (_s = consumed.resumeContext.pagedListHttpUsed) !== null && _s !== void 0 ? _s : 0, confirmedPreviewSerialized: confirmedPreviewForResume ||
+            ((_t = (await deps.prisma.agentRun.findUnique({
                 where: { id: primaryRun.id },
                 select: { output: true },
-            }))) === null || _s === void 0 ? void 0 : _s.output) ||
+            }))) === null || _t === void 0 ? void 0 : _t.output) ||
             null, pageContext: resumePageContext }, (workflowRun
         ? {
             workflowRun,
             workflowNodeDefs: consumed.resumeContext.workflowNodeDefs,
-            workflowNodeOutputs: (_t = consumed.resumeContext.workflowNodeOutputs) !== null && _t !== void 0 ? _t : {},
+            workflowNodeOutputs: (_u = consumed.resumeContext.workflowNodeOutputs) !== null && _u !== void 0 ? _u : {},
             workflowAwaitingReact: isWorkflowAwaitResume
-                ? (0, workflow_resume_util_1.shouldAwaitReactOnWorkflowResume)(workflowRun, (_u = consumed.resumeContext.workflowNodeDefs) !== null && _u !== void 0 ? _u : [])
+                ? (0, workflow_resume_util_1.shouldAwaitReactOnWorkflowResume)(workflowRun, (_v = consumed.resumeContext.workflowNodeDefs) !== null && _v !== void 0 ? _v : [])
                 : consumed.resumeContext.workflowAwaitingReact === true,
         }
         : {}));

@@ -14,6 +14,7 @@ const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const page_context_fields_dto_1 = require("../../chat/dto/page-context-fields.dto");
+const draft_review_decision_dto_1 = require("./draft-review-decision.dto");
 const MESSAGE_ROLES = ['user', 'assistant', 'tool', 'system'];
 class SaveMessageDto extends page_context_fields_dto_1.PageContextMessageFieldsDto {
 }
@@ -73,7 +74,16 @@ __decorate([
 ], SaveMessageDto.prototype, "toolOutput", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        description: '为 true 时确认并执行上一轮缓存的写操作（见 SSE confirmation_required）；content 可为空',
+        description: '写确认门结构化决策（confirm / confirm_with_edits / retry / cancel）；优先于 confirmWrite / cancelWrite',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => draft_review_decision_dto_1.DraftReviewDecisionDto),
+    __metadata("design:type", draft_review_decision_dto_1.DraftReviewDecisionDto)
+], SaveMessageDto.prototype, "writeGate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: '（已废弃）为 true 时确认并执行上一轮缓存的写操作；请改用 writeGate.action=confirm',
+        deprecated: true,
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Type)(() => Boolean),
@@ -81,7 +91,8 @@ __decorate([
 ], SaveMessageDto.prototype, "confirmWrite", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        description: '为 true 时取消上一轮待确认的写操作，不执行 Tool；与 confirmWrite 同时为 true 时仅取消',
+        description: '（已废弃）为 true 时取消待确认写操作；请改用 writeGate.action=cancel',
+        deprecated: true,
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Type)(() => Boolean),

@@ -30,7 +30,14 @@ import type {
 import {
   buildChatWriteConfirmConfirmedRunStep,
 } from '../../../approval/write-confirm-run-audit.util';
+import {
+  applyDraftReviewToChatGateToolCalls,
+  assertDraftReviewToolCallsValid,
+  resolveChatGateToolCalls,
+  resolveConfirmedPreviewSerialized,
+} from '../../../draft-review';
 import { offsetRunSteps } from '../main/run/agent-run-steps.util';
+import type { PendingWriteToolCall } from '../../../../modules/chat/pending-write-confirmation.types';
 
 export async function runWriteConfirmResume(
   input: RunWriteConfirmResumeInput,
@@ -104,6 +111,25 @@ export async function runWriteConfirmResume(
     { ...toolBuildCtx, allowedToolIds: scopedAllowedToolIds },
   );
 
+  let toolCallsForWrite: PendingWriteToolCall[] = resolveChatGateToolCalls(
+    consumed,
+  );
+  if (input.decision?.action === 'confirm_with_edits') {
+    toolCallsForWrite = applyDraftReviewToChatGateToolCalls({
+      pending: consumed,
+      decision: input.decision,
+      scopedTools: resolvedScopedTools,
+    });
+    assertDraftReviewToolCallsValid({
+      toolCalls: toolCallsForWrite,
+      scopedTools: resolvedScopedTools,
+    });
+  }
+  const confirmedPreviewForResume = resolveConfirmedPreviewSerialized({
+    decision: input.decision ?? { action: 'confirm' },
+    gatePreviewSerialized: consumed.resumeContext.confirmedPreviewSerialized,
+  });
+
   let priorObservations = deserializePendingObservations(
     consumed.resumeContext.toolObservations,
   );
@@ -150,11 +176,11 @@ export async function runWriteConfirmResume(
     ];
   }
 
-  const approvedWriteToolNamesFromPending = consumed.toolCalls.map(
+  const approvedWriteToolNamesFromPending = toolCallsForWrite.map(
     (call) => call.name,
   );
   const isWorkflowAwaitResume = isWorkflowAwaitUserConfirmResume({
-    pendingToolCalls: consumed.toolCalls,
+    pendingToolCalls: toolCallsForWrite,
     workflowRun: consumed.resumeContext.workflowRun ?? null,
   });
   let writeObservations: Awaited<
@@ -175,7 +201,7 @@ export async function runWriteConfirmResume(
   if (!isWorkflowAwaitResume) {
     const writeResult = await executePendingWriteToolCalls({
       latestUserMessage: consumed.latestUserMessage,
-      toolCalls: consumed.toolCalls,
+      toolCalls: toolCallsForWrite,
       tools: resolvedScopedTools,
       langChainBundle: scopedToolBundle,
       priorSteps: [],
@@ -349,7 +375,7 @@ export async function runWriteConfirmResume(
     taskPlan,
     pagedListHttpUsed: consumed.resumeContext.pagedListHttpUsed ?? 0,
     confirmedPreviewSerialized:
-      consumed.resumeContext.confirmedPreviewSerialized?.trim() ||
+      confirmedPreviewForResume ||
       (
         await deps.prisma.agentRun.findUnique({
           where: { id: primaryRun.id },

@@ -1,10 +1,14 @@
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
+import type { DraftReviewDecision } from '../draft-review';
 import type { RunCancellationToken } from './run-cancellation-token';
 
 export type RunJobKind =
   | 'chat_turn'
   | 'write_confirm'
-  | 'write_cancel';
+  | 'write_cancel'
+  | 'write_gate_confirm'
+  | 'write_gate_cancel'
+  | 'write_gate_retry';
 
 export type RunEnqueuePolicy = 'supersede' | 'queue';
 
@@ -22,6 +26,8 @@ export type RunJob = {
   pageContext?: AgentChatPageContext | null;
   /** 入队时的 session generation；消费时与当前 generation 不一致则跳过（supersede 后的过期 job）。 */
   enqueueGeneration?: number;
+  /** Chat writeGate 结构化决策（confirm / confirm_with_edits / retry / cancel）。 */
+  writeGateDecision?: DraftReviewDecision | null;
 };
 
 export type RunExecutionHandle = {

@@ -24,7 +24,9 @@ import type {
   AgentRunInput,
   AgentRunResult,
   ResumeAfterWriteConfirmInput,
+  ResumeAfterWriteGateInput,
 } from './main/types/agent-engine.types';
+import { normalizeDraftReviewDecision, canRequestDraftRetry, resolveDraftRetryBudget } from '../../draft-review';
 import { AgentLangGraphRunner } from './main/runner/agent-lang-graph.runner';
 import { AgentRunLifecycleService } from './main/run/agent-run-lifecycle.service';
 import { SessionGoaService } from '../../memory/goa/session-goa.service';
@@ -62,6 +64,9 @@ import {
   buildWriteConfirmResumeDeps,
   runWriteConfirmResume,
 } from './write-confirm/run-write-confirm-resume.util';
+import { runWriteGateRetry } from './write-confirm/run-write-gate-retry.util';
+import { validateWriteGateEditedToolCalls } from './write-confirm/validate-write-gate-edited-tool-calls.util';
+import { WriteGateDecisionRejectedError } from './write-confirm/write-gate-decision.error';
 import { appendChatWriteConfirmRejectedAuditToPrimaryRun } from '../../approval/write-confirm-run-audit.util';
 
 /**
@@ -119,6 +124,29 @@ export class AgentEngineService {
       skillId: input.skillId,
       allowedTools: tools,
     });
+  }
+
+  async applyWriteGateDecision(
+    input: ResumeAfterWriteGateInput,
+    scope: RunExecutionScope,
+  ): Promise<AgentRunResult | null> {
+    const decision = normalizeDraftReviewDecision(input.decision);
+    if (!decision) {
+      this.runSse.emitRunError(input.sessionId, {
+        message: '无效的写确认决策，请重试。',
+        code: 'INVALID_DRAFT_REVIEW_DECISION',
+        generation: scope.generation,
+      });
+      return null;
+    }
+    if (decision.action === 'cancel') {
+      await this.cancelPendingWriteConfirmation(input.userId, input.sessionId);
+      return null;
+    }
+    if (decision.action === 'retry') {
+      return this.resumeAfterWriteGateRetry(input, scope, decision);
+    }
+    return this.resumeAfterWriteConfirm(input, scope, decision);
   }
 
   async cancelPendingWriteConfirmation(
@@ -265,6 +293,7 @@ export class AgentEngineService {
   async resumeAfterWriteConfirm(
     input: ResumeAfterWriteConfirmInput,
     scope: RunExecutionScope,
+    decision?: ResumeAfterWriteGateInput['decision'] | null,
   ): Promise<AgentRunResult | null> {
     scope.assertActive();
 
@@ -279,6 +308,19 @@ export class AgentEngineService {
     if (!prepared) {
       this.emitWriteConfirmationExpired(input.sessionId);
       return null;
+    }
+
+    const normalizedDecision =
+      normalizeDraftReviewDecision(decision) ?? { action: 'confirm' as const };
+
+    if (normalizedDecision.action === 'confirm_with_edits') {
+      await validateWriteGateEditedToolCalls({
+        consumed: prepared.consumed,
+        decision: normalizedDecision,
+        userId: input.userId,
+        agentService: this.agentService,
+        toolEngine: this.toolEngine,
+      });
     }
 
     await releaseWriteConfirmGate({
@@ -300,6 +342,49 @@ export class AgentEngineService {
       scope,
       deps: this.buildWriteConfirmResumeDeps(),
       approvalAudit,
+      decision: normalizedDecision,
+    });
+  }
+
+  private async resumeAfterWriteGateRetry(
+    input: ResumeAfterWriteConfirmInput,
+    scope: RunExecutionScope,
+    decision: NonNullable<ReturnType<typeof normalizeDraftReviewDecision>>,
+  ): Promise<AgentRunResult | null> {
+    scope.assertActive();
+
+    const prepared = await prepareWriteConfirmFromRedis({
+      resumeInput: input,
+      prisma: this.prisma,
+      agentService: this.agentService,
+      pendingWriteConfirmationStore: this.pendingWriteConfirmationStore,
+      emitWriteConfirmationExpired: (sessionId) =>
+        this.emitWriteConfirmationExpired(sessionId),
+    });
+    if (!prepared) {
+      this.emitWriteConfirmationExpired(input.sessionId);
+      return null;
+    }
+
+    if (!canRequestDraftRetry(prepared.consumed.resumeContext.draftRetryCount)) {
+      const budget = resolveDraftRetryBudget(
+        prepared.consumed.resumeContext.draftRetryCount,
+      );
+      this.runSse.emitRunError(input.sessionId, {
+        message: `已达到草稿重试上限（${budget.max} 次），请确认、编辑后提交或取消。`,
+        code: 'DRAFT_RETRY_LIMIT_EXCEEDED',
+        generation: scope.generation,
+      });
+      return null;
+    }
+
+    // 保留 Redis gate 直至再生草稿成功覆盖；失败时用户仍可 confirm/cancel。
+    return runWriteGateRetry({
+      resumeInput: input,
+      prepared,
+      scope,
+      deps: this.buildWriteConfirmResumeDeps(),
+      decision,
     });
   }
 

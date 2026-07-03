@@ -183,7 +183,7 @@ __decorate([
 __decorate([
     (0, common_1.Get)(':sessionId/run-state'),
     (0, swagger_1.ApiOperation)({
-        summary: '获取 session run 状态（generation / active run，用于多 Tab 与 SSE 重连对齐）',
+        summary: '获取 session run 状态（generation / active run / pendingWriteGate，用于多 Tab 与页面刷新对齐）',
     }),
     (0, swagger_1.ApiParam)({ name: 'sessionId', type: String }),
     (0, swagger_1.ApiResponse)({ status: 200, type: session_run_state_dto_1.SessionRunStateResponseDto }),

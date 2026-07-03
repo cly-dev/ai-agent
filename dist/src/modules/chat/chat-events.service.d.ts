@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 import { RedisConnectionService } from '../../core/memory/redis/redis-connection.service';
 import type { HostActionSsePayload } from '../../core/host-bridge/host-action.types';
 import type { MessageBlock, MessageBlockPatch } from '../../core/agent-engine/engine/message/message-blocks.types';
+import type { WriteDraftPublic } from '../../core/draft-review/write-draft.types';
 import { PendingWriteConfirmationStore } from './pending-write-confirmation.store';
 type EmitOptions = {
     fromRelay?: boolean;
@@ -36,6 +37,11 @@ export type ChatSseEvent = {
         turnId?: number;
         message: string;
         generation?: number;
+        draftRetryCount?: number;
+        draftRetryMax?: number;
+        canRetry?: boolean;
+        writeDraft?: WriteDraftPublic;
+        writeDrafts?: WriteDraftPublic[];
     } | {
         source: 'agent-run';
         action: 'write_confirmation_cancelled';

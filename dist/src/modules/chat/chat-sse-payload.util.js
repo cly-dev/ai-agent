@@ -21,8 +21,17 @@ function serializeChatSseData(evt) {
     if (evt.event === 'message' &&
         evt.payload.source === 'agent-run' &&
         evt.payload.action === 'confirmation_required') {
-        return JSON.stringify(Object.assign({ action: 'confirmation_required', runId: evt.payload.runId, turnId: evt.payload.turnId, message: evt.payload.message, code: 'WRITE_CONFIRMATION_REQUIRED' }, (evt.payload.generation != null
+        return JSON.stringify(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ action: 'confirmation_required', runId: evt.payload.runId, turnId: evt.payload.turnId, message: evt.payload.message, code: 'WRITE_CONFIRMATION_REQUIRED' }, (evt.payload.generation != null
             ? { generation: evt.payload.generation }
+            : {})), (evt.payload.draftRetryCount != null
+            ? { draftRetryCount: evt.payload.draftRetryCount }
+            : {})), (evt.payload.draftRetryMax != null
+            ? { draftRetryMax: evt.payload.draftRetryMax }
+            : {})), (evt.payload.canRetry != null ? { canRetry: evt.payload.canRetry } : {})), (evt.payload.writeDraft != null
+            ? { writeDraft: evt.payload.writeDraft }
+            : {})), (Array.isArray(evt.payload.writeDrafts) &&
+            evt.payload.writeDrafts.length > 0
+            ? { writeDrafts: evt.payload.writeDrafts }
             : {})));
     }
     if (evt.event === 'message' &&

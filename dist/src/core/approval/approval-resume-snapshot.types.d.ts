@@ -2,6 +2,7 @@ import type { ToolLevel } from '../../../generated/prisma/client';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
 import type { PendingWriteResumeContext } from '../../modules/chat/pending-write-confirmation.types';
+import type { WriteDraft } from '../draft-review/write-draft.types';
 export type ApprovalPendingWrite = {
     name: string;
     arguments: Record<string, unknown>;
@@ -15,6 +16,8 @@ export type ApprovalResumeSnapshotBase = {
     pendingWrite: ApprovalPendingWrite;
     scopedToolIds: number[];
     pageContext?: AgentChatPageContext | null;
+    draftRetryCount?: number;
+    writeDraft?: WriteDraft;
 };
 export type ApprovalResumeChannelChat = {
     kind: 'chat';

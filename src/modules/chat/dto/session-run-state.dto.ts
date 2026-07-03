@@ -1,4 +1,34 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { WriteDraftPublicDto } from '../../../common/dto/write-draft-public.dto';
+
+export class PendingWriteGatePublicStateDto {
+  @ApiProperty({ description: '挂起时的 Agent Run ID' })
+  runId!: number;
+
+  @ApiProperty({ description: '本轮对话 turn ID' })
+  turnId!: number;
+
+  @ApiProperty({ description: '已消耗的重试次数' })
+  draftRetryCount!: number;
+
+  @ApiProperty({ description: '重试上限' })
+  draftRetryMax!: number;
+
+  @ApiProperty({ description: '是否仍可发起 retry' })
+  canRetry!: boolean;
+
+  @ApiPropertyOptional({
+    type: WriteDraftPublicDto,
+    description: '主写草稿（机器层真值，arguments 为执行依据）',
+  })
+  writeDraft?: WriteDraftPublicDto;
+
+  @ApiPropertyOptional({
+    type: [WriteDraftPublicDto],
+    description: '多写工具时全部草稿（含 writeDraft 本身）',
+  })
+  writeDrafts?: WriteDraftPublicDto[];
+}
 
 export class SessionRunStateResponseDto {
   @ApiProperty({
@@ -28,4 +58,12 @@ export class SessionRunStateResponseDto {
       'generation / 队列 / SSE 中继是否由 Redis 支撑（生产环境应为 true）',
   })
   redisBacked!: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: PendingWriteGatePublicStateDto,
+    description:
+      '挂起中的 Chat 写确认门（含 writeDraft）；无 gate 时为 null。页面刷新时可与 SSE 重放互补使用。',
+  })
+  pendingWriteGate!: PendingWriteGatePublicStateDto | null;
 }

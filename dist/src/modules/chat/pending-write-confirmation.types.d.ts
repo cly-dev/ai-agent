@@ -1,3 +1,4 @@
+import type { WriteDraft } from '../../core/draft-review/write-draft.types';
 import type { ToolLevel } from '../../../generated/prisma/client';
 import type { TaskPlanSnapshot } from '../../core/agent-engine/engine/main/plan/task-plan.types';
 import type { AgentChatPageContext } from '../../core/host-bridge/page-context.types';
@@ -46,6 +47,7 @@ export type PendingWriteResumeContext = {
     workflowNodeDefs?: WorkflowNodeDef[];
     workflowNodeOutputs?: Record<string, unknown>;
     workflowAwaitingReact?: boolean;
+    draftRetryCount?: number;
 };
 export type PendingWriteConfirmationSnapshot = {
     runId: number;
@@ -56,6 +58,8 @@ export type PendingWriteConfirmationSnapshot = {
     agentId: number;
     latestUserMessage: string;
     toolCalls: PendingWriteToolCall[];
+    writeDraft?: WriteDraft | null;
+    writeDrafts?: WriteDraft[] | null;
     resumeContext: PendingWriteResumeContext;
     createdAt: string;
 };

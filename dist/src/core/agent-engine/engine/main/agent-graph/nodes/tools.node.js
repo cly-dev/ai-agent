@@ -22,10 +22,11 @@ const workflow_plan_transition_util_1 = require("../../../../../workflow/workflo
 const workflow_mutation_write_gate_util_1 = require("../../../../../workflow/workflow-mutation-write-gate.util");
 const risk_level_util_1 = require("../../../../../risk/risk-level.util");
 const workflow_debug_util_1 = require("../../../../../workflow/trace/workflow-debug.util");
+const draft_review_1 = require("../../../../../draft-review");
 function createToolsNode(bundle) {
     const { deps, ctx, runHelpers, summarize } = bundle;
     return async (state) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1;
         const pagedGatherHttpBudget = {
             used: (_a = state.pagedListHttpUsed) !== null && _a !== void 0 ? _a : 0,
             max: (0, pagination_1.resolveMaxListHttpPerTurn)(),
@@ -258,6 +259,38 @@ function createToolsNode(bundle) {
             }
             const message = (0, write_confirmation_gate_util_1.buildWriteConfirmationUserMessage)();
             const confirmedPreviewSerialized = deps.assistantArtifact.peekSerialized(ctx.input.sessionId, ctx.input.runId);
+            const draftRetryCount = (0, draft_review_1.resolveDraftRetryCountAfterRegeneration)({
+                previousCount: state.draftRetryCount,
+                regeneratedFromRetry: ctx.input.resumeFromWriteGateRetry === true,
+            });
+            const draftRetryBudget = (0, draft_review_1.resolveDraftRetryBudget)(draftRetryCount);
+            const existingPending = await deps.pendingWriteConfirmationStore.get(ctx.input.sessionId, ctx.input.userId);
+            if (existingPending &&
+                existingPending.runId !== ctx.input.runId) {
+                deps.runSseGateway.purgeWriteConfirmationGate(ctx.input.sessionId, existingPending.runId);
+            }
+            const serializedObservations = (0, agent_write_confirmation_util_1.serializeObservationsForPending)(observations);
+            const writeDraft = (0, draft_review_1.resolveWriteDraftFromChatGate)({
+                toolCalls: writeCallsForGate,
+                observations: serializedObservations,
+                confirmedPreviewSerialized,
+                draftRetryCount,
+            });
+            const toolCallsForGate = (0, draft_review_1.syncChatGateToolCallsFromWriteDraft)({
+                toolCalls: writeCallsForGate,
+                writeDraft,
+            });
+            const previewBlocksForGate = (_p = deps.assistantArtifact.peekBlocks(ctx.input.sessionId, ctx.input.runId)) !== null && _p !== void 0 ? _p : undefined;
+            const writeDraftList = (0, draft_review_1.buildWriteDraftListFromChatGate)({
+                toolCalls: writeCallsForGate,
+                writeDraft,
+                observations: serializedObservations,
+                confirmedPreviewSerialized,
+                draftRetryCount,
+                previewBlocks: previewBlocksForGate,
+            });
+            const primaryWriteDraft = (_q = writeDraftList[0]) !== null && _q !== void 0 ? _q : writeDraft;
+            const publicDraftList = writeDraftList.map((draft) => (0, draft_review_1.toWriteDraftPublic)(draft));
             await deps.pendingWriteConfirmationStore.set({
                 runId: ctx.input.runId,
                 turnId: ctx.input.turnId,
@@ -266,29 +299,32 @@ function createToolsNode(bundle) {
                 appClientId: ctx.input.appClientId,
                 agentId: ctx.input.agentId,
                 latestUserMessage: ctx.input.latestUserMessage,
-                toolCalls: writeCallsForGate,
+                toolCalls: toolCallsForGate,
+                writeDraft: primaryWriteDraft,
+                writeDrafts: writeDraftList.length > 1 ? writeDraftList : undefined,
                 resumeContext: {
                     steps: nextSteps,
                     iteration: state.iteration,
-                    toolObservations: (0, agent_write_confirmation_util_1.serializeObservationsForPending)(observations),
+                    toolObservations: serializedObservations,
                     scopedToolIds: state.scopedTools.map((tool) => tool.id),
                     intentKind: state.intentKind,
                     hasExpandedOnce: state.hasExpandedOnce,
                     skillApplied: state.skillApplied === true,
-                    activeSkillId: (_p = state.activeSkillId) !== null && _p !== void 0 ? _p : null,
-                    activeSkillPrompt: (_q = state.activeSkillPrompt) !== null && _q !== void 0 ? _q : null,
-                    activeSkillName: (_r = state.activeSkillName) !== null && _r !== void 0 ? _r : null,
-                    activeSkillDescription: (_s = state.activeSkillDescription) !== null && _s !== void 0 ? _s : null,
-                    activeSkillConfig: (_t = state.activeSkillConfig) !== null && _t !== void 0 ? _t : null,
-                    activeSkillRiskLevel: (_u = state.activeSkillRiskLevel) !== null && _u !== void 0 ? _u : null,
+                    activeSkillId: (_r = state.activeSkillId) !== null && _r !== void 0 ? _r : null,
+                    activeSkillPrompt: (_s = state.activeSkillPrompt) !== null && _s !== void 0 ? _s : null,
+                    activeSkillName: (_t = state.activeSkillName) !== null && _t !== void 0 ? _t : null,
+                    activeSkillDescription: (_u = state.activeSkillDescription) !== null && _u !== void 0 ? _u : null,
+                    activeSkillConfig: (_v = state.activeSkillConfig) !== null && _v !== void 0 ? _v : null,
+                    activeSkillRiskLevel: (_w = state.activeSkillRiskLevel) !== null && _w !== void 0 ? _w : null,
                     taskPlan,
                     pagedListHttpUsed: pagedGatherHttpBudget.used,
                     confirmedPreviewSerialized,
-                    pageContext: (_v = state.pageContext) !== null && _v !== void 0 ? _v : null,
+                    pageContext: (_x = state.pageContext) !== null && _x !== void 0 ? _x : null,
                     workflowRun: workflowRunForContext !== null && workflowRunForContext !== void 0 ? workflowRunForContext : null,
                     workflowNodeDefs: state.workflowNodeDefs,
                     workflowNodeOutputs: state.workflowNodeOutputs,
                     workflowAwaitingReact: workflowAwaitingReactForContext === true,
+                    draftRetryCount,
                 },
                 createdAt: new Date().toISOString(),
             });
@@ -296,9 +332,9 @@ function createToolsNode(bundle) {
                 runId: ctx.input.runId,
                 sessionId: ctx.input.sessionId,
                 turnId: ctx.input.turnId,
-                toolNames: writeCallsForGate.map((call) => call.name),
-                workflowRun: (_w = state.workflowRun) !== null && _w !== void 0 ? _w : null,
-                hasWorkflowNodeDefs: ((_y = (_x = state.workflowNodeDefs) === null || _x === void 0 ? void 0 : _x.length) !== null && _y !== void 0 ? _y : 0) > 0,
+                toolNames: toolCallsForGate.map((call) => call.name),
+                workflowRun: (_y = state.workflowRun) !== null && _y !== void 0 ? _y : null,
+                hasWorkflowNodeDefs: ((_0 = (_z = state.workflowNodeDefs) === null || _z === void 0 ? void 0 : _z.length) !== null && _0 !== void 0 ? _0 : 0) > 0,
             });
             const confirmationPayload = {
                 source: 'agent-run',
@@ -311,6 +347,11 @@ function createToolsNode(bundle) {
                 runId: ctx.input.runId,
                 turnId: ctx.input.turnId,
                 message,
+                draftRetryCount: draftRetryBudget.used,
+                draftRetryMax: draftRetryBudget.max,
+                canRetry: draftRetryBudget.canRetry,
+                writeDraft: publicDraftList[0],
+                writeDrafts: publicDraftList.length > 1 ? publicDraftList : undefined,
             });
             if (!published) {
                 (0, message_blocks_debug_util_1.emitAgentMessageSseDebug)({
@@ -340,13 +381,13 @@ function createToolsNode(bundle) {
                 type: 'write_confirmation_gate',
                 output: runHelpers.normalizeJsonLike({
                     status: 'awaiting_user',
-                    pendingToolCallCount: writeCallsForGate.length,
-                    toolNames: writeCallsForGate.map((call) => call.name),
+                    pendingToolCallCount: toolCallsForGate.length,
+                    toolNames: toolCallsForGate.map((call) => call.name),
                 }),
             };
             nextSteps = [...nextSteps, gateStep];
             await runHelpers.updateRun(ctx.input.runId, nextSteps, client_1.AgentRunStatus.success);
-            return Object.assign(Object.assign({}, state), { steps: nextSteps, toolObservations: (0, graph_tool_observations_util_1.mergeRunRoundObservations)(state, observations), taskPlan, workflowRun: workflowRunForContext, workflowAwaitingReact: workflowAwaitingReactForContext, pendingToolCalls: [], awaitingWriteConfirmation: true, finalOutput: (_z = deps.assistantArtifact.peekSerialized(ctx.input.sessionId, ctx.input.runId)) !== null && _z !== void 0 ? _z : '', status: client_1.AgentRunStatus.success, finished: true, pagedListHttpUsed: pagedGatherHttpBudget.used });
+            return Object.assign(Object.assign({}, state), { steps: nextSteps, toolObservations: (0, graph_tool_observations_util_1.mergeRunRoundObservations)(state, observations), taskPlan, workflowRun: workflowRunForContext, workflowAwaitingReact: workflowAwaitingReactForContext, pendingToolCalls: [], draftRetryCount, awaitingWriteConfirmation: true, finalOutput: (_1 = deps.assistantArtifact.peekSerialized(ctx.input.sessionId, ctx.input.runId)) !== null && _1 !== void 0 ? _1 : '', status: client_1.AgentRunStatus.success, finished: true, pagedListHttpUsed: pagedGatherHttpBudget.used });
         }
         const round = await (0, paged_list_gather_util_1.expandPagedListGather)({
             round: await runRound(state.pendingToolCalls, [...(0, graph_tool_observations_util_1.allToolObservations)(state)], [...state.steps]),
