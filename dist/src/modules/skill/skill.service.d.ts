@@ -1,0 +1,45 @@
+import { type PaginatedResult } from '../../common/pagination';
+import { SkillService as SkillRuntimeService } from '../../core/skill/skill.service';
+import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
+import { AgentHostToolCatalogService } from '../../core/runtime-cache/agent-host-tool-catalog.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AgentService } from '../agent/agent.service';
+import { WorkflowService } from '../workflow/workflow.service';
+import { CreateSkillDto } from './dto/create-skill.dto';
+import { QueryClientSkillByAgentDto } from './dto/query-client-skill-by-agent.dto';
+import { QuerySkillDto } from './dto/query-skill.dto';
+import { ReplaceSkillToolsDto } from './dto/skill-tool-binding.dto';
+import { UpdateSkillDto } from './dto/update-skill.dto';
+import { type SkillClientListItem, type SkillResponse } from './types/skill.types';
+export declare class SkillService {
+    private readonly prisma;
+    private readonly skillRuntime;
+    private readonly agentService;
+    private readonly runtimeCacheInvalidator;
+    private readonly hostToolCatalogService;
+    private readonly workflowService;
+    constructor(prisma: PrismaService, skillRuntime: SkillRuntimeService, agentService: AgentService, runtimeCacheInvalidator: RuntimeCacheInvalidator, hostToolCatalogService: AgentHostToolCatalogService, workflowService: WorkflowService);
+    create(agentId: number, appClientId: number, dto: CreateSkillDto): Promise<SkillResponse>;
+    createForAppClient(appClientId: number, dto: CreateSkillDto, linkAgentId?: number): Promise<SkillResponse>;
+    findPageByAgent(agentId: number, appClientId: number, query: QuerySkillDto): Promise<PaginatedResult<SkillResponse>>;
+    findClientListByAgentForUser(agentId: number, userId: number, appClientId: number, query?: QueryClientSkillByAgentDto): Promise<SkillClientListItem[]>;
+    private resolvePageScopedHostToolIds;
+    findPageByAppClient(appClientId: number, query: QuerySkillDto & {
+        agentId?: number;
+    }): Promise<PaginatedResult<SkillResponse>>;
+    findOne(skillId: number): Promise<SkillResponse>;
+    update(skillId: number, dto: UpdateSkillDto): Promise<SkillResponse>;
+    replaceTools(skillId: number, dto: ReplaceSkillToolsDto): Promise<SkillResponse>;
+    remove(skillId: number): Promise<SkillResponse>;
+    private invalidateAppClientSkillCaches;
+    private invalidateAgentRuntimeCache;
+    private matchesClientSkillQuery;
+    private getSkillOrThrow;
+    private normalizeToolBindings;
+    private assertToolsInApp;
+    private assertAppClientExists;
+    private assertAgentInAppClient;
+    private fetchToolRiskLevels;
+    private normalizeOptionalText;
+    private assertSkillWorkflowBindingsIfNeeded;
+}

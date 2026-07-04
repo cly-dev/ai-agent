@@ -1,0 +1,43 @@
+import type { Request, Response } from 'express';
+import { type PaginatedResult } from '../../common/pagination';
+import { LlmService } from '../../core/llm/llm.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { QueryPageAgentLlmProxyAuditDto } from './dto/page-agent-audit.dto';
+import { type PageAgentLlmProxyAuditDetail, type PageAgentLlmProxyAuditListItem } from './page-agent.types';
+type ProxyChatInput = {
+    userId: number;
+    appClientId: number;
+    body: unknown;
+    req: Request;
+    res: Response;
+};
+export declare class PageAgentProxyService {
+    private readonly prisma;
+    private readonly llmService;
+    private readonly logger;
+    constructor(prisma: PrismaService, llmService: LlmService);
+    proxyChatCompletions(input: ProxyChatInput): Promise<void>;
+    findAuditPage(appClientId: number, query: QueryPageAgentLlmProxyAuditDto): Promise<PaginatedResult<PageAgentLlmProxyAuditListItem>>;
+    findAuditDetail(appClientId: number, id: number): Promise<PageAgentLlmProxyAuditDetail>;
+    private writeUpstreamResponse;
+    private observeBufferedBody;
+    private tryParseJsonBody;
+    private extractErrorPreview;
+    private copyHeader;
+    private mergeProviderModel;
+    private mergeUsage;
+    private updateAuditFinished;
+    private updateAuditFailed;
+    private safeUpdateAudit;
+    private buildHeaders;
+    private resolveApiKey;
+    private resolveEndpoint;
+    private buildUpstreamPayload;
+    private buildRequestMeta;
+    private assertRequestBody;
+    private readTimeoutMs;
+    private pickString;
+    private pickInt;
+    private errorMessage;
+}
+export {};
