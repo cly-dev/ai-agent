@@ -2,8 +2,9 @@ import { resolveDraftReviewMaxRetries } from './draft-review-config.util';
 
 export type DraftRetryBudget = {
   used: number;
-  max: number;
-  remaining: number;
+  /** `null` = 不限制 */
+  max: number | null;
+  remaining: number | null;
   canRetry: boolean;
 };
 
@@ -12,6 +13,14 @@ export function resolveDraftRetryBudget(
 ): DraftRetryBudget {
   const used = Math.max(0, draftRetryCount ?? 0);
   const max = resolveDraftReviewMaxRetries();
+  if (max === null) {
+    return {
+      used,
+      max: null,
+      remaining: null,
+      canRetry: true,
+    };
+  }
   const remaining = Math.max(0, max - used);
   return {
     used,

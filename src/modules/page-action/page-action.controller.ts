@@ -61,7 +61,7 @@ export class PageActionController {
   @ApiOperation({
     summary: 'B 端：创建 PageAction',
     description:
-      '可省略 hostToolId：服务端按 actionKey / pageScope 自动创建 HostTool（默认 text 字段 schema）。',
+      '须绑定已存在的 HostTool（hostToolId）。未绑 workflowId 时 hostToolId 必填；纯分析类 Workflow 可不绑。',
   })
   create(@Body() body: CreatePageActionDto) {
     return this.service.create(body);

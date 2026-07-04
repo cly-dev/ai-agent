@@ -123,13 +123,13 @@ POST /admin/workflow
 |------|-----|
 | `actionKey` | C 端 invoke 用，如 `review.autofill` |
 | `workflowId` | 上一步返回的 id |
-| `hostToolId` | **可省略**；若填写须等于 Workflow `generate_and_push` 节点的 `hostToolId`（preset 里一般为 12） |
+| `hostToolId` | **可省略**；若填写，必须是同 AppClient 下已有 HostTool |
 | `systemPrompt` | 页内角色说明 |
 | `pageScope` | 与 C 端 `pageContext.page` 一致 |
 
 **③ 校验**
 
-保存 PageAction 时：Workflow 须含 push 节点；若填写 `hostToolId` 则须与 push 节点一致。
+保存 PageAction 时：只校验 Workflow 引用有效；若填写 `hostToolId`，校验 HostTool 属于同 AppClient。分析类 Workflow 可不含 push 节点。
 
 ---
 
@@ -250,19 +250,20 @@ Preset 适合 80% 场景。需要改单步 objective、调整顺序时：
 
 **做法**：workflow-only 无需 SkillTool；叠加层模式下对比节点所需 Tool 与 SkillTool 列表，缺的补上。
 
-### 6.3 PageAction 对齐
+### 6.3 PageAction 保存 / 执行
 
 | code | 原因 |
 |------|------|
-| `PAGE_ACTION_WORKFLOW_BINDING_INCOMPATIBLE` | 无 push 节点，或填写的 hostToolId 与 push 节点不一致 |
-| `missing_generate_and_push` | Workflow 无推送节点 |
+| `PAGE_ACTION_HOST_TOOL_REQUIRED` | 未绑定 Workflow 且无 hostToolId |
+| `HOST_TOOL_NOT_FOUND` | hostToolId 不存在或不属于当前 AppClient |
+| `PAGE_ACTION_PUSH_HOST_TOOL_MISSING` | 执行 push 节点时节点和 PageAction 都没有可用 HostTool |
 
 ### 6.4 修改 Workflow 影响下游
 
 | code | 原因 |
 |------|------|
 | `WORKFLOW_CHANGE_BREAKS_SKILL_REFERENCES` | 改 nodes 后某 Skill 工具白名单不够 |
-| `WORKFLOW_CHANGE_BREAKS_PAGE_ACTION_REFERENCES` | 改 push 节点 hostToolId 后与 PageAction 不一致 |
+| `WORKFLOW_CHANGE_BREAKS_PAGE_ACTION_REFERENCES` | 旧版强对齐校验错误码；当前 PageAction 保存期不再因 push 节点 hostToolId 不一致失败 |
 
 ---
 
@@ -283,8 +284,8 @@ Preset 适合 80% 场景。需要改单步 objective、调整顺序时：
 ### PageAction 上线前
 
 - [ ] Workflow `profile=page_action`（或 shared）
-- [ ] Preset 含 `generate_and_push`（或手配 push 节点）
-- [ ] 若填写 PageAction.hostToolId，须与 push 节点一致（可省略，运行时推导）
+- [ ] 自动回填类 Preset 含 `generate_and_push`（分析类 Workflow 可不含 push 节点）
+- [ ] 无 Workflow 时必须选择已有 PageAction.hostToolId；绑 Workflow 时可省略
 - [ ] C 端 pageContext 与 pageScope 一致
 
 ### Skill（Chat）上线前

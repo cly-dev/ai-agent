@@ -2,7 +2,7 @@
 
 > **受众**：B 端管理台前端、运营配置、后端联调。  
 > **定位**：Workflow / Skill / PageAction 配置的**唯一入口文档**（2026-06 起）。  
-> **原则**：Workflow 节点 `input` 是工具绑定的 SSOT；绑了 `workflowId` 后不必再重复维护 SkillTool / PageAction.hostToolId。
+> **原则**：Workflow 节点 `input` 是工具绑定的 SSOT；绑了 `workflowId` 后不必再重复维护 SkillTool / PageAction.hostToolId。PageAction 不再支持内联创建 HostTool，必须绑定已有 `hostToolId`。
 
 ---
 
@@ -15,6 +15,7 @@
 | `fetch_data` | `toolId` 或 `definitionKey` 二选一 | 保存时 **`toolId` 必填** |
 | Skill + Workflow | 绑 workflowId **且** SkillTool 必须覆盖全部节点 | **workflow-only**：只绑 `workflowId` + `prompt` 即可 |
 | SkillTool | 绑 Workflow 后强制配置 | **可选**；仅「叠加层」收窄 ReAct 时才须覆盖节点引用 |
+| PageAction + HostTool | `POST /admin/page-action` 内联 `hostTool` 自动创建 | **先创建/选择 HostTool，再传 `hostToolId`** |
 | PageAction + Workflow | 必须填 `hostToolId` 且与 push 节点一致 | **只绑 `workflowId`**；任意 Workflow；`hostToolId` 可省略 |
 | PageAction invoke | Workflow 加载失败可能回退单步 | 绑了 `workflowId` 且加载失败 → **SSE `failed`**，不回退 |
 
@@ -138,7 +139,7 @@ prompt + 可选叠加层     systemPrompt + 可选 hostToolId
 
 | 路径 | hostToolId | Workflow |
 |------|------------|----------|
-| **Legacy 单步** | **必填**（或内联 `hostTool` 自动创建） | 不绑 |
+| **Legacy 单步** | **必填**，且必须是已有 HostTool | 不绑 |
 | **Workflow 多步** | **可省略** | 必填；保存期不校验节点结构 |
 
 ### 5.2 字段
@@ -154,7 +155,7 @@ prompt + 可选叠加层     systemPrompt + 可选 hostToolId
 ### 5.3 绑 Workflow 时
 
 - 仅校验 Workflow 存在且 `workflowVersion`（若 pin）有效；
-- `hostToolId` 可省略；`generate_and_push` 执行期从节点 `input.hostToolId` 解析。
+- `hostToolId` 可省略；`generate_and_push` 执行期优先从节点 `input.hostToolId` 解析，必要时可用 PageAction.hostToolId 兜底。
 
 ### 5.4 创建示例（workflow-only）
 
@@ -185,6 +186,8 @@ POST /admin/page-action
 
 | code | 含义 |
 |------|------|
+| `PAGE_ACTION_HOST_TOOL_REQUIRED` | 保存 PageAction 时无 Workflow 且无 hostToolId |
+| `HOST_TOOL_NOT_FOUND` | hostToolId 不存在，或不属于当前 AppClient |
 | `PAGE_ACTION_HOST_TOOL_MISSING` | 无 Workflow 且无 hostToolId（Legacy 单步 invoke） |
 | `PAGE_ACTION_PUSH_HOST_TOOL_MISSING` | 执行 `generate_and_push` 时节点与 PageAction 均无 hostToolId |
 
@@ -288,8 +291,8 @@ invoke(actionKey) → 加载 Workflow → runPageWorkflow（与 Chat 相同 node
 
 **PageAction**
 
-- [ ] 无 Workflow：`hostToolId` 或内联 `hostTool` 已配置  
-- [ ] 有 Workflow：含 push 节点；若填 hostToolId 与 push 一致  
+- [ ] 无 Workflow：已选择已有 `hostToolId`
+- [ ] 有 Workflow：`hostToolId` 可省略；分析类 Workflow 可不含 push 节点
 - [ ] `pageScope` 与 C 端 `pageContext.page` 一致  
 
 ---
@@ -300,7 +303,7 @@ invoke(actionKey) → 加载 Workflow → runPageWorkflow（与 Chat 相同 node
 不必。workflow-only 只绑 `workflowId` 即可。只有要收窄 ReAct 工具范围时才配 SkillTool，且须覆盖节点引用。
 
 **Q：PageAction 还要 hostToolId 吗？**  
-绑 Workflow 时可省略，运行时从 `generate_and_push` 推导。不绑 Workflow 时仍必填（或自动创建）。
+绑 Workflow 时可省略；push 执行期优先从 `generate_and_push.input.hostToolId` 推导，缺失时可用 PageAction.hostToolId 兜底。不绑 Workflow 时必须绑定已有 HostTool。
 
 **Q：`tools[]` 还要在创建 Workflow 时传吗？**  
 不必。工具绑在节点 `input` 上；`tools[]` 仅可选标 `isRequired`。

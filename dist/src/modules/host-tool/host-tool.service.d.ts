@@ -41,6 +41,8 @@ export declare class HostToolService {
     findHostToolOne(id: number): Promise<HostToolResponse>;
     updateHostTool(id: number, dto: UpdateHostToolDto): Promise<HostToolResponse>;
     removeHostTool(id: number): Promise<HostToolResponse>;
+    private assertHostToolNotReferencedByWorkflowNodes;
+    private assertHostPageNotReferencedByWorkflowNodes;
     getHostToolsForAgent(agentId: number, appClientId: number, query: QueryHostToolDto): Promise<{
         items: {
             bound: boolean;

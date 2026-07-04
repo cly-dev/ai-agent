@@ -241,7 +241,6 @@ export function createWorkflowInitNode(
       const skillWorkflow = await resolveSkillWorkflowForInit(deps.prisma, {
         skillId: boundSkillId,
         appClientId: ctx.input.appClientId,
-        scope,
       });
       if (skillWorkflow.kind === 'loaded') {
         const denied = skipIfTriggerPermissionDenied(

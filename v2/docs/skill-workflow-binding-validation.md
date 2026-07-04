@@ -114,9 +114,9 @@ Host Tool scope 仍来自当前页 `scopedHostTools`。
 
 | 模式 | `hostToolId` | 保存期 | invoke |
 |------|--------------|--------|--------|
-| 轻量（无 Workflow） | 必填或自动创建 | — | 用 DB `hostToolId` |
-| **workflow-only** | **可省略** | Workflow 须含 `generate_and_push` | 从 push 节点 `input.hostToolId` 推导 |
-| 显式对齐 | 填写且须与 push 节点一致 | 同上 + hostToolId 匹配校验 | 优先 DB `hostToolId` |
+| 轻量（无 Workflow） | 必填，且必须是已有 HostTool | 最终状态必须有 `hostToolId` | 用 DB `hostToolId` |
+| **workflow-only** | **可省略** | 只校验 Workflow 引用有效 | push 节点优先用 `input.hostToolId`，必要时用 PageAction.hostToolId 兜底 |
+| 显式兜底 | 可填写已有 HostTool | 校验 HostTool 属于同 AppClient | 节点未提供 HostTool 时使用 PageAction.hostToolId |
 
 实现：`validate-page-action-workflow-binding.util.ts`、`page-action-workflow-host.util.ts`。
 
@@ -133,8 +133,8 @@ Host Tool scope 仍来自当前页 `scopedHostTools`。
 ### PageAction
 
 1. 绑 Workflow 后，`hostToolId` 可留空；UI 可展示 push 节点 hostTool 为只读预览。
-2. 若手动填写 `hostToolId`，须与 push 节点一致。
-3. 无 Workflow 时行为不变：须 `hostToolId` 或内联 `hostTool` 自动创建。
+2. 若手动填写 `hostToolId`，只要求它是同 AppClient 下的已有 HostTool。
+3. 无 Workflow 时必须传 `hostToolId`；不再支持内联 `hostTool` 自动创建。
 
 ---
 

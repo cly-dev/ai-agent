@@ -245,23 +245,23 @@ Intent step 的 `output` 字段（持久化于 `AgentRun.steps`）示例：
 
 ## 主循环与 summarize 分流
 
-LangGraph 在 `agent-graph/` 中运行（`build-agent-graph.ts` + `nodes/intent.node.ts`）。**无论工具总数多少，均走 intent 节点**（skill 命中除外）。
+LangGraph 在 `agent-graph/` 中运行（`build-agent-graph.ts`）。主链路先由 `turnRoute` 判定本轮任务域，再进入 `workflow_init` 生成 plan；HTTP Tool 候选召回只在 ReAct 发现当前 pending 步为 `kind=tool` 且候选过多时触发。
 
 | 条件 | 路由 |
 |------|------|
-| `skill` 命中 | `llm`（带 skill prompt） |
-| 类目召回 `matchedCategoryIds.length > 0` | 按类目过滤 →（>5 则 bind 召回）→ `turnRoute` → `workflow_init` → … |
-| **smalltalk**（`smalltalk-hints.json` 命中） | `scopedTools=[]` → `turnRoute`（跳过 route LLM）→ chitchat plan → `workflow_react` → `llm`（含会话历史）→ `summarize`（`direct_reply` 润色） |
+| `skill` 显式命中 | `turnRoute` 带 requested skill 上下文 → `workflow_init` → skill frame / workflow plan |
+| `turnRoute` 判定 `orchestrated_task` | `workflow_init` 生成 plan → pending HTTP tool step 时按类目 / bind cap 做候选召回 → `workflow_react` |
+| **smalltalk**（`smalltalk-hints.json` 命中） | `turnRoute` 直接生成 chitchat contract → chitchat plan → `workflow_react` → `llm`（含会话历史）→ `summarize`（`direct_reply` 润色） |
 | **turnRoute `direct_answer`** | 同上 chitchat 路径（`buildChitchatPlanResult`） |
-| 类目未命中 / 过滤后无工具 / 无工具可用 / 意图不清 / 召回失败 | `intent` 设 `pendingRespond` → **`summarize`（跳过 plan/readiness/llm）** |
+| 无工具可用 / route 失败终局 | `turnRoute` 设置 `pendingRespond` → **`summarize`（跳过 plan/readiness/llm）** |
 
-类目未命中时 summarize 使用 `buildUnsupportedIntentGuidance()` 引导语，向用户说明当前问题不在系统支持范围内。
+工具候选召回失败时不再作为一层前置路由终局，而是在当前 HTTP tool step 内回退到可用候选集，并写入 `candidate_recall` audit step 便于排查。
 
 **规范**
 
 - smalltalk 短语只维护在 **`src/core/intent/smalltalk-hints.json`**；命中后**不再**走 summarize 专线，而是与 `direct_answer` 共用 chitchat plan + `workflow_react` → `llm`（`buildLlmInvokeMessages` 含 session history）。
-- 类目未命中等非 smalltalk 终局仍由 summarize 节点生成用户可见回复（`direct_user` observation）。
-- bind 分档（`AGENT_BIND_FULL_MAX=5`）：过滤后工具数 **≤5 全量 bind**，**>5 再走工具向量召回**。
+- 非 smalltalk 的 route 终局仍由 summarize 节点生成用户可见回复（`direct_user` observation）。
+- bind 分档（`AGENT_BIND_FULL_MAX=5`）：当前 HTTP tool step 的候选数 **≤5 全量 bind**，**>5 再走工具向量召回**。
 
 ---
 

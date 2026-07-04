@@ -24,7 +24,7 @@ flowchart TB
   end
   subgraph L3["③ 运行白名单"]
     ST[SkillTool / SkillHostTool]
-    HT[PageAction.hostToolId]
+    HT[已有 HostTool / PageAction.hostToolId]
   end
   N --> S
   N --> PA
@@ -431,18 +431,18 @@ Tool 须先绑定到 Agent（`AgentTool`）；HostTool 须先绑定到 Agent（`
 | 字段 | 说明 |
 |------|------|
 | `actionKey` | C 端 invoke 用 |
-| `hostToolId` | 无 Workflow 时必填；绑 Workflow 时可省略（invoke 从 push 节点推导） |
+| `hostToolId` | 无 Workflow 时必填，且必须是已有 HostTool；绑 Workflow 时可省略 |
 | `systemPrompt` | 必填 |
 | `pageScope` | 与 C 端 `pageContext.page` 一致 |
 | `workflowId` | 推荐必配（多步 Workflow） |
 | `workflowVersion` / `workflowOverrides` | 同 Skill |
 
-### 5.2 选 Workflow 后的 UI 逻辑（必做）
+### 5.2 选 Workflow 后的 UI 逻辑
 
 1. `GET /admin/workflow/:id`
-2. 校验 `profile` ∈ `{ page_action, shared }`
-3. 找 `action === 'generate_and_push'` 的节点，读 `input.hostToolId`
-4. **展示为只读预览**；可一键填入 `hostToolId`（非必填）
+2. 找 `action === 'generate_and_push'` 的节点，读 `input.hostToolId`
+3. **展示为只读预览**；可一键填入 `hostToolId`（非必填）
+4. 分析类 Workflow 可能没有 push 节点，仍允许保存
 
 ```typescript
 function findPushHostToolId(nodes: WorkflowNodeDef[]): number | null {
@@ -452,7 +452,7 @@ function findPushHostToolId(nodes: WorkflowNodeDef[]): number | null {
 }
 ```
 
-若无 push 节点 → **禁止保存**。若用户填写了 `hostToolId`，须与 push 节点一致。
+PageAction 页不要再内联 HostTool 创建表单。需要新建时，调用 `/admin/host-tool` 创建后回填 `hostToolId`。
 
 ### 5.3 推荐创建顺序（PageAction 全自动回填）
 
@@ -462,8 +462,7 @@ function findPushHostToolId(nodes: WorkflowNodeDef[]): number | null {
 3. POST /admin/page-action
    {
      appClientId, actionKey, name, systemPrompt, pageScope,
-     workflowId: <step1.id>,
-     hostToolId: <与 preset hostToolId 相同>
+     workflowId: <step1.id>
    }
 ```
 
@@ -471,39 +470,32 @@ function findPushHostToolId(nodes: WorkflowNodeDef[]): number | null {
 
 ```json
 {
-  "code": "PAGE_ACTION_WORKFLOW_BINDING_INCOMPATIBLE",
-  "workflowId": 2,
-  "issues": [
-    {
-      "path": "hostToolId",
-      "code": "page_action_host_tool_not_in_workflow_nodes",
-      "message": "PageAction.hostToolId=3 must match ..."
-    }
-  ]
+  "code": "PAGE_ACTION_HOST_TOOL_REQUIRED",
+  "message": "hostToolId is required when workflowId is not set; create HostTool first, then bind by id"
 }
 ```
 
 | code | 含义 |
 |------|------|
-| `missing_generate_and_push` | Workflow 无 push 节点 |
-| `page_action_host_tool_not_in_workflow_nodes` | hostToolId 与 push 节点不一致 |
+| `PAGE_ACTION_HOST_TOOL_REQUIRED` | 未绑定 Workflow 且无 hostToolId |
+| `HOST_TOOL_NOT_FOUND` | hostToolId 不存在或不属于当前 AppClient |
+| `PAGE_ACTION_PUSH_HOST_TOOL_MISSING` | 执行 push 节点时节点和 PageAction 都没有可用 HostTool |
 
-### 5.5 hostToolId 自动创建（无 Workflow）
+### 5.5 HostTool 创建与绑定（无 Workflow）
 
-未绑 `workflowId` 时，创建 PageAction 可省略 `hostToolId`，传内联 `hostTool` 由服务端创建。
+未绑 `workflowId` 时，创建 PageAction 必须传 `hostToolId`。如果目标 HostTool 不存在，先调用 `/admin/host-tool` 创建，再把返回的 `id` 写入 PageAction。
 
-绑 `workflowId` 时 `hostToolId` 可省略，invoke 从 push 节点推导；若填写须与 push 节点一致。
+绑 `workflowId` 时 `hostToolId` 可省略；如果填写，仅校验它属于同一个 AppClient。
 
 ---
 
 ## 6. Workflow 变更对 ** 对下游的阻断 **
 
-PATCH Workflow 的 `nodes` 或 Preset 重建时，若破坏已绑 Skill / PageAction，**整单 PATCH 失败**：
+PATCH Workflow 的 `nodes` 或 Preset 重建时，若破坏有叠加层的 Skill，**整单 PATCH 失败**。PageAction 不再因 push 节点 HostTool 与 PageAction.hostToolId 不一致阻断 Workflow 保存。
 
 | code | 含义 | UI |
 |------|------|-----|
 | `WORKFLOW_CHANGE_BREAKS_SKILL_REFERENCES` | 有 SkillTool 叠加层的 Skill 白名单不够 | 展示 `skillId` + issues，跳转 Skill 页 |
-| `WORKFLOW_CHANGE_BREAKS_PAGE_ACTION_REFERENCES` | PageAction 填写的 hostToolId 与 push 节点不一致 | 展示 `pageActionId`，跳转 PageAction 页 |
 
 ---
 
@@ -517,7 +509,7 @@ PATCH Workflow 的 `nodes` 或 Preset 重建时，若破坏已绑 Skill / PageAc
 | 4 | `PATCH` Preset 重建时不传 `presetConfig` | 必须传完整 requiredConfig |
 | 5 | 编辑页用本地缓存的 `preset` 当真值 | GET 详情以 `nodes[]` 为准；DB 无 preset 字段 |
 | 6 | Skill 叠加层模式下 SkillTool 未覆盖节点 | 开启叠加层时 diff 并 PUT tools；workflow-only 无需 |
-| 7 | PageAction 填写了与 push 不一致的 hostToolId | 绑 Workflow 时可省略 hostToolId，或预览 push 节点后一键填入 |
+| 7 | PageAction 里内联创建 `hostTool`，或无 Workflow 时不填 hostToolId | 先创建/选择已有 HostTool；无 Workflow 时提交 `hostToolId` |
 | 8 | 错误处理只看 HTTP 4xx | 解析 `{ status, data: { code, issues } }` |
 | 9 | B 端请求 C 端路径加了 `/admin` | invoke 用 `/page-action/invoke` |
 | 10 | `mutation_submit` 后又手加 `await_user_confirm` | Preset 已含确认链，禁止重复 |
@@ -713,7 +705,7 @@ X-App-Dsn: <dsn>
 ### PageAction
 
 - [ ] 绑 Workflow 后可不填 hostToolId
-- [ ] 若填 hostToolId，须与 push 节点一致
+- [ ] 无 Workflow 时必须选择已有 hostToolId
 - [ ] `page_action` Workflow 不含 mutation 节点
 
 ### 错误解析

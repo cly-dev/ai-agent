@@ -27,7 +27,11 @@ __decorate([
     __metadata("design:type", Number)
 ], PendingWriteGatePublicStateDto.prototype, "draftRetryCount", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: '重试上限' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: '重试上限；null 表示不限制',
+        example: null,
+    }),
     __metadata("design:type", Number)
 ], PendingWriteGatePublicStateDto.prototype, "draftRetryMax", void 0);
 __decorate([

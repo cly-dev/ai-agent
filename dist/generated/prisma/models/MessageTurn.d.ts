@@ -1032,9 +1032,6 @@ export type MessageTurnUncheckedUpdateManyWithoutPrimaryAgentNestedInput = {
 export type EnumAgentRunStatusFieldUpdateOperationsInput = {
     set?: $Enums.AgentRunStatus;
 };
-export type NullableDateTimeFieldUpdateOperationsInput = {
-    set?: Date | string | null;
-};
 export type MessageTurnCreateNestedOneWithoutAgentRunsInput = {
     create?: Prisma.XOR<Prisma.MessageTurnCreateWithoutAgentRunsInput, Prisma.MessageTurnUncheckedCreateWithoutAgentRunsInput>;
     connectOrCreate?: Prisma.MessageTurnCreateOrConnectWithoutAgentRunsInput;

@@ -148,6 +148,7 @@ export type UserWhereInput = {
     userApps?: Prisma.UserAppListRelationFilter;
     userIntegrations?: Prisma.UserIntegrationListRelationFilter;
     pageActionRuns?: Prisma.PageActionRunListRelationFilter;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditListRelationFilter;
     approvalsInitiated?: Prisma.ApprovalRequestListRelationFilter;
     approvalsToApprove?: Prisma.ApprovalRequestListRelationFilter;
 };
@@ -167,6 +168,7 @@ export type UserOrderByWithRelationInput = {
     userApps?: Prisma.UserAppOrderByRelationAggregateInput;
     userIntegrations?: Prisma.UserIntegrationOrderByRelationAggregateInput;
     pageActionRuns?: Prisma.PageActionRunOrderByRelationAggregateInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditOrderByRelationAggregateInput;
     approvalsInitiated?: Prisma.ApprovalRequestOrderByRelationAggregateInput;
     approvalsToApprove?: Prisma.ApprovalRequestOrderByRelationAggregateInput;
 };
@@ -189,6 +191,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
     userApps?: Prisma.UserAppListRelationFilter;
     userIntegrations?: Prisma.UserIntegrationListRelationFilter;
     pageActionRuns?: Prisma.PageActionRunListRelationFilter;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditListRelationFilter;
     approvalsInitiated?: Prisma.ApprovalRequestListRelationFilter;
     approvalsToApprove?: Prisma.ApprovalRequestListRelationFilter;
 }, "id" | "employeeId">;
@@ -235,6 +238,7 @@ export type UserCreateInput = {
     userApps?: Prisma.UserAppCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestCreateNestedManyWithoutApproverInput;
 };
@@ -254,6 +258,7 @@ export type UserUncheckedCreateInput = {
     userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutApproverInput;
 };
@@ -272,6 +277,7 @@ export type UserUpdateInput = {
     userApps?: Prisma.UserAppUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUpdateManyWithoutApproverNestedInput;
 };
@@ -291,6 +297,7 @@ export type UserUncheckedUpdateInput = {
     userApps?: Prisma.UserAppUncheckedUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutApproverNestedInput;
 };
@@ -385,6 +392,18 @@ export type IntFieldUpdateOperationsInput = {
     decrement?: number;
     multiply?: number;
     divide?: number;
+};
+export type UserCreateNestedOneWithoutPageAgentLlmProxyAuditsInput = {
+    create?: Prisma.XOR<Prisma.UserCreateWithoutPageAgentLlmProxyAuditsInput, Prisma.UserUncheckedCreateWithoutPageAgentLlmProxyAuditsInput>;
+    connectOrCreate?: Prisma.UserCreateOrConnectWithoutPageAgentLlmProxyAuditsInput;
+    connect?: Prisma.UserWhereUniqueInput;
+};
+export type UserUpdateOneRequiredWithoutPageAgentLlmProxyAuditsNestedInput = {
+    create?: Prisma.XOR<Prisma.UserCreateWithoutPageAgentLlmProxyAuditsInput, Prisma.UserUncheckedCreateWithoutPageAgentLlmProxyAuditsInput>;
+    connectOrCreate?: Prisma.UserCreateOrConnectWithoutPageAgentLlmProxyAuditsInput;
+    upsert?: Prisma.UserUpsertWithoutPageAgentLlmProxyAuditsInput;
+    connect?: Prisma.UserWhereUniqueInput;
+    update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutPageAgentLlmProxyAuditsInput, Prisma.UserUpdateWithoutPageAgentLlmProxyAuditsInput>, Prisma.UserUncheckedUpdateWithoutPageAgentLlmProxyAuditsInput>;
 };
 export type UserCreateNestedOneWithoutLlmModelConfigsInput = {
     create?: Prisma.XOR<Prisma.UserCreateWithoutLlmModelConfigsInput, Prisma.UserUncheckedCreateWithoutLlmModelConfigsInput>;
@@ -496,6 +515,93 @@ export type UserUpdateOneRequiredWithoutApprovalsToApproveNestedInput = {
     connect?: Prisma.UserWhereUniqueInput;
     update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutApprovalsToApproveInput, Prisma.UserUpdateWithoutApprovalsToApproveInput>, Prisma.UserUncheckedUpdateWithoutApprovalsToApproveInput>;
 };
+export type UserCreateWithoutPageAgentLlmProxyAuditsInput = {
+    employeeId: string;
+    email: string;
+    password: string;
+    username: string;
+    status?: $Enums.UserStatus;
+    mustChangePassword?: boolean;
+    createdAt?: Date | string;
+    sessions?: Prisma.SessionCreateNestedManyWithoutUserInput;
+    messageTurns?: Prisma.MessageTurnCreateNestedManyWithoutUserInput;
+    messageFeedbacks?: Prisma.MessageFeedbackCreateNestedManyWithoutUserInput;
+    llmModelConfigs?: Prisma.UserLlmModelConfigCreateNestedManyWithoutUserInput;
+    userApps?: Prisma.UserAppCreateNestedManyWithoutUserInput;
+    userIntegrations?: Prisma.UserIntegrationCreateNestedManyWithoutUserInput;
+    pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutUserInput;
+    approvalsInitiated?: Prisma.ApprovalRequestCreateNestedManyWithoutInitiatorInput;
+    approvalsToApprove?: Prisma.ApprovalRequestCreateNestedManyWithoutApproverInput;
+};
+export type UserUncheckedCreateWithoutPageAgentLlmProxyAuditsInput = {
+    id?: number;
+    employeeId: string;
+    email: string;
+    password: string;
+    username: string;
+    status?: $Enums.UserStatus;
+    mustChangePassword?: boolean;
+    createdAt?: Date | string;
+    sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput;
+    messageTurns?: Prisma.MessageTurnUncheckedCreateNestedManyWithoutUserInput;
+    messageFeedbacks?: Prisma.MessageFeedbackUncheckedCreateNestedManyWithoutUserInput;
+    llmModelConfigs?: Prisma.UserLlmModelConfigUncheckedCreateNestedManyWithoutUserInput;
+    userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutUserInput;
+    userIntegrations?: Prisma.UserIntegrationUncheckedCreateNestedManyWithoutUserInput;
+    pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutUserInput;
+    approvalsInitiated?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutInitiatorInput;
+    approvalsToApprove?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutApproverInput;
+};
+export type UserCreateOrConnectWithoutPageAgentLlmProxyAuditsInput = {
+    where: Prisma.UserWhereUniqueInput;
+    create: Prisma.XOR<Prisma.UserCreateWithoutPageAgentLlmProxyAuditsInput, Prisma.UserUncheckedCreateWithoutPageAgentLlmProxyAuditsInput>;
+};
+export type UserUpsertWithoutPageAgentLlmProxyAuditsInput = {
+    update: Prisma.XOR<Prisma.UserUpdateWithoutPageAgentLlmProxyAuditsInput, Prisma.UserUncheckedUpdateWithoutPageAgentLlmProxyAuditsInput>;
+    create: Prisma.XOR<Prisma.UserCreateWithoutPageAgentLlmProxyAuditsInput, Prisma.UserUncheckedCreateWithoutPageAgentLlmProxyAuditsInput>;
+    where?: Prisma.UserWhereInput;
+};
+export type UserUpdateToOneWithWhereWithoutPageAgentLlmProxyAuditsInput = {
+    where?: Prisma.UserWhereInput;
+    data: Prisma.XOR<Prisma.UserUpdateWithoutPageAgentLlmProxyAuditsInput, Prisma.UserUncheckedUpdateWithoutPageAgentLlmProxyAuditsInput>;
+};
+export type UserUpdateWithoutPageAgentLlmProxyAuditsInput = {
+    employeeId?: Prisma.StringFieldUpdateOperationsInput | string;
+    email?: Prisma.StringFieldUpdateOperationsInput | string;
+    password?: Prisma.StringFieldUpdateOperationsInput | string;
+    username?: Prisma.StringFieldUpdateOperationsInput | string;
+    status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus;
+    mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput;
+    messageTurns?: Prisma.MessageTurnUpdateManyWithoutUserNestedInput;
+    messageFeedbacks?: Prisma.MessageFeedbackUpdateManyWithoutUserNestedInput;
+    llmModelConfigs?: Prisma.UserLlmModelConfigUpdateManyWithoutUserNestedInput;
+    userApps?: Prisma.UserAppUpdateManyWithoutUserNestedInput;
+    userIntegrations?: Prisma.UserIntegrationUpdateManyWithoutUserNestedInput;
+    pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutUserNestedInput;
+    approvalsInitiated?: Prisma.ApprovalRequestUpdateManyWithoutInitiatorNestedInput;
+    approvalsToApprove?: Prisma.ApprovalRequestUpdateManyWithoutApproverNestedInput;
+};
+export type UserUncheckedUpdateWithoutPageAgentLlmProxyAuditsInput = {
+    id?: Prisma.IntFieldUpdateOperationsInput | number;
+    employeeId?: Prisma.StringFieldUpdateOperationsInput | string;
+    email?: Prisma.StringFieldUpdateOperationsInput | string;
+    password?: Prisma.StringFieldUpdateOperationsInput | string;
+    username?: Prisma.StringFieldUpdateOperationsInput | string;
+    status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus;
+    mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput;
+    messageTurns?: Prisma.MessageTurnUncheckedUpdateManyWithoutUserNestedInput;
+    messageFeedbacks?: Prisma.MessageFeedbackUncheckedUpdateManyWithoutUserNestedInput;
+    llmModelConfigs?: Prisma.UserLlmModelConfigUncheckedUpdateManyWithoutUserNestedInput;
+    userApps?: Prisma.UserAppUncheckedUpdateManyWithoutUserNestedInput;
+    userIntegrations?: Prisma.UserIntegrationUncheckedUpdateManyWithoutUserNestedInput;
+    pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutUserNestedInput;
+    approvalsInitiated?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutInitiatorNestedInput;
+    approvalsToApprove?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutApproverNestedInput;
+};
 export type UserCreateWithoutLlmModelConfigsInput = {
     employeeId: string;
     email: string;
@@ -510,6 +616,7 @@ export type UserCreateWithoutLlmModelConfigsInput = {
     userApps?: Prisma.UserAppCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestCreateNestedManyWithoutApproverInput;
 };
@@ -528,6 +635,7 @@ export type UserUncheckedCreateWithoutLlmModelConfigsInput = {
     userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutApproverInput;
 };
@@ -558,6 +666,7 @@ export type UserUpdateWithoutLlmModelConfigsInput = {
     userApps?: Prisma.UserAppUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUpdateManyWithoutApproverNestedInput;
 };
@@ -576,6 +685,7 @@ export type UserUncheckedUpdateWithoutLlmModelConfigsInput = {
     userApps?: Prisma.UserAppUncheckedUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutApproverNestedInput;
 };
@@ -593,6 +703,7 @@ export type UserCreateWithoutSessionsInput = {
     userApps?: Prisma.UserAppCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestCreateNestedManyWithoutApproverInput;
 };
@@ -611,6 +722,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
     userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutApproverInput;
 };
@@ -641,6 +753,7 @@ export type UserUpdateWithoutSessionsInput = {
     userApps?: Prisma.UserAppUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUpdateManyWithoutApproverNestedInput;
 };
@@ -659,6 +772,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
     userApps?: Prisma.UserAppUncheckedUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutApproverNestedInput;
 };
@@ -676,6 +790,7 @@ export type UserCreateWithoutMessageFeedbacksInput = {
     userApps?: Prisma.UserAppCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestCreateNestedManyWithoutApproverInput;
 };
@@ -694,6 +809,7 @@ export type UserUncheckedCreateWithoutMessageFeedbacksInput = {
     userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutApproverInput;
 };
@@ -724,6 +840,7 @@ export type UserUpdateWithoutMessageFeedbacksInput = {
     userApps?: Prisma.UserAppUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUpdateManyWithoutApproverNestedInput;
 };
@@ -742,6 +859,7 @@ export type UserUncheckedUpdateWithoutMessageFeedbacksInput = {
     userApps?: Prisma.UserAppUncheckedUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutApproverNestedInput;
 };
@@ -759,6 +877,7 @@ export type UserCreateWithoutUserIntegrationsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigCreateNestedManyWithoutUserInput;
     userApps?: Prisma.UserAppCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestCreateNestedManyWithoutApproverInput;
 };
@@ -777,6 +896,7 @@ export type UserUncheckedCreateWithoutUserIntegrationsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigUncheckedCreateNestedManyWithoutUserInput;
     userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutApproverInput;
 };
@@ -807,6 +927,7 @@ export type UserUpdateWithoutUserIntegrationsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigUpdateManyWithoutUserNestedInput;
     userApps?: Prisma.UserAppUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUpdateManyWithoutApproverNestedInput;
 };
@@ -825,6 +946,7 @@ export type UserUncheckedUpdateWithoutUserIntegrationsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigUncheckedUpdateManyWithoutUserNestedInput;
     userApps?: Prisma.UserAppUncheckedUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutApproverNestedInput;
 };
@@ -842,6 +964,7 @@ export type UserCreateWithoutUserAppsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestCreateNestedManyWithoutApproverInput;
 };
@@ -860,6 +983,7 @@ export type UserUncheckedCreateWithoutUserAppsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigUncheckedCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutApproverInput;
 };
@@ -890,6 +1014,7 @@ export type UserUpdateWithoutUserAppsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUpdateManyWithoutApproverNestedInput;
 };
@@ -908,6 +1033,7 @@ export type UserUncheckedUpdateWithoutUserAppsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigUncheckedUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutApproverNestedInput;
 };
@@ -925,6 +1051,7 @@ export type UserCreateWithoutMessageTurnsInput = {
     userApps?: Prisma.UserAppCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestCreateNestedManyWithoutApproverInput;
 };
@@ -943,6 +1070,7 @@ export type UserUncheckedCreateWithoutMessageTurnsInput = {
     userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutApproverInput;
 };
@@ -973,6 +1101,7 @@ export type UserUpdateWithoutMessageTurnsInput = {
     userApps?: Prisma.UserAppUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUpdateManyWithoutApproverNestedInput;
 };
@@ -991,6 +1120,7 @@ export type UserUncheckedUpdateWithoutMessageTurnsInput = {
     userApps?: Prisma.UserAppUncheckedUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutApproverNestedInput;
 };
@@ -1008,6 +1138,7 @@ export type UserCreateWithoutPageActionRunsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigCreateNestedManyWithoutUserInput;
     userApps?: Prisma.UserAppCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestCreateNestedManyWithoutApproverInput;
 };
@@ -1026,6 +1157,7 @@ export type UserUncheckedCreateWithoutPageActionRunsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigUncheckedCreateNestedManyWithoutUserInput;
     userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutInitiatorInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutApproverInput;
 };
@@ -1056,6 +1188,7 @@ export type UserUpdateWithoutPageActionRunsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigUpdateManyWithoutUserNestedInput;
     userApps?: Prisma.UserAppUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUpdateManyWithoutApproverNestedInput;
 };
@@ -1074,6 +1207,7 @@ export type UserUncheckedUpdateWithoutPageActionRunsInput = {
     llmModelConfigs?: Prisma.UserLlmModelConfigUncheckedUpdateManyWithoutUserNestedInput;
     userApps?: Prisma.UserAppUncheckedUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutInitiatorNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutApproverNestedInput;
 };
@@ -1092,6 +1226,7 @@ export type UserCreateWithoutApprovalsInitiatedInput = {
     userApps?: Prisma.UserAppCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutUserInput;
     approvalsToApprove?: Prisma.ApprovalRequestCreateNestedManyWithoutApproverInput;
 };
 export type UserUncheckedCreateWithoutApprovalsInitiatedInput = {
@@ -1110,6 +1245,7 @@ export type UserUncheckedCreateWithoutApprovalsInitiatedInput = {
     userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutUserInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutApproverInput;
 };
 export type UserCreateOrConnectWithoutApprovalsInitiatedInput = {
@@ -1131,6 +1267,7 @@ export type UserCreateWithoutApprovalsToApproveInput = {
     userApps?: Prisma.UserAppCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestCreateNestedManyWithoutInitiatorInput;
 };
 export type UserUncheckedCreateWithoutApprovalsToApproveInput = {
@@ -1149,6 +1286,7 @@ export type UserUncheckedCreateWithoutApprovalsToApproveInput = {
     userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutUserInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedCreateNestedManyWithoutUserInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutUserInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutUserInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutInitiatorInput;
 };
 export type UserCreateOrConnectWithoutApprovalsToApproveInput = {
@@ -1179,6 +1317,7 @@ export type UserUpdateWithoutApprovalsInitiatedInput = {
     userApps?: Prisma.UserAppUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutUserNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUpdateManyWithoutApproverNestedInput;
 };
 export type UserUncheckedUpdateWithoutApprovalsInitiatedInput = {
@@ -1197,6 +1336,7 @@ export type UserUncheckedUpdateWithoutApprovalsInitiatedInput = {
     userApps?: Prisma.UserAppUncheckedUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutUserNestedInput;
     approvalsToApprove?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutApproverNestedInput;
 };
 export type UserUpsertWithoutApprovalsToApproveInput = {
@@ -1223,6 +1363,7 @@ export type UserUpdateWithoutApprovalsToApproveInput = {
     userApps?: Prisma.UserAppUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUpdateManyWithoutInitiatorNestedInput;
 };
 export type UserUncheckedUpdateWithoutApprovalsToApproveInput = {
@@ -1241,6 +1382,7 @@ export type UserUncheckedUpdateWithoutApprovalsToApproveInput = {
     userApps?: Prisma.UserAppUncheckedUpdateManyWithoutUserNestedInput;
     userIntegrations?: Prisma.UserIntegrationUncheckedUpdateManyWithoutUserNestedInput;
     pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutUserNestedInput;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutUserNestedInput;
     approvalsInitiated?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutInitiatorNestedInput;
 };
 export type UserCountOutputType = {
@@ -1251,6 +1393,7 @@ export type UserCountOutputType = {
     userApps: number;
     userIntegrations: number;
     pageActionRuns: number;
+    pageAgentLlmProxyAudits: number;
     approvalsInitiated: number;
     approvalsToApprove: number;
 };
@@ -1262,6 +1405,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
     userApps?: boolean | UserCountOutputTypeCountUserAppsArgs;
     userIntegrations?: boolean | UserCountOutputTypeCountUserIntegrationsArgs;
     pageActionRuns?: boolean | UserCountOutputTypeCountPageActionRunsArgs;
+    pageAgentLlmProxyAudits?: boolean | UserCountOutputTypeCountPageAgentLlmProxyAuditsArgs;
     approvalsInitiated?: boolean | UserCountOutputTypeCountApprovalsInitiatedArgs;
     approvalsToApprove?: boolean | UserCountOutputTypeCountApprovalsToApproveArgs;
 };
@@ -1289,6 +1433,9 @@ export type UserCountOutputTypeCountUserIntegrationsArgs<ExtArgs extends runtime
 export type UserCountOutputTypeCountPageActionRunsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     where?: Prisma.PageActionRunWhereInput;
 };
+export type UserCountOutputTypeCountPageAgentLlmProxyAuditsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    where?: Prisma.PageAgentLlmProxyAuditWhereInput;
+};
 export type UserCountOutputTypeCountApprovalsInitiatedArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     where?: Prisma.ApprovalRequestWhereInput;
 };
@@ -1311,6 +1458,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
     userApps?: boolean | Prisma.User$userAppsArgs<ExtArgs>;
     userIntegrations?: boolean | Prisma.User$userIntegrationsArgs<ExtArgs>;
     pageActionRuns?: boolean | Prisma.User$pageActionRunsArgs<ExtArgs>;
+    pageAgentLlmProxyAudits?: boolean | Prisma.User$pageAgentLlmProxyAuditsArgs<ExtArgs>;
     approvalsInitiated?: boolean | Prisma.User$approvalsInitiatedArgs<ExtArgs>;
     approvalsToApprove?: boolean | Prisma.User$approvalsToApproveArgs<ExtArgs>;
     _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>;
@@ -1354,6 +1502,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
     userApps?: boolean | Prisma.User$userAppsArgs<ExtArgs>;
     userIntegrations?: boolean | Prisma.User$userIntegrationsArgs<ExtArgs>;
     pageActionRuns?: boolean | Prisma.User$pageActionRunsArgs<ExtArgs>;
+    pageAgentLlmProxyAudits?: boolean | Prisma.User$pageAgentLlmProxyAuditsArgs<ExtArgs>;
     approvalsInitiated?: boolean | Prisma.User$approvalsInitiatedArgs<ExtArgs>;
     approvalsToApprove?: boolean | Prisma.User$approvalsToApproveArgs<ExtArgs>;
     _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>;
@@ -1370,6 +1519,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
         userApps: Prisma.$UserAppPayload<ExtArgs>[];
         userIntegrations: Prisma.$UserIntegrationPayload<ExtArgs>[];
         pageActionRuns: Prisma.$PageActionRunPayload<ExtArgs>[];
+        pageAgentLlmProxyAudits: Prisma.$PageAgentLlmProxyAuditPayload<ExtArgs>[];
         approvalsInitiated: Prisma.$ApprovalRequestPayload<ExtArgs>[];
         approvalsToApprove: Prisma.$ApprovalRequestPayload<ExtArgs>[];
     };
@@ -1441,6 +1591,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
     userApps<T extends Prisma.User$userAppsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$userAppsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserAppPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     userIntegrations<T extends Prisma.User$userIntegrationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$userIntegrationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserIntegrationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     pageActionRuns<T extends Prisma.User$pageActionRunsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$pageActionRunsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PageActionRunPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
+    pageAgentLlmProxyAudits<T extends Prisma.User$pageAgentLlmProxyAuditsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$pageAgentLlmProxyAuditsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PageAgentLlmProxyAuditPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     approvalsInitiated<T extends Prisma.User$approvalsInitiatedArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$approvalsInitiatedArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ApprovalRequestPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     approvalsToApprove<T extends Prisma.User$approvalsToApproveArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$approvalsToApproveArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ApprovalRequestPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): runtime.Types.Utils.JsPromise<TResult1 | TResult2>;
@@ -1631,6 +1782,17 @@ export type User$pageActionRunsArgs<ExtArgs extends runtime.Types.Extensions.Int
     take?: number;
     skip?: number;
     distinct?: Prisma.PageActionRunScalarFieldEnum | Prisma.PageActionRunScalarFieldEnum[];
+};
+export type User$pageAgentLlmProxyAuditsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    select?: Prisma.PageAgentLlmProxyAuditSelect<ExtArgs> | null;
+    omit?: Prisma.PageAgentLlmProxyAuditOmit<ExtArgs> | null;
+    include?: Prisma.PageAgentLlmProxyAuditInclude<ExtArgs> | null;
+    where?: Prisma.PageAgentLlmProxyAuditWhereInput;
+    orderBy?: Prisma.PageAgentLlmProxyAuditOrderByWithRelationInput | Prisma.PageAgentLlmProxyAuditOrderByWithRelationInput[];
+    cursor?: Prisma.PageAgentLlmProxyAuditWhereUniqueInput;
+    take?: number;
+    skip?: number;
+    distinct?: Prisma.PageAgentLlmProxyAuditScalarFieldEnum | Prisma.PageAgentLlmProxyAuditScalarFieldEnum[];
 };
 export type User$approvalsInitiatedArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.ApprovalRequestSelect<ExtArgs> | null;

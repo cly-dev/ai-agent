@@ -123,7 +123,6 @@ function createWorkflowInitNode(bundle) {
             const skillWorkflow = await (0, workflow_init_skill_util_1.resolveSkillWorkflowForInit)(deps.prisma, {
                 skillId: boundSkillId,
                 appClientId: ctx.input.appClientId,
-                scope,
             });
             if (skillWorkflow.kind === 'loaded') {
                 const denied = skipIfTriggerPermissionDenied(bundle, afterPlan, skillWorkflow.workflow.nodes, scope.allowedToolIds, boundSkillId, ctx.input.latestUserMessage);

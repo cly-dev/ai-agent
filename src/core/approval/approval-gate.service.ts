@@ -12,6 +12,7 @@ import {
   syncWriteDraftPresentation,
   writeDraftToPendingWrite,
 } from '../draft-review/write-draft.util';
+import { buildWriteDraftStepDetail } from '../page-action/page-action-run-audit.util';
 
 export type SuspendForApprovalInput = {
   appClientId: number;
@@ -46,11 +47,26 @@ export class ApprovalGateService {
    * 统一挂起门：创建 ApprovalRequest + 追加审计步骤（不覆盖既有 steps）。
    */
   async suspend(input: SuspendForApprovalInput) {
+    const isRefresh = input.existingApprovalRequestId != null;
+    let previousSnapshot: ApprovalResumeSnapshot | null = null;
+    if (isRefresh) {
+      const existing = await this.approvalRequests.findByIdForApprover(
+        input.existingApprovalRequestId!,
+        input.approverUserId,
+      );
+      previousSnapshot = existing
+        ? this.approvalRequests.parseResumeSnapshot(existing)
+        : null;
+    }
+
     const writeDraft = syncWriteDraftPresentation({
       ...input.writeDraft,
+      version: isRefresh
+        ? (previousSnapshot?.writeDraft?.version ?? input.writeDraft.version) + 1
+        : input.writeDraft.version,
       provenance: {
         ...input.writeDraft.provenance,
-        lastEvent: 'suspended',
+        lastEvent: isRefresh ? 'retry' : 'suspended',
       },
     });
     const pendingWrite = writeDraftToPendingWrite(writeDraft);
@@ -71,13 +87,6 @@ export class ApprovalGateService {
     };
 
     if (input.existingApprovalRequestId != null) {
-      const existing = await this.approvalRequests.findByIdForApprover(
-        input.existingApprovalRequestId,
-        input.approverUserId,
-      );
-      const previousSnapshot = existing
-        ? this.approvalRequests.parseResumeSnapshot(existing)
-        : null;
       const previousRetry = previousSnapshot?.draftRetryCount ?? 0;
       const mergedRetryCount = Math.max(
         previousRetry,
@@ -93,7 +102,7 @@ export class ApprovalGateService {
           provenance: {
             ...writeDraft.provenance,
             draftRetryCount: mergedRetryCount,
-            lastEvent: 'suspended',
+            lastEvent: 'retry',
           },
         },
       );
@@ -125,10 +134,8 @@ export class ApprovalGateService {
           approvalRequestId: approval.id,
           nodeId: input.nodeId,
           workflowId: input.workflowId,
-          pendingWriteTool: pendingWrite.name,
-          pendingWriteRiskLevel: pendingWrite.riskLevel,
-          writeDraftVersion: writeDraft.version,
           refreshed: true,
+          ...buildWriteDraftStepDetail(writeDraft),
         },
       });
       return approval;
@@ -158,9 +165,7 @@ export class ApprovalGateService {
         approvalRequestId: approval.id,
         nodeId: input.nodeId,
         workflowId: input.workflowId,
-        pendingWriteTool: pendingWrite.name,
-        pendingWriteRiskLevel: pendingWrite.riskLevel,
-        writeDraftVersion: writeDraft.version,
+        ...buildWriteDraftStepDetail(writeDraft),
       },
     });
 

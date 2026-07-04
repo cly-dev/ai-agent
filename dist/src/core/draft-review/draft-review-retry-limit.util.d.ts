@@ -1,7 +1,7 @@
 export type DraftRetryBudget = {
     used: number;
-    max: number;
-    remaining: number;
+    max: number | null;
+    remaining: number | null;
     canRetry: boolean;
 };
 export declare function resolveDraftRetryBudget(draftRetryCount: number | null | undefined): DraftRetryBudget;

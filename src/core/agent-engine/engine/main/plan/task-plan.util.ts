@@ -101,6 +101,16 @@ function readStringArray(raw: unknown): string[] | undefined {
   return values.length > 0 ? values : undefined;
 }
 
+function readPositiveIntArray(raw: unknown): number[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const values = raw.filter(
+    (item): item is number => Number.isInteger(item) && item > 0,
+  );
+  return values.length > 0 ? values : undefined;
+}
+
 function parseWorkflowSteps(raw: unknown): TaskPlanStep[] | null {
   if (!Array.isArray(raw) || raw.length === 0) {
     return null;
@@ -122,6 +132,7 @@ function parseWorkflowSteps(raw: unknown): TaskPlanStep[] | null {
     }
     const toolRole = readString(item.toolRole);
     const hostToolNames = readStringArray(item.hostToolNames);
+    const hostToolIds = readPositiveIntArray(item.hostToolIds);
     const stopWhen = readString(item.stopWhen);
     steps.push({
       id,
@@ -129,6 +140,7 @@ function parseWorkflowSteps(raw: unknown): TaskPlanStep[] | null {
       kind: kind as TaskPlanStep['kind'],
       ...(toolRole ? { toolRole: toolRole as ToolDecisionRole } : {}),
       ...(hostToolNames ? { hostToolNames } : {}),
+      ...(hostToolIds ? { hostToolIds } : {}),
       objective,
       ...(stopWhen
         ? { stopWhen: stopWhen as TaskPlanStep['stopWhen'] }
@@ -1578,6 +1590,39 @@ export function buildDeterministicMutationPlanResult(input: {
     plan,
     method: 'template',
     llmFallbackReason: input.llmFallbackReason,
+  };
+}
+
+export function buildHostToolWritePlanResult(input: {
+  userMessage: string;
+  availableHostTools: Array<{ name: string }>;
+}): ResolveTaskPlanResult {
+  const userMessage = input.userMessage.trim();
+  const hostToolNames = input.availableHostTools
+    .map((tool) => tool.name.trim())
+    .filter(Boolean);
+  const plan = buildPlanSnapshot({
+    source: 'template',
+    userMessage,
+    goal: resolvePlanGoal({ userMessage }),
+    deliverable: 'answer',
+    steps: [
+      {
+        id: 'host_operation',
+        phase: 'mutate',
+        kind: 'host_tool',
+        ...(hostToolNames.length > 0 ? { hostToolNames } : {}),
+        objective:
+          'Use a browser-side host tool to perform the requested page task without server-side HTTP tools.',
+        stopWhen: 'always',
+      },
+    ],
+    constraints: ['host_write_channel'],
+  });
+  return {
+    plan,
+    method: 'template',
+    llmFallbackReason: 'host_write_contract',
   };
 }
 

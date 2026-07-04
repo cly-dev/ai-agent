@@ -26,6 +26,9 @@ exports.pageSummarizeExecutor = {
             clientActionId: (_b = runtime.clientActionId) !== null && _b !== void 0 ? _b : null,
             existingFillText: runtime.fillText,
             stepRecorder: runtime.stepRecorder,
+            systemPrompt: runtime.systemPrompt,
+            objectivePrefix: runtime.objectivePrefix,
+            nodeObjective: ctx.def.objective,
         });
         (0, page_workflow_node_util_1.mergePageWorkflowLlmMetrics)(runtime.metrics, summarizeResult);
         const outputRef = (0, workflow_node_output_util_1.buildWorkflowNodeOutputRef)(ctx.def.action, ctx.nodeId);

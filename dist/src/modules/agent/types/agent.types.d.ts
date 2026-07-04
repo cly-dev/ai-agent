@@ -129,6 +129,7 @@ export declare const AGENT_WITH_TOOLS_INCLUDE: {
                             id: true;
                             scope: true;
                             label: true;
+                            updatedAt: true;
                         };
                     };
                 };

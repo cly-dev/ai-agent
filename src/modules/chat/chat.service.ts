@@ -6,11 +6,8 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
-import {
-  type PaginatedResult,
-  resolvePagination,
-  toPaginatedResult,
-} from '../../common/pagination';
+import { resolvePagination, toPaginatedResult } from '../../common/pagination';
+import type { PaginatedResult } from '../../common/pagination';
 import type { Message } from '../../../generated/prisma/client';
 import type { Session } from '../../../generated/prisma/client';
 import { SessionContextStore } from '../../core/memory/context/session-context.store';
@@ -28,10 +25,12 @@ import { SessionRunCoordinator } from '../../core/session-run/session-run-coordi
 import type { CancelSessionRunResult } from '../../core/session-run/session-run.types';
 import { PendingWriteConfirmationStore } from './pending-write-confirmation.store';
 import { buildPendingWriteGatePublicState } from './chat-pending-write-gate.mapper';
+import { parsePageContextFromMessageFields } from '../../core/host-bridge';
+import { AgentAutoSelectService } from './agent-auto-select.service';
+import type { AgentChatPageContext } from '../../core/host-bridge';
 
 @Injectable()
 export class ChatService {
-  static readonly DEFAULT_AGENT_ID = 1;
   private static readonly SESSION_ID_HEX = /^[a-f0-9]{32}$/;
 
   constructor(
@@ -46,6 +45,7 @@ export class ChatService {
     private readonly messageService: MessageService,
     private readonly sessionRunCoordinator: SessionRunCoordinator,
     private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
+    private readonly agentAutoSelect: AgentAutoSelectService,
   ) {}
 
   async cancelSessionRun(
@@ -80,8 +80,19 @@ export class ChatService {
     userId: number,
     appClientId: number,
     dto: CreateChatDto,
-  ): Promise<{ sessionId: string }> {
-    const agentId = await this.resolveAgentId(dto.agentId, appClientId);
+  ): Promise<{
+    sessionId: string;
+    agent: { id: number; source: string; reason: string };
+  }> {
+    const pageContext = parsePageContextFromMessageFields(dto);
+    const selection = await this.resolveAgentSelection({
+      requestedAgentId: dto.agentId,
+      sessionAgentId: null,
+      userId,
+      appClientId,
+      userMessage: dto.content,
+      pageContext,
+    });
     const id = this.createSessionId();
     const session = await this.prisma.session.create({
       data: {
@@ -89,7 +100,7 @@ export class ChatService {
         userId,
         appClientId,
         title: dto.content.slice(0, 20),
-        agentId,
+        agentId: selection.agentId,
       },
     });
 
@@ -98,6 +109,7 @@ export class ChatService {
         session.id,
         userId,
         appClientId,
+        pageContext,
       );
       await this.messageService.create(userId, session.id, dto, appClientId);
     } catch (error) {
@@ -105,7 +117,14 @@ export class ChatService {
       await this.sessionPrepareStore.delete(session.id);
       throw error;
     }
-    return { sessionId: session.id };
+    return {
+      sessionId: session.id,
+      agent: {
+        id: selection.agentId,
+        source: selection.source,
+        reason: selection.reason,
+      },
+    };
   }
 
   async findAllForUser(
@@ -196,12 +215,7 @@ export class ChatService {
       title: session.title ?? null,
       agentId: session.agentId ?? null,
       createdAt: session.createdAt,
-      messages: toPaginatedResult(
-        [...rows].reverse(),
-        total,
-        page,
-        pageSize,
-      ),
+      messages: toPaginatedResult([...rows].reverse(), total, page, pageSize),
     };
   }
 
@@ -236,47 +250,49 @@ export class ChatService {
     return this.resolveSession(sessionId, userId, appClientId);
   }
 
-  /** 发送消息时确保会话已绑定 Agent（请求参数 > 会话已有 > 默认 1） */
+  /** 发送消息时确保会话已绑定 Agent（请求参数 > 会话已有 > Auto Agent）。 */
   async ensureSessionAgent(
     session: Session,
     agentIdOverride: number | undefined,
     appClientId: number,
+    input?: {
+      userMessage?: string;
+      pageContext?: AgentChatPageContext | null;
+    },
   ): Promise<Session> {
-    const agentId = await this.resolveAgentId(
-      agentIdOverride ?? session.agentId ?? undefined,
+    const selection = await this.resolveAgentSelection({
+      requestedAgentId: agentIdOverride,
+      sessionAgentId: session.agentId ?? null,
+      userId: session.userId,
       appClientId,
-    );
-    if (session.agentId === agentId) {
+      userMessage: input?.userMessage ?? '',
+      pageContext: input?.pageContext ?? null,
+    });
+    if (session.agentId === selection.agentId) {
       return session;
     }
     return this.prisma.session.update({
       where: { id: session.id },
-      data: { agentId },
+      data: { agentId: selection.agentId },
     });
   }
 
-  private async resolveAgentId(
-    requested: number | undefined,
-    appClientId: number,
-  ): Promise<number> {
-    const agentId = requested ?? ChatService.DEFAULT_AGENT_ID;
-    await this.assertAgentBelongsToApp(agentId, appClientId);
-    return agentId;
-  }
-
-  private async assertAgentBelongsToApp(
-    agentId: number,
-    appClientId: number,
-  ): Promise<void> {
-    const agent = await this.prisma.agent.findFirst({
-      where: { id: agentId, appClientId },
-      select: { id: true },
+  private resolveAgentSelection(input: {
+    requestedAgentId?: number;
+    sessionAgentId?: number | null;
+    userId: number;
+    appClientId: number;
+    userMessage: string;
+    pageContext?: AgentChatPageContext | null;
+  }) {
+    return this.agentAutoSelect.select({
+      appClientId: input.appClientId,
+      userId: input.userId,
+      userMessage: input.userMessage,
+      pageContext: input.pageContext ?? null,
+      requestedAgentId: input.requestedAgentId,
+      sessionAgentId: input.sessionAgentId ?? null,
     });
-    if (!agent) {
-      throw new BadRequestException(
-        `agent ${agentId} not found or does not belong to this app client`,
-      );
-    }
   }
 
   private async resolveSession(

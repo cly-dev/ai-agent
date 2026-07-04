@@ -22,6 +22,7 @@ const agent_capability_load_util_1 = require("../../core/runtime-cache/agent-cap
 const runtime_cache_invalidator_service_1 = require("../../core/runtime-cache/runtime-cache-invalidator.service");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const workflow_service_1 = require("../workflow/workflow.service");
+const workflow_node_reference_guard_util_1 = require("../../core/workflow/workflow-node-reference-guard.util");
 const host_tool_mapper_1 = require("./host-tool.mapper");
 const host_tool_types_1 = require("./host-tool.types");
 const LLM_SKILL_TRIGGERS = [
@@ -115,6 +116,7 @@ let HostToolService = HostToolService_1 = class HostToolService {
     }
     async removeHostPage(id) {
         const existing = await this.findHostPageOne(id);
+        await this.assertHostPageNotReferencedByWorkflowNodes(existing.appClientId, id);
         await this.invalidateHostToolsForHostPage(id);
         await this.prisma.hostPage.delete({ where: { id } });
         return existing;
@@ -153,6 +155,7 @@ let HostToolService = HostToolService_1 = class HostToolService {
             },
             include: host_tool_types_1.HOST_TOOL_DETAIL_INCLUDE,
         });
+        await this.runtimeCacheInvalidator.invalidateForHostTools([row.id]);
         return (0, host_tool_mapper_1.toHostToolResponse)(row);
     }
     async findHostToolPage(appClientId, query) {
@@ -246,9 +249,36 @@ let HostToolService = HostToolService_1 = class HostToolService {
     }
     async removeHostTool(id) {
         const existing = await this.findHostToolOne(id);
+        await this.assertHostToolNotReferencedByWorkflowNodes(existing.appClientId, id);
         await this.prisma.hostTool.delete({ where: { id } });
-        await this.runtimeCacheInvalidator.invalidateForHostTools([id]);
+        await this.runtimeCacheInvalidator.invalidateForAppClient(existing.appClientId);
         return existing;
+    }
+    async assertHostToolNotReferencedByWorkflowNodes(appClientId, hostToolId) {
+        const usages = await (0, workflow_node_reference_guard_util_1.findWorkflowNodeReferences)(this.prisma, {
+            appClientId,
+            kind: 'host_tool',
+            targetId: hostToolId,
+        });
+        if (usages.length === 0) {
+            return;
+        }
+        throw new common_1.BadRequestException({
+            code: 'HOST_TOOL_REFERENCED_BY_WORKFLOW_NODES',
+            message: 'HostTool is referenced by Workflow nodes and cannot be deleted; deactivate it or update the Workflow first',
+            hostToolId,
+            references: usages.slice(0, 20),
+        });
+    }
+    async assertHostPageNotReferencedByWorkflowNodes(appClientId, hostPageId) {
+        const hostTools = await this.prisma.hostTool.findMany({
+            where: { appClientId, hostPageId },
+            select: { id: true },
+            orderBy: { id: 'asc' },
+        });
+        for (const hostTool of hostTools) {
+            await this.assertHostToolNotReferencedByWorkflowNodes(appClientId, hostTool.id);
+        }
     }
     async getHostToolsForAgent(agentId, appClientId, query) {
         await this.assertAgentInAppClient(agentId, appClientId);
@@ -397,20 +427,25 @@ let HostToolService = HostToolService_1 = class HostToolService {
                 tool: (0, host_tool_mapper_1.toHostToolResponse)(row),
             });
         }
+        if (created.length > 0) {
+            await this.runtimeCacheInvalidator.invalidateForHostTools(created.map((row) => row.id));
+        }
         return { created, skipped };
     }
     async findClientCatalog(appClientId, query) {
         var _a;
         const scope = ((_a = query.scope) === null || _a === void 0 ? void 0 : _a.trim()) || undefined;
+        const agentHostToolIds = query.agentId != null
+            ? await (0, agent_capability_load_util_1.loadAgentHostToolCandidateIds)(this.prisma, appClientId, query.agentId)
+            : null;
+        if ((agentHostToolIds === null || agentHostToolIds === void 0 ? void 0 : agentHostToolIds.length) === 0) {
+            return [];
+        }
         const where = Object.assign(Object.assign({ appClientId, isActive: true }, (scope
             ? {
                 OR: [{ hostPageId: null }, { hostPage: { scope } }],
             }
-            : {})), (query.agentId != null
-            ? {
-                agentHostTools: { some: { agentId: query.agentId } },
-            }
-            : {}));
+            : {})), (agentHostToolIds != null ? { id: { in: agentHostToolIds } } : {}));
         const rows = await this.prisma.hostTool.findMany({
             where,
             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],

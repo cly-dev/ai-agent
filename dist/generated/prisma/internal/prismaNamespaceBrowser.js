@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NullsOrder = exports.QueryMode = exports.JsonNullValueInput = exports.NullableJsonNullValueInput = exports.SortOrder = exports.WorkflowHostToolScalarFieldEnum = exports.WorkflowToolScalarFieldEnum = exports.WorkflowRevisionScalarFieldEnum = exports.WorkflowScalarFieldEnum = exports.ApprovalRequestScalarFieldEnum = exports.PageActionRunScalarFieldEnum = exports.PageActionScalarFieldEnum = exports.RoleHostToolScalarFieldEnum = exports.SkillHostToolScalarFieldEnum = exports.AgentHostToolScalarFieldEnum = exports.HostToolScalarFieldEnum = exports.HostPageScalarFieldEnum = exports.AgentToolScalarFieldEnum = exports.AgentRunScalarFieldEnum = exports.MessageTurnScalarFieldEnum = exports.PromptTemplateScalarFieldEnum = exports.AgentScalarFieldEnum = exports.RoleToolScalarFieldEnum = exports.UserAppScalarFieldEnum = exports.SkillToolScalarFieldEnum = exports.RoleSkillScalarFieldEnum = exports.AgentSkillScalarFieldEnum = exports.SkillScalarFieldEnum = exports.UserIntegrationScalarFieldEnum = exports.IntegrationScalarFieldEnum = exports.ToolScalarFieldEnum = exports.ToolCategoryScalarFieldEnum = exports.MessageFeedbackScalarFieldEnum = exports.MessageScalarFieldEnum = exports.SessionGoaMemoryScalarFieldEnum = exports.SessionScalarFieldEnum = exports.UserLlmModelConfigScalarFieldEnum = exports.IntentRecallConfigScalarFieldEnum = exports.LlmModelConfigScalarFieldEnum = exports.AppClientScalarFieldEnum = exports.AdminUserScalarFieldEnum = exports.RoleScalarFieldEnum = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.Decimal = void 0;
-exports.JsonNullValueFilter = void 0;
+exports.QueryMode = exports.JsonNullValueInput = exports.NullableJsonNullValueInput = exports.SortOrder = exports.WorkflowHostToolScalarFieldEnum = exports.WorkflowToolScalarFieldEnum = exports.WorkflowRevisionScalarFieldEnum = exports.WorkflowScalarFieldEnum = exports.ApprovalRequestScalarFieldEnum = exports.PageActionRunScalarFieldEnum = exports.PageActionScalarFieldEnum = exports.RoleHostToolScalarFieldEnum = exports.SkillHostToolScalarFieldEnum = exports.AgentHostToolScalarFieldEnum = exports.HostToolScalarFieldEnum = exports.HostPageScalarFieldEnum = exports.AgentToolScalarFieldEnum = exports.AgentRunScalarFieldEnum = exports.MessageTurnScalarFieldEnum = exports.PromptTemplateScalarFieldEnum = exports.AgentScalarFieldEnum = exports.RoleToolScalarFieldEnum = exports.UserAppScalarFieldEnum = exports.SkillToolScalarFieldEnum = exports.RoleSkillScalarFieldEnum = exports.AgentSkillScalarFieldEnum = exports.SkillScalarFieldEnum = exports.UserIntegrationScalarFieldEnum = exports.IntegrationScalarFieldEnum = exports.ToolScalarFieldEnum = exports.ToolCategoryScalarFieldEnum = exports.MessageFeedbackScalarFieldEnum = exports.MessageScalarFieldEnum = exports.SessionGoaMemoryScalarFieldEnum = exports.SessionScalarFieldEnum = exports.UserLlmModelConfigScalarFieldEnum = exports.IntentRecallConfigScalarFieldEnum = exports.PageAgentLlmProxyAuditScalarFieldEnum = exports.LlmModelConfigScalarFieldEnum = exports.AppClientScalarFieldEnum = exports.AdminUserScalarFieldEnum = exports.RoleScalarFieldEnum = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.Decimal = void 0;
+exports.JsonNullValueFilter = exports.NullsOrder = void 0;
 const runtime = require("@prisma/client/runtime/index-browser");
 exports.Decimal = runtime.Decimal;
 exports.NullTypes = {
@@ -18,6 +18,7 @@ exports.ModelName = {
     AdminUser: 'AdminUser',
     AppClient: 'AppClient',
     LlmModelConfig: 'LlmModelConfig',
+    PageAgentLlmProxyAudit: 'PageAgentLlmProxyAudit',
     IntentRecallConfig: 'IntentRecallConfig',
     UserLlmModelConfig: 'UserLlmModelConfig',
     Session: 'Session',
@@ -112,6 +113,25 @@ exports.LlmModelConfigScalarFieldEnum = {
     enabled: 'enabled',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
+};
+exports.PageAgentLlmProxyAuditScalarFieldEnum = {
+    id: 'id',
+    appClientId: 'appClientId',
+    userId: 'userId',
+    modelConfigId: 'modelConfigId',
+    requestedModel: 'requestedModel',
+    provider: 'provider',
+    providerModel: 'providerModel',
+    status: 'status',
+    upstreamStatus: 'upstreamStatus',
+    durationMs: 'durationMs',
+    promptTokens: 'promptTokens',
+    completionTokens: 'completionTokens',
+    totalTokens: 'totalTokens',
+    requestMeta: 'requestMeta',
+    errorMessage: 'errorMessage',
+    createdAt: 'createdAt',
+    finishedAt: 'finishedAt'
 };
 exports.IntentRecallConfigScalarFieldEnum = {
     id: 'id',

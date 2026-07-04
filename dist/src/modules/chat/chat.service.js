@@ -28,8 +28,10 @@ const runtime_cache_invalidator_service_1 = require("../../core/runtime-cache/ru
 const session_run_coordinator_service_1 = require("../../core/session-run/session-run-coordinator.service");
 const pending_write_confirmation_store_1 = require("./pending-write-confirmation.store");
 const chat_pending_write_gate_mapper_1 = require("./chat-pending-write-gate.mapper");
+const host_bridge_1 = require("../../core/host-bridge");
+const agent_auto_select_service_1 = require("./agent-auto-select.service");
 let ChatService = ChatService_1 = class ChatService {
-    constructor(prisma, chatEvents, sessionContextStore, sessionGoaStore, sessionPrepareStore, sessionPrepareService, runtimeCacheInvalidator, messageService, sessionRunCoordinator, pendingWriteConfirmationStore) {
+    constructor(prisma, chatEvents, sessionContextStore, sessionGoaStore, sessionPrepareStore, sessionPrepareService, runtimeCacheInvalidator, messageService, sessionRunCoordinator, pendingWriteConfirmationStore, agentAutoSelect) {
         this.prisma = prisma;
         this.chatEvents = chatEvents;
         this.sessionContextStore = sessionContextStore;
@@ -40,6 +42,7 @@ let ChatService = ChatService_1 = class ChatService {
         this.messageService = messageService;
         this.sessionRunCoordinator = sessionRunCoordinator;
         this.pendingWriteConfirmationStore = pendingWriteConfirmationStore;
+        this.agentAutoSelect = agentAutoSelect;
     }
     async cancelSessionRun(sessionId, userId, appClientId, runId) {
         await this.assertSessionOwnedByUser(sessionId, userId, appClientId);
@@ -56,7 +59,15 @@ let ChatService = ChatService_1 = class ChatService {
                 : null });
     }
     async create(userId, appClientId, dto) {
-        const agentId = await this.resolveAgentId(dto.agentId, appClientId);
+        const pageContext = (0, host_bridge_1.parsePageContextFromMessageFields)(dto);
+        const selection = await this.resolveAgentSelection({
+            requestedAgentId: dto.agentId,
+            sessionAgentId: null,
+            userId,
+            appClientId,
+            userMessage: dto.content,
+            pageContext,
+        });
         const id = this.createSessionId();
         const session = await this.prisma.session.create({
             data: {
@@ -64,11 +75,11 @@ let ChatService = ChatService_1 = class ChatService {
                 userId,
                 appClientId,
                 title: dto.content.slice(0, 20),
-                agentId,
+                agentId: selection.agentId,
             },
         });
         try {
-            await this.sessionPrepareService.warm(session.id, userId, appClientId);
+            await this.sessionPrepareService.warm(session.id, userId, appClientId, pageContext);
             await this.messageService.create(userId, session.id, dto, appClientId);
         }
         catch (error) {
@@ -76,7 +87,14 @@ let ChatService = ChatService_1 = class ChatService {
             await this.sessionPrepareStore.delete(session.id);
             throw error;
         }
-        return { sessionId: session.id };
+        return {
+            sessionId: session.id,
+            agent: {
+                id: selection.agentId,
+                source: selection.source,
+                reason: selection.reason,
+            },
+        };
     }
     async findAllForUser(userId, appClientId, query) {
         const { page, pageSize, skip, take } = (0, pagination_1.resolvePagination)(query.page, query.size);
@@ -159,30 +177,34 @@ let ChatService = ChatService_1 = class ChatService {
     async assertSessionOwnedByUser(sessionId, userId, appClientId) {
         return this.resolveSession(sessionId, userId, appClientId);
     }
-    async ensureSessionAgent(session, agentIdOverride, appClientId) {
-        var _a;
-        const agentId = await this.resolveAgentId((_a = agentIdOverride !== null && agentIdOverride !== void 0 ? agentIdOverride : session.agentId) !== null && _a !== void 0 ? _a : undefined, appClientId);
-        if (session.agentId === agentId) {
+    async ensureSessionAgent(session, agentIdOverride, appClientId, input) {
+        var _a, _b, _c;
+        const selection = await this.resolveAgentSelection({
+            requestedAgentId: agentIdOverride,
+            sessionAgentId: (_a = session.agentId) !== null && _a !== void 0 ? _a : null,
+            userId: session.userId,
+            appClientId,
+            userMessage: (_b = input === null || input === void 0 ? void 0 : input.userMessage) !== null && _b !== void 0 ? _b : '',
+            pageContext: (_c = input === null || input === void 0 ? void 0 : input.pageContext) !== null && _c !== void 0 ? _c : null,
+        });
+        if (session.agentId === selection.agentId) {
             return session;
         }
         return this.prisma.session.update({
             where: { id: session.id },
-            data: { agentId },
+            data: { agentId: selection.agentId },
         });
     }
-    async resolveAgentId(requested, appClientId) {
-        const agentId = requested !== null && requested !== void 0 ? requested : ChatService_1.DEFAULT_AGENT_ID;
-        await this.assertAgentBelongsToApp(agentId, appClientId);
-        return agentId;
-    }
-    async assertAgentBelongsToApp(agentId, appClientId) {
-        const agent = await this.prisma.agent.findFirst({
-            where: { id: agentId, appClientId },
-            select: { id: true },
+    resolveAgentSelection(input) {
+        var _a, _b;
+        return this.agentAutoSelect.select({
+            appClientId: input.appClientId,
+            userId: input.userId,
+            userMessage: input.userMessage,
+            pageContext: (_a = input.pageContext) !== null && _a !== void 0 ? _a : null,
+            requestedAgentId: input.requestedAgentId,
+            sessionAgentId: (_b = input.sessionAgentId) !== null && _b !== void 0 ? _b : null,
         });
-        if (!agent) {
-            throw new common_1.BadRequestException(`agent ${agentId} not found or does not belong to this app client`);
-        }
     }
     async resolveSession(sessionId, userId, appClientId) {
         const normalizedSessionId = this.normalizeSessionId(sessionId);
@@ -215,7 +237,6 @@ let ChatService = ChatService_1 = class ChatService {
         }
     }
 };
-ChatService.DEFAULT_AGENT_ID = 1;
 ChatService.SESSION_ID_HEX = /^[a-f0-9]{32}$/;
 ChatService = ChatService_1 = __decorate([
     (0, common_1.Injectable)(),
@@ -229,7 +250,8 @@ ChatService = ChatService_1 = __decorate([
         runtime_cache_invalidator_service_1.RuntimeCacheInvalidator,
         message_service_1.MessageService,
         session_run_coordinator_service_1.SessionRunCoordinator,
-        pending_write_confirmation_store_1.PendingWriteConfirmationStore])
+        pending_write_confirmation_store_1.PendingWriteConfirmationStore,
+        agent_auto_select_service_1.AgentAutoSelectService])
 ], ChatService);
 exports.ChatService = ChatService;
 //# sourceMappingURL=chat.service.js.map

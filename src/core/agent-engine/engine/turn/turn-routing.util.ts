@@ -21,7 +21,7 @@ export function buildChitchatRoutingDecision(input: {
   };
 }
 
-/** turn route LLM 失败时保守回退：不猜测 on_page_task，避免误触发页面 host 工作流。 */
+/** turn route LLM 失败时保守回退；执行域由后续 plan/candidate recall 决定。 */
 export function buildTurnRouteFallbackDecision(input: {
   reason: string;
 }): TurnRoutingDecision {

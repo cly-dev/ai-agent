@@ -6,6 +6,7 @@ const sensors_1 = require("../../harness/sensors");
 const page_workflow_node_util_1 = require("../../page-action/page-workflow-node.util");
 const page_action_inline_sse_util_1 = require("../../page-action/page-action-inline-sse.util");
 const page_workflow_node_dispatch_util_1 = require("../../page-action/page-workflow-node-dispatch.util");
+const page_action_run_audit_util_1 = require("../../page-action/page-action-run-audit.util");
 const workflow_run_util_1 = require("../workflow-run.util");
 const workflow_debug_util_1 = require("../trace/workflow-debug.util");
 const executor_host_util_1 = require("../executors/executor-host.util");
@@ -163,10 +164,7 @@ async function executePageWorkflowNode(input) {
     input.runtime.stepRecorder.record({
         type: 'workflow',
         name: `${input.nodeId}:complete`,
-        detail: {
-            outputRef: outcome.outputRef,
-            action: input.def.action,
-        },
+        detail: Object.assign({ outputRef: outcome.outputRef, action: input.def.action }, (0, page_action_run_audit_util_1.buildWorkflowNodeCompleteAudit)(input.def.action, outcome.nodeOutput)),
     });
     (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.res, {
         phase: 'complete',

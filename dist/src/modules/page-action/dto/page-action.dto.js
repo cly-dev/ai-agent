@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.QueryPageActionRunDto = exports.InvokePageActionDto = exports.UpdatePageActionDto = exports.CreatePageActionDto = exports.CreatePageActionHostToolInlineDto = exports.QueryPageActionDto = void 0;
+exports.QueryPageActionRunDto = exports.InvokePageActionDto = exports.UpdatePageActionDto = exports.CreatePageActionDto = exports.QueryPageActionDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -45,37 +45,6 @@ __decorate([
     __metadata("design:type", Boolean)
 ], QueryPageActionDto.prototype, "isActive", void 0);
 exports.QueryPageActionDto = QueryPageActionDto;
-class CreatePageActionHostToolInlineDto {
-}
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({
-        description: 'HostTool name；缺省取 actionKey 最后一段（如 fill_draft）',
-        example: 'fill_draft',
-    }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MaxLength)(120),
-    __metadata("design:type", String)
-], CreatePageActionHostToolInlineDto.prototype, "name", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({
-        description: 'HostTool 说明；缺省用 PageAction 的 description 或 name',
-    }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], CreatePageActionHostToolInlineDto.prototype, "description", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({
-        enum: ['text', 'content', 'value'],
-        default: 'text',
-        description: '流式填入的 string 参数字段名',
-    }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsIn)(['text', 'content', 'value']),
-    __metadata("design:type", String)
-], CreatePageActionHostToolInlineDto.prototype, "fillField", void 0);
-exports.CreatePageActionHostToolInlineDto = CreatePageActionHostToolInlineDto;
 class CreatePageActionDto {
 }
 __decorate([
@@ -107,8 +76,9 @@ __decorate([
     __metadata("design:type", String)
 ], CreatePageActionDto.prototype, "description", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: '绑定的 HostTool ID；绑定 workflowId 时可省略，由 Workflow 节点推导' }),
-    (0, class_validator_1.ValidateIf)((dto) => dto.hostTool == null && dto.workflowId == null),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: '已存在的 HostTool ID；未绑 workflowId 时必填。须先在 B 端创建 HostTool 再绑定。',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
@@ -117,18 +87,7 @@ __decorate([
 ], CreatePageActionDto.prototype, "hostToolId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        type: CreatePageActionHostToolInlineDto,
-        description: '内联 HostTool 规格；未绑定 workflow 且省略 hostToolId 时自动创建（默认 text 字段 schema）',
-    }),
-    (0, class_validator_1.ValidateIf)((dto) => dto.hostToolId == null && dto.workflowId == null),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.ValidateNested)(),
-    (0, class_transformer_1.Type)(() => CreatePageActionHostToolInlineDto),
-    __metadata("design:type", CreatePageActionHostToolInlineDto)
-], CreatePageActionDto.prototype, "hostTool", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({
-        description: '与 pageContext.page 对齐；自动创建 HostTool 时用于绑定 HostPage',
+        description: '与 pageContext.page 对齐',
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

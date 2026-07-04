@@ -10,6 +10,6 @@ export declare function tryBuildTaskPlanFromSkillWorkflow(prisma: PrismaService,
     userMessage: string;
     binding: SkillWorkflowBinding;
     goal?: string;
-    allowedToolIds: number[];
-    allowedHostToolIds: number[];
+    allowedToolIds?: number[];
+    allowedHostToolIds?: number[];
 }): Promise<TaskPlanSnapshot | null>;

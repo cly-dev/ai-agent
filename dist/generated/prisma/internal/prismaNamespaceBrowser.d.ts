@@ -16,6 +16,7 @@ export declare const ModelName: {
     readonly AdminUser: "AdminUser";
     readonly AppClient: "AppClient";
     readonly LlmModelConfig: "LlmModelConfig";
+    readonly PageAgentLlmProxyAudit: "PageAgentLlmProxyAudit";
     readonly IntentRecallConfig: "IntentRecallConfig";
     readonly UserLlmModelConfig: "UserLlmModelConfig";
     readonly Session: "Session";
@@ -118,6 +119,26 @@ export declare const LlmModelConfigScalarFieldEnum: {
     readonly updatedAt: "updatedAt";
 };
 export type LlmModelConfigScalarFieldEnum = (typeof LlmModelConfigScalarFieldEnum)[keyof typeof LlmModelConfigScalarFieldEnum];
+export declare const PageAgentLlmProxyAuditScalarFieldEnum: {
+    readonly id: "id";
+    readonly appClientId: "appClientId";
+    readonly userId: "userId";
+    readonly modelConfigId: "modelConfigId";
+    readonly requestedModel: "requestedModel";
+    readonly provider: "provider";
+    readonly providerModel: "providerModel";
+    readonly status: "status";
+    readonly upstreamStatus: "upstreamStatus";
+    readonly durationMs: "durationMs";
+    readonly promptTokens: "promptTokens";
+    readonly completionTokens: "completionTokens";
+    readonly totalTokens: "totalTokens";
+    readonly requestMeta: "requestMeta";
+    readonly errorMessage: "errorMessage";
+    readonly createdAt: "createdAt";
+    readonly finishedAt: "finishedAt";
+};
+export type PageAgentLlmProxyAuditScalarFieldEnum = (typeof PageAgentLlmProxyAuditScalarFieldEnum)[keyof typeof PageAgentLlmProxyAuditScalarFieldEnum];
 export declare const IntentRecallConfigScalarFieldEnum: {
     readonly id: "id";
     readonly singletonKey: "singletonKey";

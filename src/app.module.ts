@@ -32,6 +32,7 @@ import { PromptTemplateModule } from './modules/prompt-template/prompt-template.
 import { RoleModule } from './modules/role/role.module';
 import { HostToolModule } from './modules/host-tool/host-tool.module';
 import { PageActionModule } from './modules/page-action/page-action.module';
+import { PageAgentModule } from './modules/page-agent/page-agent.module';
 import { ApprovalModule } from './core/approval/approval.module';
 import { ApprovalModule as ApprovalInboxModule } from './modules/approval/approval.module';
 import { WorkflowModule } from './modules/workflow/workflow.module';
@@ -59,6 +60,7 @@ import { WorkflowModule } from './modules/workflow/workflow.module';
     RoleModule,
     HostToolModule,
     PageActionModule,
+    PageAgentModule,
     ApprovalModule,
     ApprovalInboxModule,
     WorkflowModule,

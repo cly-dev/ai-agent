@@ -12,6 +12,7 @@ function mapFetchDataToPlanStep(node) {
     };
 }
 function mapGenerateAndPushToPlanSteps(node) {
+    const hostToolIds = node.input.hostToolId > 0 ? [node.input.hostToolId] : undefined;
     return [
         {
             id: `${node.id}:reason`,
@@ -19,12 +20,7 @@ function mapGenerateAndPushToPlanSteps(node) {
             objective: node.objective,
             phase: 'answer',
         },
-        {
-            id: node.id,
-            kind: 'host_tool',
-            objective: node.objective,
-            phase: 'answer',
-        },
+        Object.assign({ id: node.id, kind: 'host_tool', objective: node.objective, phase: 'answer' }, (hostToolIds ? { hostToolIds } : {})),
     ];
 }
 function mapSummarizeToPlanStep(node) {

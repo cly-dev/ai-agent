@@ -138,7 +138,7 @@ function mapPlanStepToWorkflowNodes(
           ...baseNodeFromStep(step),
           action: 'generate_and_push',
           objective: step.objective,
-          input: { hostToolId: 0 },
+          input: { hostToolId: step.hostToolIds?.[0] ?? 0 },
         },
       ];
     case 'summarize':

@@ -37,6 +37,9 @@ export const pagePresentMutationExecutor: WorkflowExecutor = {
       existingFillText: runtime.fillText,
       stepRecorder: runtime.stepRecorder,
       streamLifecycle: 'none',
+      systemPrompt: runtime.systemPrompt,
+      objectivePrefix: runtime.objectivePrefix,
+      nodeObjective: ctx.def.objective,
     });
     mergePageWorkflowLlmMetrics(runtime.metrics, summarizeResult);
 

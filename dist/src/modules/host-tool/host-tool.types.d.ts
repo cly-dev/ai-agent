@@ -26,6 +26,7 @@ export declare const HOST_TOOL_DETAIL_INCLUDE: {
             id: true;
             scope: true;
             label: true;
+            updatedAt: true;
         };
     };
 };

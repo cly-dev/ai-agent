@@ -1,1 +1,1 @@
-export declare function resolveDraftReviewMaxRetries(): number;
+export declare function resolveDraftReviewMaxRetries(): number | null;

@@ -53,15 +53,22 @@ export function buildSkillsRuntimeRevision(
 
 export function buildHostToolCatalogRevision(input: {
   hostTools: Array<{ id: number; updatedAt: Date | string }>;
+  hostPages?: Array<{ id: number; updatedAt: Date | string }>;
   skillBindings: Array<{ id: number; updatedAt: Date | string }>;
   agentBoundHostToolIds: number[];
 }): string {
   const hostPart = buildEntityRevisionsFingerprint(
     input.hostTools.map((row) => ({ id: row.id, updatedAt: row.updatedAt })),
   );
+  const pagePart = buildEntityRevisionsFingerprint(
+    (input.hostPages ?? []).map((row) => ({
+      id: row.id,
+      updatedAt: row.updatedAt,
+    })),
+  );
   const skillPart = buildEntityRevisionsFingerprint(input.skillBindings);
   const bindPart = [...input.agentBoundHostToolIds].sort((a, b) => a - b).join(',');
-  return `h:${hostPart}|s:${skillPart}|b:${bindPart}`;
+  return `h:${hostPart}|p:${pagePart}|s:${skillPart}|b:${bindPart}`;
 }
 
 export function isRuntimeRevisionEqual(

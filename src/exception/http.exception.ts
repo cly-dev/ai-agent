@@ -48,6 +48,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
       applyHttpCors(req, res);
 
+      if (this.shouldReturnOpenAiCompatibleError(req)) {
+        res.status(status).send({
+          error: {
+            message,
+            type: status >= 500 ? 'server_error' : 'invalid_request_error',
+            code: status,
+          },
+        });
+        return;
+      }
+
       res.status(200).send({
         status,
         data,
@@ -65,6 +76,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message: 'system busy',
       });
     }
+  }
+
+  private shouldReturnOpenAiCompatibleError(req: Request): boolean {
+    const path = (req.originalUrl ?? req.url).split('?')[0];
+    return (
+      req.method === 'POST' &&
+      path === '/page-agent/compatible-mode/v1/chat/completions'
+    );
   }
 
   private logException(

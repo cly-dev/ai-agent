@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.advanceHostToolPlanStep = exports.buildHostToolSkippedObservation = exports.buildHostToolDispatchObservations = exports.HOST_TOOL_INVOKE_OBSERVATION_NAME = exports.hostToolCallsMatchPlanStep = exports.partitionDecisionToolCalls = exports.partitionToolCallsByHost = exports.collectRemovedPendingHostToolStepIds = exports.enrichPlanStepsWithHostTools = exports.collectRequiredHostToolNamesForPlanStep = exports.filterHostToolsForPlanStep = void 0;
 const task_plan_util_1 = require("../plan/task-plan.util");
 function filterHostToolsForPlanStep(hostTools, taskPlan) {
-    var _a;
+    var _a, _b;
     const step = (0, task_plan_util_1.getPendingPlanHostToolStep)(taskPlan);
     if (!step) {
         return [];
@@ -15,6 +15,10 @@ function filterHostToolsForPlanStep(hostTools, taskPlan) {
         }
         const allowedSet = new Set(allowed);
         return hostTools.filter((tool) => allowedSet.has(tool.name));
+    }
+    if ((_b = step.hostToolIds) === null || _b === void 0 ? void 0 : _b.length) {
+        const allowedIds = new Set(step.hostToolIds);
+        return hostTools.filter((tool) => allowedIds.has(tool.id));
     }
     return hostTools;
 }
@@ -39,12 +43,19 @@ function collectRequiredHostToolNamesForPlanStep(pendingHostStep, scopedHostTool
 }
 exports.collectRequiredHostToolNamesForPlanStep = collectRequiredHostToolNamesForPlanStep;
 function enrichHostToolStep(step, scopedHostTools, scopedNames) {
-    var _a;
+    var _a, _b;
     if (step.kind !== 'host_tool') {
         return step;
     }
     if ((_a = step.hostToolNames) === null || _a === void 0 ? void 0 : _a.length) {
         const names = step.hostToolNames.filter((name) => scopedNames.has(name));
+        return Object.assign(Object.assign({}, step), { hostToolNames: names });
+    }
+    if ((_b = step.hostToolIds) === null || _b === void 0 ? void 0 : _b.length) {
+        const allowedIds = new Set(step.hostToolIds);
+        const names = scopedHostTools
+            .filter((tool) => allowedIds.has(tool.id))
+            .map((tool) => tool.name);
         return Object.assign(Object.assign({}, step), { hostToolNames: names });
     }
     return Object.assign(Object.assign({}, step), { hostToolNames: scopedHostTools.map((tool) => tool.name) });

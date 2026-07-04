@@ -27,6 +27,10 @@ export function filterHostToolsForPlanStep(
     const allowedSet = new Set(allowed);
     return hostTools.filter((tool) => allowedSet.has(tool.name));
   }
+  if (step.hostToolIds?.length) {
+    const allowedIds = new Set(step.hostToolIds);
+    return hostTools.filter((tool) => allowedIds.has(tool.id));
+  }
   return hostTools;
 }
 
@@ -64,6 +68,13 @@ function enrichHostToolStep(
   }
   if (step.hostToolNames?.length) {
     const names = step.hostToolNames.filter((name) => scopedNames.has(name));
+    return { ...step, hostToolNames: names };
+  }
+  if (step.hostToolIds?.length) {
+    const allowedIds = new Set(step.hostToolIds);
+    const names = scopedHostTools
+      .filter((tool) => allowedIds.has(tool.id))
+      .map((tool) => tool.name);
     return { ...step, hostToolNames: names };
   }
   return {

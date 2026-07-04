@@ -10,7 +10,7 @@ export type PageWorkflowOrchestratorInput = PageWorkflowRunnerInput & {
     resumeFrom?: {
         workflowRun: WorkflowRunState;
         nodeOutputs: Record<string, unknown>;
-        pendingWrite: ApprovalPendingWrite;
+        pendingWrite?: ApprovalPendingWrite | null;
         advancePastAwait?: boolean;
     };
     existingApprovalRequestId?: number | null;

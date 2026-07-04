@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.executePageWorkflowFetchData = void 0;
 const common_1 = require("@nestjs/common");
 const page_context_metadata_scan_util_1 = require("../host-bridge/page-context-metadata-scan.util");
+const page_action_run_audit_util_1 = require("./page-action-run-audit.util");
 function buildReadToolInputFromPageContext(pageContext, pathTemplate) {
     var _a, _b;
     const input = {};
@@ -66,12 +67,25 @@ async function resolveFetchDataTool(prisma, input) {
     });
 }
 async function executePageWorkflowFetchData(input) {
+    var _a, _b, _c;
     const tool = await resolveFetchDataTool(input.prisma, {
         appClientId: input.appClientId,
         toolId: input.nodeInput.toolId,
         definitionKey: input.nodeInput.definitionKey,
     });
     const args = buildReadToolInputFromPageContext(input.pageContext, tool.path);
+    const toolStepId = (_a = input.nodeId) !== null && _a !== void 0 ? _a : 'fetch_data';
+    (_b = input.stepRecorder) === null || _b === void 0 ? void 0 : _b.record({
+        type: 'workflow',
+        name: `${toolStepId}:tool:start`,
+        detail: (0, page_action_run_audit_util_1.buildToolCallRequestAudit)({
+            toolName: tool.name,
+            toolId: tool.id,
+            arguments: args,
+            httpMethod: tool.method,
+            httpPath: tool.path,
+        }),
+    });
     const result = await input.toolEngine.executeFromDefinition({
         id: tool.id,
         name: tool.name,
@@ -91,6 +105,12 @@ async function executePageWorkflowFetchData(input) {
         agentMetadata: tool.agentMetadata,
         responseProfile: tool.responseProfile,
     }, args, input.userId);
+    (_c = input.stepRecorder) === null || _c === void 0 ? void 0 : _c.record({
+        type: 'workflow',
+        name: `${toolStepId}:tool:complete`,
+        detail: (0, page_action_run_audit_util_1.buildToolCallResultAudit)(result),
+        status: 'ok',
+    });
     return {
         name: tool.name,
         output: result.output,

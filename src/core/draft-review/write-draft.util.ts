@@ -16,6 +16,7 @@ import {
 } from './apply-edited-pending-write.util';
 import type { DraftReviewDecision, DraftReviewWriteToolLike } from './draft-review.types';
 import { resolveDraftRetryBudget } from './draft-review-retry-limit.util';
+import { resolveDraftReviewMaxRetries } from './draft-review-config.util';
 import type {
   BuildPageWriteDraftInput,
   WriteDraft,
@@ -351,6 +352,7 @@ export function toWriteDraftPublic(
   input?: { draftRetryMax?: number },
 ): WriteDraftPublic {
   const budget = resolveDraftRetryBudget(draft.provenance.draftRetryCount);
+  const max = resolveDraftReviewMaxRetries();
   return {
     version: draft.version,
     tool: {
@@ -365,7 +367,7 @@ export function toWriteDraftPublic(
     },
     provenance: {
       draftRetryCount: budget.used,
-      draftRetryMax: input?.draftRetryMax ?? budget.max,
+      draftRetryMax: input?.draftRetryMax ?? max,
       canRetry: budget.canRetry,
       composedAt: draft.provenance.composedAt,
       lastEvent: draft.provenance.lastEvent,

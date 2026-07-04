@@ -16,7 +16,7 @@ export declare class WriteDraftPresentationPublicDto {
 }
 export declare class WriteDraftProvenancePublicDto {
     draftRetryCount: number;
-    draftRetryMax: number;
+    draftRetryMax: number | null;
     canRetry: boolean;
     composedAt: string;
     lastEvent: 'composed' | 'suspended' | 'user_edit' | 'retry';

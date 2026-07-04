@@ -41,10 +41,15 @@ function buildSkillsRuntimeRevision(skills) {
 }
 exports.buildSkillsRuntimeRevision = buildSkillsRuntimeRevision;
 function buildHostToolCatalogRevision(input) {
+    var _a;
     const hostPart = buildEntityRevisionsFingerprint(input.hostTools.map((row) => ({ id: row.id, updatedAt: row.updatedAt })));
+    const pagePart = buildEntityRevisionsFingerprint(((_a = input.hostPages) !== null && _a !== void 0 ? _a : []).map((row) => ({
+        id: row.id,
+        updatedAt: row.updatedAt,
+    })));
     const skillPart = buildEntityRevisionsFingerprint(input.skillBindings);
     const bindPart = [...input.agentBoundHostToolIds].sort((a, b) => a - b).join(',');
-    return `h:${hostPart}|s:${skillPart}|b:${bindPart}`;
+    return `h:${hostPart}|p:${pagePart}|s:${skillPart}|b:${bindPart}`;
 }
 exports.buildHostToolCatalogRevision = buildHostToolCatalogRevision;
 function isRuntimeRevisionEqual(left, right) {

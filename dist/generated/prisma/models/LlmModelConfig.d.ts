@@ -205,6 +205,7 @@ export type LlmModelConfigWhereInput = {
     enabled?: Prisma.BoolFilter<"LlmModelConfig"> | boolean;
     createdAt?: Prisma.DateTimeFilter<"LlmModelConfig"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"LlmModelConfig"> | Date | string;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditListRelationFilter;
 };
 export type LlmModelConfigOrderByWithRelationInput = {
     id?: Prisma.SortOrder;
@@ -222,6 +223,7 @@ export type LlmModelConfigOrderByWithRelationInput = {
     enabled?: Prisma.SortOrder;
     createdAt?: Prisma.SortOrder;
     updatedAt?: Prisma.SortOrder;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditOrderByRelationAggregateInput;
 };
 export type LlmModelConfigWhereUniqueInput = Prisma.AtLeast<{
     id?: number;
@@ -242,6 +244,7 @@ export type LlmModelConfigWhereUniqueInput = Prisma.AtLeast<{
     enabled?: Prisma.BoolFilter<"LlmModelConfig"> | boolean;
     createdAt?: Prisma.DateTimeFilter<"LlmModelConfig"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"LlmModelConfig"> | Date | string;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditListRelationFilter;
 }, "id">;
 export type LlmModelConfigOrderByWithAggregationInput = {
     id?: Prisma.SortOrder;
@@ -300,6 +303,7 @@ export type LlmModelConfigCreateInput = {
     enabled?: boolean;
     createdAt?: Date | string;
     updatedAt?: Date | string;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutModelConfigInput;
 };
 export type LlmModelConfigUncheckedCreateInput = {
     id?: number;
@@ -317,6 +321,7 @@ export type LlmModelConfigUncheckedCreateInput = {
     enabled?: boolean;
     createdAt?: Date | string;
     updatedAt?: Date | string;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutModelConfigInput;
 };
 export type LlmModelConfigUpdateInput = {
     kind?: Prisma.EnumLlmModelKindFieldUpdateOperationsInput | $Enums.LlmModelKind;
@@ -333,6 +338,7 @@ export type LlmModelConfigUpdateInput = {
     enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutModelConfigNestedInput;
 };
 export type LlmModelConfigUncheckedUpdateInput = {
     id?: Prisma.IntFieldUpdateOperationsInput | number;
@@ -350,6 +356,7 @@ export type LlmModelConfigUncheckedUpdateInput = {
     enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutModelConfigNestedInput;
 };
 export type LlmModelConfigCreateManyInput = {
     id?: number;
@@ -462,6 +469,10 @@ export type LlmModelConfigSumOrderByAggregateInput = {
     maxTokens?: Prisma.SortOrder;
     temperature?: Prisma.SortOrder;
 };
+export type LlmModelConfigNullableScalarRelationFilter = {
+    is?: Prisma.LlmModelConfigWhereInput | null;
+    isNot?: Prisma.LlmModelConfigWhereInput | null;
+};
 export type EnumLlmModelKindFieldUpdateOperationsInput = {
     set?: $Enums.LlmModelKind;
 };
@@ -479,6 +490,111 @@ export type NullableFloatFieldUpdateOperationsInput = {
     multiply?: number;
     divide?: number;
 };
+export type LlmModelConfigCreateNestedOneWithoutPageAgentLlmProxyAuditsInput = {
+    create?: Prisma.XOR<Prisma.LlmModelConfigCreateWithoutPageAgentLlmProxyAuditsInput, Prisma.LlmModelConfigUncheckedCreateWithoutPageAgentLlmProxyAuditsInput>;
+    connectOrCreate?: Prisma.LlmModelConfigCreateOrConnectWithoutPageAgentLlmProxyAuditsInput;
+    connect?: Prisma.LlmModelConfigWhereUniqueInput;
+};
+export type LlmModelConfigUpdateOneWithoutPageAgentLlmProxyAuditsNestedInput = {
+    create?: Prisma.XOR<Prisma.LlmModelConfigCreateWithoutPageAgentLlmProxyAuditsInput, Prisma.LlmModelConfigUncheckedCreateWithoutPageAgentLlmProxyAuditsInput>;
+    connectOrCreate?: Prisma.LlmModelConfigCreateOrConnectWithoutPageAgentLlmProxyAuditsInput;
+    upsert?: Prisma.LlmModelConfigUpsertWithoutPageAgentLlmProxyAuditsInput;
+    disconnect?: Prisma.LlmModelConfigWhereInput | boolean;
+    delete?: Prisma.LlmModelConfigWhereInput | boolean;
+    connect?: Prisma.LlmModelConfigWhereUniqueInput;
+    update?: Prisma.XOR<Prisma.XOR<Prisma.LlmModelConfigUpdateToOneWithWhereWithoutPageAgentLlmProxyAuditsInput, Prisma.LlmModelConfigUpdateWithoutPageAgentLlmProxyAuditsInput>, Prisma.LlmModelConfigUncheckedUpdateWithoutPageAgentLlmProxyAuditsInput>;
+};
+export type LlmModelConfigCreateWithoutPageAgentLlmProxyAuditsInput = {
+    kind?: $Enums.LlmModelKind;
+    singletonKey?: number | null;
+    provider?: string;
+    model: string;
+    apiKey?: string | null;
+    baseUrl: string;
+    chatPath?: string;
+    parameters?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    stream?: boolean;
+    maxTokens?: number | null;
+    temperature?: number | null;
+    enabled?: boolean;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+};
+export type LlmModelConfigUncheckedCreateWithoutPageAgentLlmProxyAuditsInput = {
+    id?: number;
+    kind?: $Enums.LlmModelKind;
+    singletonKey?: number | null;
+    provider?: string;
+    model: string;
+    apiKey?: string | null;
+    baseUrl: string;
+    chatPath?: string;
+    parameters?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    stream?: boolean;
+    maxTokens?: number | null;
+    temperature?: number | null;
+    enabled?: boolean;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+};
+export type LlmModelConfigCreateOrConnectWithoutPageAgentLlmProxyAuditsInput = {
+    where: Prisma.LlmModelConfigWhereUniqueInput;
+    create: Prisma.XOR<Prisma.LlmModelConfigCreateWithoutPageAgentLlmProxyAuditsInput, Prisma.LlmModelConfigUncheckedCreateWithoutPageAgentLlmProxyAuditsInput>;
+};
+export type LlmModelConfigUpsertWithoutPageAgentLlmProxyAuditsInput = {
+    update: Prisma.XOR<Prisma.LlmModelConfigUpdateWithoutPageAgentLlmProxyAuditsInput, Prisma.LlmModelConfigUncheckedUpdateWithoutPageAgentLlmProxyAuditsInput>;
+    create: Prisma.XOR<Prisma.LlmModelConfigCreateWithoutPageAgentLlmProxyAuditsInput, Prisma.LlmModelConfigUncheckedCreateWithoutPageAgentLlmProxyAuditsInput>;
+    where?: Prisma.LlmModelConfigWhereInput;
+};
+export type LlmModelConfigUpdateToOneWithWhereWithoutPageAgentLlmProxyAuditsInput = {
+    where?: Prisma.LlmModelConfigWhereInput;
+    data: Prisma.XOR<Prisma.LlmModelConfigUpdateWithoutPageAgentLlmProxyAuditsInput, Prisma.LlmModelConfigUncheckedUpdateWithoutPageAgentLlmProxyAuditsInput>;
+};
+export type LlmModelConfigUpdateWithoutPageAgentLlmProxyAuditsInput = {
+    kind?: Prisma.EnumLlmModelKindFieldUpdateOperationsInput | $Enums.LlmModelKind;
+    singletonKey?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
+    provider?: Prisma.StringFieldUpdateOperationsInput | string;
+    model?: Prisma.StringFieldUpdateOperationsInput | string;
+    apiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    baseUrl?: Prisma.StringFieldUpdateOperationsInput | string;
+    chatPath?: Prisma.StringFieldUpdateOperationsInput | string;
+    parameters?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    stream?: Prisma.BoolFieldUpdateOperationsInput | boolean;
+    maxTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
+    temperature?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null;
+    enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+};
+export type LlmModelConfigUncheckedUpdateWithoutPageAgentLlmProxyAuditsInput = {
+    id?: Prisma.IntFieldUpdateOperationsInput | number;
+    kind?: Prisma.EnumLlmModelKindFieldUpdateOperationsInput | $Enums.LlmModelKind;
+    singletonKey?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
+    provider?: Prisma.StringFieldUpdateOperationsInput | string;
+    model?: Prisma.StringFieldUpdateOperationsInput | string;
+    apiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    baseUrl?: Prisma.StringFieldUpdateOperationsInput | string;
+    chatPath?: Prisma.StringFieldUpdateOperationsInput | string;
+    parameters?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    stream?: Prisma.BoolFieldUpdateOperationsInput | boolean;
+    maxTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
+    temperature?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null;
+    enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+};
+export type LlmModelConfigCountOutputType = {
+    pageAgentLlmProxyAudits: number;
+};
+export type LlmModelConfigCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    pageAgentLlmProxyAudits?: boolean | LlmModelConfigCountOutputTypeCountPageAgentLlmProxyAuditsArgs;
+};
+export type LlmModelConfigCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    select?: Prisma.LlmModelConfigCountOutputTypeSelect<ExtArgs> | null;
+};
+export type LlmModelConfigCountOutputTypeCountPageAgentLlmProxyAuditsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    where?: Prisma.PageAgentLlmProxyAuditWhereInput;
+};
 export type LlmModelConfigSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
     id?: boolean;
     kind?: boolean;
@@ -495,6 +611,8 @@ export type LlmModelConfigSelect<ExtArgs extends runtime.Types.Extensions.Intern
     enabled?: boolean;
     createdAt?: boolean;
     updatedAt?: boolean;
+    pageAgentLlmProxyAudits?: boolean | Prisma.LlmModelConfig$pageAgentLlmProxyAuditsArgs<ExtArgs>;
+    _count?: boolean | Prisma.LlmModelConfigCountOutputTypeDefaultArgs<ExtArgs>;
 }, ExtArgs["result"]["llmModelConfig"]>;
 export type LlmModelConfigSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
     id?: boolean;
@@ -548,9 +666,17 @@ export type LlmModelConfigSelectScalar = {
     updatedAt?: boolean;
 };
 export type LlmModelConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "kind" | "singletonKey" | "provider" | "model" | "apiKey" | "baseUrl" | "chatPath" | "parameters" | "stream" | "maxTokens" | "temperature" | "enabled" | "createdAt" | "updatedAt", ExtArgs["result"]["llmModelConfig"]>;
+export type LlmModelConfigInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    pageAgentLlmProxyAudits?: boolean | Prisma.LlmModelConfig$pageAgentLlmProxyAuditsArgs<ExtArgs>;
+    _count?: boolean | Prisma.LlmModelConfigCountOutputTypeDefaultArgs<ExtArgs>;
+};
+export type LlmModelConfigIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {};
+export type LlmModelConfigIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {};
 export type $LlmModelConfigPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     name: "LlmModelConfig";
-    objects: {};
+    objects: {
+        pageAgentLlmProxyAudits: Prisma.$PageAgentLlmProxyAuditPayload<ExtArgs>[];
+    };
     scalars: runtime.Types.Extensions.GetPayloadResult<{
         id: number;
         kind: $Enums.LlmModelKind;
@@ -619,6 +745,7 @@ export interface LlmModelConfigDelegate<ExtArgs extends runtime.Types.Extensions
 }
 export interface Prisma__LlmModelConfigClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
     readonly [Symbol.toStringTag]: "PrismaPromise";
+    pageAgentLlmProxyAudits<T extends Prisma.LlmModelConfig$pageAgentLlmProxyAuditsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LlmModelConfig$pageAgentLlmProxyAuditsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PageAgentLlmProxyAuditPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): runtime.Types.Utils.JsPromise<TResult1 | TResult2>;
     catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): runtime.Types.Utils.JsPromise<T | TResult>;
     finally(onfinally?: (() => void) | undefined | null): runtime.Types.Utils.JsPromise<T>;
@@ -643,16 +770,19 @@ export interface LlmModelConfigFieldRefs {
 export type LlmModelConfigFindUniqueArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.LlmModelConfigSelect<ExtArgs> | null;
     omit?: Prisma.LlmModelConfigOmit<ExtArgs> | null;
+    include?: Prisma.LlmModelConfigInclude<ExtArgs> | null;
     where: Prisma.LlmModelConfigWhereUniqueInput;
 };
 export type LlmModelConfigFindUniqueOrThrowArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.LlmModelConfigSelect<ExtArgs> | null;
     omit?: Prisma.LlmModelConfigOmit<ExtArgs> | null;
+    include?: Prisma.LlmModelConfigInclude<ExtArgs> | null;
     where: Prisma.LlmModelConfigWhereUniqueInput;
 };
 export type LlmModelConfigFindFirstArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.LlmModelConfigSelect<ExtArgs> | null;
     omit?: Prisma.LlmModelConfigOmit<ExtArgs> | null;
+    include?: Prisma.LlmModelConfigInclude<ExtArgs> | null;
     where?: Prisma.LlmModelConfigWhereInput;
     orderBy?: Prisma.LlmModelConfigOrderByWithRelationInput | Prisma.LlmModelConfigOrderByWithRelationInput[];
     cursor?: Prisma.LlmModelConfigWhereUniqueInput;
@@ -663,6 +793,7 @@ export type LlmModelConfigFindFirstArgs<ExtArgs extends runtime.Types.Extensions
 export type LlmModelConfigFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.LlmModelConfigSelect<ExtArgs> | null;
     omit?: Prisma.LlmModelConfigOmit<ExtArgs> | null;
+    include?: Prisma.LlmModelConfigInclude<ExtArgs> | null;
     where?: Prisma.LlmModelConfigWhereInput;
     orderBy?: Prisma.LlmModelConfigOrderByWithRelationInput | Prisma.LlmModelConfigOrderByWithRelationInput[];
     cursor?: Prisma.LlmModelConfigWhereUniqueInput;
@@ -673,6 +804,7 @@ export type LlmModelConfigFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Ext
 export type LlmModelConfigFindManyArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.LlmModelConfigSelect<ExtArgs> | null;
     omit?: Prisma.LlmModelConfigOmit<ExtArgs> | null;
+    include?: Prisma.LlmModelConfigInclude<ExtArgs> | null;
     where?: Prisma.LlmModelConfigWhereInput;
     orderBy?: Prisma.LlmModelConfigOrderByWithRelationInput | Prisma.LlmModelConfigOrderByWithRelationInput[];
     cursor?: Prisma.LlmModelConfigWhereUniqueInput;
@@ -683,6 +815,7 @@ export type LlmModelConfigFindManyArgs<ExtArgs extends runtime.Types.Extensions.
 export type LlmModelConfigCreateArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.LlmModelConfigSelect<ExtArgs> | null;
     omit?: Prisma.LlmModelConfigOmit<ExtArgs> | null;
+    include?: Prisma.LlmModelConfigInclude<ExtArgs> | null;
     data: Prisma.XOR<Prisma.LlmModelConfigCreateInput, Prisma.LlmModelConfigUncheckedCreateInput>;
 };
 export type LlmModelConfigCreateManyArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -698,6 +831,7 @@ export type LlmModelConfigCreateManyAndReturnArgs<ExtArgs extends runtime.Types.
 export type LlmModelConfigUpdateArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.LlmModelConfigSelect<ExtArgs> | null;
     omit?: Prisma.LlmModelConfigOmit<ExtArgs> | null;
+    include?: Prisma.LlmModelConfigInclude<ExtArgs> | null;
     data: Prisma.XOR<Prisma.LlmModelConfigUpdateInput, Prisma.LlmModelConfigUncheckedUpdateInput>;
     where: Prisma.LlmModelConfigWhereUniqueInput;
 };
@@ -716,6 +850,7 @@ export type LlmModelConfigUpdateManyAndReturnArgs<ExtArgs extends runtime.Types.
 export type LlmModelConfigUpsertArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.LlmModelConfigSelect<ExtArgs> | null;
     omit?: Prisma.LlmModelConfigOmit<ExtArgs> | null;
+    include?: Prisma.LlmModelConfigInclude<ExtArgs> | null;
     where: Prisma.LlmModelConfigWhereUniqueInput;
     create: Prisma.XOR<Prisma.LlmModelConfigCreateInput, Prisma.LlmModelConfigUncheckedCreateInput>;
     update: Prisma.XOR<Prisma.LlmModelConfigUpdateInput, Prisma.LlmModelConfigUncheckedUpdateInput>;
@@ -723,13 +858,26 @@ export type LlmModelConfigUpsertArgs<ExtArgs extends runtime.Types.Extensions.In
 export type LlmModelConfigDeleteArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.LlmModelConfigSelect<ExtArgs> | null;
     omit?: Prisma.LlmModelConfigOmit<ExtArgs> | null;
+    include?: Prisma.LlmModelConfigInclude<ExtArgs> | null;
     where: Prisma.LlmModelConfigWhereUniqueInput;
 };
 export type LlmModelConfigDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     where?: Prisma.LlmModelConfigWhereInput;
     limit?: number;
 };
+export type LlmModelConfig$pageAgentLlmProxyAuditsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    select?: Prisma.PageAgentLlmProxyAuditSelect<ExtArgs> | null;
+    omit?: Prisma.PageAgentLlmProxyAuditOmit<ExtArgs> | null;
+    include?: Prisma.PageAgentLlmProxyAuditInclude<ExtArgs> | null;
+    where?: Prisma.PageAgentLlmProxyAuditWhereInput;
+    orderBy?: Prisma.PageAgentLlmProxyAuditOrderByWithRelationInput | Prisma.PageAgentLlmProxyAuditOrderByWithRelationInput[];
+    cursor?: Prisma.PageAgentLlmProxyAuditWhereUniqueInput;
+    take?: number;
+    skip?: number;
+    distinct?: Prisma.PageAgentLlmProxyAuditScalarFieldEnum | Prisma.PageAgentLlmProxyAuditScalarFieldEnum[];
+};
 export type LlmModelConfigDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.LlmModelConfigSelect<ExtArgs> | null;
     omit?: Prisma.LlmModelConfigOmit<ExtArgs> | null;
+    include?: Prisma.LlmModelConfigInclude<ExtArgs> | null;
 };

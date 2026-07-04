@@ -25,6 +25,11 @@ export declare class ChatController {
         };
     }, body: CreateChatDto): Promise<{
         sessionId: string;
+        agent: {
+            id: number;
+            source: string;
+            reason: string;
+        };
     }>;
     listMessageFeedbackDownReasonTags(): {
         items: ({

@@ -4,7 +4,7 @@ export type PendingWriteGatePublicState = {
     runId: number;
     turnId: number;
     draftRetryCount: number;
-    draftRetryMax: number;
+    draftRetryMax: number | null;
     canRetry: boolean;
     writeDraft?: WriteDraftPublic;
     writeDrafts?: WriteDraftPublic[];

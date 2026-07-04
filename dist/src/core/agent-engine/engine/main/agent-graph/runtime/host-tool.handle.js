@@ -8,10 +8,11 @@ const host_tool_run_step_util_1 = require("../../host-tool/host-tool-run-step.ut
 const host_tool_llm_util_1 = require("../../host-tool/host-tool-llm.util");
 const plan_draft_reply_util_1 = require("../../plan-present/plan-draft-reply.util");
 const plan_host_fill_util_1 = require("../../plan-present/plan-host-fill.util");
+const workflow_plan_transition_util_1 = require("../../../../../workflow/workflow-plan-transition.util");
 const turn_execution_contract_util_1 = require("../../../turn/turn-execution-contract.util");
 const graph_tool_observations_util_1 = require("../../../graph-tool-observations.util");
 function applyHostToolPlanStepHandle(deps, skillFrame, graphState, input, withPlanSyncStep) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     if (input.warnMessage) {
         deps.logger.warn(input.warnMessage);
     }
@@ -34,10 +35,20 @@ function applyHostToolPlanStepHandle(deps, skillFrame, graphState, input, withPl
         pageScope: (_h = (_g = graphState.pageContext) === null || _g === void 0 ? void 0 : _g.page) !== null && _h !== void 0 ? _h : null,
     });
     const stepsWithHostTool = [...input.steps, hostToolRunStep];
+    const progressed = graphState.taskPlan
+        ? (0, workflow_plan_transition_util_1.applyPlanAdvanceAsWorkflowProgress)({
+            taskPlan: graphState.taskPlan,
+            workflowRun: graphState.workflowRun,
+            workflowNodeDefs: graphState.workflowNodeDefs,
+            workflowAwaitingReact: graphState.workflowAwaitingReact,
+            planBefore: graphState.taskPlan,
+            planAdvance: input.handle.planAdvance,
+        })
+        : { taskPlan: input.handle.planAdvance.updatedPlan };
     let nextState = Object.assign(Object.assign({}, graphState), { iteration: input.nextIteration, steps: stepsWithHostTool, toolObservations: [
             ...graphState.toolObservations,
             ...input.handle.observations,
-        ], taskPlan: input.handle.planAdvance.updatedPlan, pendingToolCalls: input.httpCalls, pendingRespond: null });
+        ], taskPlan: (_j = progressed.taskPlan) !== null && _j !== void 0 ? _j : input.handle.planAdvance.updatedPlan, workflowRun: (_k = progressed.workflowRun) !== null && _k !== void 0 ? _k : graphState.workflowRun, workflowAwaitingReact: (_l = progressed.workflowAwaitingReact) !== null && _l !== void 0 ? _l : graphState.workflowAwaitingReact, pendingToolCalls: input.httpCalls, pendingRespond: null });
     nextState = withPlanSyncStep(nextState, input.handle.planAdvance, input.planStepId, 'llm');
     return nextState;
 }

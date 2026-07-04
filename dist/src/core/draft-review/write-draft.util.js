@@ -6,6 +6,7 @@ const plan_compose_write_util_1 = require("../agent-engine/engine/main/plan-pres
 const message_blocks_util_2 = require("../agent-engine/engine/message/message-blocks.util");
 const apply_edited_pending_write_util_1 = require("./apply-edited-pending-write.util");
 const draft_review_retry_limit_util_1 = require("./draft-review-retry-limit.util");
+const draft_review_config_util_1 = require("./draft-review-config.util");
 const INTERNAL_COMPOSE_MARKER = '_composedFor';
 function stripInternalComposeMarkers(args) {
     if (!(INTERNAL_COMPOSE_MARKER in args)) {
@@ -229,6 +230,7 @@ function tryParsePreviewBlocksFromDecision(serialized) {
 function toWriteDraftPublic(draft, input) {
     var _a, _b;
     const budget = (0, draft_review_retry_limit_util_1.resolveDraftRetryBudget)(draft.provenance.draftRetryCount);
+    const max = (0, draft_review_config_util_1.resolveDraftReviewMaxRetries)();
     return {
         version: draft.version,
         tool: Object.assign(Object.assign({ name: draft.tool.name }, (draft.tool.toolId != null ? { toolId: draft.tool.toolId } : {})), { riskLevel: String(draft.tool.riskLevel) }),
@@ -239,7 +241,7 @@ function toWriteDraftPublic(draft, input) {
         },
         provenance: {
             draftRetryCount: budget.used,
-            draftRetryMax: (_b = input === null || input === void 0 ? void 0 : input.draftRetryMax) !== null && _b !== void 0 ? _b : budget.max,
+            draftRetryMax: (_b = input === null || input === void 0 ? void 0 : input.draftRetryMax) !== null && _b !== void 0 ? _b : max,
             canRetry: budget.canRetry,
             composedAt: draft.provenance.composedAt,
             lastEvent: draft.provenance.lastEvent,

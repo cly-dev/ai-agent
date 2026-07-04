@@ -10,6 +10,7 @@ const page_action_host_tool_util_1 = require("../page-action/page-action-host-to
 const page_action_prompt_util_1 = require("../page-action/page-action-prompt.util");
 const host_tool_types_1 = require("../../modules/host-tool/host-tool.types");
 const draft_review_1 = require("../draft-review");
+const page_action_run_audit_util_1 = require("../page-action/page-action-run-audit.util");
 const validate_approval_edited_pending_write_util_1 = require("./validate-approval-edited-pending-write.util");
 async function resumePageActionFromApprovalSnapshot(input) {
     var _a, _b, _c, _d, _e;
@@ -111,7 +112,7 @@ async function resumePageActionFromApprovalSnapshot(input) {
 }
 exports.resumePageActionFromApprovalSnapshot = resumePageActionFromApprovalSnapshot;
 async function retryPageActionFromApprovalSnapshot(input) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const { snapshot } = input;
     if (snapshot.channel.kind !== 'page_action') {
         return false;
@@ -150,10 +151,14 @@ async function retryPageActionFromApprovalSnapshot(input) {
         pageContext,
     });
     const recorder = page_action_run_steps_util_1.PageActionRunStepRecorder.fromJson(run.steps);
+    const previousWriteDraft = (0, draft_review_1.resolveWriteDraftFromApprovalSnapshot)(snapshot);
     recorder.recordLifecycle('approval_retry_requested', {
         approvalRequestId: input.approvalRequestId,
         retryInstruction: input.retryInstruction,
         retryNodeId: rewind.retryNodeId,
+        clearedOutputKeys: rewind.clearedOutputKeys,
+        draftRetryCount: (_c = snapshot.draftRetryCount) !== null && _c !== void 0 ? _c : 0,
+        previousWriteDraft: (0, page_action_run_audit_util_1.buildWriteDraftStepDetail)(previousWriteDraft),
     });
     const loadResult = await (0, load_workflow_definition_util_1.loadWorkflowForRunDetailed)(input.prisma, {
         workflowId: retrySnapshot.workflowRun.workflowId,
@@ -192,7 +197,6 @@ async function retryPageActionFromApprovalSnapshot(input) {
         resumeFrom: {
             workflowRun: retrySnapshot.workflowRun,
             nodeOutputs: retrySnapshot.workflowNodeOutputs,
-            pendingWrite: retrySnapshot.pendingWrite,
             advancePastAwait: false,
         },
     });
@@ -205,7 +209,7 @@ async function retryPageActionFromApprovalSnapshot(input) {
                     : client_1.PageActionRunStatus.running, workflowRun: result.workflowRun, fillText: result.fillText || null, dslOutcome: result.dslOutcome, model: result.model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, finishedAt: result.suspended || result.errorCode ? null : new Date(), steps: recorder.toJson() }, (result.errorCode
             ? {
                 errorCode: result.errorCode,
-                errorMessage: (_c = result.errorMessage) !== null && _c !== void 0 ? _c : result.errorCode,
+                errorMessage: (_d = result.errorMessage) !== null && _d !== void 0 ? _d : result.errorCode,
             }
             : {})),
     });

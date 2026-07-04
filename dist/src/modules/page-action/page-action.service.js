@@ -21,7 +21,6 @@ const resolve_approval_parties_util_1 = require("../../core/approval/resolve-app
 const load_workflow_definition_util_1 = require("../../core/workflow/load-workflow-definition.util");
 const page_action_workflow_load_util_1 = require("../../core/page-action/page-action-workflow-load.util");
 const page_action_host_tool_util_1 = require("../../core/page-action/page-action-host-tool.util");
-const page_action_host_tool_provision_util_1 = require("../../core/page-action/page-action-host-tool-provision.util");
 const page_action_inline_sse_util_1 = require("../../core/page-action/page-action-inline-sse.util");
 const page_action_run_steps_util_1 = require("../../core/page-action/page-action-run-steps.util");
 const page_action_constants_1 = require("../../core/page-action/page-action.constants");
@@ -45,35 +44,22 @@ let PageActionService = class PageActionService {
         this.triggerPermission = triggerPermission;
     }
     async create(dto) {
-        var _a, _b, _c, _d, _e, _f, _g, _h;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
         await this.assertAppClientExists(dto.appClientId);
         this.assertInlineStreamOnly(dto.defaultDelivery);
         const actionKey = dto.actionKey.trim();
         this.assertPromptLimits(dto.systemPrompt, null);
-        const workflowBound = dto.workflowId != null && dto.workflowId > 0;
-        let hostToolId = null;
-        if (workflowBound) {
+        if (dto.hostToolId != null) {
+            await this.assertHostToolForApp(dto.appClientId, dto.hostToolId);
+        }
+        this.assertPageActionHostToolBinding(dto.workflowId, dto.hostToolId);
+        const hostToolId = (_a = dto.hostToolId) !== null && _a !== void 0 ? _a : null;
+        if (dto.workflowId != null && dto.workflowId > 0) {
             await this.workflowService.assertWorkflowReferenceCompatible({
                 workflowId: dto.workflowId,
                 appClientId: dto.appClientId,
                 entry: 'page_action',
             });
-            if (dto.hostToolId != null) {
-                await this.assertHostToolForApp(dto.appClientId, dto.hostToolId);
-                hostToolId = dto.hostToolId;
-            }
-            else if (dto.hostTool != null) {
-                const hostTool = await (0, page_action_host_tool_provision_util_1.resolveOrProvisionPageActionHostTool)(this.prisma, {
-                    appClientId: dto.appClientId,
-                    actionKey: dto.actionKey,
-                    pageActionName: dto.name,
-                    pageActionDescription: dto.description,
-                    pageScope: dto.pageScope,
-                    hostToolId: undefined,
-                    hostTool: dto.hostTool,
-                });
-                hostToolId = hostTool.id;
-            }
             await this.workflowService.assertPageActionWorkflowBindingsCompatible({
                 workflowId: dto.workflowId,
                 appClientId: dto.appClientId,
@@ -81,38 +67,26 @@ let PageActionService = class PageActionService {
                 pageActionHostToolId: hostToolId,
             });
         }
-        else {
-            const hostTool = await (0, page_action_host_tool_provision_util_1.resolveOrProvisionPageActionHostTool)(this.prisma, {
-                appClientId: dto.appClientId,
-                actionKey: dto.actionKey,
-                pageActionName: dto.name,
-                pageActionDescription: dto.description,
-                pageScope: dto.pageScope,
-                hostToolId: dto.hostToolId,
-                hostTool: dto.hostTool,
-            });
-            hostToolId = hostTool.id;
-        }
         try {
             const row = await this.prisma.pageAction.create({
                 data: {
                     appClientId: dto.appClientId,
                     actionKey,
                     name: dto.name.trim(),
-                    description: ((_a = dto.description) === null || _a === void 0 ? void 0 : _a.trim()) || null,
+                    description: ((_b = dto.description) === null || _b === void 0 ? void 0 : _b.trim()) || null,
                     hostToolId,
-                    pageScope: ((_b = dto.pageScope) === null || _b === void 0 ? void 0 : _b.trim()) || null,
+                    pageScope: ((_c = dto.pageScope) === null || _c === void 0 ? void 0 : _c.trim()) || null,
                     systemPrompt: dto.systemPrompt.trim(),
                     defaultDelivery: client_1.PageActionDelivery.inline_stream,
-                    allowCustomInstruction: (_c = dto.allowCustomInstruction) !== null && _c !== void 0 ? _c : true,
-                    isActive: (_d = dto.isActive) !== null && _d !== void 0 ? _d : true,
-                    sortOrder: (_e = dto.sortOrder) !== null && _e !== void 0 ? _e : 0,
+                    allowCustomInstruction: (_d = dto.allowCustomInstruction) !== null && _d !== void 0 ? _d : true,
+                    isActive: (_e = dto.isActive) !== null && _e !== void 0 ? _e : true,
+                    sortOrder: (_f = dto.sortOrder) !== null && _f !== void 0 ? _f : 0,
                     config: dto.config === undefined
                         ? undefined
                         : dto.config,
-                    sourceSkillId: (_f = dto.sourceSkillId) !== null && _f !== void 0 ? _f : null,
-                    workflowId: (_g = dto.workflowId) !== null && _g !== void 0 ? _g : undefined,
-                    workflowVersion: (_h = dto.workflowVersion) !== null && _h !== void 0 ? _h : undefined,
+                    sourceSkillId: (_g = dto.sourceSkillId) !== null && _g !== void 0 ? _g : null,
+                    workflowId: (_h = dto.workflowId) !== null && _h !== void 0 ? _h : undefined,
+                    workflowVersion: (_j = dto.workflowVersion) !== null && _j !== void 0 ? _j : undefined,
                     workflowOverrides: dto.workflowOverrides === undefined
                         ? undefined
                         : dto.workflowOverrides === null
@@ -153,6 +127,7 @@ let PageActionService = class PageActionService {
             ? dto.workflowVersion
             : existing.workflowVersion;
         const nextHostToolId = (_a = dto.hostToolId) !== null && _a !== void 0 ? _a : existing.hostToolId;
+        this.assertPageActionHostToolBinding(nextWorkflowId, nextHostToolId);
         if (nextWorkflowId != null && nextWorkflowId > 0) {
             await this.workflowService.assertPageActionWorkflowBindingsCompatible({
                 workflowId: nextWorkflowId,
@@ -598,13 +573,25 @@ let PageActionService = class PageActionService {
             throw new common_1.NotFoundException(`AppClient ${appClientId} not found`);
         }
     }
+    assertPageActionHostToolBinding(workflowId, hostToolId) {
+        const workflowBound = workflowId != null && Number.isInteger(workflowId) && workflowId > 0;
+        if (!workflowBound && hostToolId == null) {
+            throw new common_1.BadRequestException({
+                code: 'PAGE_ACTION_HOST_TOOL_REQUIRED',
+                message: 'hostToolId is required when workflowId is not set; create HostTool first, then bind by id',
+            });
+        }
+    }
     async assertHostToolForApp(appClientId, hostToolId) {
         const row = await this.prisma.hostTool.findFirst({
             where: { id: hostToolId, appClientId },
             include: host_tool_types_1.HOST_TOOL_DETAIL_INCLUDE,
         });
         if (!row) {
-            throw new common_1.BadRequestException(`HostTool ${hostToolId} not found for AppClient ${appClientId}`);
+            throw new common_1.NotFoundException({
+                code: 'HOST_TOOL_NOT_FOUND',
+                message: `HostTool ${hostToolId} not found for AppClient ${appClientId}`,
+            });
         }
     }
 };

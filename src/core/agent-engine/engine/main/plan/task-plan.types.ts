@@ -51,6 +51,8 @@ export type TaskPlanStep = {
   toolRole?: ToolDecisionRole;
   /** kind=host_tool 时可选：限定可绑定的 Host Tool 名；空则使用当前 scope 下全部 LLM 暴露工具。 */
   hostToolNames?: string[];
+  /** kind=host_tool 时可选：Workflow 节点声明的 HostTool ID 约束。 */
+  hostToolIds?: number[];
   objective: string;
   stopWhen?: TaskStepStopWhen;
 };
@@ -77,6 +79,7 @@ export type TaskPlanSnapshot = {
 };
 
 export type PlanHostToolSummary = {
+  id?: number;
   name: string;
   description: string;
 };

@@ -36,9 +36,6 @@ export class LlmService implements OnModuleInit {
   /** 为 tool schema / 路由预留的 token 余量。 */
   private static readonly INVOCATION_TOKEN_BUFFER = 384;
   private static readonly LOCAL_EMBED_BATCH_SIZE = 16;
-  private cachedChatConfig: LlmModelConfig | null = null;
-  /** undefined = 未加载；null = 已加载但无启用项 */
-  private cachedEmbeddingConfig: LlmModelConfig | null | undefined;
   private localEmbeddingRuntime:
     | {
         model: string;
@@ -69,11 +66,9 @@ export class LlmService implements OnModuleInit {
 
   async refreshConfigCache(): Promise<void> {
     const chat = await this.loadActiveConfigFromDb(LlmModelKind.chat);
-    this.cachedChatConfig = chat;
     await this.modelConfigCache.trySetActive(chat);
 
     const embedding = await this.loadActiveEmbeddingConfigFromDb();
-    this.cachedEmbeddingConfig = embedding;
     await this.modelConfigCache.deleteActive(
       LlmModelKind.transformers_embedding,
     );
@@ -95,6 +90,11 @@ export class LlmService implements OnModuleInit {
   ): Promise<LlmChatResult> {
     const messages = await this.applyPromptBudget(input);
     return this.invokeWithLangChain({ ...input, messages }, true, handlers);
+  }
+
+  /** 内部调用方读取当前启用的 chat 模型运行配置（含密钥），不要直接暴露给 HTTP 响应。 */
+  async getActiveChatModelConfig(): Promise<LlmModelConfig> {
+    return this.getCachedChatConfig();
   }
 
   /** 模型上下文窗口（parameters.contextLength 等），非输出 max_tokens。 */
@@ -591,31 +591,21 @@ export class LlmService implements OnModuleInit {
   }
 
   private async getCachedChatConfig(): Promise<LlmModelConfig> {
-    if (this.cachedChatConfig?.enabled) {
-      return this.cachedChatConfig;
-    }
     const fromRedis = await this.modelConfigCache.getActive(LlmModelKind.chat);
     if (fromRedis?.enabled) {
-      this.cachedChatConfig = fromRedis;
       return fromRedis;
     }
     const fromDb = await this.loadActiveConfigFromDb(LlmModelKind.chat);
-    this.cachedChatConfig = fromDb;
     await this.modelConfigCache.trySetActive(fromDb);
     return fromDb;
   }
 
   private async getCachedEmbeddingConfig(): Promise<LlmModelConfig | null> {
-    if (this.cachedEmbeddingConfig !== undefined) {
-      return this.cachedEmbeddingConfig;
-    }
     const fromRedis = await this.loadActiveEmbeddingConfigFromRedis();
     if (fromRedis) {
-      this.cachedEmbeddingConfig = fromRedis;
       return fromRedis;
     }
     const fromDb = await this.loadActiveEmbeddingConfigFromDb();
-    this.cachedEmbeddingConfig = fromDb;
     if (fromDb) {
       await this.modelConfigCache.trySetActive(fromDb);
     }

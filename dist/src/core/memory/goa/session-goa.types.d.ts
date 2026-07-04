@@ -47,6 +47,8 @@ export type StoredTaskPlanStep = {
     kind: string;
     skillId?: number;
     toolRole?: string;
+    hostToolNames?: string[];
+    hostToolIds?: number[];
     objective: string;
     stopWhen?: string;
 };

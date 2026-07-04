@@ -65,6 +65,11 @@ export type AppClient = Prisma.AppClientModel
  */
 export type LlmModelConfig = Prisma.LlmModelConfigModel
 /**
+ * Model PageAgentLlmProxyAudit
+ * C 端 PageAgent LLM 代理调用审计；不保存完整 messages，避免落库页面 DOM / 隐私文本。
+ */
+export type PageAgentLlmProxyAudit = Prisma.PageAgentLlmProxyAuditModel
+/**
  * Model IntentRecallConfig
  * * 意图召回（向量 Top-K / bind 上限）；进程内缓存，管理端可改。
  */

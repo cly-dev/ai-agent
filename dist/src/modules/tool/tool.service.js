@@ -27,6 +27,7 @@ const tool_types_1 = require("./tool.types");
 const tool_decision_input_util_1 = require("../../core/tool-engine/tool-decision-input.util");
 const tool_response_profile_spec_util_1 = require("../../core/tool-engine/tool-response-profile.spec.util");
 const tool_schema_inference_util_1 = require("./tool-schema-inference.util");
+const workflow_node_reference_guard_util_1 = require("../../core/workflow/workflow-node-reference-guard.util");
 let ToolService = class ToolService {
     constructor(prisma, toolEngine, runtimeCacheInvalidator, llmService, promptRegistry) {
         this.prisma = prisma;
@@ -122,6 +123,7 @@ let ToolService = class ToolService {
             },
             include: tool_types_1.TOOL_DETAIL_INCLUDE,
         });
+        await this.runtimeCacheInvalidator.invalidateForTools([row.id]);
         return (0, tool_mapper_1.toToolResponse)(row);
     }
     async findPageByAppClientId(appClientId, query) {
@@ -295,6 +297,7 @@ let ToolService = class ToolService {
                 include: tool_types_1.TOOL_DETAIL_INCLUDE,
             });
             updatedTool = (0, tool_mapper_1.toToolResponse)(row);
+            await this.runtimeCacheInvalidator.invalidateForTools([id]);
         }
         else {
             updatedTool = (0, tool_mapper_1.toToolResponse)(tool);
@@ -344,13 +347,14 @@ let ToolService = class ToolService {
         return undefined;
     }
     async remove(id) {
-        await this.findOne(id);
+        const existing = await this.findOne(id);
+        await this.assertToolNotReferencedByWorkflowNodes(existing.appClientId, id);
         try {
             const row = await this.prisma.tool.delete({
                 where: { id },
                 include: tool_types_1.TOOL_DETAIL_INCLUDE,
             });
-            await this.runtimeCacheInvalidator.invalidateForTools([id]);
+            await this.runtimeCacheInvalidator.invalidateForAppClient(existing.appClientId);
             return (0, tool_mapper_1.toToolResponse)(row);
         }
         catch (error) {
@@ -364,6 +368,22 @@ let ToolService = class ToolService {
             }
             throw error;
         }
+    }
+    async assertToolNotReferencedByWorkflowNodes(appClientId, toolId) {
+        const usages = await (0, workflow_node_reference_guard_util_1.findWorkflowNodeReferences)(this.prisma, {
+            appClientId,
+            kind: 'tool',
+            targetId: toolId,
+        });
+        if (usages.length === 0) {
+            return;
+        }
+        throw new common_1.BadRequestException({
+            code: 'TOOL_REFERENCED_BY_WORKFLOW_NODES',
+            message: 'Tool is referenced by Workflow nodes and cannot be deleted; deactivate it or update the Workflow first',
+            toolId,
+            references: usages.slice(0, 20),
+        });
     }
     buildWhere(query) {
         const base = {};

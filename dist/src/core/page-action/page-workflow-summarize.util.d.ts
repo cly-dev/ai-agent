@@ -29,4 +29,7 @@ export declare function executePageWorkflowSummarize(input: {
     existingFillText: string;
     stepRecorder?: PageActionRunStepRecorder;
     streamLifecycle?: PageWorkflowSummarizeStreamLifecycle;
+    systemPrompt?: string | null;
+    objectivePrefix?: string | null;
+    nodeObjective?: string | null;
 }): Promise<PageWorkflowSummarizeResult>;

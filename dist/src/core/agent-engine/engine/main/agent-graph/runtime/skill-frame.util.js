@@ -15,7 +15,7 @@ const plan_observation_scope_util_1 = require("../../plan/plan-observation-scope
 const agent_run_steps_util_1 = require("../../run/agent-run-steps.util");
 function createAgentGraphSkillFrameHelpers(deps, ctx, runHelpers) {
     const applySkillFrameContext = async (state) => {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g;
         if (!state.taskPlan) {
             return state;
         }
@@ -29,6 +29,7 @@ function createAgentGraphSkillFrameHelpers(deps, ctx, runHelpers) {
             : null)) !== null && _e !== void 0 ? _e : ctx.input.requestedSkillId) !== null && _f !== void 0 ? _f : null;
         const hostBundle = await runHelpers.loadScopedHostTools(ctx.input, pageContext, skillIdForHost);
         const availableHostTools = hostBundle.scopedHostTools.map((tool) => ({
+            id: tool.id,
             name: tool.name,
             description: tool.description,
         }));
@@ -54,11 +55,17 @@ function createAgentGraphSkillFrameHelpers(deps, ctx, runHelpers) {
             availableHostTools,
             scopedHostToolIds: hostBundle.scopedHostTools.map((tool) => tool.id),
         });
+        const effectiveHostBundle = ((_g = expanded.skill) === null || _g === void 0 ? void 0 : _g.workflowId) != null && expanded.skill.workflowId > 0
+            ? await runHelpers.loadScopedHostTools(ctx.input, pageContext, null)
+            : hostBundle;
+        const narrowedHostTools = (0, skill_frame_expand_util_1.filterDecisionHostToolsForSkill)(effectiveHostBundle.scopedHostTools, expanded.skill);
+        const narrowedHostToolNames = new Set(narrowedHostTools.map((tool) => tool.name));
+        const narrowedHostLangChainTools = effectiveHostBundle.scopedHostLangChainTools.filter((tool) => narrowedHostToolNames.has(tool.name));
         const skillCtx = (0, plan_stack_util_1.resolveSkillContextFromPlan)(expanded.plan);
         let taskPlan = expanded.plan;
         let contractSkippedObservations = [];
-        if (hostBundle.scopedHostTools.length > 0) {
-            const enriched = (0, host_tool_plan_util_1.enrichPlanStepsWithHostTools)(expanded.plan, hostBundle.scopedHostTools);
+        if (narrowedHostTools.length > 0) {
+            const enriched = (0, host_tool_plan_util_1.enrichPlanStepsWithHostTools)(expanded.plan, narrowedHostTools);
             taskPlan = enriched.plan;
             if (enriched.prunedHostToolStepIds.length > 0) {
                 deps.logger.warn(`host_tool plan steps pruned after enrich runId=${ctx.input.runId} stepIds=${enriched.prunedHostToolStepIds.join(',')}`);
@@ -85,7 +92,7 @@ function createAgentGraphSkillFrameHelpers(deps, ctx, runHelpers) {
                         output: row.output,
                     })),
                 ]
-                : state.toolObservations, scopedTools: expanded.scopedTools, scopedLangChainTools: expanded.scopedToolBundle.tools, scopedToolBundle: expanded.scopedToolBundle, scopedAllowedToolIds: expanded.scopedAllowedToolIds, scopedHostTools: hostBundle.scopedHostTools, scopedHostLangChainTools: hostBundle.scopedHostLangChainTools, skillApplied: skillCtx.skillApplied, activeSkillId: skillCtx.activeSkillId, activeSkillPrompt: skillCtx.activeSkillPrompt, activeSkillName: skillCtx.activeSkillName, activeSkillDescription: skillCtx.activeSkillDescription, activeSkillConfig: skillCtx.activeSkillConfig, activeSkillRiskLevel: skillCtx.activeSkillRiskLevel });
+                : state.toolObservations, scopedTools: expanded.scopedTools, scopedLangChainTools: expanded.scopedToolBundle.tools, scopedToolBundle: expanded.scopedToolBundle, scopedAllowedToolIds: expanded.scopedAllowedToolIds, scopedHostTools: narrowedHostTools, scopedHostLangChainTools: narrowedHostLangChainTools, skillApplied: skillCtx.skillApplied, activeSkillId: skillCtx.activeSkillId, activeSkillPrompt: skillCtx.activeSkillPrompt, activeSkillName: skillCtx.activeSkillName, activeSkillDescription: skillCtx.activeSkillDescription, activeSkillConfig: skillCtx.activeSkillConfig, activeSkillRiskLevel: skillCtx.activeSkillRiskLevel });
     };
     const withPlanSyncStep = (graphState, planAdvance, fromStepId, site) => {
         if (!planAdvance) {

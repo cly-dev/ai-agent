@@ -83,8 +83,13 @@ export class AgentHostToolCatalogService {
     if (!pageScope) {
       return { tools: [], fromCache: false };
     }
-    const cached = await this.catalogStore.get(input.appClientId, input.agentId);
-    if (cached) {
+    const before = await this.catalogStore.get(input.appClientId, input.agentId);
+    const catalog = await this.loadOrWarm(input.appClientId, input.agentId);
+    if (!catalog) {
+      return { tools: [], fromCache: false };
+    }
+    const fromCache = before?.revision === catalog.revision;
+    if (fromCache) {
       logRuntimeCacheEvent({
         layer: 'L2',
         operation: 'resolveLlmHostTools',
@@ -92,33 +97,22 @@ export class AgentHostToolCatalogService {
         agentId: input.agentId,
         appClientId: input.appClientId,
       });
-      return {
-        tools: resolveLlmHostToolsFromCatalog(cached, {
-          pageScope,
-          skillId: input.skillId,
-          skillTriggers: LLM_SKILL_TRIGGERS,
-        }),
-        fromCache: true,
-      };
+    } else {
+      logRuntimeCacheEvent({
+        layer: 'L2',
+        operation: 'resolveLlmHostTools',
+        cacheHit: false,
+        agentId: input.agentId,
+        appClientId: input.appClientId,
+      });
     }
-    const warmed = await this.loadOrWarm(input.appClientId, input.agentId);
-    if (!warmed) {
-      return { tools: [], fromCache: false };
-    }
-    logRuntimeCacheEvent({
-      layer: 'L2',
-      operation: 'resolveLlmHostTools',
-      cacheHit: false,
-      agentId: input.agentId,
-      appClientId: input.appClientId,
-    });
     return {
-      tools: resolveLlmHostToolsFromCatalog(warmed, {
+      tools: resolveLlmHostToolsFromCatalog(catalog, {
         pageScope,
         skillId: input.skillId,
         skillTriggers: LLM_SKILL_TRIGGERS,
       }),
-      fromCache: false,
+      fromCache,
     };
   }
 
@@ -146,6 +140,7 @@ export class AgentHostToolCatalogService {
     }
     return buildHostToolCatalogRevision({
       hostTools: ctx.revisionHostToolRows,
+      hostPages: ctx.revisionHostPageRows,
       skillBindings: ctx.revisionSkillBindingRows,
       agentBoundHostToolIds: ctx.candidateHostToolIds,
     });
@@ -166,6 +161,7 @@ export class AgentHostToolCatalogService {
         agentId,
         revision: buildHostToolCatalogRevision({
           hostTools: [],
+          hostPages: [],
           skillBindings: [],
           agentBoundHostToolIds: [],
         }),
@@ -242,6 +238,12 @@ export class AgentHostToolCatalogService {
           id: row.id,
           updatedAt: row.updatedAt,
         })),
+        hostPages: hostToolRows
+          .filter((row) => row.hostPage != null)
+          .map((row) => ({
+            id: row.hostPage!.id,
+            updatedAt: row.hostPage!.updatedAt,
+          })),
         skillBindings: skillBindingRows.map((row) => ({
           id: row.id,
           updatedAt: row.updatedAt,
@@ -261,6 +263,7 @@ export class AgentHostToolCatalogService {
   ): Promise<{
     candidateHostToolIds: number[];
     revisionHostToolRows: Array<{ id: number; updatedAt: Date }>;
+    revisionHostPageRows: Array<{ id: number; updatedAt: Date }>;
     revisionSkillBindingRows: Array<{ id: number; updatedAt: Date }>;
   } | null> {
     const agent = await this.prisma.agent.findFirst({
@@ -278,7 +281,11 @@ export class AgentHostToolCatalogService {
       }),
       this.prisma.hostTool.findMany({
         where: { appClientId, isActive: true },
-        select: { id: true, updatedAt: true },
+        select: {
+          id: true,
+          updatedAt: true,
+          hostPage: { select: { id: true, updatedAt: true } },
+        },
         orderBy: { id: 'asc' },
       }),
     ]);
@@ -291,6 +298,12 @@ export class AgentHostToolCatalogService {
     const revisionHostToolRows = appActiveHostTools.filter((row) =>
       candidateSet.has(row.id),
     );
+    const revisionHostPageRows = revisionHostToolRows
+      .filter((row) => row.hostPage != null)
+      .map((row) => ({
+        id: row.hostPage!.id,
+        updatedAt: row.hostPage!.updatedAt,
+      }));
     let revisionSkillBindingRows: Array<{ id: number; updatedAt: Date }> = [];
     if (candidateHostToolIds.length > 0) {
       revisionSkillBindingRows = await this.prisma.skillHostTool.findMany({
@@ -305,6 +318,7 @@ export class AgentHostToolCatalogService {
     return {
       candidateHostToolIds,
       revisionHostToolRows,
+      revisionHostPageRows,
       revisionSkillBindingRows,
     };
   }

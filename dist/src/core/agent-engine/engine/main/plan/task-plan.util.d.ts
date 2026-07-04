@@ -160,6 +160,12 @@ export declare function buildDeterministicMutationPlanResult(input: {
     scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'];
     llmFallbackReason?: string;
 }): ResolveTaskPlanResult;
+export declare function buildHostToolWritePlanResult(input: {
+    userMessage: string;
+    availableHostTools: Array<{
+        name: string;
+    }>;
+}): ResolveTaskPlanResult;
 export declare function scopedToolsIncludeWrite(scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries']): boolean;
 export declare function shouldReplacePlanWithMutationTemplate(plan: TaskPlanSnapshot, hasWrite: boolean, planInput?: BuildTaskPlanInput): boolean;
 export declare function toolCallMatchesPendingPlanToolRole(call: {

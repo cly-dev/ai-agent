@@ -43,6 +43,9 @@ export interface PrismaClient<in LogOpts extends Prisma.LogLevel = never, in out
     get llmModelConfig(): Prisma.LlmModelConfigDelegate<ExtArgs, {
         omit: OmitOpts;
     }>;
+    get pageAgentLlmProxyAudit(): Prisma.PageAgentLlmProxyAuditDelegate<ExtArgs, {
+        omit: OmitOpts;
+    }>;
     get intentRecallConfig(): Prisma.IntentRecallConfigDelegate<ExtArgs, {
         omit: OmitOpts;
     }>;

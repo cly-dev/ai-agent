@@ -19,7 +19,7 @@ export declare function resolveWorkflowBoundSkillId(bundle: AgentGraphNodeBundle
 export declare function resolveSkillWorkflowForInit(prisma: PrismaService, input: {
     skillId: number;
     appClientId: number;
-    scope: {
+    scope?: {
         allowedToolIds: number[];
         allowedHostToolIds: number[];
     };

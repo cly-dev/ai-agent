@@ -6,6 +6,7 @@ const workflow_run_util_1 = require("../workflow/workflow-run.util");
 const workflow_node_output_util_1 = require("../workflow/workflow-node-output.util");
 const page_workflow_pending_write_util_1 = require("./page-workflow-pending-write.util");
 const page_workflow_compose_mutation_util_1 = require("./page-workflow-compose-mutation.util");
+const page_action_run_audit_util_1 = require("./page-action-run-audit.util");
 async function resolveWriteTool(prisma, appClientId, toolId) {
     const tool = await prisma.tool.findFirst({
         where: { id: toolId, appClientId, isActive: true },
@@ -50,6 +51,7 @@ async function runPageWorkflowMutationReact(input) {
         }
         try {
             const tool = await resolveWriteTool(runtime.prisma, runtime.appClientId, toolId);
+            const recomposedFromPendingWrite = input.pendingWrite != null;
             const composedArgs = (_b = (_a = input.pendingWrite) === null || _a === void 0 ? void 0 : _a.arguments) !== null && _b !== void 0 ? _b : (await (0, page_workflow_compose_mutation_util_1.executePageWorkflowComposeMutation)({
                 runtime,
                 def,
@@ -70,6 +72,9 @@ async function runPageWorkflowMutationReact(input) {
                 detail: {
                     toolId: tool.id,
                     toolName: tool.name,
+                    recomposedFromPendingWrite,
+                    argumentKeys: Object.keys(composedArgs),
+                    writeArguments: (0, page_action_run_audit_util_1.summarizeRecordForAudit)(composedArgs),
                 },
             });
             const outputRef = (0, workflow_node_output_util_1.buildWorkflowNodeOutputRef)(def.action, nodeId);
@@ -128,13 +133,20 @@ async function runPageWorkflowMutationReact(input) {
             }
         }
         try {
+            runtime.stepRecorder.record({
+                type: 'workflow',
+                name: `${nodeId}:write:start`,
+                detail: (0, page_action_run_audit_util_1.buildToolCallRequestAudit)({
+                    toolName: pending.name,
+                    toolId: toolId !== null && toolId !== void 0 ? toolId : null,
+                    arguments: pending.arguments,
+                }),
+            });
             const result = await runtime.toolEngine.executeByName(pending.name, pending.arguments, input.allowedToolIds, runtime.userId);
             runtime.stepRecorder.record({
                 type: 'workflow',
-                name: `${nodeId}:write`,
-                detail: {
-                    toolName: pending.name,
-                },
+                name: `${nodeId}:write:complete`,
+                detail: (0, page_action_run_audit_util_1.buildToolCallResultAudit)(result),
                 status: 'ok',
             });
             const outputRef = (0, workflow_node_output_util_1.buildWorkflowNodeOutputRef)(def.action, nodeId);
@@ -149,6 +161,17 @@ async function runPageWorkflowMutationReact(input) {
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            runtime.stepRecorder.record({
+                type: 'workflow',
+                name: `${nodeId}:write:complete`,
+                detail: (0, page_action_run_audit_util_1.buildToolCallErrorAudit)({
+                    toolName: pending.name,
+                    toolId: toolId !== null && toolId !== void 0 ? toolId : null,
+                    arguments: pending.arguments,
+                    error: message,
+                }),
+                status: 'failed',
+            });
             const failed = (0, workflow_run_util_1.failWorkflowNode)(input.workflowRun, nodeId, {
                 code: 'WRITE_EXEC_ERROR',
                 message,

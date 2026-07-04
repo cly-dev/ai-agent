@@ -22,6 +22,10 @@ export declare function buildHostToolCatalogRevision(input: {
         id: number;
         updatedAt: Date | string;
     }>;
+    hostPages?: Array<{
+        id: number;
+        updatedAt: Date | string;
+    }>;
     skillBindings: Array<{
         id: number;
         updatedAt: Date | string;

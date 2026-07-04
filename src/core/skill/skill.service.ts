@@ -176,7 +176,16 @@ export class SkillService {
             hostToolIdFilter: [...scopedHostToolIdSet],
           })
         : [];
-    const rows = this.mergeSkillDbRows(httpRows, hostRows, hostBoundRows);
+    const workflowRows = await this.queryAgentSkills({
+      ...queryBase,
+      workflowBoundOnly: true,
+    });
+    const rows = this.mergeSkillDbRows(
+      httpRows,
+      hostRows,
+      hostBoundRows,
+      workflowRows,
+    );
     return rows
       .map((row) =>
         this.toAvailableSkillRowIfResolvable(
@@ -249,8 +258,6 @@ export class SkillService {
       'workflowId' | 'workflowVersion' | 'workflowOverrides'
     >;
     goal?: string;
-    allowedToolIds: number[];
-    allowedHostToolIds: number[];
   }): Promise<TaskPlanSnapshot | null> {
     if (input.skill.workflowId == null || input.skill.workflowId <= 0) {
       return null;
@@ -264,8 +271,6 @@ export class SkillService {
         workflowOverrides: input.skill.workflowOverrides,
       },
       goal: input.goal,
-      allowedToolIds: input.allowedToolIds,
-      allowedHostToolIds: input.allowedHostToolIds,
     });
   }
 
@@ -433,6 +438,7 @@ export class SkillService {
     pureHostOnly?: boolean;
     hostBoundWithHttp?: boolean;
     hostToolIdFilter?: number[];
+    workflowBoundOnly?: boolean;
   }): Promise<SkillDbRow[]> {
     const hostToolIdFilter = input.hostToolIdFilter ?? [];
     const skillCtx = await loadAgentSkillVisibilityContext(
@@ -449,7 +455,12 @@ export class SkillService {
           skillWhitelistIds: skillCtx.skillWhitelistIds,
         }),
         ...(input.skillId != null ? { id: input.skillId } : {}),
-        ...(input.pureHostOnly
+        ...(input.workflowBoundOnly
+          ? {
+              workflowId: { not: null },
+              workflow: { is: { isActive: true } },
+            }
+          : input.pureHostOnly
           ? {
               skillTools: { none: {} },
               skillHostTools: {

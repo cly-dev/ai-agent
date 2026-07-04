@@ -12,7 +12,7 @@ import type {
   ApprovalDecisionInput,
   CreateApprovalRequestInput,
 } from './approval.types';
-import { canRequestDraftRetry, resolveDraftReviewMaxRetries } from '../draft-review';
+import { canRequestDraftRetry } from '../draft-review';
 
 /** 收件箱可见的审批来源（chat 写确认走会话内路径，不进收件箱）。 */
 export const APPROVAL_INBOX_SOURCES = [
@@ -201,7 +201,6 @@ export class ApprovalRequestService {
     | { ok: true; draftRetryCount: number }
     | { ok: false; reason: 'not_found' | 'not_pending' | 'limit_exceeded' }
   > {
-    const maxRetries = resolveDraftReviewMaxRetries();
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.approvalRequest.findFirst({
         where: {

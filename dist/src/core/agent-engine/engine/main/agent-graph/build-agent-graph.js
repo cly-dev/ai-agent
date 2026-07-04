@@ -12,7 +12,6 @@ const plan_observation_scope_util_1 = require("../plan/plan-observation-scope.ut
 const graph_state_annotation_1 = require("./state/graph-state.annotation");
 const runtime_1 = require("./runtime");
 const summarize_1 = require("./summarize");
-const intent_node_1 = require("./nodes/intent.node");
 const turn_route_node_1 = require("./nodes/turn-route.node");
 const tools_node_1 = require("./nodes/tools.node");
 const result_check_node_1 = require("./nodes/result-check.node");
@@ -92,7 +91,6 @@ async function buildAndRunAgentGraph(deps, input) {
     const State = (0, graph_state_annotation_1.createAgentGraphStateAnnotation)();
     const wrap = (node) => withRunCancellation(deps, input, node);
     const graph = new langgraph_1.StateGraph(State)
-        .addNode('intent', wrap((0, intent_node_1.createIntentNode)(bundle)))
         .addNode('turnRoute', wrap((0, turn_route_node_1.createTurnRouteNode)(bundle)))
         .addNode('workflow_init', wrap((0, workflow_init_node_1.createWorkflowInitNode)(bundle)))
         .addNode('execute_node', wrap((0, execute_node_node_1.createExecuteNodeNode)(bundle)))
@@ -127,15 +125,6 @@ async function buildAndRunAgentGraph(deps, input) {
                 return 'workflow_advance';
             }
             return 'resultCheck';
-        }
-        return 'intent';
-    })
-        .addConditionalEdges('intent', (s) => {
-        if (s.finished) {
-            return langgraph_1.END;
-        }
-        if ((0, turn_graph_util_1.shouldRouteToRespond)(s)) {
-            return 'summarize';
         }
         return 'turnRoute';
     })

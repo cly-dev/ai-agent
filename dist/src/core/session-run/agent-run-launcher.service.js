@@ -85,7 +85,7 @@ let AgentRunLauncher = AgentRunLauncher_1 = class AgentRunLauncher {
             }, scope);
             if (!run) {
                 this.runSse.emitRunError(scope.sessionId, {
-                    message: '当前会话未绑定 Agent，无法执行智能回复。请确认 agentId=1 存在且属于当前 AppClient。',
+                    message: '当前会话未绑定可用 Agent，无法执行智能回复。请联系管理员配置可用 Agent。',
                     code: 'NO_AGENT',
                     generation: scope.generation,
                 });

@@ -11,7 +11,6 @@ import {
   IsString,
   MaxLength,
   Min,
-  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PageActionDelivery } from '../../../../generated/prisma/client';
@@ -42,34 +41,6 @@ export class QueryPageActionDto extends PaginationQueryDto {
   isActive?: boolean;
 }
 
-/** 未传 hostToolId 时，服务端按 PageAction 约定自动创建 HostTool。 */
-export class CreatePageActionHostToolInlineDto {
-  @ApiPropertyOptional({
-    description: 'HostTool name；缺省取 actionKey 最后一段（如 fill_draft）',
-    example: 'fill_draft',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  name?: string;
-
-  @ApiPropertyOptional({
-    description: 'HostTool 说明；缺省用 PageAction 的 description 或 name',
-  })
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @ApiPropertyOptional({
-    enum: ['text', 'content', 'value'],
-    default: 'text',
-    description: '流式填入的 string 参数字段名',
-  })
-  @IsOptional()
-  @IsIn(['text', 'content', 'value'])
-  fillField?: 'text' | 'content' | 'value';
-}
-
 export class CreatePageActionDto {
   @ApiProperty()
   @Type(() => Number)
@@ -95,10 +66,10 @@ export class CreatePageActionDto {
   @MaxLength(2000)
   description?: string;
 
-  @ApiPropertyOptional({ description: '绑定的 HostTool ID；绑定 workflowId 时可省略，由 Workflow 节点推导' })
-  @ValidateIf(
-    (dto: CreatePageActionDto) => dto.hostTool == null && dto.workflowId == null,
-  )
+  @ApiPropertyOptional({
+    description:
+      '已存在的 HostTool ID；未绑 workflowId 时必填。须先在 B 端创建 HostTool 再绑定。',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -106,21 +77,7 @@ export class CreatePageActionDto {
   hostToolId?: number;
 
   @ApiPropertyOptional({
-    type: CreatePageActionHostToolInlineDto,
-    description:
-      '内联 HostTool 规格；未绑定 workflow 且省略 hostToolId 时自动创建（默认 text 字段 schema）',
-  })
-  @ValidateIf(
-    (dto: CreatePageActionDto) =>
-      dto.hostToolId == null && dto.workflowId == null,
-  )
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => CreatePageActionHostToolInlineDto)
-  hostTool?: CreatePageActionHostToolInlineDto;
-
-  @ApiPropertyOptional({
-    description: '与 pageContext.page 对齐；自动创建 HostTool 时用于绑定 HostPage',
+    description: '与 pageContext.page 对齐',
   })
   @IsOptional()
   @IsString()

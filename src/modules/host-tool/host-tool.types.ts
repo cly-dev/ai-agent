@@ -7,7 +7,7 @@ export const HOST_PAGE_DETAIL_INCLUDE = {
 
 export const HOST_TOOL_DETAIL_INCLUDE = {
   appClient: { select: { id: true, name: true, dsn: true } },
-  hostPage: { select: { id: true, scope: true, label: true } },
+  hostPage: { select: { id: true, scope: true, label: true, updatedAt: true } },
 } satisfies Prisma.HostToolInclude;
 
 export type HostPageDetailRow = Prisma.HostPageGetPayload<{

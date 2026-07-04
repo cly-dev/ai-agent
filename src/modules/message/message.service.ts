@@ -68,12 +68,17 @@ export class MessageService {
       dto.role === 'user' &&
       writeGateDecision != null &&
       !String(dto.content ?? '').trim();
+    const pageContext = parsePageContextFromMessageFields(dto);
     let boundSession = session;
     if (dto.role === 'user') {
       boundSession = await this.chatService.ensureSessionAgent(
         session,
         dto.agentId,
         appClientId,
+        {
+          userMessage: dto.content,
+          pageContext,
+        },
       );
       if (dto.skillId != null && !writeGateDecision) {
         await this.agentEngine.assertRequestedSkillRunnable({
@@ -85,7 +90,6 @@ export class MessageService {
         });
       }
     }
-    const pageContext = parsePageContextFromMessageFields(dto);
     let messageContent: string | null = isWriteGateAction
       ? null
       : this.normalizeMessageContentForStorage(dto.content);
@@ -120,7 +124,10 @@ export class MessageService {
           : undefined,
       },
     });
-    await this.sessionMessageContext.syncAfterMessageCreate(session.id, message);
+    await this.sessionMessageContext.syncAfterMessageCreate(
+      session.id,
+      message,
+    );
     if (message.role === 'assistant' && dto.turnId != null) {
       await this.linkAssistantOutputToTurn(
         userId,

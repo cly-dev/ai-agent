@@ -19,6 +19,12 @@ import {
 } from './page-workflow-pending-write.util';
 import type { ApprovalPendingWrite } from '../approval/approval-resume-snapshot.types';
 import { executePageWorkflowComposeMutation } from './page-workflow-compose-mutation.util';
+import {
+  buildToolCallErrorAudit,
+  buildToolCallRequestAudit,
+  buildToolCallResultAudit,
+  summarizeRecordForAudit,
+} from './page-action-run-audit.util';
 
 export type PageWorkflowReactResult =
   | {
@@ -99,6 +105,7 @@ export async function runPageWorkflowMutationReact(input: {
         runtime.appClientId,
         toolId,
       );
+      const recomposedFromPendingWrite = input.pendingWrite != null;
       const composedArgs =
         input.pendingWrite?.arguments ??
         (
@@ -124,6 +131,9 @@ export async function runPageWorkflowMutationReact(input: {
         detail: {
           toolId: tool.id,
           toolName: tool.name,
+          recomposedFromPendingWrite,
+          argumentKeys: Object.keys(composedArgs),
+          writeArguments: summarizeRecordForAudit(composedArgs),
         },
       });
 
@@ -187,6 +197,15 @@ export async function runPageWorkflowMutationReact(input: {
     }
 
     try {
+      runtime.stepRecorder.record({
+        type: 'workflow',
+        name: `${nodeId}:write:start`,
+        detail: buildToolCallRequestAudit({
+          toolName: pending.name,
+          toolId: toolId ?? null,
+          arguments: pending.arguments,
+        }),
+      });
       const result = await runtime.toolEngine.executeByName(
         pending.name,
         pending.arguments,
@@ -195,10 +214,8 @@ export async function runPageWorkflowMutationReact(input: {
       );
       runtime.stepRecorder.record({
         type: 'workflow',
-        name: `${nodeId}:write`,
-        detail: {
-          toolName: pending.name,
-        },
+        name: `${nodeId}:write:complete`,
+        detail: buildToolCallResultAudit(result),
         status: 'ok',
       });
       const outputRef = buildWorkflowNodeOutputRef(def.action, nodeId);
@@ -212,6 +229,17 @@ export async function runPageWorkflowMutationReact(input: {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      runtime.stepRecorder.record({
+        type: 'workflow',
+        name: `${nodeId}:write:complete`,
+        detail: buildToolCallErrorAudit({
+          toolName: pending.name,
+          toolId: toolId ?? null,
+          arguments: pending.arguments,
+          error: message,
+        }),
+        status: 'failed',
+      });
       const failed = failWorkflowNode(input.workflowRun, nodeId, {
         code: 'WRITE_EXEC_ERROR',
         message,

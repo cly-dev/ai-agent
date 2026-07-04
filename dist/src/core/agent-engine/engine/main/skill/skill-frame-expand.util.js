@@ -1,10 +1,27 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.expandPendingSkillStepIfNeeded = void 0;
+exports.expandPendingSkillStepIfNeeded = exports.filterDecisionHostToolsForSkill = void 0;
 const requested_skill_run_error_1 = require("./requested-skill-run.error");
 const plan_stack_util_1 = require("../plan/plan-stack.util");
 const task_plan_llm_util_1 = require("../plan/task-plan-llm.util");
 const task_plan_util_1 = require("../plan/task-plan.util");
+function filterHostToolSummariesForSkill(hostTools, skill) {
+    var _a;
+    if (!hostTools || ((_a = skill.workflowId) !== null && _a !== void 0 ? _a : 0) > 0 || skill.hostToolIds.length === 0) {
+        return hostTools;
+    }
+    const allowedIds = new Set(skill.hostToolIds);
+    return hostTools.filter((tool) => tool.id == null || allowedIds.has(tool.id));
+}
+function filterDecisionHostToolsForSkill(hostTools, skill) {
+    var _a;
+    if (!skill || ((_a = skill.workflowId) !== null && _a !== void 0 ? _a : 0) > 0 || skill.hostToolIds.length === 0) {
+        return hostTools;
+    }
+    const allowedIds = new Set(skill.hostToolIds);
+    return hostTools.filter((tool) => allowedIds.has(tool.id));
+}
+exports.filterDecisionHostToolsForSkill = filterDecisionHostToolsForSkill;
 function getPendingSkillStep(plan) {
     var _a;
     const stepId = (_a = plan.pendingStepIds[0]) !== null && _a !== void 0 ? _a : plan.currentStepId;
@@ -110,8 +127,6 @@ async function expandPendingSkillStepIfNeeded(input) {
         userMessage: input.plan.originalUserRequest,
         skill,
         goal: input.plan.goal,
-        allowedToolIds: bind.scopedAllowedToolIds,
-        allowedHostToolIds: skill.hostToolIds,
     });
     const innerResolved = await (0, task_plan_llm_util_1.resolveTaskPlan)({
         llmService: input.llmService,
@@ -128,7 +143,7 @@ async function expandPendingSkillStepIfNeeded(input) {
             skillPrompt: skill.prompt,
             skillToolIds: skill.skillToolIds,
             skillHostToolIds: skill.hostToolIds,
-            availableHostTools: input.availableHostTools,
+            availableHostTools: filterHostToolSummariesForSkill(input.availableHostTools, skill),
             skillBoundWorkflowPlan,
         },
     });

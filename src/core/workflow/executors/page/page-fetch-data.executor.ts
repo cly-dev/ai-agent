@@ -10,6 +10,7 @@ export const pageFetchDataExecutor: WorkflowExecutor = {
   async run(ctx) {
     const { runtime } = requirePageExecutorHost(ctx.host);
     const nodeInput = ctx.def.input as FetchDataNodeInput;
+
     const observation = await executePageWorkflowFetchData({
       prisma: runtime.prisma,
       toolEngine: runtime.toolEngine,
@@ -17,15 +18,8 @@ export const pageFetchDataExecutor: WorkflowExecutor = {
       appClientId: runtime.appClientId,
       nodeInput,
       pageContext: runtime.pageContext,
-    });
-    runtime.stepRecorder.record({
-      type: 'workflow',
-      name: `${ctx.nodeId}:tool`,
-      detail: {
-        toolId: observation.toolId,
-        toolName: observation.toolName,
-        args: observation.args,
-      },
+      stepRecorder: runtime.stepRecorder,
+      nodeId: ctx.nodeId,
     });
 
     const outputRef = buildWorkflowNodeOutputRef(ctx.def.action, ctx.nodeId);

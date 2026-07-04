@@ -264,21 +264,13 @@ let AgentService = AgentService_1 = class AgentService {
         await this.assertAgentInAppClient(agentId, appClientId);
         const uniqueToolIds = [...new Set(dto.toolIds)];
         await this.assertToolsBelongToAppClient(uniqueToolIds, appClientId);
-        await this.prisma.$transaction([
-            this.prisma.skillTool.deleteMany({
-                where: {
-                    toolId: { in: uniqueToolIds },
-                    skill: { appClientId },
-                },
-            }),
-            this.prisma.agentTool.deleteMany({
-                where: {
-                    agentId,
-                    toolId: { in: uniqueToolIds },
-                    tool: { appClientId },
-                },
-            }),
-        ]);
+        await this.prisma.agentTool.deleteMany({
+            where: {
+                agentId,
+                toolId: { in: uniqueToolIds },
+                tool: { appClientId },
+            },
+        });
         await this.runtimeCacheInvalidator.invalidateForAgent({
             agentId,
             appClientId,

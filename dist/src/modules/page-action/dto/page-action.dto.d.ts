@@ -7,18 +7,12 @@ export declare class QueryPageActionDto extends PaginationQueryDto {
     pageScope?: string;
     isActive?: boolean;
 }
-export declare class CreatePageActionHostToolInlineDto {
-    name?: string;
-    description?: string;
-    fillField?: 'text' | 'content' | 'value';
-}
 export declare class CreatePageActionDto {
     appClientId: number;
     actionKey: string;
     name: string;
     description?: string;
     hostToolId?: number;
-    hostTool?: CreatePageActionHostToolInlineDto;
     pageScope?: string | null;
     systemPrompt: string;
     defaultDelivery?: PageActionDelivery;

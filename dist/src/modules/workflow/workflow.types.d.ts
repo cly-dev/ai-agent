@@ -64,6 +64,7 @@ export declare const WORKFLOW_DETAIL_INCLUDE: {
                             id: true;
                             scope: true;
                             label: true;
+                            updatedAt: true;
                         };
                     };
                 };

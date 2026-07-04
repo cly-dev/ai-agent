@@ -17,7 +17,6 @@ import {
   collectWorkflowNodeBindingRefs,
   resolveWorkflowBindingsForSave,
 } from '../../core/workflow/derive-workflow-bindings-from-nodes.util';
-import { validateSkillWorkflowBinding } from '../../core/workflow/validate-skill-workflow-binding.util';
 import { validateWorkflowDefinition } from '../../core/workflow/validate-workflow.util';
 import {
   expandWorkflowPreset,
@@ -409,11 +408,7 @@ export class WorkflowService {
     }
   }
 
-  /**
-   * Skill 保存期：校验 Workflow 引用有效。
-   * workflow-only Skill（无 SkillTool / SkillHostTool）不再要求绑定表覆盖 Workflow；
-   * 若配置了 SkillTool 叠加层，仍须覆盖 Workflow 节点引用。
-   */
+  /** Skill 保存期：校验 Workflow 引用有效；工具/HostTool 能力边界由 Workflow 自身声明。 */
   async assertSkillWorkflowBindingsCompatible(input: {
     workflowId: number;
     appClientId: number;
@@ -421,28 +416,13 @@ export class WorkflowService {
     skillToolIds: number[];
     skillHostToolIds: number[];
   }): Promise<void> {
-    if (
-      input.skillToolIds.length === 0 &&
-      input.skillHostToolIds.length === 0
-    ) {
-      await this.assertWorkflowReferenceCompatible({
-        workflowId: input.workflowId,
-        appClientId: input.appClientId,
-        entry: 'skill',
-      });
-      return;
-    }
-
     const workflow = await this.prisma.workflow.findFirst({
       where: {
         id: input.workflowId,
         appClientId: input.appClientId,
         isActive: true,
       },
-      include: {
-        workflowTools: true,
-        workflowHostTools: true,
-      },
+      select: { id: true, version: true },
     });
     if (!workflow) {
       throw new BadRequestException(
@@ -450,7 +430,6 @@ export class WorkflowService {
       );
     }
 
-    let nodesJson: unknown = workflow.nodes;
     const pinVersion = input.workflowVersion ?? null;
     if (pinVersion != null && pinVersion !== workflow.version) {
       const revision = await this.prisma.workflowRevision.findUnique({
@@ -466,38 +445,6 @@ export class WorkflowService {
           `Workflow ${input.workflowId} revision version=${pinVersion} not found`,
         );
       }
-      nodesJson = revision.nodes;
-    }
-
-    const nodes = parseWorkflowNodesJson(nodesJson);
-    const nodeRefs = collectWorkflowNodeBindingRefs(nodes);
-    const workflowToolIds = [
-      ...new Set([
-        ...workflow.workflowTools.map((row) => row.toolId),
-        ...nodeRefs.toolIds,
-      ]),
-    ];
-    const workflowHostToolIds = [
-      ...new Set([
-        ...workflow.workflowHostTools.map((row) => row.hostToolId),
-        ...nodeRefs.hostToolIds,
-      ]),
-    ];
-    const issues = validateSkillWorkflowBinding({
-      nodes,
-      workflowToolIds,
-      workflowHostToolIds,
-      skillToolIds: input.skillToolIds,
-      skillHostToolIds: input.skillHostToolIds,
-    });
-    if (issues.length > 0) {
-      throw new BadRequestException({
-        code: 'SKILL_WORKFLOW_BINDING_INCOMPATIBLE',
-        message:
-          'Skill tool bindings do not cover Workflow requirements; align SkillTool / SkillHostTool with WorkflowTool / WorkflowHostTool',
-        workflowId: input.workflowId,
-        issues,
-      });
     }
   }
 
@@ -543,77 +490,10 @@ export class WorkflowService {
   }
 
   private async assertReferencingSkillsStillCompatible(
-    workflowId: number,
+    _workflowId: number,
   ): Promise<void> {
-    const workflow = await this.findEntityOrThrow(workflowId);
-    const nodes = parseWorkflowNodesJson(workflow.nodes);
-    const nodeRefs = collectWorkflowNodeBindingRefs(nodes);
-    const workflowToolIds = [
-      ...new Set([
-        ...workflow.workflowTools.map((row) => row.toolId),
-        ...nodeRefs.toolIds,
-      ]),
-    ];
-    const workflowHostToolIds = [
-      ...new Set([
-        ...workflow.workflowHostTools.map((row) => row.hostToolId),
-        ...nodeRefs.hostToolIds,
-      ]),
-    ];
-
-    const skills = await this.prisma.skill.findMany({
-      where: { workflowId, isActive: true },
-      select: {
-        id: true,
-        name: true,
-        workflowVersion: true,
-        skillTools: { select: { toolId: true } },
-        skillHostTools: { select: { hostToolId: true } },
-      },
-    });
-
-    for (const skill of skills) {
-      const skillToolIds = skill.skillTools.map((row) => row.toolId);
-      const skillHostToolIds = skill.skillHostTools.map(
-        (row) => row.hostToolId,
-      );
-      if (skillToolIds.length === 0 && skillHostToolIds.length === 0) {
-        continue;
-      }
-
-      let skillNodes = nodes;
-      const pinVersion = skill.workflowVersion ?? null;
-      if (pinVersion != null && pinVersion !== workflow.version) {
-        const revision = await this.prisma.workflowRevision.findUnique({
-          where: {
-            workflowId_version: {
-              workflowId: workflow.id,
-              version: pinVersion,
-            },
-          },
-        });
-        if (revision) {
-          skillNodes = parseWorkflowNodesJson(revision.nodes);
-        }
-      }
-
-      const issues = validateSkillWorkflowBinding({
-        nodes: skillNodes,
-        workflowToolIds,
-        workflowHostToolIds,
-        skillToolIds,
-        skillHostToolIds,
-      });
-      if (issues.length > 0) {
-        throw new BadRequestException({
-          code: 'WORKFLOW_CHANGE_BREAKS_SKILL_REFERENCES',
-          message: `Workflow update is incompatible with Skill id=${skill.id} (${skill.name})`,
-          workflowId,
-          skillId: skill.id,
-          issues,
-        });
-      }
-    }
+    // Workflow-bound Skills use the Workflow definition as their tool boundary.
+    // SkillTool / SkillHostTool are not required to duplicate Workflow bindings.
   }
 
   private async assertReferencingPageActionsStillCompatible(

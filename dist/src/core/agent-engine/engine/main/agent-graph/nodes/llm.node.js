@@ -10,6 +10,7 @@ const run_metrics_util_1 = require("../../../run-metrics.util");
 const turn_respond_util_1 = require("../../../turn/turn-respond.util");
 const agent_run_steps_util_1 = require("../../run/agent-run-steps.util");
 const agent_run_audit_util_1 = require("../../run/agent-run-audit.util");
+const workflow_run_util_1 = require("../../../../../workflow/workflow-run.util");
 const host_tool_plan_util_1 = require("../../host-tool/host-tool-plan.util");
 const plan_draft_reply_util_1 = require("../../plan-present/plan-draft-reply.util");
 const plan_host_fill_util_1 = require("../../plan-present/plan-host-fill.util");
@@ -28,7 +29,7 @@ function resolveCurrentWorkflowNodeAction(state) {
 function createLlmNode(bundle) {
     const { deps, ctx, runHelpers, skillFrame, hostToolHandle, decision, summarize, } = bundle;
     return async (state) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6;
         const prepared = await skillFrame.prepareReActPlanState(state);
         const graphState = skillFrame.withPlanSyncStep(prepared.state, prepared.planAdvance, prepared.fromStepId, 'llm');
         if ((0, turn_respond_util_1.hasPendingRespond)(graphState.pendingRespond)) {
@@ -85,9 +86,33 @@ function createLlmNode(bundle) {
         }
         try {
             const pendingHostStep = (0, task_plan_util_1.getPendingPlanHostToolStep)(graphStateForLlm.taskPlan, graphStateForLlm.workflowRun);
+            const pendingToolStep = (0, task_plan_util_1.getPendingPlanToolStep)(graphStateForLlm.taskPlan, graphStateForLlm.workflowRun);
             const decisionEnableToolCall = ctx.input.enableToolCall && !planAnswerStep;
-            const toolsForPrompt = (0, task_plan_util_1.filterScopedToolsForPlanStep)(graphStateForLlm.scopedTools, graphStateForLlm.taskPlan, graphStateForLlm.workflowRun, graphStateForLlm.workflowNodeDefs);
+            let toolsForPrompt = (0, task_plan_util_1.filterScopedToolsForPlanStep)(graphStateForLlm.scopedTools, graphStateForLlm.taskPlan, graphStateForLlm.workflowRun, graphStateForLlm.workflowNodeDefs);
             const hostToolsForPrompt = (0, host_tool_plan_util_1.filterHostToolsForPlanStep)((_f = graphStateForLlm.scopedHostTools) !== null && _f !== void 0 ? _f : [], graphStateForLlm.taskPlan);
+            let candidateRecallLangChainTools = null;
+            let candidateRecallStep = null;
+            if ((pendingToolStep === null || pendingToolStep === void 0 ? void 0 : pendingToolStep.kind) === 'tool' && toolsForPrompt.length > 0) {
+                const scoped = await deps.sessionScope.scopeToolsForMainLoop(toolsForPrompt, ctx.input.latestUserMessage, ctx.input.toolBuildCtx);
+                if (scoped.bindCap || scoped.fallbackReason) {
+                    toolsForPrompt = scoped.scopedTools;
+                    candidateRecallLangChainTools = scoped.scopedLangChainTools;
+                    candidateRecallStep = {
+                        step: llmStepNumber,
+                        type: 'intent',
+                        output: runHelpers.normalizeJsonLike({
+                            stage: 'candidate_recall',
+                            domain: 'tool',
+                            before: graphStateForLlm.scopedTools.length,
+                            afterRoleFilter: (0, task_plan_util_1.filterScopedToolsForPlanStep)(graphStateForLlm.scopedTools, graphStateForLlm.taskPlan, graphStateForLlm.workflowRun, graphStateForLlm.workflowNodeDefs).length,
+                            after: toolsForPrompt.length,
+                            bindToolsCap: scoped.bindCap,
+                            fallbackReason: scoped.fallbackReason,
+                            planStepId: (_h = (_g = graphStateForLlm.taskPlan) === null || _g === void 0 ? void 0 : _g.currentStepId) !== null && _h !== void 0 ? _h : null,
+                        }),
+                    };
+                }
+            }
             const allowedDecisionToolNames = new Set(toolsForPrompt.map((tool) => tool.name));
             const allowedHostToolNames = new Set(hostToolsForPrompt.map((tool) => tool.name));
             if (pendingHostStep) {
@@ -131,18 +156,18 @@ function createLlmNode(bundle) {
             let langChainToolsForDecision = [];
             if (!planAnswerStep) {
                 if (pendingHostStep) {
-                    langChainToolsForDecision = ((_g = graphStateForLlm.scopedHostLangChainTools) !== null && _g !== void 0 ? _g : []).filter((tool) => allowedHostToolNames.has(tool.name));
+                    langChainToolsForDecision = ((_j = graphStateForLlm.scopedHostLangChainTools) !== null && _j !== void 0 ? _j : []).filter((tool) => allowedHostToolNames.has(tool.name));
                 }
                 else {
                     langChainToolsForDecision =
-                        graphStateForLlm.scopedLangChainTools.filter((tool) => allowedDecisionToolNames.has(tool.name));
+                        candidateRecallLangChainTools !== null && candidateRecallLangChainTools !== void 0 ? candidateRecallLangChainTools : graphStateForLlm.scopedLangChainTools.filter((tool) => allowedDecisionToolNames.has(tool.name));
                     if (langChainToolsForDecision.length === 0) {
                         langChainToolsForDecision = graphStateForLlm.scopedLangChainTools;
                     }
                 }
             }
             const decisionResult = await decision.buildDecisionPrompt(ctx.input.promptMessages, toolsForPrompt, observationSplit, decisionEnableToolCall, ctx.promptScope, graphStateForLlm.activeSkillPrompt, graphStateForLlm.taskPlan, hostToolsForPrompt);
-            const { messages: invokeMessages, trimMeta } = decision.buildLlmInvokeMessages(ctx.input.promptMessages, observationSplit, ctx.input.latestUserMessage, decisionResult.toolSchemaJson, decisionResult.hostToolSchemaJson, decisionResult.toolDecisionPrompt, ctx.input.messageTokenBudget, graphStateForLlm.taskPlan, ((_h = graphStateForLlm.workflowRun) === null || _h === void 0 ? void 0 : _h.status) === 'running'
+            const { messages: invokeMessages, trimMeta } = decision.buildLlmInvokeMessages(ctx.input.promptMessages, observationSplit, ctx.input.latestUserMessage, decisionResult.toolSchemaJson, decisionResult.hostToolSchemaJson, decisionResult.toolDecisionPrompt, ctx.input.messageTokenBudget, graphStateForLlm.taskPlan, ((_k = graphStateForLlm.workflowRun) === null || _k === void 0 ? void 0 : _k.status) === 'running'
                 ? graphStateForLlm.workflowNodeOutputs
                 : undefined);
             const llmStartedAt = Date.now();
@@ -174,14 +199,14 @@ function createLlmNode(bundle) {
                     scopedToolCount: graphStateForLlm.scopedTools.length,
                     decisionToolCount: toolsForPrompt.length,
                     planAnswerStep: planAnswerStep,
-                    planToolRoleFilter: (_k = (_j = (0, task_plan_util_1.getPendingPlanToolStep)(graphStateForLlm.taskPlan, graphStateForLlm.workflowRun)) === null || _j === void 0 ? void 0 : _j.toolRole) !== null && _k !== void 0 ? _k : null,
+                    planToolRoleFilter: (_m = (_l = (0, task_plan_util_1.getPendingPlanToolStep)(graphStateForLlm.taskPlan, graphStateForLlm.workflowRun)) === null || _l === void 0 ? void 0 : _l.toolRole) !== null && _m !== void 0 ? _m : null,
                     observationCount: observationsForLlm.length,
                     estimatedTokens: trimMeta.estimatedTokensAfter,
                     promptBudgetFitted: fitted.report.fitted,
                     promptBudgetDegradations: fitted.report.degradations.length,
-                    taskPlanStep: (_m = (_l = graphStateForLlm.taskPlan) === null || _l === void 0 ? void 0 : _l.currentStepId) !== null && _m !== void 0 ? _m : null,
-                    taskPlanPhase: (_p = (_o = graphStateForLlm.taskPlan) === null || _o === void 0 ? void 0 : _o.taskPhase) !== null && _p !== void 0 ? _p : null,
-                    currentObjective: (_r = (_q = graphStateForLlm.taskPlan) === null || _q === void 0 ? void 0 : _q.currentObjective) !== null && _r !== void 0 ? _r : null,
+                    taskPlanStep: (_p = (_o = graphStateForLlm.taskPlan) === null || _o === void 0 ? void 0 : _o.currentStepId) !== null && _p !== void 0 ? _p : null,
+                    taskPlanPhase: (_r = (_q = graphStateForLlm.taskPlan) === null || _q === void 0 ? void 0 : _q.taskPhase) !== null && _r !== void 0 ? _r : null,
+                    currentObjective: (_t = (_s = graphStateForLlm.taskPlan) === null || _s === void 0 ? void 0 : _s.currentObjective) !== null && _t !== void 0 ? _t : null,
                 },
                 messages: fittedMessages,
             });
@@ -225,8 +250,9 @@ function createLlmNode(bundle) {
             });
             const steps = [
                 ...graphStateForLlm.steps,
+                ...(candidateRecallStep ? [candidateRecallStep] : []),
                 (0, agent_run_audit_util_1.maybeTagWorkflowReactInternalStep)({
-                    step: llmStepNumber,
+                    step: candidateRecallStep ? llmStepNumber + 1 : llmStepNumber,
                     type: 'llm',
                     output: runHelpers.normalizeJsonLike({
                         content: llmText,
@@ -240,8 +266,8 @@ function createLlmNode(bundle) {
                         prompt: decisionResult.toolDecisionPrompt,
                         toolSchema: decisionResult.toolSchemaJson,
                         observations: decisionResult.observationsJson,
-                        agentPrompt: (_s = decisionResult.agentPrompt) !== null && _s !== void 0 ? _s : undefined,
-                        userRequest: (_u = (_t = graphStateForLlm.taskPlan) === null || _t === void 0 ? void 0 : _t.currentObjective) !== null && _u !== void 0 ? _u : ctx.input.latestUserMessage,
+                        agentPrompt: (_u = decisionResult.agentPrompt) !== null && _u !== void 0 ? _u : undefined,
+                        userRequest: (_w = (_v = graphStateForLlm.taskPlan) === null || _v === void 0 ? void 0 : _v.currentObjective) !== null && _w !== void 0 ? _w : ctx.input.latestUserMessage,
                     },
                 }, graphStateForLlm),
             ];
@@ -263,7 +289,6 @@ function createLlmNode(bundle) {
                 return hostToolOutcome.state;
             }
             const httpToolCalls = httpCalls;
-            const pendingToolStep = (0, task_plan_util_1.getPendingPlanToolStep)(graphStateForLlm.taskPlan, graphStateForLlm.workflowRun);
             const pageContextEntityId = (0, turn_execution_contract_util_2.pageContextEntityIdFromGraphState)(graphStateForLlm);
             if (httpToolCalls.length === 0 && hostCalls.length === 0) {
                 const planRequiresToolCall = (pendingToolStep === null || pendingToolStep === void 0 ? void 0 : pendingToolStep.kind) === 'tool' &&
@@ -305,7 +330,7 @@ function createLlmNode(bundle) {
                     taskPlan: graphStateForLlm.taskPlan,
                     scopedTools: graphStateForLlm.scopedTools,
                 });
-                return Object.assign(Object.assign({}, graphStateForLlm), { iteration: nextIteration, steps, pendingToolCalls: [], pendingRespond: (0, turn_respond_util_1.pendingRespondFromObservation)((_v = completion === null || completion === void 0 ? void 0 : completion.observation) !== null && _v !== void 0 ? _v : summarize.buildDirectReplyObservation(ctx.input.latestUserMessage, emptyReply)) });
+                return Object.assign(Object.assign({}, graphStateForLlm), { iteration: nextIteration, steps, pendingToolCalls: [], pendingRespond: (0, turn_respond_util_1.pendingRespondFromObservation)((_x = completion === null || completion === void 0 ? void 0 : completion.observation) !== null && _x !== void 0 ? _x : summarize.buildDirectReplyObservation(ctx.input.latestUserMessage, emptyReply)) });
             }
             if ((0, task_plan_util_1.isComposeMutationParameterStep)(pendingToolStep, workflowNodeAction) &&
                 graphStateForLlm.taskPlan) {
@@ -314,7 +339,7 @@ function createLlmNode(bundle) {
                     taskPlan: graphStateForLlm.taskPlan,
                     scopedTools: graphStateForLlm.scopedTools,
                     observations: (0, graph_tool_observations_util_1.allToolObservations)(graphStateForLlm),
-                    pageContext: (_w = graphStateForLlm.pageContext) !== null && _w !== void 0 ? _w : null,
+                    pageContext: (_y = graphStateForLlm.pageContext) !== null && _y !== void 0 ? _y : null,
                     planStepId: pendingToolStep.id,
                     workflowRun: graphStateForLlm.workflowRun,
                     workflowNodeDefs: graphStateForLlm.workflowNodeDefs,
@@ -322,10 +347,10 @@ function createLlmNode(bundle) {
                 if (intercept.kind === 'applied') {
                     const preparedCall = intercept.preparedCall;
                     const composeObs = intercept.composeObservation;
-                    const pageContextEntityId = typeof ((_y = (_x = graphStateForLlm.pageContext) === null || _x === void 0 ? void 0 : _x.entity) === null || _y === void 0 ? void 0 : _y.id) === 'string'
+                    const pageContextEntityId = typeof ((_0 = (_z = graphStateForLlm.pageContext) === null || _z === void 0 ? void 0 : _z.entity) === null || _0 === void 0 ? void 0 : _0.id) === 'string'
                         ? graphStateForLlm.pageContext.entity.id.trim() || null
                         : null;
-                    const pageContextEntityType = typeof ((_0 = (_z = graphStateForLlm.pageContext) === null || _z === void 0 ? void 0 : _z.entity) === null || _0 === void 0 ? void 0 : _0.type) === 'string'
+                    const pageContextEntityType = typeof ((_2 = (_1 = graphStateForLlm.pageContext) === null || _1 === void 0 ? void 0 : _1.entity) === null || _2 === void 0 ? void 0 : _2.type) === 'string'
                         ? graphStateForLlm.pageContext.entity.type.trim() || null
                         : null;
                     deps.logger.log(`compose_write observation stored runId=${ctx.input.runId} tool=${preparedCall.name} planStep=${pendingToolStep.id} pageContextEntityType=${pageContextEntityType !== null && pageContextEntityType !== void 0 ? pageContextEntityType : 'null'} pageContextEntityId=${pageContextEntityId !== null && pageContextEntityId !== void 0 ? pageContextEntityId : 'null'} llmArgs=${(0, plan_draft_summarize_util_1.summarizeWriteArgsForGateLog)(preparedCall.arguments)} preparedArgs=${(0, plan_draft_summarize_util_1.summarizeWriteArgsForGateLog)(preparedCall.arguments)}`);
@@ -343,7 +368,7 @@ function createLlmNode(bundle) {
                     ];
                     deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, '参数已生成，正在整理写操作草稿…\n', 'delta');
                     return Object.assign(Object.assign({}, graphStateForLlm), { iteration: nextIteration, steps,
-                        toolObservations, taskPlan: progressed.taskPlan, workflowRun: (_1 = progressed.workflowRun) !== null && _1 !== void 0 ? _1 : graphStateForLlm.workflowRun, workflowAwaitingReact: (_2 = progressed.workflowAwaitingReact) !== null && _2 !== void 0 ? _2 : graphStateForLlm.workflowAwaitingReact, pendingToolCalls: [], pendingRespond: (0, turn_respond_util_1.pendingRespondFromObservation)((0, task_plan_util_1.buildPlanSummarizeObservation)({
+                        toolObservations, taskPlan: progressed.taskPlan, workflowRun: (_3 = progressed.workflowRun) !== null && _3 !== void 0 ? _3 : graphStateForLlm.workflowRun, workflowAwaitingReact: (_4 = progressed.workflowAwaitingReact) !== null && _4 !== void 0 ? _4 : graphStateForLlm.workflowAwaitingReact, pendingToolCalls: [], pendingRespond: (0, turn_respond_util_1.pendingRespondFromObservation)((0, task_plan_util_1.buildPlanSummarizeObservation)({
                             userMessage: ctx.input.latestUserMessage,
                             summarizeObservation: summarize.buildSummarizeObservationFromState({
                                 preloadedToolObservations: graphStateForLlm.preloadedToolObservations,
@@ -361,7 +386,7 @@ function createLlmNode(bundle) {
             }
             return Object.assign(Object.assign({}, graphStateForLlm), { iteration: nextIteration, steps, pendingToolCalls: (0, plan_draft_reply_util_1.applyPlanDraftToWriteToolCalls)(httpToolCalls, graphStateForLlm.taskPlan, graphStateForLlm.scopedTools, (0, plan_draft_reply_util_1.resolvePlanSubmitTextForWrite)({
                     observations: (0, graph_tool_observations_util_1.allToolObservations)(graphStateForLlm),
-                    artifactBlocks: (_3 = deps.assistantArtifact.peekBlocks(ctx.input.sessionId, ctx.input.runId)) !== null && _3 !== void 0 ? _3 : null,
+                    artifactBlocks: (_5 = deps.assistantArtifact.peekBlocks(ctx.input.sessionId, ctx.input.runId)) !== null && _5 !== void 0 ? _5 : null,
                     scopedTools: graphStateForLlm.scopedTools,
                 })) });
         }
@@ -372,19 +397,36 @@ function createLlmNode(bundle) {
             deps.logger.warn(`llm node failed runId=${ctx.input.runId} step=${failedLlmStepNumber}: ${error instanceof Error ? error.message : String(error)}`);
             const steps = [
                 ...graphState.steps,
-                (0, agent_run_audit_util_1.maybeTagWorkflowReactInternalStep)({
-                    step: failedLlmStepNumber,
-                    type: 'llm',
-                    output: runHelpers.normalizeJsonLike({
-                        error: true,
-                        content: userMessage,
-                    }),
-                    meta: { code },
-                }, graphState),
+                graphState.workflowAwaitingReact === true
+                    ? {
+                        step: failedLlmStepNumber,
+                        type: 'llm',
+                        output: runHelpers.normalizeJsonLike({
+                            error: true,
+                            content: userMessage,
+                        }),
+                        meta: { code },
+                    }
+                    : (0, agent_run_audit_util_1.maybeTagWorkflowReactInternalStep)({
+                        step: failedLlmStepNumber,
+                        type: 'llm',
+                        output: runHelpers.normalizeJsonLike({
+                            error: true,
+                            content: userMessage,
+                        }),
+                        meta: { code },
+                    }, graphState),
             ];
             await runHelpers.updateRun(ctx.input.runId, steps, client_1.AgentRunStatus.success);
             (0, run_metrics_util_1.recordMachineCodeUsage)(ctx.input.runMetrics, code);
-            return Object.assign(Object.assign({}, graphState), { iteration: graphState.iteration + 1, steps, pendingToolCalls: [], pendingRespond: (0, turn_respond_util_1.pendingRespondFromObservation)(summarize.buildDirectReplyObservation(ctx.input.latestUserMessage, userMessage)) });
+            const failedWorkflowRun = graphState.workflowAwaitingReact === true &&
+                ((_6 = graphState.workflowRun) === null || _6 === void 0 ? void 0 : _6.currentNodeId)
+                ? (0, workflow_run_util_1.failWorkflowNode)(graphState.workflowRun, graphState.workflowRun.currentNodeId, {
+                    code,
+                    message: userMessage,
+                })
+                : graphState.workflowRun;
+            return Object.assign(Object.assign({}, graphState), { iteration: graphState.iteration + 1, steps, workflowRun: failedWorkflowRun, workflowAwaitingReact: false, pendingToolCalls: [], pendingRespond: (0, turn_respond_util_1.pendingRespondFromObservation)(summarize.buildDirectReplyObservation(ctx.input.latestUserMessage, userMessage)) });
         }
     };
 }

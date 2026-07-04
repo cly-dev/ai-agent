@@ -11,7 +11,7 @@ function findRetryTargetNodeId(nodes, run) {
     const awaitIndex = ordered.findIndex((id) => { var _a; return ((_a = nodes.find((row) => row.id === id)) === null || _a === void 0 ? void 0 : _a.action) === 'await_user_confirm'; });
     const searchEnd = awaitIndex >= 0 ? awaitIndex : ordered.length;
     const candidates = ordered.slice(0, searchEnd);
-    for (const action of ['present_mutation', 'compose_mutation', 'summarize']) {
+    for (const action of ['compose_mutation', 'present_mutation', 'summarize']) {
         const match = [...candidates]
             .reverse()
             .find((id) => { var _a; return ((_a = nodes.find((row) => row.id === id)) === null || _a === void 0 ? void 0 : _a.action) === action; });

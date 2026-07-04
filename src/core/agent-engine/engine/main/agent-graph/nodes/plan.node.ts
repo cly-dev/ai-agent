@@ -295,6 +295,7 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
 
     const hostBundle = planHostBundle;
     const availableHostTools = hostBundle.scopedHostTools.map((tool) => ({
+      id: tool.id,
       name: tool.name,
       description: tool.description,
     }));

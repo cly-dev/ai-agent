@@ -407,7 +407,7 @@ load_page_context → generate_and_push
 |------|------|
 | `actionKey` | App 内唯一，如 `demo-playground.fill_draft`；C 端 invoke 用 |
 | `systemPrompt` | **运行时主真值**（等同 Page 场景的 system 指引） |
-| `hostToolId` | 无 Workflow 时必填（或可内联自动创建）；绑 `workflowId` 时可省略，由 push 节点推导 |
+| `hostToolId` | 无 Workflow 时必填，且必须是已有 HostTool；绑 `workflowId` 时可省略 |
 | `pageScope` | 与 `pageContext.page` 对齐；空表示不限页 |
 | `allowCustomInstruction` | 是否允许用户 invoke 时传 `instruction` 补充说明 |
 | `workflowId` | 可选；有则走 `runPageWorkflow` |
@@ -422,7 +422,7 @@ load_page_context → generate_and_push
 | `PATCH` | `/admin/page-action/:id` | B | 更新 |
 | `GET` | `/admin/page-action/:id` | B | 详情 |
 | `GET` | `/admin/page-action/by-app-client/:appClientId` | B | 分页 |
-| `POST` | `/admin/page-action/invoke` | **C** | 执行（`text/event-stream`）；需用户 JWT + `x-app-dsn` |
+| `POST` | `/page-action/invoke` | **C** | 执行（`text/event-stream`）；需用户 JWT + `x-app-dsn` |
 | `GET` | `/admin/page-action/run/:id` | B | Run 详情（含 `workflowRun`、steps 时间线） |
 | `GET` | `/admin/page-action/run/by-app-client/:appClientId` | B | Run 分页 |
 
@@ -460,23 +460,25 @@ load_page_context → generate_and_push
 
 1. 解析 `actionKey` → 加载 `PageAction`（须 `isActive`）。
 2. 解析 / 校验 `hostTool`、`pageContext`。
-3. **有 `workflowId` 且加载成功**：  
-   - `runPageWorkflow` 按 nodes **线性**执行；  
-   - 每步通过 Page executor + Harness sensor；  
-   - SSE 推送 `page_workflow` 节点生命周期；  
+3. **有 `workflowId` 且加载成功**：
+   - `runPageWorkflow` 按 nodes **线性**执行；
+   - 每步通过 Page executor + Harness sensor；
+   - SSE 推送 `page_workflow` 节点生命周期；
    - 落库 `PageActionRun.workflowId` / `workflowVersion` / `workflowRun`。
-4. **无 `workflowId` 或 Workflow 加载失败**：  
-   - 回退 **`executePageActionHostFill`**：单次 LLM 调用 + HostTool 流式填入（Legacy 单步路径）；  
+4. **无 `workflowId`**：
+   - 走 **`executePageActionHostFill`**：单次 LLM 调用 + HostTool 流式填入（Legacy 单步路径）；
    - **无** `workflowRun` 快照。
-5. Run 详情 B 端展示：`steps` JSON 时间线应与 `workflowRun.nodes` 对齐（有 Workflow 时）。
+5. **有 `workflowId` 但 Workflow 加载失败**：SSE 返回 `page_action` failed，不回退 Legacy 单步路径。
+6. Run 详情 B 端展示：`steps` JSON 时间线应与 `workflowRun.nodes` 对齐（有 Workflow 时）。
 
 ### 6.4 PageAction 绑定 Workflow 的配置清单
 
-1. `Workflow.profile` 为 `page_action` 或 `shared`。
-2. nodes 仅含 `load_page_context` / `fetch_data` / `generate_and_push` / `summarize`。
-3. `generate_and_push.input.hostToolId` 与 `PageAction.hostToolId` 对齐（或在该 Workflow 的 `hostTools` 绑定内）。
-4. `systemPrompt` 写「角色与风格」；**分步目标**写在各节点 `objective`。
-5. 用户补充说明走 invoke `instruction`，运行时会作为 `objectivePrefix` 传入 Page runner。
+1. Workflow 须存在、同 `appClientId` 且 `isActive=true`。
+2. 无 Workflow 的 PageAction 必须绑定已有 `hostToolId`；不再支持内联 `hostTool` 自动创建。
+3. 绑 Workflow 后 `hostToolId` 可省略；分析类 Workflow 可不含 `generate_and_push`。
+4. `generate_and_push` 执行期优先使用节点 `input.hostToolId`，必要时可用 PageAction.hostToolId 兜底。
+5. `systemPrompt` 写「角色与风格」；**分步目标**写在各节点 `objective`。
+6. 用户补充说明走 invoke `instruction`，运行时会作为 `objectivePrefix` 传入 Page runner。
 
 ---
 
@@ -488,7 +490,7 @@ load_page_context → generate_and_push
 |------|------|------|
 | **shared Workflow** | 同一 `workflowId` 绑到 Skill + PageAction | Page 只能跑前 4 种 action；Chat 可跑全量 |
 | **分拆资产** | `skill.xxx` + `page.xxx` 两条 Workflow | 步序可不同，维护更清晰 |
-| **从 Skill 导入 PageAction** | 创建 PageAction 时设 `sourceSkillId`（追溯） | 须另拷 `systemPrompt`、单独绑 `hostToolId` |
+| **从 Skill 导入 PageAction** | 创建 PageAction 时设 `sourceSkillId`（追溯） | 须另拷 `systemPrompt`；无 Workflow 时单独选择已有 `hostToolId` |
 
 ### 7.2 工具绑定关系（Skill）
 
@@ -612,7 +614,7 @@ DRY_RUN=0 STRIP_LEGACY_CONFIG_WORKFLOW=1 npm run db:migrate:skill-config-workflo
 Workflow 发版后若不想 Skill 立刻跟新版本，在 Skill 上 pin 旧 `workflowVersion`；省略则始终用当前版。
 
 **Q：PageAction 为什么需要 hostToolId？**  
-无 Workflow 时：流式填入目标，必填或自动创建。绑 Workflow 时：可省略，invoke 从 `generate_and_push` 节点推导。
+无 Workflow 时：流式填入目标，必须绑定已有 HostTool。绑 Workflow 时：可省略；执行 push 节点时优先从 `generate_and_push.input.hostToolId` 推导，缺失时可用 PageAction.hostToolId 兜底。
 
 **Q：能否在 PageAction 跑写确认链？**  
 不能。`profile=page_action` 禁止 #5–8；写确认链仅 Chat（`chat_skill` / `shared` 的 Skill 入口）。

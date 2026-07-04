@@ -15,6 +15,8 @@ const turn_routing_util_1 = require("../../../turn/turn-routing.util");
 const page_context_usage_util_1 = require("../../../../../host-bridge/page-context-usage.util");
 const page_context_execution_policy_util_1 = require("../../../../../host-bridge/page-context-execution-policy.util");
 const skill_runnable_util_1 = require("../../../../../skill/skill-runnable.util");
+const intent_kind_util_1 = require("../../../../intent-kind.util");
+const smalltalk_hints_util_1 = require("../../../../../intent/smalltalk-hints.util");
 function resolveRequestedSkillRowForTurnRoute(input) {
     var _a;
     if (input.requestedSkillId == null) {
@@ -125,7 +127,10 @@ function createTurnRouteNode(bundle) {
         const stepNum = (0, agent_run_steps_util_1.nextRunStepNumber)(state.steps);
         const requestedSkillId = (_a = ctx.input.requestedSkillId) !== null && _a !== void 0 ? _a : null;
         const pageContextForRoute = (_c = (_b = state.pageContext) !== null && _b !== void 0 ? _b : ctx.input.pageContext) !== null && _c !== void 0 ? _c : null;
-        if (state.intentKind === 'smalltalk') {
+        const intentKind = state.intentKind === 'smalltalk'
+            ? 'smalltalk'
+            : (0, intent_kind_util_1.detectIntentKind)(ctx.input.latestUserMessage, (0, smalltalk_hints_util_1.loadSmallTalkHints)());
+        if (intentKind === 'smalltalk') {
             deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, '正在回复…\n', 'replace');
             const turnRoutingDecision = (0, turn_routing_util_1.finalizeTurnRoutingDecision)({
                 decision: (0, turn_routing_util_1.buildChitchatRoutingDecision)({ reason: 'smalltalk_intent' }),
@@ -159,7 +164,7 @@ function createTurnRouteNode(bundle) {
             const stepsWithRoute = [...state.steps, routeStep];
             await runHelpers.updateRun(ctx.input.runId, stepsWithRoute, client_1.AgentRunStatus.running);
             return Object.assign(Object.assign(Object.assign({}, state), { steps: stepsWithRoute, turnRoutingDecision,
-                turnExecutionContract, pageContext: pageContextForRoute, preloadedToolObservations: (_d = state.preloadedToolObservations) !== null && _d !== void 0 ? _d : [], scopedHostTools: [], scopedHostLangChainTools: [] }), (0, turn_scoped_tools_util_1.spreadScopedToolsBundle)((0, turn_scoped_tools_util_1.emptyScopedToolsBundle)()));
+                turnExecutionContract, pageContext: pageContextForRoute, intentKind: 'smalltalk', preloadedToolObservations: (_d = state.preloadedToolObservations) !== null && _d !== void 0 ? _d : [], scopedHostTools: [], scopedHostLangChainTools: [] }), (0, turn_scoped_tools_util_1.spreadScopedToolsBundle)((0, turn_scoped_tools_util_1.emptyScopedToolsBundle)()));
         }
         deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, '正在判断本轮任务类型…\n', 'replace');
         const hostBundle = await runHelpers.loadScopedHostTools(ctx.input, pageContextForRoute, requestedSkillId);

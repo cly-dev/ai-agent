@@ -34,7 +34,6 @@ let LlmService = LlmService_1 = class LlmService {
         this.modelConfigCache = modelConfigCache;
         this.promptBudgetService = promptBudgetService;
         this.logger = new common_1.Logger(LlmService_1.name);
-        this.cachedChatConfig = null;
         this.localEmbeddingRuntime = null;
     }
     async onModuleInit() {
@@ -47,10 +46,8 @@ let LlmService = LlmService_1 = class LlmService {
     }
     async refreshConfigCache() {
         const chat = await this.loadActiveConfigFromDb(client_1.LlmModelKind.chat);
-        this.cachedChatConfig = chat;
         await this.modelConfigCache.trySetActive(chat);
         const embedding = await this.loadActiveEmbeddingConfigFromDb();
-        this.cachedEmbeddingConfig = embedding;
         await this.modelConfigCache.deleteActive(client_1.LlmModelKind.transformers_embedding);
         await this.modelConfigCache.deleteActive(client_1.LlmModelKind.api_embedding);
         if (embedding) {
@@ -65,6 +62,9 @@ let LlmService = LlmService_1 = class LlmService {
     async streamChat(input, handlers) {
         const messages = await this.applyPromptBudget(input);
         return this.invokeWithLangChain(Object.assign(Object.assign({}, input), { messages }), true, handlers);
+    }
+    async getActiveChatModelConfig() {
+        return this.getCachedChatConfig();
     }
     async getContextLength() {
         const config = await this.getCachedConfig();
@@ -405,31 +405,20 @@ let LlmService = LlmService_1 = class LlmService {
         };
     }
     async getCachedChatConfig() {
-        var _a;
-        if ((_a = this.cachedChatConfig) === null || _a === void 0 ? void 0 : _a.enabled) {
-            return this.cachedChatConfig;
-        }
         const fromRedis = await this.modelConfigCache.getActive(client_1.LlmModelKind.chat);
         if (fromRedis === null || fromRedis === void 0 ? void 0 : fromRedis.enabled) {
-            this.cachedChatConfig = fromRedis;
             return fromRedis;
         }
         const fromDb = await this.loadActiveConfigFromDb(client_1.LlmModelKind.chat);
-        this.cachedChatConfig = fromDb;
         await this.modelConfigCache.trySetActive(fromDb);
         return fromDb;
     }
     async getCachedEmbeddingConfig() {
-        if (this.cachedEmbeddingConfig !== undefined) {
-            return this.cachedEmbeddingConfig;
-        }
         const fromRedis = await this.loadActiveEmbeddingConfigFromRedis();
         if (fromRedis) {
-            this.cachedEmbeddingConfig = fromRedis;
             return fromRedis;
         }
         const fromDb = await this.loadActiveEmbeddingConfigFromDb();
-        this.cachedEmbeddingConfig = fromDb;
         if (fromDb) {
             await this.modelConfigCache.trySetActive(fromDb);
         }

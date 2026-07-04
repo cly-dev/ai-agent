@@ -11,6 +11,7 @@ export type Role = Prisma.RoleModel;
 export type AdminUser = Prisma.AdminUserModel;
 export type AppClient = Prisma.AppClientModel;
 export type LlmModelConfig = Prisma.LlmModelConfigModel;
+export type PageAgentLlmProxyAudit = Prisma.PageAgentLlmProxyAuditModel;
 export type IntentRecallConfig = Prisma.IntentRecallConfigModel;
 export type UserLlmModelConfig = Prisma.UserLlmModelConfigModel;
 export type Session = Prisma.SessionModel;

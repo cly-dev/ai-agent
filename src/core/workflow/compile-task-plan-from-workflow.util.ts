@@ -18,7 +18,11 @@ function mapFetchDataToPlanStep(node: WorkflowNodeDef): TaskPlanStep {
   };
 }
 
-function mapGenerateAndPushToPlanSteps(node: WorkflowNodeDef): TaskPlanStep[] {
+function mapGenerateAndPushToPlanSteps(
+  node: WorkflowNodeDef<'generate_and_push'>,
+): TaskPlanStep[] {
+  const hostToolIds =
+    node.input.hostToolId > 0 ? [node.input.hostToolId] : undefined;
   return [
     {
       id: `${node.id}:reason`,
@@ -31,6 +35,7 @@ function mapGenerateAndPushToPlanSteps(node: WorkflowNodeDef): TaskPlanStep[] {
       kind: 'host_tool',
       objective: node.objective,
       phase: 'answer',
+      ...(hostToolIds ? { hostToolIds } : {}),
     },
   ];
 }
@@ -51,7 +56,9 @@ function mapWorkflowNodeToPlanSteps(node: WorkflowNodeDef): TaskPlanStep[] {
     case 'fetch_data':
       return [mapFetchDataToPlanStep(node)];
     case 'generate_and_push':
-      return mapGenerateAndPushToPlanSteps(node);
+      return mapGenerateAndPushToPlanSteps(
+        node as WorkflowNodeDef<'generate_and_push'>,
+      );
     case 'summarize':
     case 'present_mutation':
       return [mapSummarizeToPlanStep(node)];

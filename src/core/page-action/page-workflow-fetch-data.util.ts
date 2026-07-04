@@ -7,6 +7,11 @@ import { resolvePageContextEntityId } from '../host-bridge/page-context-metadata
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 import type { ToolEngineService } from '../tool-engine/tool-engine.service';
 import type { FetchDataNodeInput } from '../workflow/workflow-node-input.types';
+import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
+import {
+  buildToolCallRequestAudit,
+  buildToolCallResultAudit,
+} from './page-action-run-audit.util';
 
 export type PageWorkflowFetchObservation = {
   name: string;
@@ -98,6 +103,8 @@ export async function executePageWorkflowFetchData(input: {
   appClientId: number;
   nodeInput: FetchDataNodeInput;
   pageContext: AgentChatPageContext | null;
+  stepRecorder?: PageActionRunStepRecorder;
+  nodeId?: string;
 }): Promise<PageWorkflowFetchObservation> {
   const tool = await resolveFetchDataTool(input.prisma, {
     appClientId: input.appClientId,
@@ -108,6 +115,18 @@ export async function executePageWorkflowFetchData(input: {
     input.pageContext,
     tool.path,
   );
+  const toolStepId = input.nodeId ?? 'fetch_data';
+  input.stepRecorder?.record({
+    type: 'workflow',
+    name: `${toolStepId}:tool:start`,
+    detail: buildToolCallRequestAudit({
+      toolName: tool.name,
+      toolId: tool.id,
+      arguments: args,
+      httpMethod: tool.method,
+      httpPath: tool.path,
+    }),
+  });
   const result = await input.toolEngine.executeFromDefinition(
     {
       id: tool.id,
@@ -131,6 +150,12 @@ export async function executePageWorkflowFetchData(input: {
     args,
     input.userId,
   );
+  input.stepRecorder?.record({
+    type: 'workflow',
+    name: `${toolStepId}:tool:complete`,
+    detail: buildToolCallResultAudit(result),
+    status: 'ok',
+  });
   return {
     name: tool.name,
     output: result.output,

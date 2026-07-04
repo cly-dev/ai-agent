@@ -22,6 +22,8 @@ const session_prepare_store_1 = require("./session-prepare.store");
 const session_runtime_cache_hooks_service_1 = require("./session-runtime-cache-hooks.service");
 const chat_events_module_1 = require("./chat-events.module");
 const chat_session_run_bridge_module_1 = require("./chat-session-run-bridge.module");
+const agent_auto_select_service_1 = require("./agent-auto-select.service");
+const prisma_service_1 = require("../../prisma/prisma.service");
 let ChatModule = class ChatModule {
 };
 ChatModule = __decorate([
@@ -42,6 +44,11 @@ ChatModule = __decorate([
             session_prepare_store_1.SessionPrepareStore,
             session_prepare_service_1.SessionPrepareService,
             session_runtime_cache_hooks_service_1.SessionRuntimeCacheHooksService,
+            {
+                provide: agent_auto_select_service_1.AgentAutoSelectService,
+                useFactory: (prisma) => new agent_auto_select_service_1.AgentAutoSelectService(prisma),
+                inject: [prisma_service_1.PrismaService],
+            },
         ],
         controllers: [chat_controller_1.ChatController],
         exports: [

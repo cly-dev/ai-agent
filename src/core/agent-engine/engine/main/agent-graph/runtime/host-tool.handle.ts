@@ -20,6 +20,7 @@ import {
   resolvePlanSubmitTextForWrite,
 } from '../../plan-present/plan-draft-reply.util';
 import { resolvePlanHostFillCalls } from '../../plan-present/plan-host-fill.util';
+import { applyPlanAdvanceAsWorkflowProgress } from '../../../../../workflow/workflow-plan-transition.util';
 import { resolveTurnExecutionContract } from '../../../turn/turn-execution-contract.util';
 import { allToolObservations } from '../../../graph-tool-observations.util';
 import type {  TaskPlanStep } from '../../plan/task-plan.types';
@@ -134,6 +135,16 @@ export function applyHostToolPlanStepHandle(
     pageScope: graphState.pageContext?.page ?? null,
   });
   const stepsWithHostTool = [...input.steps, hostToolRunStep];
+  const progressed = graphState.taskPlan
+    ? applyPlanAdvanceAsWorkflowProgress({
+        taskPlan: graphState.taskPlan,
+        workflowRun: graphState.workflowRun,
+        workflowNodeDefs: graphState.workflowNodeDefs,
+        workflowAwaitingReact: graphState.workflowAwaitingReact,
+        planBefore: graphState.taskPlan,
+        planAdvance: input.handle.planAdvance,
+      })
+    : { taskPlan: input.handle.planAdvance.updatedPlan };
   let nextState: AgentGraphState = {
     ...graphState,
     iteration: input.nextIteration,
@@ -142,7 +153,10 @@ export function applyHostToolPlanStepHandle(
       ...graphState.toolObservations,
       ...input.handle.observations,
     ],
-    taskPlan: input.handle.planAdvance.updatedPlan,
+    taskPlan: progressed.taskPlan ?? input.handle.planAdvance.updatedPlan,
+    workflowRun: progressed.workflowRun ?? graphState.workflowRun,
+    workflowAwaitingReact:
+      progressed.workflowAwaitingReact ?? graphState.workflowAwaitingReact,
     pendingToolCalls: input.httpCalls,
     pendingRespond: null,
   };

@@ -42,6 +42,16 @@ let HttpExceptionFilter = HttpExceptionFilter_1 = class HttpExceptionFilter {
             }
             this.logException(exception, req, status, message);
             (0, client_public_cors_util_1.applyHttpCors)(req, res);
+            if (this.shouldReturnOpenAiCompatibleError(req)) {
+                res.status(status).send({
+                    error: {
+                        message,
+                        type: status >= 500 ? 'server_error' : 'invalid_request_error',
+                        code: status,
+                    },
+                });
+                return;
+            }
             res.status(200).send({
                 status,
                 data,
@@ -57,6 +67,12 @@ let HttpExceptionFilter = HttpExceptionFilter_1 = class HttpExceptionFilter {
                 message: 'system busy',
             });
         }
+    }
+    shouldReturnOpenAiCompatibleError(req) {
+        var _a;
+        const path = ((_a = req.originalUrl) !== null && _a !== void 0 ? _a : req.url).split('?')[0];
+        return (req.method === 'POST' &&
+            path === '/page-agent/compatible-mode/v1/chat/completions');
     }
     logException(exception, req, status, message) {
         var _a;

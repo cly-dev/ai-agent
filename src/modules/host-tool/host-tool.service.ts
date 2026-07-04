@@ -34,6 +34,7 @@ import { loadAgentHostToolCandidateIds } from '../../core/runtime-cache/agent-ca
 import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkflowService } from '../workflow/workflow.service';
+import { findWorkflowNodeReferences } from '../../core/workflow/workflow-node-reference-guard.util';
 import {
   CreateHostPageDto,
   UpdateHostPageDto,
@@ -201,6 +202,10 @@ export class HostToolService {
 
   async removeHostPage(id: number): Promise<HostPageResponse> {
     const existing = await this.findHostPageOne(id);
+    await this.assertHostPageNotReferencedByWorkflowNodes(
+      existing.appClientId,
+      id,
+    );
     await this.invalidateHostToolsForHostPage(id);
     await this.prisma.hostPage.delete({ where: { id } });
     return existing;
@@ -246,6 +251,7 @@ export class HostToolService {
       },
       include: HOST_TOOL_DETAIL_INCLUDE,
     });
+    await this.runtimeCacheInvalidator.invalidateForHostTools([row.id]);
     return toHostToolResponse(row);
   }
 
@@ -364,9 +370,51 @@ export class HostToolService {
 
   async removeHostTool(id: number): Promise<HostToolResponse> {
     const existing = await this.findHostToolOne(id);
+    await this.assertHostToolNotReferencedByWorkflowNodes(
+      existing.appClientId,
+      id,
+    );
     await this.prisma.hostTool.delete({ where: { id } });
-    await this.runtimeCacheInvalidator.invalidateForHostTools([id]);
+    await this.runtimeCacheInvalidator.invalidateForAppClient(existing.appClientId);
     return existing;
+  }
+
+  private async assertHostToolNotReferencedByWorkflowNodes(
+    appClientId: number,
+    hostToolId: number,
+  ): Promise<void> {
+    const usages = await findWorkflowNodeReferences(this.prisma, {
+      appClientId,
+      kind: 'host_tool',
+      targetId: hostToolId,
+    });
+    if (usages.length === 0) {
+      return;
+    }
+    throw new BadRequestException({
+      code: 'HOST_TOOL_REFERENCED_BY_WORKFLOW_NODES',
+      message:
+        'HostTool is referenced by Workflow nodes and cannot be deleted; deactivate it or update the Workflow first',
+      hostToolId,
+      references: usages.slice(0, 20),
+    });
+  }
+
+  private async assertHostPageNotReferencedByWorkflowNodes(
+    appClientId: number,
+    hostPageId: number,
+  ): Promise<void> {
+    const hostTools = await this.prisma.hostTool.findMany({
+      where: { appClientId, hostPageId },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    for (const hostTool of hostTools) {
+      await this.assertHostToolNotReferencedByWorkflowNodes(
+        appClientId,
+        hostTool.id,
+      );
+    }
   }
 
   // ── Agent bindings ───────────────────────────────────────────────────────
@@ -595,6 +643,12 @@ export class HostToolService {
       });
     }
 
+    if (created.length > 0) {
+      await this.runtimeCacheInvalidator.invalidateForHostTools(
+        created.map((row) => row.id),
+      );
+    }
+
     return { created, skipped };
   }
 
@@ -603,6 +657,18 @@ export class HostToolService {
     query: QueryClientHostToolDto,
   ): Promise<ClientHostToolCatalogItem[]> {
     const scope = query.scope?.trim() || undefined;
+    const agentHostToolIds =
+      query.agentId != null
+        ? await loadAgentHostToolCandidateIds(
+            this.prisma,
+            appClientId,
+            query.agentId,
+          )
+        : null;
+    if (agentHostToolIds?.length === 0) {
+      return [];
+    }
+
     const where: Prisma.HostToolWhereInput = {
       appClientId,
       isActive: true,
@@ -611,11 +677,7 @@ export class HostToolService {
             OR: [{ hostPageId: null }, { hostPage: { scope } }],
           }
         : {}),
-      ...(query.agentId != null
-        ? {
-            agentHostTools: { some: { agentId: query.agentId } },
-          }
-        : {}),
+      ...(agentHostToolIds != null ? { id: { in: agentHostToolIds } } : {}),
     };
     const rows = await this.prisma.hostTool.findMany({
       where,

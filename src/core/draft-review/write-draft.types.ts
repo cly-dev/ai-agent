@@ -50,7 +50,7 @@ export type WriteDraftPublic = {
   };
   provenance: {
     draftRetryCount: number;
-    draftRetryMax: number;
+    draftRetryMax: number | null;
     canRetry: boolean;
     composedAt: string;
     lastEvent: WriteDraftLastEvent;

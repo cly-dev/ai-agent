@@ -9,6 +9,7 @@ import type {
 } from './task-plan.types';
 import {
   buildChitchatPlanResult,
+  buildHostToolWritePlanResult,
   buildPageContextEntityReadPlanResult,
   buildPageContextInlinePlanResult,
   buildRequestedSkillOuterPlanResult,
@@ -88,6 +89,33 @@ export async function resolvePlanFromContract(input: {
     }
     case 'llm':
     default:
+      if (
+        contract.routing.llmWriteChannel === 'host' &&
+        contract.plan.allowHostToolSteps &&
+        (planInput.availableHostTools?.length ?? 0) > 0
+      ) {
+        const suggestedSkill =
+          contract.routing.suggestedSkillId != null
+            ? planInput.availableSkills.find(
+                (skill) => skill.id === contract.routing.suggestedSkillId,
+              )
+            : null;
+        const suggestedHostToolIds = new Set(suggestedSkill?.hostToolIds ?? []);
+        const suggestedHostTools =
+          suggestedHostToolIds.size > 0
+            ? (planInput.availableHostTools ?? []).filter(
+                (tool) =>
+                  tool.id != null && suggestedHostToolIds.has(tool.id),
+              )
+            : [];
+        return buildHostToolWritePlanResult({
+          userMessage: planInput.userMessage,
+          availableHostTools:
+            suggestedHostTools.length > 0
+              ? suggestedHostTools
+              : (planInput.availableHostTools ?? []),
+        });
+      }
       return resolveOuterPlan({
         llmService: input.llmService,
         promptRegistry: input.promptRegistry,

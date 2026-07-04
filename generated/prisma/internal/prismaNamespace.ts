@@ -389,6 +389,7 @@ export const ModelName = {
   AdminUser: 'AdminUser',
   AppClient: 'AppClient',
   LlmModelConfig: 'LlmModelConfig',
+  PageAgentLlmProxyAudit: 'PageAgentLlmProxyAudit',
   IntentRecallConfig: 'IntentRecallConfig',
   UserLlmModelConfig: 'UserLlmModelConfig',
   Session: 'Session',
@@ -437,7 +438,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "role" | "adminUser" | "appClient" | "llmModelConfig" | "intentRecallConfig" | "userLlmModelConfig" | "session" | "sessionGoaMemory" | "message" | "messageFeedback" | "toolCategory" | "tool" | "integration" | "userIntegration" | "skill" | "agentSkill" | "roleSkill" | "skillTool" | "userApp" | "roleTool" | "agent" | "promptTemplate" | "messageTurn" | "agentRun" | "agentTool" | "hostPage" | "hostTool" | "agentHostTool" | "skillHostTool" | "roleHostTool" | "pageAction" | "pageActionRun" | "approvalRequest" | "workflow" | "workflowRevision" | "workflowTool" | "workflowHostTool"
+    modelProps: "user" | "role" | "adminUser" | "appClient" | "llmModelConfig" | "pageAgentLlmProxyAudit" | "intentRecallConfig" | "userLlmModelConfig" | "session" | "sessionGoaMemory" | "message" | "messageFeedback" | "toolCategory" | "tool" | "integration" | "userIntegration" | "skill" | "agentSkill" | "roleSkill" | "skillTool" | "userApp" | "roleTool" | "agent" | "promptTemplate" | "messageTurn" | "agentRun" | "agentTool" | "hostPage" | "hostTool" | "agentHostTool" | "skillHostTool" | "roleHostTool" | "pageAction" | "pageActionRun" | "approvalRequest" | "workflow" | "workflowRevision" | "workflowTool" | "workflowHostTool"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -808,6 +809,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.LlmModelConfigCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.LlmModelConfigCountAggregateOutputType> | number
+        }
+      }
+    }
+    PageAgentLlmProxyAudit: {
+      payload: Prisma.$PageAgentLlmProxyAuditPayload<ExtArgs>
+      fields: Prisma.PageAgentLlmProxyAuditFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.PageAgentLlmProxyAuditFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.PageAgentLlmProxyAuditFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload>
+        }
+        findFirst: {
+          args: Prisma.PageAgentLlmProxyAuditFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.PageAgentLlmProxyAuditFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload>
+        }
+        findMany: {
+          args: Prisma.PageAgentLlmProxyAuditFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload>[]
+        }
+        create: {
+          args: Prisma.PageAgentLlmProxyAuditCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload>
+        }
+        createMany: {
+          args: Prisma.PageAgentLlmProxyAuditCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.PageAgentLlmProxyAuditCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload>[]
+        }
+        delete: {
+          args: Prisma.PageAgentLlmProxyAuditDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload>
+        }
+        update: {
+          args: Prisma.PageAgentLlmProxyAuditUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload>
+        }
+        deleteMany: {
+          args: Prisma.PageAgentLlmProxyAuditDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.PageAgentLlmProxyAuditUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.PageAgentLlmProxyAuditUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload>[]
+        }
+        upsert: {
+          args: Prisma.PageAgentLlmProxyAuditUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PageAgentLlmProxyAuditPayload>
+        }
+        aggregate: {
+          args: Prisma.PageAgentLlmProxyAuditAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregatePageAgentLlmProxyAudit>
+        }
+        groupBy: {
+          args: Prisma.PageAgentLlmProxyAuditGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PageAgentLlmProxyAuditGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.PageAgentLlmProxyAuditCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PageAgentLlmProxyAuditCountAggregateOutputType> | number
         }
       }
     }
@@ -3367,6 +3442,29 @@ export const LlmModelConfigScalarFieldEnum = {
 export type LlmModelConfigScalarFieldEnum = (typeof LlmModelConfigScalarFieldEnum)[keyof typeof LlmModelConfigScalarFieldEnum]
 
 
+export const PageAgentLlmProxyAuditScalarFieldEnum = {
+  id: 'id',
+  appClientId: 'appClientId',
+  userId: 'userId',
+  modelConfigId: 'modelConfigId',
+  requestedModel: 'requestedModel',
+  provider: 'provider',
+  providerModel: 'providerModel',
+  status: 'status',
+  upstreamStatus: 'upstreamStatus',
+  durationMs: 'durationMs',
+  promptTokens: 'promptTokens',
+  completionTokens: 'completionTokens',
+  totalTokens: 'totalTokens',
+  requestMeta: 'requestMeta',
+  errorMessage: 'errorMessage',
+  createdAt: 'createdAt',
+  finishedAt: 'finishedAt'
+} as const
+
+export type PageAgentLlmProxyAuditScalarFieldEnum = (typeof PageAgentLlmProxyAuditScalarFieldEnum)[keyof typeof PageAgentLlmProxyAuditScalarFieldEnum]
+
+
 export const IntentRecallConfigScalarFieldEnum = {
   id: 'id',
   singletonKey: 'singletonKey',
@@ -4371,6 +4469,7 @@ export type GlobalOmitConfig = {
   adminUser?: Prisma.AdminUserOmit
   appClient?: Prisma.AppClientOmit
   llmModelConfig?: Prisma.LlmModelConfigOmit
+  pageAgentLlmProxyAudit?: Prisma.PageAgentLlmProxyAuditOmit
   intentRecallConfig?: Prisma.IntentRecallConfigOmit
   userLlmModelConfig?: Prisma.UserLlmModelConfigOmit
   session?: Prisma.SessionOmit

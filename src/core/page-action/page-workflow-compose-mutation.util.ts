@@ -1,5 +1,6 @@
 import type { AIMessage } from '@langchain/core/messages';
 import {
+  extractAiMessageText,
   extractToolCalls,
 } from '../agent-engine/engine/main/agent-graph/runtime/decision.util';
 import {
@@ -16,6 +17,12 @@ import {
 } from './page-workflow-messages.util';
 import { mergePageWorkflowLlmMetrics } from './page-workflow-node.util';
 import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
+import {
+  buildLlmOutputStepAudit,
+  buildLlmStepAudit,
+  summarizeRecordForAudit,
+} from './page-action-run-audit.util';
+import { extractLlmUserFacingText } from '../agent-engine/engine/llm-output-sanitize.util';
 import {
   extractLlmTokenUsageFromResponseMeta,
   resolveLlmModelNameFromResponseMeta,
@@ -105,6 +112,12 @@ export async function executePageWorkflowComposeMutation(input: {
     writeToolId: writeTool.id,
     writeToolName: writeTool.name,
     messageCount: messages.length,
+    ...buildLlmStepAudit({
+      systemPrompt: runtime.systemPrompt,
+      objectivePrefix: runtime.objectivePrefix,
+      nodeObjective: input.def.objective,
+      promptMessages: messages,
+    }),
   });
 
   const { model, messages: fittedMessages } =
@@ -118,6 +131,7 @@ export async function executePageWorkflowComposeMutation(input: {
     | undefined;
   const usage = extractLlmTokenUsageFromResponseMeta(responseMeta);
   const resolvedModel = resolveLlmModelNameFromResponseMeta(responseMeta);
+  const assistantText = extractAiMessageText(aiMessage);
 
   const toolCalls = extractToolCalls(aiMessage);
   const rawCall = toolCalls.find((call) => call.name === writeTool.name);
@@ -156,8 +170,22 @@ export async function executePageWorkflowComposeMutation(input: {
 
   recorder.recordLlm('compose_mutation.end', {
     writeToolName: writeTool.name,
+    writeToolId: writeTool.id,
     argumentKeys: Object.keys(prepared.arguments),
+    writeArguments: summarizeRecordForAudit(prepared.arguments),
     model: resolvedModel,
+    promptTokens: usage?.promptTokens ?? null,
+    completionTokens: usage?.completionTokens ?? null,
+    fittedMessageCount: fittedMessages.length,
+    ...buildLlmOutputStepAudit({
+      assistantText,
+      userFacingText: extractLlmUserFacingText(assistantText),
+      toolCall: {
+        name: rawCall.name,
+        arguments: rawCall.arguments,
+      },
+      structuredOutput: prepared.arguments,
+    }),
   });
 
   return {

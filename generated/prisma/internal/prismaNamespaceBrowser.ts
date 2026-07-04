@@ -56,6 +56,7 @@ export const ModelName = {
   AdminUser: 'AdminUser',
   AppClient: 'AppClient',
   LlmModelConfig: 'LlmModelConfig',
+  PageAgentLlmProxyAudit: 'PageAgentLlmProxyAudit',
   IntentRecallConfig: 'IntentRecallConfig',
   UserLlmModelConfig: 'UserLlmModelConfig',
   Session: 'Session',
@@ -180,6 +181,29 @@ export const LlmModelConfigScalarFieldEnum = {
 } as const
 
 export type LlmModelConfigScalarFieldEnum = (typeof LlmModelConfigScalarFieldEnum)[keyof typeof LlmModelConfigScalarFieldEnum]
+
+
+export const PageAgentLlmProxyAuditScalarFieldEnum = {
+  id: 'id',
+  appClientId: 'appClientId',
+  userId: 'userId',
+  modelConfigId: 'modelConfigId',
+  requestedModel: 'requestedModel',
+  provider: 'provider',
+  providerModel: 'providerModel',
+  status: 'status',
+  upstreamStatus: 'upstreamStatus',
+  durationMs: 'durationMs',
+  promptTokens: 'promptTokens',
+  completionTokens: 'completionTokens',
+  totalTokens: 'totalTokens',
+  requestMeta: 'requestMeta',
+  errorMessage: 'errorMessage',
+  createdAt: 'createdAt',
+  finishedAt: 'finishedAt'
+} as const
+
+export type PageAgentLlmProxyAuditScalarFieldEnum = (typeof PageAgentLlmProxyAuditScalarFieldEnum)[keyof typeof PageAgentLlmProxyAuditScalarFieldEnum]
 
 
 export const IntentRecallConfigScalarFieldEnum = {

@@ -142,6 +142,10 @@ export function resolveHostToolsForUpcomingHostStep(
     const allowedSet = new Set(allowed);
     return scopedHostTools.filter((tool) => allowedSet.has(tool.name));
   }
+  if (hostStep.hostToolIds?.length) {
+    const allowedIds = new Set(hostStep.hostToolIds);
+    return scopedHostTools.filter((tool) => allowedIds.has(tool.id));
+  }
   return scopedHostTools;
 }
 

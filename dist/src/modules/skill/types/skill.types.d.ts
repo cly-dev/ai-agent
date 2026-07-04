@@ -129,6 +129,7 @@ export declare const SKILL_DETAIL_INCLUDE: {
                             id: true;
                             scope: true;
                             label: true;
+                            updatedAt: true;
                         };
                     };
                 };

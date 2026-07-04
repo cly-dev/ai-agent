@@ -43,6 +43,7 @@ import type {
 import { normalizeAgentMetadataForPersist } from '../../core/tool-engine/tool-decision-input.util';
 import { parseAndNormalizeResponseProfile } from '../../core/tool-engine/tool-response-profile.spec.util';
 import { inferToolSchemasFromSample } from './tool-schema-inference.util';
+import { findWorkflowNodeReferences } from '../../core/workflow/workflow-node-reference-guard.util';
 
 @Injectable()
 export class ToolService {
@@ -165,6 +166,7 @@ export class ToolService {
       },
       include: TOOL_DETAIL_INCLUDE,
     });
+    await this.runtimeCacheInvalidator.invalidateForTools([row.id]);
     return toToolResponse(row);
   }
 
@@ -393,6 +395,7 @@ export class ToolService {
         include: TOOL_DETAIL_INCLUDE,
       });
       updatedTool = toToolResponse(row);
+      await this.runtimeCacheInvalidator.invalidateForTools([id]);
     } else {
       updatedTool = toToolResponse(tool);
     }
@@ -488,13 +491,19 @@ export class ToolService {
   }
 
   async remove(id: number): Promise<ToolResponse> {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
+    await this.assertToolNotReferencedByWorkflowNodes(
+      existing.appClientId,
+      id,
+    );
     try {
       const row = await this.prisma.tool.delete({
         where: { id },
         include: TOOL_DETAIL_INCLUDE,
       });
-      await this.runtimeCacheInvalidator.invalidateForTools([id]);
+      await this.runtimeCacheInvalidator.invalidateForAppClient(
+        existing.appClientId,
+      );
       return toToolResponse(row);
     } catch (error) {
       if (
@@ -513,6 +522,27 @@ export class ToolService {
       }
       throw error;
     }
+  }
+
+  private async assertToolNotReferencedByWorkflowNodes(
+    appClientId: number,
+    toolId: number,
+  ): Promise<void> {
+    const usages = await findWorkflowNodeReferences(this.prisma, {
+      appClientId,
+      kind: 'tool',
+      targetId: toolId,
+    });
+    if (usages.length === 0) {
+      return;
+    }
+    throw new BadRequestException({
+      code: 'TOOL_REFERENCED_BY_WORKFLOW_NODES',
+      message:
+        'Tool is referenced by Workflow nodes and cannot be deleted; deactivate it or update the Workflow first',
+      toolId,
+      references: usages.slice(0, 20),
+    });
   }
 
   private buildWhere(query: QueryToolDto): Prisma.ToolWhereInput {

@@ -32,6 +32,9 @@ export const pageSummarizeExecutor: WorkflowExecutor = {
       clientActionId: runtime.clientActionId ?? null,
       existingFillText: runtime.fillText,
       stepRecorder: runtime.stepRecorder,
+      systemPrompt: runtime.systemPrompt,
+      objectivePrefix: runtime.objectivePrefix,
+      nodeObjective: ctx.def.objective,
     });
     mergePageWorkflowLlmMetrics(runtime.metrics, summarizeResult);
 

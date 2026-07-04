@@ -94,6 +94,7 @@ model User {
   userApps         UserApp[]
   userIntegrations UserIntegration[]
   pageActionRuns   PageActionRun[]
+  pageAgentLlmProxyAudits PageAgentLlmProxyAudit[]
   approvalsInitiated ApprovalRequest[] @relation("ApprovalInitiator")
   approvalsToApprove ApprovalRequest[] @relation("ApprovalApprover")
 }
@@ -152,6 +153,7 @@ model AppClient {
   workflows       Workflow[]
   skills          Skill[]
   approvalRequests ApprovalRequest[]
+  pageAgentLlmProxyAudits PageAgentLlmProxyAudit[]
 }
 
 model LlmModelConfig {
@@ -171,6 +173,38 @@ model LlmModelConfig {
   enabled      Boolean      @default(true)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+
+  pageAgentLlmProxyAudits PageAgentLlmProxyAudit[]
+}
+
+/// C 端 PageAgent LLM 代理调用审计；不保存完整 messages，避免落库页面 DOM / 隐私文本。
+model PageAgentLlmProxyAudit {
+  id               Int      @id @default(autoincrement())
+  appClientId      Int
+  userId           Int
+  modelConfigId    Int?
+  requestedModel   String?
+  provider         String?
+  providerModel    String?
+  status           String   @default("running")
+  upstreamStatus   Int?
+  durationMs       Int?
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  requestMeta      Json?
+  errorMessage     String?  @db.Text
+  createdAt        DateTime @default(now())
+  finishedAt       DateTime?
+
+  appClient   AppClient       @relation(fields: [appClientId], references: [id], onDelete: Cascade)
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  modelConfig LlmModelConfig? @relation(fields: [modelConfigId], references: [id], onDelete: SetNull)
+
+  @@index([appClientId, createdAt])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([modelConfigId])
 }
 
 /** 意图召回（向量 Top-K / bind 上限）；进程内缓存，管理端可改。 */

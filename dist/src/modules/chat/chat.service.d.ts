@@ -1,4 +1,4 @@
-import { type PaginatedResult } from '../../common/pagination';
+import type { PaginatedResult } from '../../common/pagination';
 import type { Message } from '../../../generated/prisma/client';
 import type { Session } from '../../../generated/prisma/client';
 import { SessionContextStore } from '../../core/memory/context/session-context.store';
@@ -15,6 +15,8 @@ import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-
 import { SessionRunCoordinator } from '../../core/session-run/session-run-coordinator.service';
 import type { CancelSessionRunResult } from '../../core/session-run/session-run.types';
 import { PendingWriteConfirmationStore } from './pending-write-confirmation.store';
+import { AgentAutoSelectService } from './agent-auto-select.service';
+import type { AgentChatPageContext } from '../../core/host-bridge';
 export declare class ChatService {
     private readonly prisma;
     private readonly chatEvents;
@@ -26,9 +28,9 @@ export declare class ChatService {
     private readonly messageService;
     private readonly sessionRunCoordinator;
     private readonly pendingWriteConfirmationStore;
-    static readonly DEFAULT_AGENT_ID = 1;
+    private readonly agentAutoSelect;
     private static readonly SESSION_ID_HEX;
-    constructor(prisma: PrismaService, chatEvents: ChatEventsService, sessionContextStore: SessionContextStore, sessionGoaStore: SessionGoaStore, sessionPrepareStore: SessionPrepareStore, sessionPrepareService: SessionPrepareService, runtimeCacheInvalidator: RuntimeCacheInvalidator, messageService: MessageService, sessionRunCoordinator: SessionRunCoordinator, pendingWriteConfirmationStore: PendingWriteConfirmationStore);
+    constructor(prisma: PrismaService, chatEvents: ChatEventsService, sessionContextStore: SessionContextStore, sessionGoaStore: SessionGoaStore, sessionPrepareStore: SessionPrepareStore, sessionPrepareService: SessionPrepareService, runtimeCacheInvalidator: RuntimeCacheInvalidator, messageService: MessageService, sessionRunCoordinator: SessionRunCoordinator, pendingWriteConfirmationStore: PendingWriteConfirmationStore, agentAutoSelect: AgentAutoSelectService);
     cancelSessionRun(sessionId: string, userId: number, appClientId: number, runId?: number): Promise<CancelSessionRunResult>;
     getSessionRunState(sessionId: string, userId: number, appClientId: number): Promise<{
         pendingWriteGate: import("./chat-pending-write-gate.mapper").PendingWriteGatePublicState;
@@ -40,6 +42,11 @@ export declare class ChatService {
     }>;
     create(userId: number, appClientId: number, dto: CreateChatDto): Promise<{
         sessionId: string;
+        agent: {
+            id: number;
+            source: string;
+            reason: string;
+        };
     }>;
     findAllForUser(userId: number, appClientId: number, query: QueryChatListDto): Promise<PaginatedResult<{
         sessionId: string;
@@ -56,9 +63,11 @@ export declare class ChatService {
     }>;
     remove(sessionId: string, userId: number, appClientId: number): Promise<DeleteChatResponseDto>;
     assertSessionOwnedByUser(sessionId: string, userId: number, appClientId: number): Promise<Session>;
-    ensureSessionAgent(session: Session, agentIdOverride: number | undefined, appClientId: number): Promise<Session>;
-    private resolveAgentId;
-    private assertAgentBelongsToApp;
+    ensureSessionAgent(session: Session, agentIdOverride: number | undefined, appClientId: number, input?: {
+        userMessage?: string;
+        pageContext?: AgentChatPageContext | null;
+    }): Promise<Session>;
+    private resolveAgentSelection;
     private resolveSession;
     private createSessionId;
     private normalizeSessionId;

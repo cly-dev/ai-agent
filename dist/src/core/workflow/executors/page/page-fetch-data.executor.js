@@ -17,15 +17,8 @@ exports.pageFetchDataExecutor = {
             appClientId: runtime.appClientId,
             nodeInput,
             pageContext: runtime.pageContext,
-        });
-        runtime.stepRecorder.record({
-            type: 'workflow',
-            name: `${ctx.nodeId}:tool`,
-            detail: {
-                toolId: observation.toolId,
-                toolName: observation.toolName,
-                args: observation.args,
-            },
+            stepRecorder: runtime.stepRecorder,
+            nodeId: ctx.nodeId,
         });
         const outputRef = (0, workflow_node_output_util_1.buildWorkflowNodeOutputRef)(ctx.def.action, ctx.nodeId);
         const nodeOutput = {

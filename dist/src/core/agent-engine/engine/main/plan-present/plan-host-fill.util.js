@@ -95,7 +95,7 @@ function isPlanReasonBeforeHostTool(plan) {
 }
 exports.isPlanReasonBeforeHostTool = isPlanReasonBeforeHostTool;
 function resolveHostToolsForUpcomingHostStep(plan, scopedHostTools) {
-    var _a;
+    var _a, _b;
     const afterFinalize = (0, task_plan_util_1.finalizePlanAfterSummarize)(plan);
     if (!afterFinalize) {
         return [];
@@ -111,6 +111,10 @@ function resolveHostToolsForUpcomingHostStep(plan, scopedHostTools) {
         }
         const allowedSet = new Set(allowed);
         return scopedHostTools.filter((tool) => allowedSet.has(tool.name));
+    }
+    if ((_b = hostStep.hostToolIds) === null || _b === void 0 ? void 0 : _b.length) {
+        const allowedIds = new Set(hostStep.hostToolIds);
+        return scopedHostTools.filter((tool) => allowedIds.has(tool.id));
     }
     return scopedHostTools;
 }

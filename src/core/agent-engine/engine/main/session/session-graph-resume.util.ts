@@ -31,6 +31,8 @@ function mapStoredStep(step: StoredTaskPlan['steps'][number]): TaskPlanStep {
     ...(step.toolRole
       ? { toolRole: step.toolRole as TaskPlanStep['toolRole'] }
       : {}),
+    ...(step.hostToolNames?.length ? { hostToolNames: step.hostToolNames } : {}),
+    ...(step.hostToolIds?.length ? { hostToolIds: step.hostToolIds } : {}),
     ...(step.stopWhen
       ? { stopWhen: step.stopWhen as TaskPlanStep['stopWhen'] }
       : {}),
@@ -75,6 +77,10 @@ function mapFrameToStored(frame: PlanFrame): StoredPlanFrame {
       objective: step.objective,
       ...(step.skillId != null ? { skillId: step.skillId } : {}),
       ...(step.toolRole ? { toolRole: step.toolRole } : {}),
+      ...(step.hostToolNames?.length
+        ? { hostToolNames: step.hostToolNames }
+        : {}),
+      ...(step.hostToolIds?.length ? { hostToolIds: step.hostToolIds } : {}),
       ...(step.stopWhen ? { stopWhen: step.stopWhen } : {}),
     })),
     pendingStepIds: [...frame.pendingStepIds],
@@ -104,6 +110,10 @@ export function toStoredTaskPlan(plan: TaskPlanSnapshot): StoredTaskPlan {
       objective: step.objective,
       ...(step.skillId != null ? { skillId: step.skillId } : {}),
       ...(step.toolRole ? { toolRole: step.toolRole } : {}),
+      ...(step.hostToolNames?.length
+        ? { hostToolNames: step.hostToolNames }
+        : {}),
+      ...(step.hostToolIds?.length ? { hostToolIds: step.hostToolIds } : {}),
       ...(step.stopWhen ? { stopWhen: step.stopWhen } : {}),
     })),
     pendingStepIds: [...plan.pendingStepIds],

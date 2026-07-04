@@ -41,8 +41,12 @@ export class WriteDraftProvenancePublicDto {
   @ApiProperty({ example: 0 })
   draftRetryCount!: number;
 
-  @ApiProperty({ example: 3 })
-  draftRetryMax!: number;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: '重试上限；null 表示不限制',
+    example: null,
+  })
+  draftRetryMax!: number | null;
 
   @ApiProperty({ example: true })
   canRetry!: boolean;

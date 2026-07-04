@@ -16,6 +16,7 @@ import {
 import { resolveTaskPlan } from '../plan/task-plan-llm.util';
 import type { TaskPlanSnapshot } from '../plan/task-plan.types';
 import { summarizeScopedToolsForPlan } from '../plan/task-plan.util';
+import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-tool-decision.types';
 
 export type SkillFrameExpandResult = {
   plan: TaskPlanSnapshot;
@@ -24,6 +25,27 @@ export type SkillFrameExpandResult = {
   scopedToolBundle: ReturnType<SkillService['bindSkillToScopedTools']>['scopedToolBundle'];
   skill: AvailableSkillRow | null;
 };
+
+function filterHostToolSummariesForSkill<
+  T extends { id?: number; name: string; description: string },
+>(hostTools: T[] | undefined, skill: AvailableSkillRow): T[] | undefined {
+  if (!hostTools || (skill.workflowId ?? 0) > 0 || skill.hostToolIds.length === 0) {
+    return hostTools;
+  }
+  const allowedIds = new Set(skill.hostToolIds);
+  return hostTools.filter((tool) => tool.id == null || allowedIds.has(tool.id));
+}
+
+export function filterDecisionHostToolsForSkill(
+  hostTools: HostToolDecisionDefinition[],
+  skill: AvailableSkillRow | null,
+): HostToolDecisionDefinition[] {
+  if (!skill || (skill.workflowId ?? 0) > 0 || skill.hostToolIds.length === 0) {
+    return hostTools;
+  }
+  const allowedIds = new Set(skill.hostToolIds);
+  return hostTools.filter((tool) => allowedIds.has(tool.id));
+}
 
 function getPendingSkillStep(plan: TaskPlanSnapshot) {
   const stepId = plan.pendingStepIds[0] ?? plan.currentStepId;
@@ -103,7 +125,7 @@ export async function expandPendingSkillStepIfNeeded(input: {
   appClientId: number;
   /** 用户指定 skillId 时，展开失败须中止 run，不可静默跳过 skill 步。 */
   enforceRequestedSkill?: boolean;
-  availableHostTools?: Array<{ name: string; description: string }>;
+  availableHostTools?: Array<{ id?: number; name: string; description: string }>;
   scopedHostToolIds?: number[];
 }): Promise<SkillFrameExpandResult> {
   const base = {
@@ -183,8 +205,6 @@ export async function expandPendingSkillStepIfNeeded(input: {
       userMessage: input.plan.originalUserRequest,
       skill,
       goal: input.plan.goal,
-      allowedToolIds: bind.scopedAllowedToolIds,
-      allowedHostToolIds: skill.hostToolIds,
     });
   const innerResolved = await resolveTaskPlan({
     llmService: input.llmService,
@@ -201,7 +221,10 @@ export async function expandPendingSkillStepIfNeeded(input: {
       skillPrompt: skill.prompt,
       skillToolIds: skill.skillToolIds,
       skillHostToolIds: skill.hostToolIds,
-      availableHostTools: input.availableHostTools,
+      availableHostTools: filterHostToolSummariesForSkill(
+        input.availableHostTools,
+        skill,
+      ),
       skillBoundWorkflowPlan,
     },
   });

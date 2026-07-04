@@ -49,8 +49,6 @@ export declare class SkillService {
         userMessage: string;
         skill: Pick<AvailableSkillRow, 'workflowId' | 'workflowVersion' | 'workflowOverrides'>;
         goal?: string;
-        allowedToolIds: number[];
-        allowedHostToolIds: number[];
     }): Promise<TaskPlanSnapshot | null>;
     private queryHostBoundSkills;
     private narrowHostToolIdsToPageScope;

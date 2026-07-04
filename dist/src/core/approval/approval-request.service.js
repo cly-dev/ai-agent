@@ -142,7 +142,6 @@ let ApprovalRequestService = class ApprovalRequestService {
         return updated.count > 0;
     }
     async reserveDraftRetrySlot(input) {
-        const maxRetries = (0, draft_review_1.resolveDraftReviewMaxRetries)();
         return this.prisma.$transaction(async (tx) => {
             var _a;
             const row = await tx.approvalRequest.findFirst({

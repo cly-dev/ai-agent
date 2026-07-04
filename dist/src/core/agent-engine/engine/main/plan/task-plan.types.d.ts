@@ -24,6 +24,7 @@ export type TaskPlanStep = {
     skillId?: number;
     toolRole?: ToolDecisionRole;
     hostToolNames?: string[];
+    hostToolIds?: number[];
     objective: string;
     stopWhen?: TaskStepStopWhen;
 };
@@ -45,6 +46,7 @@ export type TaskPlanSnapshot = {
     autoSelectedSkillId?: number | null;
 };
 export type PlanHostToolSummary = {
+    id?: number;
     name: string;
     description: string;
 };

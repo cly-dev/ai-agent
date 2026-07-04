@@ -7,6 +7,6 @@ exports.HOST_PAGE_DETAIL_INCLUDE = {
 };
 exports.HOST_TOOL_DETAIL_INCLUDE = {
     appClient: { select: { id: true, name: true, dsn: true } },
-    hostPage: { select: { id: true, scope: true, label: true } },
+    hostPage: { select: { id: true, scope: true, label: true, updatedAt: true } },
 };
 //# sourceMappingURL=host-tool.types.js.map

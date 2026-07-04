@@ -32,6 +32,7 @@ function mapAwaitUserConfirmNode(step) {
     return Object.assign(Object.assign({}, baseNodeFromStep(Object.assign(Object.assign({}, step), { id: `${step.id}_await`, objective: 'Wait for user confirmation before executing write.' }))), { action: 'await_user_confirm', input: { confirmKind: 'mutation' } });
 }
 function mapPlanStepToWorkflowNodes(step, constraints = []) {
+    var _a, _b;
     if ((0, task_plan_util_1.isPlanComposeWriteStep)(step)) {
         return [
             Object.assign(Object.assign({}, baseNodeFromStep(step)), { action: 'compose_mutation', input: {} }),
@@ -71,7 +72,7 @@ function mapPlanStepToWorkflowNodes(step, constraints = []) {
             ];
         case 'host_tool':
             return [
-                Object.assign(Object.assign({}, baseNodeFromStep(step)), { action: 'generate_and_push', objective: step.objective, input: { hostToolId: 0 } }),
+                Object.assign(Object.assign({}, baseNodeFromStep(step)), { action: 'generate_and_push', objective: step.objective, input: { hostToolId: (_b = (_a = step.hostToolIds) === null || _a === void 0 ? void 0 : _a[0]) !== null && _b !== void 0 ? _b : 0 } }),
             ];
         case 'summarize':
             return [

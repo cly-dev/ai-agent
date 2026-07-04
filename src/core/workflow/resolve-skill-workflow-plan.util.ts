@@ -19,10 +19,12 @@ export async function tryBuildTaskPlanFromSkillWorkflow(
     userMessage: string;
     binding: SkillWorkflowBinding;
     goal?: string;
-    allowedToolIds: number[];
-    allowedHostToolIds: number[];
+    allowedToolIds?: number[];
+    allowedHostToolIds?: number[];
   },
 ): Promise<TaskPlanSnapshot | null> {
+  const hasScope =
+    input.allowedToolIds !== undefined || input.allowedHostToolIds !== undefined;
   const loaded = await loadWorkflowForRun(prisma, {
     workflowId: input.binding.workflowId,
     appClientId: input.appClientId,
@@ -30,10 +32,12 @@ export async function tryBuildTaskPlanFromSkillWorkflow(
     workflowOverrides: parseWorkflowOverridesJson(
       input.binding.workflowOverrides,
     ),
-    scope: {
-      allowedToolIds: input.allowedToolIds,
-      allowedHostToolIds: input.allowedHostToolIds,
-    },
+    scope: hasScope
+      ? {
+          allowedToolIds: input.allowedToolIds ?? [],
+          allowedHostToolIds: input.allowedHostToolIds ?? [],
+        }
+      : undefined,
   });
   if (!loaded) {
     return null;

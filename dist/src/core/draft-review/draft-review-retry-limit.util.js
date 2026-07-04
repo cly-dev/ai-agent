@@ -5,6 +5,14 @@ const draft_review_config_util_1 = require("./draft-review-config.util");
 function resolveDraftRetryBudget(draftRetryCount) {
     const used = Math.max(0, draftRetryCount !== null && draftRetryCount !== void 0 ? draftRetryCount : 0);
     const max = (0, draft_review_config_util_1.resolveDraftReviewMaxRetries)();
+    if (max === null) {
+        return {
+            used,
+            max: null,
+            remaining: null,
+            canRetry: true,
+        };
+    }
     const remaining = Math.max(0, max - used);
     return {
         used,

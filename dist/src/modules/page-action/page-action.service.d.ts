@@ -28,5 +28,6 @@ export declare class PageActionService {
     private assertPromptLimits;
     private findEntityOrThrow;
     private assertAppClientExists;
+    private assertPageActionHostToolBinding;
     private assertHostToolForApp;
 }

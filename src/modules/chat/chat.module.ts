@@ -13,6 +13,8 @@ import { SessionPrepareStore } from './session-prepare.store';
 import { SessionRuntimeCacheHooksService } from './session-runtime-cache-hooks.service';
 import { ChatEventsModule } from './chat-events.module';
 import { ChatSessionRunBridgeModule } from './chat-session-run-bridge.module';
+import { AgentAutoSelectService } from './agent-auto-select.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Module({
   imports: [
@@ -31,6 +33,11 @@ import { ChatSessionRunBridgeModule } from './chat-session-run-bridge.module';
     SessionPrepareStore,
     SessionPrepareService,
     SessionRuntimeCacheHooksService,
+    {
+      provide: AgentAutoSelectService,
+      useFactory: (prisma: PrismaService) => new AgentAutoSelectService(prisma),
+      inject: [PrismaService],
+    },
   ],
   controllers: [ChatController],
   exports: [

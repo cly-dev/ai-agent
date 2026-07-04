@@ -14,9 +14,10 @@ function asTaskDeliverable(value) {
     return 'answer';
 }
 function mapStoredStep(step) {
-    return Object.assign(Object.assign(Object.assign({ id: step.id, phase: step.phase, kind: step.kind, objective: step.objective }, (step.skillId != null ? { skillId: step.skillId } : {})), (step.toolRole
+    var _a, _b;
+    return Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ id: step.id, phase: step.phase, kind: step.kind, objective: step.objective }, (step.skillId != null ? { skillId: step.skillId } : {})), (step.toolRole
         ? { toolRole: step.toolRole }
-        : {})), (step.stopWhen
+        : {})), (((_a = step.hostToolNames) === null || _a === void 0 ? void 0 : _a.length) ? { hostToolNames: step.hostToolNames } : {})), (((_b = step.hostToolIds) === null || _b === void 0 ? void 0 : _b.length) ? { hostToolIds: step.hostToolIds } : {})), (step.stopWhen
         ? { stopWhen: step.stopWhen }
         : {}));
 }
@@ -51,7 +52,12 @@ function mapFrameToStored(frame) {
         skillId: frame.skillId,
         skillName: frame.skillName,
         source: frame.source,
-        steps: frame.steps.map((step) => (Object.assign(Object.assign(Object.assign({ id: step.id, phase: step.phase, kind: step.kind, objective: step.objective }, (step.skillId != null ? { skillId: step.skillId } : {})), (step.toolRole ? { toolRole: step.toolRole } : {})), (step.stopWhen ? { stopWhen: step.stopWhen } : {})))),
+        steps: frame.steps.map((step) => {
+            var _a, _b;
+            return (Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ id: step.id, phase: step.phase, kind: step.kind, objective: step.objective }, (step.skillId != null ? { skillId: step.skillId } : {})), (step.toolRole ? { toolRole: step.toolRole } : {})), (((_a = step.hostToolNames) === null || _a === void 0 ? void 0 : _a.length)
+                ? { hostToolNames: step.hostToolNames }
+                : {})), (((_b = step.hostToolIds) === null || _b === void 0 ? void 0 : _b.length) ? { hostToolIds: step.hostToolIds } : {})), (step.stopWhen ? { stopWhen: step.stopWhen } : {})));
+        }),
         pendingStepIds: [...frame.pendingStepIds],
         completedStepIds: [...frame.completedStepIds],
         taskPhase: frame.taskPhase,
@@ -65,7 +71,12 @@ function mapFrameToStored(frame) {
     };
 }
 function toStoredTaskPlan(plan) {
-    return Object.assign(Object.assign({ source: plan.source, originalUserRequest: plan.originalUserRequest, goal: plan.goal, deliverable: plan.deliverable, constraints: [...plan.constraints], steps: plan.steps.map((step) => (Object.assign(Object.assign(Object.assign({ id: step.id, phase: step.phase, kind: step.kind, objective: step.objective }, (step.skillId != null ? { skillId: step.skillId } : {})), (step.toolRole ? { toolRole: step.toolRole } : {})), (step.stopWhen ? { stopWhen: step.stopWhen } : {})))), pendingStepIds: [...plan.pendingStepIds], completedStepIds: [...plan.completedStepIds], taskPhase: plan.taskPhase, currentObjective: plan.currentObjective, currentStepId: plan.currentStepId, frames: plan.frames.map(mapFrameToStored), activeFrameIndex: plan.activeFrameIndex }, (plan.outerSkillSelectMethod
+    return Object.assign(Object.assign({ source: plan.source, originalUserRequest: plan.originalUserRequest, goal: plan.goal, deliverable: plan.deliverable, constraints: [...plan.constraints], steps: plan.steps.map((step) => {
+            var _a, _b;
+            return (Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ id: step.id, phase: step.phase, kind: step.kind, objective: step.objective }, (step.skillId != null ? { skillId: step.skillId } : {})), (step.toolRole ? { toolRole: step.toolRole } : {})), (((_a = step.hostToolNames) === null || _a === void 0 ? void 0 : _a.length)
+                ? { hostToolNames: step.hostToolNames }
+                : {})), (((_b = step.hostToolIds) === null || _b === void 0 ? void 0 : _b.length) ? { hostToolIds: step.hostToolIds } : {})), (step.stopWhen ? { stopWhen: step.stopWhen } : {})));
+        }), pendingStepIds: [...plan.pendingStepIds], completedStepIds: [...plan.completedStepIds], taskPhase: plan.taskPhase, currentObjective: plan.currentObjective, currentStepId: plan.currentStepId, frames: plan.frames.map(mapFrameToStored), activeFrameIndex: plan.activeFrameIndex }, (plan.outerSkillSelectMethod
         ? { outerSkillSelectMethod: plan.outerSkillSelectMethod }
         : {})), (plan.autoSelectedSkillId !== undefined
         ? { autoSelectedSkillId: plan.autoSelectedSkillId }

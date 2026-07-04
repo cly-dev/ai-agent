@@ -5,6 +5,7 @@ import type { AvailableSkillRow } from '../../../../skill/skill.types';
 import type { ToolBuildContext } from '../../../../tool-engine/tool-engine.service';
 import type { AgentEngineTool } from '../types/agent-engine.types';
 import type { TaskPlanSnapshot } from '../plan/task-plan.types';
+import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-tool-decision.types';
 export type SkillFrameExpandResult = {
     plan: TaskPlanSnapshot;
     scopedTools: AgentEngineTool[];
@@ -12,6 +13,7 @@ export type SkillFrameExpandResult = {
     scopedToolBundle: ReturnType<SkillService['bindSkillToScopedTools']>['scopedToolBundle'];
     skill: AvailableSkillRow | null;
 };
+export declare function filterDecisionHostToolsForSkill(hostTools: HostToolDecisionDefinition[], skill: AvailableSkillRow | null): HostToolDecisionDefinition[];
 export declare function expandPendingSkillStepIfNeeded(input: {
     plan: TaskPlanSnapshot;
     scopedTools: AgentEngineTool[];
@@ -28,6 +30,7 @@ export declare function expandPendingSkillStepIfNeeded(input: {
     appClientId: number;
     enforceRequestedSkill?: boolean;
     availableHostTools?: Array<{
+        id?: number;
         name: string;
         description: string;
     }>;

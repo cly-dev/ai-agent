@@ -52,9 +52,13 @@ let MessageService = MessageService_1 = class MessageService {
         const isWriteGateAction = dto.role === 'user' &&
             writeGateDecision != null &&
             !String((_b = dto.content) !== null && _b !== void 0 ? _b : '').trim();
+        const pageContext = (0, host_bridge_1.parsePageContextFromMessageFields)(dto);
         let boundSession = session;
         if (dto.role === 'user') {
-            boundSession = await this.chatService.ensureSessionAgent(session, dto.agentId, appClientId);
+            boundSession = await this.chatService.ensureSessionAgent(session, dto.agentId, appClientId, {
+                userMessage: dto.content,
+                pageContext,
+            });
             if (dto.skillId != null && !writeGateDecision) {
                 await this.agentEngine.assertRequestedSkillRunnable({
                     userId,
@@ -65,7 +69,6 @@ let MessageService = MessageService_1 = class MessageService {
                 });
             }
         }
-        const pageContext = (0, host_bridge_1.parsePageContextFromMessageFields)(dto);
         let messageContent = isWriteGateAction
             ? null
             : this.normalizeMessageContentForStorage(dto.content);

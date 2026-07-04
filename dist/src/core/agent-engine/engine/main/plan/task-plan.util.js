@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildDeterministicMutationPlanSnapshot = exports.buildMutationSteps = exports.advancePlanAfterStepComplete = exports.isCompliantMutationPlan = exports.isPlanPresentSummarizeStep = exports.isPlanWriteExecutionStepInMutationFlow = exports.isPlanWriteExecutionStep = exports.isPlanWriteFallbackStep = exports.isComposeMutationParameterStep = exports.isPlanComposeWriteStep = exports.PLAN_DRAFT_STEP_ID = exports.WORKFLOW_PRESENT_MUTATION_STEP_ID = exports.PLAN_WRITE_STEP_ID = exports.PLAN_PRESENT_STEP_ID = exports.PLAN_COMPOSE_WRITE_STEP_ID = exports.resolveMutationWriteToolsForPresent = exports.isPlanWriteToolStep = exports.isPlanWriteToolRole = exports.filterScopedToolsForPlanStep = exports.resolveScopedToolRoleForPlan = exports.countConsecutiveLlmRoundsWithoutToolCalls = exports.isPlanToolStepSatisfiedByObservations = exports.listBusinessFieldsForPlanGatherStep = exports.isPendingPlanAnswerStep = exports.getPendingPlanToolStep = exports.isPlanTextGenerationStep = exports.isPlanStepBlockingToolScope = exports.isPlanWorkflowGateStep = exports.isPlanAwaitUserConfirmStep = exports.resolvePlanStepExecutionRoute = exports.getPendingPlanHostToolStep = exports.resolveEffectivePlanStepId = exports.resolveEffectivePlanStep = exports.getPendingPlanStep = exports.resolvePlanExecutionStep = exports.workflowNodeActionForPlanStepId = exports.planExecutionContextFromState = exports.summarizeScopedToolsForPlan = exports.buildTaskPlan = exports.buildRequestedSkillOuterPlanResult = exports.buildPageContextEntityReadPlanResult = exports.buildPageContextInlinePlanResult = exports.buildChitchatPlanResult = exports.planHasChitchatConstraint = exports.resolveOuterSkillPlanDeliverable = exports.buildPlanSnapshot = exports.applyOuterPlanSelectMetadata = exports.alignDeliverableWithScopedTools = exports.PLAN_TOOL_STEP_MAX_SKIPS_WITHOUT_CALLS = exports.parseSkillPlanConfig = void 0;
-exports.buildDecisionUserFrame = exports.formatPlanContextForSummarize = exports.resolvePlanSummarizePublishMode = exports.isIntermediatePlanTextGenerationStep = exports.resolveSummarizeUserMessageForPlan = exports.buildPlanSummarizeObservation = exports.completedGatherStepsSatisfiedInObservations = exports.observationsForPlanSummarize = exports.filterObservationsForPlanSummarize = exports.resolveTaskPlanInitialAdvance = exports.shouldContinuePlanAfterSummarize = exports.finalizePlanAfterSummarize = exports.resolveTaskPlanAdvance = exports.resolveTaskPlanAdvanceWhenStepSatisfied = exports.resolveTaskPlanAfterTools = exports.isTerminalEmptyToolRound = exports.toolCallMatchesPendingPlanToolRole = exports.shouldReplacePlanWithMutationTemplate = exports.scopedToolsIncludeWrite = exports.buildDeterministicMutationPlanResult = exports.shouldUseDeterministicMutationPlan = void 0;
+exports.buildDecisionUserFrame = exports.formatPlanContextForSummarize = exports.resolvePlanSummarizePublishMode = exports.isIntermediatePlanTextGenerationStep = exports.resolveSummarizeUserMessageForPlan = exports.buildPlanSummarizeObservation = exports.completedGatherStepsSatisfiedInObservations = exports.observationsForPlanSummarize = exports.filterObservationsForPlanSummarize = exports.resolveTaskPlanInitialAdvance = exports.shouldContinuePlanAfterSummarize = exports.finalizePlanAfterSummarize = exports.resolveTaskPlanAdvance = exports.resolveTaskPlanAdvanceWhenStepSatisfied = exports.resolveTaskPlanAfterTools = exports.isTerminalEmptyToolRound = exports.toolCallMatchesPendingPlanToolRole = exports.shouldReplacePlanWithMutationTemplate = exports.scopedToolsIncludeWrite = exports.buildHostToolWritePlanResult = exports.buildDeterministicMutationPlanResult = exports.shouldUseDeterministicMutationPlan = void 0;
 const tool_agent_metadata_util_1 = require("../../../../tool-engine/tool-agent-metadata.util");
 const skill_runnable_util_1 = require("../../../../skill/skill-runnable.util");
 const tool_observation_util_1 = require("../../tool/tool-observation.util");
@@ -53,6 +53,13 @@ function readStringArray(raw) {
         .filter(Boolean);
     return values.length > 0 ? values : undefined;
 }
+function readPositiveIntArray(raw) {
+    if (!Array.isArray(raw)) {
+        return undefined;
+    }
+    const values = raw.filter((item) => Number.isInteger(item) && item > 0);
+    return values.length > 0 ? values : undefined;
+}
 function parseWorkflowSteps(raw) {
     if (!Array.isArray(raw) || raw.length === 0) {
         return null;
@@ -74,8 +81,9 @@ function parseWorkflowSteps(raw) {
         }
         const toolRole = readString(item.toolRole);
         const hostToolNames = readStringArray(item.hostToolNames);
+        const hostToolIds = readPositiveIntArray(item.hostToolIds);
         const stopWhen = readString(item.stopWhen);
-        steps.push(Object.assign(Object.assign(Object.assign(Object.assign({ id, phase: phase, kind: kind }, (toolRole ? { toolRole: toolRole } : {})), (hostToolNames ? { hostToolNames } : {})), { objective }), (stopWhen
+        steps.push(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ id, phase: phase, kind: kind }, (toolRole ? { toolRole: toolRole } : {})), (hostToolNames ? { hostToolNames } : {})), (hostToolIds ? { hostToolIds } : {})), { objective }), (stopWhen
             ? { stopWhen: stopWhen }
             : {})));
     }
@@ -1085,6 +1093,28 @@ function buildDeterministicMutationPlanResult(input) {
     };
 }
 exports.buildDeterministicMutationPlanResult = buildDeterministicMutationPlanResult;
+function buildHostToolWritePlanResult(input) {
+    const userMessage = input.userMessage.trim();
+    const hostToolNames = input.availableHostTools
+        .map((tool) => tool.name.trim())
+        .filter(Boolean);
+    const plan = buildPlanSnapshot({
+        source: 'template',
+        userMessage,
+        goal: (0, plan_goal_util_1.resolvePlanGoal)({ userMessage }),
+        deliverable: 'answer',
+        steps: [
+            Object.assign(Object.assign({ id: 'host_operation', phase: 'mutate', kind: 'host_tool' }, (hostToolNames.length > 0 ? { hostToolNames } : {})), { objective: 'Use a browser-side host tool to perform the requested page task without server-side HTTP tools.', stopWhen: 'always' }),
+        ],
+        constraints: ['host_write_channel'],
+    });
+    return {
+        plan,
+        method: 'template',
+        llmFallbackReason: 'host_write_contract',
+    };
+}
+exports.buildHostToolWritePlanResult = buildHostToolWritePlanResult;
 function scopedToolsIncludeWrite(scopedToolSummaries) {
     return summarizeScopedRoles(scopedToolSummaries).hasWrite;
 }

@@ -39,6 +39,7 @@ export declare class ToolService {
     private resolveAgentMetadataForPersist;
     private resolveAgentMetadataForToolPersist;
     remove(id: number): Promise<ToolResponse>;
+    private assertToolNotReferencedByWorkflowNodes;
     private buildWhere;
     private buildOrderBy;
     private assertAppClientExists;

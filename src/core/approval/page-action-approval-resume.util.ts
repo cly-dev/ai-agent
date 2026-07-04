@@ -18,9 +18,11 @@ import type { ToolEngineService } from '../tool-engine/tool-engine.service';
 import type { Response } from 'express';
 import {
   buildRetryUserMessage,
+  resolveWriteDraftFromApprovalSnapshot,
   rewindWorkflowForDraftRetry,
   stripNodeOutputsForRetry,
 } from '../draft-review';
+import { buildWriteDraftStepDetail } from '../page-action/page-action-run-audit.util';
 import type { DraftReviewDecision } from '../draft-review';
 import { resolveApprovalSnapshotForDecision } from './validate-approval-edited-pending-write.util';
 
@@ -214,10 +216,14 @@ export async function retryPageActionFromApprovalSnapshot(input: {
   });
 
   const recorder = PageActionRunStepRecorder.fromJson(run.steps);
+  const previousWriteDraft = resolveWriteDraftFromApprovalSnapshot(snapshot);
   recorder.recordLifecycle('approval_retry_requested', {
     approvalRequestId: input.approvalRequestId,
     retryInstruction: input.retryInstruction,
     retryNodeId: rewind.retryNodeId,
+    clearedOutputKeys: rewind.clearedOutputKeys,
+    draftRetryCount: snapshot.draftRetryCount ?? 0,
+    previousWriteDraft: buildWriteDraftStepDetail(previousWriteDraft),
   });
 
   const loadResult = await loadWorkflowForRunDetailed(input.prisma, {
@@ -261,7 +267,6 @@ export async function retryPageActionFromApprovalSnapshot(input: {
     resumeFrom: {
       workflowRun: retrySnapshot.workflowRun,
       nodeOutputs: retrySnapshot.workflowNodeOutputs,
-      pendingWrite: retrySnapshot.pendingWrite,
       advancePastAwait: false,
     },
   });

@@ -11,8 +11,12 @@ export class PendingWriteGatePublicStateDto {
   @ApiProperty({ description: '已消耗的重试次数' })
   draftRetryCount!: number;
 
-  @ApiProperty({ description: '重试上限' })
-  draftRetryMax!: number;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: '重试上限；null 表示不限制',
+    example: null,
+  })
+  draftRetryMax!: number | null;
 
   @ApiProperty({ description: '是否仍可发起 retry' })
   canRetry!: boolean;

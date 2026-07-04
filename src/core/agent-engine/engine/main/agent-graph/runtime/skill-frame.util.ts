@@ -1,4 +1,7 @@
-import { expandPendingSkillStepIfNeeded } from '../../skill/skill-frame-expand.util';
+import {
+  expandPendingSkillStepIfNeeded,
+  filterDecisionHostToolsForSkill,
+} from '../../skill/skill-frame-expand.util';
 import { resolveSkillContextFromPlan } from '../../plan/plan-stack.util';
 import { enrichPlanStepsWithHostTools } from '../../host-tool/host-tool-plan.util';
 import { skipPendingHostToolStepsByContract } from '../../host-tool/host-tool-llm.util';
@@ -60,6 +63,7 @@ export function createAgentGraphSkillFrameHelpers(
       skillIdForHost,
     );
     const availableHostTools = hostBundle.scopedHostTools.map((tool) => ({
+      id: tool.id,
       name: tool.name,
       description: tool.description,
     }));
@@ -89,16 +93,31 @@ export function createAgentGraphSkillFrameHelpers(
       availableHostTools,
       scopedHostToolIds: hostBundle.scopedHostTools.map((tool) => tool.id),
     });
+    const effectiveHostBundle =
+      expanded.skill?.workflowId != null && expanded.skill.workflowId > 0
+        ? await runHelpers.loadScopedHostTools(ctx.input, pageContext, null)
+        : hostBundle;
+    const narrowedHostTools = filterDecisionHostToolsForSkill(
+      effectiveHostBundle.scopedHostTools,
+      expanded.skill,
+    );
+    const narrowedHostToolNames = new Set(
+      narrowedHostTools.map((tool) => tool.name),
+    );
+    const narrowedHostLangChainTools =
+      effectiveHostBundle.scopedHostLangChainTools.filter((tool) =>
+        narrowedHostToolNames.has(tool.name),
+      );
     const skillCtx = resolveSkillContextFromPlan(expanded.plan);
     let taskPlan = expanded.plan;
     let contractSkippedObservations: Array<{
       name: string;
       output: Record<string, unknown>;
     }> = [];
-    if (hostBundle.scopedHostTools.length > 0) {
+    if (narrowedHostTools.length > 0) {
       const enriched = enrichPlanStepsWithHostTools(
         expanded.plan,
-        hostBundle.scopedHostTools,
+        narrowedHostTools,
       );
       taskPlan = enriched.plan;
       if (enriched.prunedHostToolStepIds.length > 0) {
@@ -139,8 +158,8 @@ export function createAgentGraphSkillFrameHelpers(
       scopedLangChainTools: expanded.scopedToolBundle.tools,
       scopedToolBundle: expanded.scopedToolBundle,
       scopedAllowedToolIds: expanded.scopedAllowedToolIds,
-      scopedHostTools: hostBundle.scopedHostTools,
-      scopedHostLangChainTools: hostBundle.scopedHostLangChainTools,
+      scopedHostTools: narrowedHostTools,
+      scopedHostLangChainTools: narrowedHostLangChainTools,
       skillApplied: skillCtx.skillApplied,
       activeSkillId: skillCtx.activeSkillId,
       activeSkillPrompt: skillCtx.activeSkillPrompt,

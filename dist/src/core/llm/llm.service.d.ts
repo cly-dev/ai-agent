@@ -1,5 +1,6 @@
 import { OnModuleInit } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
+import { type LlmModelConfig } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LlmModelConfigCacheStore } from './llm-model-config-cache.store';
 import { PromptBudgetService } from './prompt-budget/prompt-budget.service';
@@ -13,14 +14,13 @@ export declare class LlmService implements OnModuleInit {
     private static readonly DEFAULT_OUTPUT_MAX_TOKENS;
     private static readonly INVOCATION_TOKEN_BUFFER;
     private static readonly LOCAL_EMBED_BATCH_SIZE;
-    private cachedChatConfig;
-    private cachedEmbeddingConfig;
     private localEmbeddingRuntime;
     constructor(prisma: PrismaService, modelConfigCache: LlmModelConfigCacheStore, promptBudgetService: PromptBudgetService);
     onModuleInit(): Promise<void>;
     refreshConfigCache(): Promise<void>;
     chat(input: LlmChatInput): Promise<LlmChatResult>;
     streamChat(input: LlmChatInput, handlers?: LlmStreamHandlers): Promise<LlmChatResult>;
+    getActiveChatModelConfig(): Promise<LlmModelConfig>;
     getContextLength(): Promise<number | null>;
     getResolvedMaxTokens(): Promise<number>;
     resolveInvocationMaxTokens(messages: LlmChatMessage[]): Promise<number>;

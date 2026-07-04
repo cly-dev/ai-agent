@@ -47,7 +47,7 @@ export async function resolveSkillWorkflowForInit(
   input: {
     skillId: number;
     appClientId: number;
-    scope: {
+    scope?: {
       allowedToolIds: number[];
       allowedHostToolIds: number[];
     };

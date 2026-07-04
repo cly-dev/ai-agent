@@ -17,7 +17,8 @@
 | `fetch_data` | `toolId` 或 `definitionKey` 二选一 | **保存时 `toolId` 必填**（不再接受仅 definitionKey） |
 | `tools[]` / `hostTools[]` | 与 nodes 并列的主配置 | **可选**；仅用于给已在 nodes 中出现的 ID 标记 `isRequired` |
 | Skill + Workflow | 只绑 workflowId | **workflow-only**：只绑 `workflowId` + `prompt` 即可；SkillTool / SkillHostTool **可选**（叠加层时才须覆盖节点引用） |
-| PageAction + Workflow | 只绑 workflowId + hostToolId | **`hostToolId` 可省略**；Workflow 须含 `generate_and_push`；invoke 时从 push 节点推导；若填写则须与节点一致 |
+| PageAction + HostTool | PageAction 内联 `hostTool` 自动创建 | **先创建/选择已有 HostTool，再绑定 `hostToolId`** |
+| PageAction + Workflow | 只绑 workflowId + hostToolId | **`hostToolId` 可省略**；分析类 Workflow 可不含 push 节点；push 执行期优先用节点 HostTool，必要时用 PageAction.hostToolId 兜底 |
 | PageAction invoke | workflow 加载失败可能静默走单步 | 绑了 `workflowId` 时加载失败 → **SSE failed**，不再回退单步 |
 | Workflow 创建 | 必须手拖 4～6 个原子节点 | **推荐 Preset**：`preset` + `presetConfig`，服务端展开为 `nodes[]` 再保存 |
 
@@ -292,7 +293,7 @@ type CreateWorkflowBody = {
 | 字段 | 说明 |
 |------|------|
 | `actionKey` | C 端 invoke 用 |
-| `hostToolId` | 流式填入目标；**无 `workflowId` 时必填**（可内联自动创建）；有 Workflow 时可省略 |
+| `hostToolId` | 流式填入目标；**无 `workflowId` 时必填**，且必须是已有 HostTool；有 Workflow 时可省略 |
 | `systemPrompt` | 全局角色提示 |
 | `pageScope` | 与 `pageContext.page` 对齐 |
 | `workflowId` | 可选；有则走多步 Workflow runner |
@@ -300,38 +301,34 @@ type CreateWorkflowBody = {
 
 ### 5.2 校验规则
 
-绑 `workflowId` 时：
+保存 PageAction 时：
 
-1. Workflow `profile` 须为 `page_action` 或 `shared`；
-2. Workflow **至少有一个** `generate_and_push` 节点（含 `input.hostToolId`）；
-3. 若填写了 **`PageAction.hostToolId`**，须与某 push 节点的 `input.hostToolId` 一致；
-4. **未填写 `hostToolId`** 时允许保存；C 端 invoke 从 push 节点推导 HostTool。
+1. 不再接收内联 `hostTool` 对象；只接收已有 HostTool 的 `hostToolId`；
+2. 未绑定 `workflowId` 时，`hostToolId` 必填；
+3. 绑定 `workflowId` 时，`hostToolId` 可省略，保存期只校验 Workflow 存在且启用；
+4. 若填写了 `hostToolId`，服务端校验它属于同一个 AppClient；
+5. C 端执行 `generate_and_push` 时，优先使用节点 `input.hostToolId`，缺失时可用 PageAction.hostToolId 兜底。
 
 **UI 建议**：
 
-- 选 Workflow 后，读取 push 节点的 `hostToolId` 作为**只读预览**（可一键填入，非必填）；
-- 若 Workflow 无 push 节点，禁用保存并提示。
+- PageAction 页不要再内嵌 HostTool 创建表单；需要新建时跳转或弹出 HostTool 创建流程；
+- 选 Workflow 后，HostTool 下拉降级为可选，可展示 push 节点 HostTool 作为只读预览；
+- 分析类 Workflow 没有 push 节点也可保存，不要在前端强制拦截。
 
 ### 5.3 错误码
 
 ```json
 {
-  "code": "PAGE_ACTION_WORKFLOW_BINDING_INCOMPATIBLE",
-  "workflowId": 2,
-  "issues": [
-    {
-      "path": "hostToolId",
-      "code": "page_action_host_tool_not_in_workflow_nodes",
-      "message": "PageAction.hostToolId=3 must match ..."
-    }
-  ]
+  "code": "PAGE_ACTION_HOST_TOOL_REQUIRED",
+  "message": "hostToolId is required when workflowId is not set; create HostTool first, then bind by id"
 }
 ```
 
 | code | 含义 |
 |------|------|
-| `missing_generate_and_push` | Workflow 无 push 节点 |
-| `page_action_host_tool_not_in_workflow_nodes` | hostToolId 与 push 节点不一致 |
+| `PAGE_ACTION_HOST_TOOL_REQUIRED` | 未绑定 Workflow 且无 hostToolId |
+| `HOST_TOOL_NOT_FOUND` | hostToolId 不存在或不属于当前 AppClient |
+| `PAGE_ACTION_PUSH_HOST_TOOL_MISSING` | 执行 push 节点时节点和 PageAction 都没有可用 HostTool |
 
 ---
 
@@ -342,7 +339,7 @@ type CreateWorkflowBody = {
 | code | 说明 |
 |------|------|
 | `WORKFLOW_CHANGE_BREAKS_SKILL_REFERENCES` | 有 SkillTool 叠加层的 Skill 不再覆盖节点 |
-| `WORKFLOW_CHANGE_BREAKS_PAGE_ACTION_REFERENCES` | PageAction 填写的 hostToolId 与 push 节点不一致 |
+| `WORKFLOW_CHANGE_BREAKS_PAGE_ACTION_REFERENCES` | 旧版 PageAction 强对齐错误码；当前保存期不再因 push 节点 HostTool 不一致失败 |
 
 **UI 建议**：Workflow 保存失败时展示 `skillId` / `pageActionId` 与 `issues`，并提供跳转链接。
 
@@ -406,7 +403,7 @@ type CreateWorkflowBody = {
 - [ ] **移除** `fetch_data` 表单的 `definitionKey` 选项（保存不再支持）
 - [ ] **保留**（可选）高级区：`isRequired` 勾选，提交时合成 `tools[]` / `hostTools[]`
 - [ ] Skill 页：workflow-only 默认只绑 workflowId；叠加层模式 diff SkillTool/SkillHostTool
-- [ ] PageAction 页：绑 Workflow 后展示 push hostTool 预览；hostToolId 可选
+- [ ] PageAction 页：移除内联 HostTool 创建；无 Workflow 时强制选择已有 hostToolId，绑 Workflow 后 hostToolId 可选
 - [ ] Workflow 编辑页：保存失败时解析 `WORKFLOW_CHANGE_BREAKS_*` 并跳转引用方
 - [ ] PageAction C 端：处理 `WORKFLOW_LOAD_*` 失败，不再依赖「无 workflow 单步」兜底
 
@@ -464,7 +461,7 @@ export type ApiValidationError = {
 不必。**workflow-only**：只绑 `workflowId` 即可，权限由 Workflow 节点 + 用户 Agent 角色决定。若额外配置 SkillTool 作为 ReAct 收窄，则须覆盖 Workflow 节点引用。
 
 **Q：PageAction 的 hostToolId 和 Workflow push 节点必须相同吗？**  
-绑 Workflow 时 **`hostToolId` 可省略**，运行时从 push 节点推导。若 B 端填写了 `hostToolId`，保存时会校验与 push 节点一致。
+不要求相同。绑 Workflow 时 **`hostToolId` 可省略**；push 执行期优先使用节点 `input.hostToolId`，缺失时可用 PageAction.hostToolId 兜底。若 B 端填写了 `hostToolId`，保存时只校验它属于同一个 AppClient。
 
 **Q：Chat 里 Skill 绑了 Workflow 但用户无节点 tool 权限会怎样？**  
 发消息前返回 `SKILL_TOOLS_EMPTY`。`workflow_init` scope 不对时仍可能回退 `plan_compile`。

@@ -23,8 +23,8 @@ export declare class SessionController {
     } & {
         id: string;
         createdAt: Date;
-        userId: number;
         appClientId: number;
+        userId: number;
         agentId: number;
         title: string;
     }>;
@@ -46,8 +46,8 @@ export declare class SessionController {
     } & {
         id: string;
         createdAt: Date;
-        userId: number;
         appClientId: number;
+        userId: number;
         agentId: number;
         title: string;
     }>>;
@@ -69,8 +69,8 @@ export declare class SessionController {
     } & {
         id: string;
         createdAt: Date;
-        userId: number;
         appClientId: number;
+        userId: number;
         agentId: number;
         title: string;
     }>;
@@ -92,8 +92,8 @@ export declare class SessionController {
     } & {
         id: string;
         createdAt: Date;
-        userId: number;
         appClientId: number;
+        userId: number;
         agentId: number;
         title: string;
     }>;
@@ -115,8 +115,8 @@ export declare class SessionController {
     } & {
         id: string;
         createdAt: Date;
-        userId: number;
         appClientId: number;
+        userId: number;
         agentId: number;
         title: string;
     }>;

@@ -29,6 +29,7 @@ import {
 } from '../../../turn/turn-respond.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import { maybeTagWorkflowReactInternalStep } from '../../run/agent-run-audit.util';
+import { failWorkflowNode } from '../../../../../workflow/workflow-run.util';
 import {
   filterHostToolsForPlanStep,
   partitionDecisionToolCalls,
@@ -189,9 +190,13 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
         graphStateForLlm.taskPlan,
         graphStateForLlm.workflowRun,
       );
+      const pendingToolStep = getPendingPlanToolStep(
+        graphStateForLlm.taskPlan,
+        graphStateForLlm.workflowRun,
+      );
       const decisionEnableToolCall =
         ctx.input.enableToolCall && !planAnswerStep;
-      const toolsForPrompt = filterScopedToolsForPlanStep(
+      let toolsForPrompt = filterScopedToolsForPlanStep(
         graphStateForLlm.scopedTools,
         graphStateForLlm.taskPlan,
         graphStateForLlm.workflowRun,
@@ -201,6 +206,38 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
         graphStateForLlm.scopedHostTools ?? [],
         graphStateForLlm.taskPlan,
       );
+      let candidateRecallLangChainTools: DynamicStructuredTool[] | null = null;
+      let candidateRecallStep: AgentRunStep | null = null;
+      if (pendingToolStep?.kind === 'tool' && toolsForPrompt.length > 0) {
+        const scoped = await deps.sessionScope.scopeToolsForMainLoop(
+          toolsForPrompt,
+          ctx.input.latestUserMessage,
+          ctx.input.toolBuildCtx,
+        );
+        if (scoped.bindCap || scoped.fallbackReason) {
+          toolsForPrompt = scoped.scopedTools;
+          candidateRecallLangChainTools = scoped.scopedLangChainTools;
+          candidateRecallStep = {
+            step: llmStepNumber,
+            type: 'intent',
+            output: runHelpers.normalizeJsonLike({
+              stage: 'candidate_recall',
+              domain: 'tool',
+              before: graphStateForLlm.scopedTools.length,
+              afterRoleFilter: filterScopedToolsForPlanStep(
+                graphStateForLlm.scopedTools,
+                graphStateForLlm.taskPlan,
+                graphStateForLlm.workflowRun,
+                graphStateForLlm.workflowNodeDefs,
+              ).length,
+              after: toolsForPrompt.length,
+              bindToolsCap: scoped.bindCap,
+              fallbackReason: scoped.fallbackReason,
+              planStepId: graphStateForLlm.taskPlan?.currentStepId ?? null,
+            }),
+          };
+        }
+      }
       const allowedDecisionToolNames = new Set(
         toolsForPrompt.map((tool) => tool.name),
       );
@@ -260,6 +297,7 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
           ).filter((tool) => allowedHostToolNames.has(tool.name));
         } else {
           langChainToolsForDecision =
+            candidateRecallLangChainTools ??
             graphStateForLlm.scopedLangChainTools.filter((tool) =>
               allowedDecisionToolNames.has(tool.name),
             );
@@ -410,9 +448,10 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
       });
       const steps = [
         ...graphStateForLlm.steps,
+        ...(candidateRecallStep ? [candidateRecallStep] : []),
         maybeTagWorkflowReactInternalStep(
           {
-            step: llmStepNumber,
+            step: candidateRecallStep ? llmStepNumber + 1 : llmStepNumber,
             type: 'llm' as const,
             output: runHelpers.normalizeJsonLike({
               content: llmText,
@@ -464,10 +503,6 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
         return hostToolOutcome.state;
       }
       const httpToolCalls = httpCalls;
-      const pendingToolStep = getPendingPlanToolStep(
-        graphStateForLlm.taskPlan,
-        graphStateForLlm.workflowRun,
-      );
       const pageContextEntityId =
         pageContextEntityIdFromGraphState(graphStateForLlm);
       if (httpToolCalls.length === 0 && hostCalls.length === 0) {
@@ -685,18 +720,28 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
       );
       const steps = [
         ...graphState.steps,
-        maybeTagWorkflowReactInternalStep(
-          {
-            step: failedLlmStepNumber,
-            type: 'llm' as const,
-            output: runHelpers.normalizeJsonLike({
-              error: true,
-              content: userMessage,
-            }),
-            meta: { code },
-          },
-          graphState,
-        ),
+        graphState.workflowAwaitingReact === true
+          ? {
+              step: failedLlmStepNumber,
+              type: 'llm' as const,
+              output: runHelpers.normalizeJsonLike({
+                error: true,
+                content: userMessage,
+              }),
+              meta: { code },
+            }
+          : maybeTagWorkflowReactInternalStep(
+              {
+                step: failedLlmStepNumber,
+                type: 'llm' as const,
+                output: runHelpers.normalizeJsonLike({
+                  error: true,
+                  content: userMessage,
+                }),
+                meta: { code },
+              },
+              graphState,
+            ),
       ];
       await runHelpers.updateRun(
         ctx.input.runId,
@@ -704,10 +749,24 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
         AgentRunStatus.success,
       );
       recordMachineCodeUsage(ctx.input.runMetrics, code);
+      const failedWorkflowRun =
+        graphState.workflowAwaitingReact === true &&
+        graphState.workflowRun?.currentNodeId
+          ? failWorkflowNode(
+              graphState.workflowRun,
+              graphState.workflowRun.currentNodeId,
+              {
+                code,
+                message: userMessage,
+              },
+            )
+          : graphState.workflowRun;
       return {
         ...graphState,
         iteration: graphState.iteration + 1,
         steps,
+        workflowRun: failedWorkflowRun,
+        workflowAwaitingReact: false,
         pendingToolCalls: [],
         pendingRespond: pendingRespondFromObservation(
           summarize.buildDirectReplyObservation(

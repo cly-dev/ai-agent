@@ -41,6 +41,7 @@ const prompt_template_module_1 = require("./modules/prompt-template/prompt-templ
 const role_module_1 = require("./modules/role/role.module");
 const host_tool_module_1 = require("./modules/host-tool/host-tool.module");
 const page_action_module_1 = require("./modules/page-action/page-action.module");
+const page_agent_module_1 = require("./modules/page-agent/page-agent.module");
 const approval_module_1 = require("./core/approval/approval.module");
 const approval_module_2 = require("./modules/approval/approval.module");
 const workflow_module_1 = require("./modules/workflow/workflow.module");
@@ -70,6 +71,7 @@ AppModule = __decorate([
             role_module_1.RoleModule,
             host_tool_module_1.HostToolModule,
             page_action_module_1.PageActionModule,
+            page_agent_module_1.PageAgentModule,
             approval_module_1.ApprovalModule,
             approval_module_2.ApprovalModule,
             workflow_module_1.WorkflowModule,

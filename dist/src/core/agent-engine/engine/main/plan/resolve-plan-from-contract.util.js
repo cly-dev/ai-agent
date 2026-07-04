@@ -4,7 +4,7 @@ exports.resolvePlanFromContract = void 0;
 const task_plan_llm_util_1 = require("./task-plan-llm.util");
 const task_plan_util_1 = require("./task-plan.util");
 async function resolvePlanFromContract(input) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const { contract, planInput } = input;
     if (!contract.plan.enabled) {
         throw new Error('resolvePlanFromContract called while contract.plan.enabled is false');
@@ -58,6 +58,23 @@ async function resolvePlanFromContract(input) {
         }
         case 'llm':
         default:
+            if (contract.routing.llmWriteChannel === 'host' &&
+                contract.plan.allowHostToolSteps &&
+                ((_e = (_d = planInput.availableHostTools) === null || _d === void 0 ? void 0 : _d.length) !== null && _e !== void 0 ? _e : 0) > 0) {
+                const suggestedSkill = contract.routing.suggestedSkillId != null
+                    ? planInput.availableSkills.find((skill) => skill.id === contract.routing.suggestedSkillId)
+                    : null;
+                const suggestedHostToolIds = new Set((_f = suggestedSkill === null || suggestedSkill === void 0 ? void 0 : suggestedSkill.hostToolIds) !== null && _f !== void 0 ? _f : []);
+                const suggestedHostTools = suggestedHostToolIds.size > 0
+                    ? ((_g = planInput.availableHostTools) !== null && _g !== void 0 ? _g : []).filter((tool) => tool.id != null && suggestedHostToolIds.has(tool.id))
+                    : [];
+                return (0, task_plan_util_1.buildHostToolWritePlanResult)({
+                    userMessage: planInput.userMessage,
+                    availableHostTools: suggestedHostTools.length > 0
+                        ? suggestedHostTools
+                        : ((_h = planInput.availableHostTools) !== null && _h !== void 0 ? _h : []),
+                });
+            }
             return (0, task_plan_llm_util_1.resolveOuterPlan)({
                 llmService: input.llmService,
                 promptRegistry: input.promptRegistry,

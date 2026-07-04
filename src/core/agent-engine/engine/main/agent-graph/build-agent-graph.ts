@@ -35,7 +35,6 @@ import {
 } from './runtime';
 import { createAgentGraphSummarizeHelpers } from './summarize';
 import type { AgentGraphNodeFn } from './types/graph.types';
-import { createIntentNode } from './nodes/intent.node';
 import { createTurnRouteNode } from './nodes/turn-route.node';
 import { createToolsNode } from './nodes/tools.node';
 import { createResultCheckNode } from './nodes/result-check.node';
@@ -48,10 +47,10 @@ import type { RequestedSkillRunContext } from '../skill/requested-skill-run.serv
 import { bundleFromAllowedRunInput } from '../../turn/turn-scoped-tools.util';
 
 /**
- * Chat LangGraph 主轴（9 个顶层节点）：
- * intent → turnRoute → workflow_init → execute_node ↔ workflow_react → workflow_advance → summarize
+ * Chat LangGraph 主轴：
+ * turnRoute → workflow_init → execute_node ↔ workflow_react → workflow_advance → summarize
  * 旁路：tools / resultCheck（写确认 resume、summarize 续跑）
- * plan / readiness / llm 不在顶层注册；plan 在 workflow_init 内，ReAct 在 workflow_react 内。
+ * plan / readiness / llm 不在顶层注册；plan 在 workflow_init 内，HTTP tool 候选召回在 ReAct 的具体 tool 步内。
  */
 function withRunCancellation(
   deps: AgentGraphDeps,
@@ -155,7 +154,6 @@ export async function buildAndRunAgentGraph(
   const wrap = (node: AgentGraphNodeFn) =>
     withRunCancellation(deps, input, node);
   const graph = new StateGraph(State)
-    .addNode('intent', wrap(createIntentNode(bundle)))
     .addNode('turnRoute', wrap(createTurnRouteNode(bundle)))
     .addNode('workflow_init', wrap(createWorkflowInitNode(bundle)))
     .addNode('execute_node', wrap(createExecuteNodeNode(bundle)))
@@ -193,15 +191,6 @@ export async function buildAndRunAgentGraph(
           return 'workflow_advance';
         }
         return 'resultCheck';
-      }
-      return 'intent';
-    })
-    .addConditionalEdges('intent', (s: AgentGraphState) => {
-      if (s.finished) {
-        return END;
-      }
-      if (shouldRouteToRespond(s)) {
-        return 'summarize';
       }
       return 'turnRoute';
     })

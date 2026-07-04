@@ -3,7 +3,7 @@ export declare class PendingWriteGatePublicStateDto {
     runId: number;
     turnId: number;
     draftRetryCount: number;
-    draftRetryMax: number;
+    draftRetryMax: number | null;
     canRetry: boolean;
     writeDraft?: WriteDraftPublicDto;
     writeDrafts?: WriteDraftPublicDto[];

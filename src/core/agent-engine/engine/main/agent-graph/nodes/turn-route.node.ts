@@ -36,6 +36,8 @@ import {
 } from '../../../../../skill/skill-runnable.util';
 import type { AvailableSkillRow } from '../../../../../skill/skill.types';
 import type { AgentRunStep, AgentGraphState } from '../../types/agent-engine.types';
+import { detectIntentKind as classifyIntentKind } from '../../../../intent-kind.util';
+import { loadSmallTalkHints } from '../../../../../intent/smalltalk-hints.util';
 
 function resolveRequestedSkillRowForTurnRoute(input: {
   requestedSkillId: number | null;
@@ -175,7 +177,12 @@ export function createTurnRouteNode(
     const pageContextForRoute =
       state.pageContext ?? ctx.input.pageContext ?? null;
 
-    if (state.intentKind === 'smalltalk') {
+    const intentKind =
+      state.intentKind === 'smalltalk'
+        ? 'smalltalk'
+        : classifyIntentKind(ctx.input.latestUserMessage, loadSmallTalkHints());
+
+    if (intentKind === 'smalltalk') {
       deps.sse.emitThink(
         ctx.input.sessionId,
         ctx.input.runId,
@@ -223,6 +230,7 @@ export function createTurnRouteNode(
         turnRoutingDecision,
         turnExecutionContract,
         pageContext: pageContextForRoute,
+          intentKind: 'smalltalk',
         preloadedToolObservations: state.preloadedToolObservations ?? [],
         scopedHostTools: [],
         scopedHostLangChainTools: [],

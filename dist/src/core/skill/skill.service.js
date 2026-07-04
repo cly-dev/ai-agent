@@ -93,7 +93,8 @@ let SkillService = class SkillService {
         const hostBoundRows = scopedHostToolIdSet.size > 0
             ? await this.queryHostBoundSkills(Object.assign(Object.assign({}, queryBase), { hostToolIdFilter: [...scopedHostToolIdSet] }))
             : [];
-        const rows = this.mergeSkillDbRows(httpRows, hostRows, hostBoundRows);
+        const workflowRows = await this.queryAgentSkills(Object.assign(Object.assign({}, queryBase), { workflowBoundOnly: true }));
+        const rows = this.mergeSkillDbRows(httpRows, hostRows, hostBoundRows, workflowRows);
         return rows
             .map((row) => this.toAvailableSkillRowIfResolvable(row, runnableHostToolIds, scopedToolIds, scopedHostToolIdSet, false))
             .filter((row) => row != null)
@@ -136,8 +137,6 @@ let SkillService = class SkillService {
                 workflowOverrides: input.skill.workflowOverrides,
             },
             goal: input.goal,
-            allowedToolIds: input.allowedToolIds,
-            allowedHostToolIds: input.allowedHostToolIds,
         });
     }
     async queryHostBoundSkills(input) {
@@ -242,27 +241,32 @@ let SkillService = class SkillService {
                 agentId: input.agentId,
                 restrictSkills: skillCtx.restrictSkills,
                 skillWhitelistIds: skillCtx.skillWhitelistIds,
-            })), (input.skillId != null ? { id: input.skillId } : {})), (input.pureHostOnly
+            })), (input.skillId != null ? { id: input.skillId } : {})), (input.workflowBoundOnly
                 ? {
-                    skillTools: { none: {} },
-                    skillHostTools: {
-                        some: { hostToolId: { in: hostToolIdFilter } },
-                    },
+                    workflowId: { not: null },
+                    workflow: { is: { isActive: true } },
                 }
-                : input.hostBoundWithHttp && hostToolIdFilter.length > 0
+                : input.pureHostOnly
                     ? {
-                        skillTools: { some: {} },
+                        skillTools: { none: {} },
                         skillHostTools: {
                             some: { hostToolId: { in: hostToolIdFilter } },
                         },
                     }
-                    : input.toolIdFilter && input.toolIdFilter.length > 0
+                    : input.hostBoundWithHttp && hostToolIdFilter.length > 0
                         ? {
-                            skillTools: {
-                                some: { toolId: { in: input.toolIdFilter } },
+                            skillTools: { some: {} },
+                            skillHostTools: {
+                                some: { hostToolId: { in: hostToolIdFilter } },
                             },
                         }
-                        : {})), (input.roleSkillFiltered
+                        : input.toolIdFilter && input.toolIdFilter.length > 0
+                            ? {
+                                skillTools: {
+                                    some: { toolId: { in: input.toolIdFilter } },
+                                },
+                            }
+                            : {})), (input.roleSkillFiltered
                 ? { roleSkills: { some: { roleId: input.roleId } } }
                 : {})),
             select: {

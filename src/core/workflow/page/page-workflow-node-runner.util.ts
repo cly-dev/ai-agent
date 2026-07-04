@@ -7,6 +7,7 @@ import {
 } from '../../page-action/page-workflow-node.util';
 import { writePageWorkflowNodeSse } from '../../page-action/page-action-inline-sse.util';
 import { dispatchPageWorkflowNodeOutcome } from '../../page-action/page-workflow-node-dispatch.util';
+import { buildWorkflowNodeCompleteAudit } from '../../page-action/page-action-run-audit.util';
 import { failWorkflowNode } from '../workflow-run.util';
 import { logWorkflowDebug } from '../trace/workflow-debug.util';
 import type { WorkflowActionKind } from '../workflow.types';
@@ -227,6 +228,7 @@ export async function executePageWorkflowNode(input: {
     detail: {
       outputRef: outcome.outputRef,
       action: input.def.action,
+      ...buildWorkflowNodeCompleteAudit(input.def.action, outcome.nodeOutput),
     },
   });
 

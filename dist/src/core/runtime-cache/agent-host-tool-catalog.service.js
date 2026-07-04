@@ -61,8 +61,13 @@ let AgentHostToolCatalogService = AgentHostToolCatalogService_1 = class AgentHos
         if (!pageScope) {
             return { tools: [], fromCache: false };
         }
-        const cached = await this.catalogStore.get(input.appClientId, input.agentId);
-        if (cached) {
+        const before = await this.catalogStore.get(input.appClientId, input.agentId);
+        const catalog = await this.loadOrWarm(input.appClientId, input.agentId);
+        if (!catalog) {
+            return { tools: [], fromCache: false };
+        }
+        const fromCache = (before === null || before === void 0 ? void 0 : before.revision) === catalog.revision;
+        if (fromCache) {
             (0, runtime_cache_observability_util_1.logRuntimeCacheEvent)({
                 layer: 'L2',
                 operation: 'resolveLlmHostTools',
@@ -70,33 +75,23 @@ let AgentHostToolCatalogService = AgentHostToolCatalogService_1 = class AgentHos
                 agentId: input.agentId,
                 appClientId: input.appClientId,
             });
-            return {
-                tools: (0, host_tool_catalog_resolve_util_1.resolveLlmHostToolsFromCatalog)(cached, {
-                    pageScope,
-                    skillId: input.skillId,
-                    skillTriggers: LLM_SKILL_TRIGGERS,
-                }),
-                fromCache: true,
-            };
         }
-        const warmed = await this.loadOrWarm(input.appClientId, input.agentId);
-        if (!warmed) {
-            return { tools: [], fromCache: false };
+        else {
+            (0, runtime_cache_observability_util_1.logRuntimeCacheEvent)({
+                layer: 'L2',
+                operation: 'resolveLlmHostTools',
+                cacheHit: false,
+                agentId: input.agentId,
+                appClientId: input.appClientId,
+            });
         }
-        (0, runtime_cache_observability_util_1.logRuntimeCacheEvent)({
-            layer: 'L2',
-            operation: 'resolveLlmHostTools',
-            cacheHit: false,
-            agentId: input.agentId,
-            appClientId: input.appClientId,
-        });
         return {
-            tools: (0, host_tool_catalog_resolve_util_1.resolveLlmHostToolsFromCatalog)(warmed, {
+            tools: (0, host_tool_catalog_resolve_util_1.resolveLlmHostToolsFromCatalog)(catalog, {
                 pageScope,
                 skillId: input.skillId,
                 skillTriggers: LLM_SKILL_TRIGGERS,
             }),
-            fromCache: false,
+            fromCache,
         };
     }
     async warmPageLlmTools(input) {
@@ -115,6 +110,7 @@ let AgentHostToolCatalogService = AgentHostToolCatalogService_1 = class AgentHos
         }
         return (0, runtime_revision_util_1.buildHostToolCatalogRevision)({
             hostTools: ctx.revisionHostToolRows,
+            hostPages: ctx.revisionHostPageRows,
             skillBindings: ctx.revisionSkillBindingRows,
             agentBoundHostToolIds: ctx.candidateHostToolIds,
         });
@@ -130,6 +126,7 @@ let AgentHostToolCatalogService = AgentHostToolCatalogService_1 = class AgentHos
                 agentId,
                 revision: (0, runtime_revision_util_1.buildHostToolCatalogRevision)({
                     hostTools: [],
+                    hostPages: [],
                     skillBindings: [],
                     agentBoundHostToolIds: [],
                 }),
@@ -202,6 +199,12 @@ let AgentHostToolCatalogService = AgentHostToolCatalogService_1 = class AgentHos
                     id: row.id,
                     updatedAt: row.updatedAt,
                 })),
+                hostPages: hostToolRows
+                    .filter((row) => row.hostPage != null)
+                    .map((row) => ({
+                    id: row.hostPage.id,
+                    updatedAt: row.hostPage.updatedAt,
+                })),
                 skillBindings: skillBindingRows.map((row) => ({
                     id: row.id,
                     updatedAt: row.updatedAt,
@@ -230,7 +233,11 @@ let AgentHostToolCatalogService = AgentHostToolCatalogService_1 = class AgentHos
             }),
             this.prisma.hostTool.findMany({
                 where: { appClientId, isActive: true },
-                select: { id: true, updatedAt: true },
+                select: {
+                    id: true,
+                    updatedAt: true,
+                    hostPage: { select: { id: true, updatedAt: true } },
+                },
                 orderBy: { id: 'asc' },
             }),
         ]);
@@ -241,6 +248,12 @@ let AgentHostToolCatalogService = AgentHostToolCatalogService_1 = class AgentHos
         });
         const candidateSet = new Set(candidateHostToolIds);
         const revisionHostToolRows = appActiveHostTools.filter((row) => candidateSet.has(row.id));
+        const revisionHostPageRows = revisionHostToolRows
+            .filter((row) => row.hostPage != null)
+            .map((row) => ({
+            id: row.hostPage.id,
+            updatedAt: row.hostPage.updatedAt,
+        }));
         let revisionSkillBindingRows = [];
         if (candidateHostToolIds.length > 0) {
             revisionSkillBindingRows = await this.prisma.skillHostTool.findMany({
@@ -255,6 +268,7 @@ let AgentHostToolCatalogService = AgentHostToolCatalogService_1 = class AgentHos
         return {
             candidateHostToolIds,
             revisionHostToolRows,
+            revisionHostPageRows,
             revisionSkillBindingRows,
         };
     }
