@@ -4,8 +4,8 @@ import { ApprovalTriggerPermissionService } from '../../core/approval/approval-t
 import { LlmService } from '../../core/llm/llm.service';
 import { ToolEngineService } from '../../core/tool-engine/tool-engine.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { CreatePageActionDto, InvokePageActionDto, QueryPageActionDto, QueryPageActionRunDto, UpdatePageActionDto } from './dto/page-action.dto';
-import type { PageActionResponse, PageActionRunAdminDetail, PageActionRunAdminListItem } from './page-action.types';
+import type { CreatePageActionDto, InvokePageActionDto, QueryPageActionDto, QueryPageActionRunDto, QueryPageScopeOptionsDto, UpdatePageActionDto } from './dto/page-action.dto';
+import type { PageActionResponse, PageActionRunAdminDetail, PageActionRunAdminListItem, PageScopeOption } from './page-action.types';
 import type { Response } from 'express';
 import { WorkflowService } from '../workflow/workflow.service';
 export declare class PageActionService {
@@ -19,6 +19,7 @@ export declare class PageActionService {
     create(dto: CreatePageActionDto): Promise<PageActionResponse>;
     update(id: number, dto: UpdatePageActionDto): Promise<PageActionResponse>;
     findOne(id: number): Promise<PageActionResponse>;
+    listPageScopes(appClientId: number, query?: QueryPageScopeOptionsDto): Promise<PageScopeOption[]>;
     findPage(query: QueryPageActionDto): Promise<PaginatedResult<PageActionResponse>>;
     findRunAdmin(id: number): Promise<PageActionRunAdminDetail>;
     findRunPageAdmin(appClientId: number, query: QueryPageActionRunDto): Promise<PaginatedResult<PageActionRunAdminListItem>>;

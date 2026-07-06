@@ -31,6 +31,7 @@ import {
   InvokePageActionDto,
   QueryPageActionDto,
   QueryPageActionRunDto,
+  QueryPageScopeOptionsDto,
   UpdatePageActionDto,
 } from './dto/page-action.dto';
 import { PageActionService } from './page-action.service';
@@ -92,6 +93,20 @@ export class PageActionController {
     @Query() query: QueryPageActionDto,
   ) {
     return this.service.findPage({ ...query, appClientId });
+  }
+
+  @Get('page-action/page-scopes/by-app-client/:appClientId')
+  @ApiParam({ name: 'appClientId', type: Number })
+  @ApiOperation({
+    summary: 'B 端：获取 App 下全部 pageScope（下拉选项）',
+    description:
+      '主数据来自 HostPage.scope；合并 PageAction 已使用但未登记的 scope。默认仅含启用中的 HostPage。',
+  })
+  listPageScopes(
+    @Param('appClientId', ParseIntPipe) appClientId: number,
+    @Query() query: QueryPageScopeOptionsDto,
+  ) {
+    return this.service.listPageScopes(appClientId, query);
   }
 
   @Get('page-action/run/by-app-client/:appClientId')

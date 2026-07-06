@@ -42,13 +42,13 @@ export declare class AdminUserService {
         accessToken: string;
         user: {
             id: number;
-            isActive: boolean;
-            createdAt: Date;
-            updatedAt: Date;
-            role: AdminRole;
             email: string;
             username: string;
             mustChangePassword: boolean;
+            createdAt: Date;
+            updatedAt: Date;
+            role: AdminRole;
+            isActive: boolean;
         };
         mustChangePassword: boolean;
     }>;

@@ -93,6 +93,11 @@ export type PageActionRunAdminListItem = {
     createdAt: Date;
     finishedAt: Date | null;
 };
+export type PageScopeOption = {
+    scope: string;
+    label: string | null;
+    isActive: boolean;
+};
 export type PageActionRunAdminDetail = PageActionRunAdminListItem & {
     delivery: string;
     instruction: string | null;

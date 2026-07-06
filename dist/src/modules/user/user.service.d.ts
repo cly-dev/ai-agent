@@ -23,64 +23,64 @@ export declare class UserService {
     create(data: CreateUserDto): Promise<{
         generatedPassword: string;
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }>;
     findAll(): Promise<{
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }[]>;
     findOne(id: number): Promise<{
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }>;
     update(id: number, data: UpdateUserDto): Promise<{
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }>;
     remove(id: number): Promise<{
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }>;
     private syntheticEmployeeIdFromEmail;
     findOrCreateByExternalAccount(profile: ExternalAccountProfile): Promise<Omit<{
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }, "password">>;
     signUserAccessToken(user: {
         id: number;
@@ -93,13 +93,13 @@ export declare class UserService {
         accessToken: string;
         user: {
             id: number;
-            createdAt: Date;
+            employeeId: string;
             email: string;
             password: string;
             username: string;
-            mustChangePassword: boolean;
-            employeeId: string;
             status: UserStatus;
+            mustChangePassword: boolean;
+            createdAt: Date;
         };
         mustChangePassword: boolean;
     }>;
@@ -108,15 +108,15 @@ export declare class UserService {
         message: string;
     }>;
     getAllowedToolsForApp(userId: number, appClientId: number): Promise<{
-        path: string;
-        id: number;
-        appClientId: number;
-        description: string;
-        isActive: boolean;
-        createdAt: Date;
-        updatedAt: Date;
         name: string;
-        method: import("../../../generated/prisma/enums").HttpMethod;
+        id: number;
+        createdAt: Date;
+        appClientId: number;
+        updatedAt: Date;
+        integrationId: number;
+        isActive: boolean;
+        description: string;
+        path: string;
         definitionKey: string;
         riskLevel: import("../../../generated/prisma/enums").ToolLevel;
         schema: import("@prisma/client/runtime/client").JsonValue;
@@ -124,7 +124,7 @@ export declare class UserService {
         outputSchema: import("@prisma/client/runtime/client").JsonValue;
         responseProfile: import("@prisma/client/runtime/client").JsonValue;
         agentMetadata: import("@prisma/client/runtime/client").JsonValue;
-        integrationId: number;
+        method: import("../../../generated/prisma/enums").HttpMethod;
         toolCategoryId: number;
         timeout: number;
     }[]>;

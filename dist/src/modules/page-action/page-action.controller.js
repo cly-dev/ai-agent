@@ -52,6 +52,9 @@ let PageActionController = class PageActionController {
     findPage(appClientId, query) {
         return this.service.findPage(Object.assign(Object.assign({}, query), { appClientId }));
     }
+    listPageScopes(appClientId, query) {
+        return this.service.listPageScopes(appClientId, query);
+    }
     findRunPageAdmin(appClientId, query) {
         return this.service.findRunPageAdmin(appClientId, query);
     }
@@ -105,6 +108,19 @@ __decorate([
     __metadata("design:paramtypes", [Number, page_action_dto_1.QueryPageActionDto]),
     __metadata("design:returntype", void 0)
 ], PageActionController.prototype, "findPage", null);
+__decorate([
+    (0, common_1.Get)('page-action/page-scopes/by-app-client/:appClientId'),
+    (0, swagger_1.ApiParam)({ name: 'appClientId', type: Number }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'B 端：获取 App 下全部 pageScope（下拉选项）',
+        description: '主数据来自 HostPage.scope；合并 PageAction 已使用但未登记的 scope。默认仅含启用中的 HostPage。',
+    }),
+    __param(0, (0, common_1.Param)('appClientId', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, page_action_dto_1.QueryPageScopeOptionsDto]),
+    __metadata("design:returntype", void 0)
+], PageActionController.prototype, "listPageScopes", null);
 __decorate([
     (0, common_1.Get)('page-action/run/by-app-client/:appClientId'),
     (0, swagger_1.ApiParam)({ name: 'appClientId', type: Number }),

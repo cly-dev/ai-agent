@@ -1,4 +1,6 @@
 {
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "modules", "apps", "packages"],
   "compilerOptions": {
     "module": "commonjs",
     "declaration": true,

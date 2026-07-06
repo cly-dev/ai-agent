@@ -10,10 +10,7 @@ import { IntentModule } from '../core/intent/intent.module';
 import { SharedInfraModule } from './shared-infra.module';
 
 /**
- * Worker 部署单元（apps/worker）。
- * 无 HTTP 业务路由；消费 BullMQ，执行 AgentEngine / Workflow。
- *
- * 迁移说明：modules 仍引用 ../modules 与 ../core，下一步逐步迁入 packages/ 或 apps/worker/src/。
+ * Worker 部署单元（omnix-worker:3031）。
  */
 @Module({
   imports: [

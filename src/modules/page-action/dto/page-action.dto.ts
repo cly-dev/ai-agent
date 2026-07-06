@@ -17,6 +17,17 @@ import { PageActionDelivery } from '../../../../generated/prisma/client';
 import { PaginationQueryDto } from '../../../common/pagination';
 import { AgentChatPageContextDto } from '../../chat/dto/page-context-fields.dto';
 
+export class QueryPageScopeOptionsDto {
+  @ApiPropertyOptional({
+    description: '仅返回 isActive=true 的 HostPage scope（默认 true，适合下拉）',
+    default: true,
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  activeOnly?: boolean;
+}
+
 export class QueryPageActionDto extends PaginationQueryDto {
   @ApiPropertyOptional()
   @IsOptional()

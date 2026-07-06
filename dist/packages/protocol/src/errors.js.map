@@ -1,1 +1,0 @@
-{"version":3,"file":"errors.js","sourceRoot":"","sources":["../../../../packages/protocol/src/errors.ts"],"names":[],"mappings":";;;AAMa,QAAA,iBAAiB,GAAG;IAC/B,YAAY,EAAE,cAAc;IAC5B,SAAS,EAAE,WAAW;IACtB,SAAS,EAAE,WAAW;IACtB,iBAAiB,EAAE,mBAAmB;IACtC,qBAAqB,EAAE,uBAAuB;IAC9C,aAAa,EAAE,eAAe;IAC9B,aAAa,EAAE,eAAe;CACtB,CAAC"}

@@ -9,91 +9,91 @@ export declare class UserAppService {
         id: number;
         createdAt: Date;
         userId: number;
-        roleId: number;
         appId: number;
+        roleId: number;
     }>;
     findAll(): Promise<({
-        appClient: {
-            id: number;
-            name: string;
-            dsn: string;
-        };
         user: {
             id: number;
             email: string;
             username: string;
         };
-        role: {
-            id: number;
+        appClient: {
             name: string;
+            id: number;
+            dsn: string;
+        };
+        role: {
+            name: string;
+            id: number;
             allowToolLevel: import("../../../generated/prisma/enums").ToolLevel;
         };
     } & {
         id: number;
         createdAt: Date;
         userId: number;
-        roleId: number;
         appId: number;
+        roleId: number;
     })[]>;
     findOne(id: number): Promise<{
-        appClient: {
-            id: number;
-            name: string;
-            dsn: string;
-        };
         user: {
             id: number;
             email: string;
             username: string;
         };
-        role: {
-            id: number;
+        appClient: {
             name: string;
+            id: number;
+            dsn: string;
+        };
+        role: {
+            name: string;
+            id: number;
             allowToolLevel: import("../../../generated/prisma/enums").ToolLevel;
         };
     } & {
         id: number;
         createdAt: Date;
         userId: number;
-        roleId: number;
         appId: number;
+        roleId: number;
     }>;
     update(id: number, body: UpdateUserAppDto): Promise<{
-        appClient: {
-            id: number;
-            name: string;
-            dsn: string;
-        };
         user: {
             id: number;
             email: string;
             username: string;
         };
-        role: {
-            id: number;
+        appClient: {
             name: string;
+            id: number;
+            dsn: string;
+        };
+        role: {
+            name: string;
+            id: number;
             allowToolLevel: import("../../../generated/prisma/enums").ToolLevel;
         };
     } & {
         id: number;
         createdAt: Date;
         userId: number;
-        roleId: number;
         appId: number;
+        roleId: number;
     }>;
     remove(id: number): Promise<{
         id: number;
         createdAt: Date;
         userId: number;
-        roleId: number;
         appId: number;
+        roleId: number;
     }>;
     addUser(appId: number, body: AddUserToAppDto): Promise<{
         id: number;
         createdAt: Date;
         userId: number;
-        roleId: number;
         appId: number;
+        roleId: number;
     }>;
     private ensureBaseEntities;
     private ensureUniqueUserApp;

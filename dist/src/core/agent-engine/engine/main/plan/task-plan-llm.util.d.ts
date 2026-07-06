@@ -8,16 +8,16 @@ export declare function resolveRequestedSkillOuterPlan(planInput: ResolveOuterPl
 export declare const llmTaskPlanStepSchema: z.ZodObject<{
     id: z.ZodString;
     phase: z.ZodEnum<{
+        answer: "answer";
         gather: "gather";
         analyze: "analyze";
-        answer: "answer";
         mutate: "mutate";
     }>;
     kind: z.ZodEnum<{
-        summarize: "summarize";
         tool: "tool";
-        reason: "reason";
+        summarize: "summarize";
         host_tool: "host_tool";
+        reason: "reason";
     }>;
     toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     hostToolNames: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString>>>;
@@ -32,17 +32,17 @@ export declare const llmTaskPlanStepSchema: z.ZodObject<{
 export declare const llmOuterPlanStepSchema: z.ZodObject<{
     id: z.ZodString;
     phase: z.ZodEnum<{
+        answer: "answer";
         gather: "gather";
         analyze: "analyze";
-        answer: "answer";
         mutate: "mutate";
     }>;
     kind: z.ZodEnum<{
-        summarize: "summarize";
-        tool: "tool";
         skill: "skill";
-        reason: "reason";
+        tool: "tool";
+        summarize: "summarize";
         host_tool: "host_tool";
+        reason: "reason";
     }>;
     skillId: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
     toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
@@ -57,27 +57,27 @@ export declare const llmOuterPlanStepSchema: z.ZodObject<{
 }, z.core.$strip>;
 export declare const llmOuterPlanSchema: z.ZodObject<{
     deliverable: z.ZodEnum<{
+        analysis: "analysis";
         list: "list";
         detail: "detail";
-        answer: "answer";
-        analysis: "analysis";
         mutation: "mutation";
+        answer: "answer";
     }>;
     goal: z.ZodString;
     steps: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         phase: z.ZodEnum<{
+            answer: "answer";
             gather: "gather";
             analyze: "analyze";
-            answer: "answer";
             mutate: "mutate";
         }>;
         kind: z.ZodEnum<{
-            summarize: "summarize";
-            tool: "tool";
             skill: "skill";
-            reason: "reason";
+            tool: "tool";
+            summarize: "summarize";
             host_tool: "host_tool";
+            reason: "reason";
         }>;
         skillId: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
@@ -93,26 +93,26 @@ export declare const llmOuterPlanSchema: z.ZodObject<{
 }, z.core.$strip>;
 export declare const llmTaskPlanSchema: z.ZodObject<{
     deliverable: z.ZodEnum<{
+        analysis: "analysis";
         list: "list";
         detail: "detail";
-        answer: "answer";
-        analysis: "analysis";
         mutation: "mutation";
+        answer: "answer";
     }>;
     goal: z.ZodString;
     steps: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         phase: z.ZodEnum<{
+            answer: "answer";
             gather: "gather";
             analyze: "analyze";
-            answer: "answer";
             mutate: "mutate";
         }>;
         kind: z.ZodEnum<{
-            summarize: "summarize";
             tool: "tool";
-            reason: "reason";
+            summarize: "summarize";
             host_tool: "host_tool";
+            reason: "reason";
         }>;
         toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         hostToolNames: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString>>>;

@@ -1,6 +1,9 @@
 import { PageActionDelivery } from '../../../../generated/prisma/client';
 import { PaginationQueryDto } from '../../../common/pagination';
 import { AgentChatPageContextDto } from '../../chat/dto/page-context-fields.dto';
+export declare class QueryPageScopeOptionsDto {
+    activeOnly?: boolean;
+}
 export declare class QueryPageActionDto extends PaginationQueryDto {
     appClientId?: number;
     keyword?: string;

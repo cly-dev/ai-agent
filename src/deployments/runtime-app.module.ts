@@ -31,7 +31,7 @@ import { WorkflowModule } from '../modules/workflow/workflow.module';
 import { SharedInfraModule } from './shared-infra.module';
 
 /**
- * C 端 Runtime API 部署单元（apps/runtime）。
+ * C 端 Runtime API 部署单元（omnix-runtime:3030）。
  * HTTP 路由：Chat / Session / Message / PageAgent / PageAction 等。
  * BullMQ 只入队，不消费（由 worker-main 设置 SESSION_RUN_WORKER_ENABLED=0）。
  */

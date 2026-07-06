@@ -167,6 +167,41 @@ let PageActionService = class PageActionService {
         const row = await this.findEntityOrThrow(id);
         return (0, page_action_mapper_1.toPageActionResponse)(row);
     }
+    async listPageScopes(appClientId, query = {}) {
+        var _a;
+        await this.assertAppClientExists(appClientId);
+        const activeOnly = query.activeOnly !== false;
+        const hostPages = await this.prisma.hostPage.findMany({
+            where: Object.assign({ appClientId }, (activeOnly ? { isActive: true } : {})),
+            select: { scope: true, label: true, isActive: true },
+            orderBy: [{ sortOrder: 'asc' }, { scope: 'asc' }],
+        });
+        const scopeMap = new Map();
+        for (const row of hostPages) {
+            scopeMap.set(row.scope, {
+                scope: row.scope,
+                label: row.label,
+                isActive: row.isActive,
+            });
+        }
+        const actionScopes = await this.prisma.pageAction.findMany({
+            where: { appClientId, pageScope: { not: null } },
+            select: { pageScope: true },
+            distinct: ['pageScope'],
+        });
+        for (const row of actionScopes) {
+            const scope = (_a = row.pageScope) === null || _a === void 0 ? void 0 : _a.trim();
+            if (!scope || scopeMap.has(scope)) {
+                continue;
+            }
+            scopeMap.set(scope, {
+                scope,
+                label: null,
+                isActive: true,
+            });
+        }
+        return [...scopeMap.values()].sort((a, b) => a.scope.localeCompare(b.scope));
+    }
     async findPage(query) {
         var _a, _b;
         const { page, pageSize, skip, take } = (0, pagination_1.resolvePagination)(query.page, query.pageSize);

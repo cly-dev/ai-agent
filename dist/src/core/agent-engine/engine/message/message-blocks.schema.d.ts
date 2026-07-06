@@ -62,17 +62,17 @@ export declare const messageBlockSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         value: z.ZodString;
         delta: z.ZodOptional<z.ZodString>;
         trend: z.ZodOptional<z.ZodEnum<{
-            flat: "flat";
             up: "up";
             down: "down";
+            flat: "flat";
         }>>;
     }, z.core.$strip>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"alert">;
     severity: z.ZodEnum<{
-        info: "info";
-        error: "error";
         success: "success";
+        error: "error";
+        info: "info";
         warning: "warning";
     }>;
     title: z.ZodOptional<z.ZodString>;
@@ -152,17 +152,17 @@ export declare const messageBlocksPayloadSchema: z.ZodObject<{
             value: z.ZodString;
             delta: z.ZodOptional<z.ZodString>;
             trend: z.ZodOptional<z.ZodEnum<{
-                flat: "flat";
                 up: "up";
                 down: "down";
+                flat: "flat";
             }>>;
         }, z.core.$strip>>;
     }, z.core.$strip>, z.ZodObject<{
         type: z.ZodLiteral<"alert">;
         severity: z.ZodEnum<{
-            info: "info";
-            error: "error";
             success: "success";
+            error: "error";
+            info: "info";
             warning: "warning";
         }>;
         title: z.ZodOptional<z.ZodString>;

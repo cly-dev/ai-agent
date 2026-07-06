@@ -6,118 +6,118 @@ export declare class SessionController {
     private readonly service;
     constructor(service: SessionService);
     create(appClientId: number, body: CreateSessionDto): Promise<{
-        appClient: {
-            id: number;
-            isActive: boolean;
-            name: string;
-        };
-        _count: {
-            messageTurns: number;
-            agentRuns: number;
-            messages: number;
-        };
         user: {
             id: number;
             username: string;
         };
+        _count: {
+            messageTurns: number;
+            messages: number;
+            agentRuns: number;
+        };
+        appClient: {
+            name: string;
+            id: number;
+            isActive: boolean;
+        };
     } & {
         id: string;
+        createdAt: Date;
+        userId: number;
         appClientId: number;
         agentId: number;
         title: string;
-        createdAt: Date;
-        userId: number;
     }>;
     findPage(appClientId: number, query: QuerySessionDto): Promise<import("../../common/pagination").PaginatedResult<{
-        appClient: {
-            id: number;
-            isActive: boolean;
-            name: string;
-        };
-        _count: {
-            messageTurns: number;
-            agentRuns: number;
-            messages: number;
-        };
         user: {
             id: number;
             username: string;
         };
+        _count: {
+            messageTurns: number;
+            messages: number;
+            agentRuns: number;
+        };
+        appClient: {
+            name: string;
+            id: number;
+            isActive: boolean;
+        };
     } & {
         id: string;
+        createdAt: Date;
+        userId: number;
         appClientId: number;
         agentId: number;
         title: string;
-        createdAt: Date;
-        userId: number;
     }>>;
     update(appClientId: number, id: string, body: UpdateSessionDto): Promise<{
-        appClient: {
-            id: number;
-            isActive: boolean;
-            name: string;
-        };
-        _count: {
-            messageTurns: number;
-            agentRuns: number;
-            messages: number;
-        };
         user: {
             id: number;
             username: string;
         };
+        _count: {
+            messageTurns: number;
+            messages: number;
+            agentRuns: number;
+        };
+        appClient: {
+            name: string;
+            id: number;
+            isActive: boolean;
+        };
     } & {
         id: string;
+        createdAt: Date;
+        userId: number;
         appClientId: number;
         agentId: number;
         title: string;
-        createdAt: Date;
-        userId: number;
     }>;
     remove(appClientId: number, id: string): Promise<{
-        appClient: {
-            id: number;
-            isActive: boolean;
-            name: string;
-        };
-        _count: {
-            messageTurns: number;
-            agentRuns: number;
-            messages: number;
-        };
         user: {
             id: number;
             username: string;
         };
+        _count: {
+            messageTurns: number;
+            messages: number;
+            agentRuns: number;
+        };
+        appClient: {
+            name: string;
+            id: number;
+            isActive: boolean;
+        };
     } & {
         id: string;
+        createdAt: Date;
+        userId: number;
         appClientId: number;
         agentId: number;
         title: string;
-        createdAt: Date;
-        userId: number;
     }>;
     findOne(id: string): Promise<{
-        appClient: {
-            id: number;
-            isActive: boolean;
-            name: string;
-        };
-        _count: {
-            messageTurns: number;
-            agentRuns: number;
-            messages: number;
-        };
         user: {
             id: number;
             username: string;
         };
+        _count: {
+            messageTurns: number;
+            messages: number;
+            agentRuns: number;
+        };
+        appClient: {
+            name: string;
+            id: number;
+            isActive: boolean;
+        };
     } & {
         id: string;
+        createdAt: Date;
+        userId: number;
         appClientId: number;
         agentId: number;
         title: string;
-        createdAt: Date;
-        userId: number;
     }>;
 }

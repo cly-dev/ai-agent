@@ -7,52 +7,52 @@ export declare class UserAdminController {
     create(body: CreateUserDto): Promise<{
         generatedPassword: string;
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: import("../../../generated/prisma/enums").UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }>;
     findAll(): Promise<{
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: import("../../../generated/prisma/enums").UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }[]>;
     findOne(id: number): Promise<{
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: import("../../../generated/prisma/enums").UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }>;
     update(id: number, body: UpdateUserDto): Promise<{
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: import("../../../generated/prisma/enums").UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }>;
     remove(id: number): Promise<{
         id: number;
-        createdAt: Date;
+        employeeId: string;
         email: string;
         password: string;
         username: string;
-        mustChangePassword: boolean;
-        employeeId: string;
         status: import("../../../generated/prisma/enums").UserStatus;
+        mustChangePassword: boolean;
+        createdAt: Date;
     }>;
 }

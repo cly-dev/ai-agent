@@ -56,6 +56,7 @@ import type {
   InvokePageActionDto,
   QueryPageActionDto,
   QueryPageActionRunDto,
+  QueryPageScopeOptionsDto,
   UpdatePageActionDto,
 } from './dto/page-action.dto';
 import {
@@ -67,6 +68,7 @@ import type {
   PageActionResponse,
   PageActionRunAdminDetail,
   PageActionRunAdminListItem,
+  PageScopeOption,
 } from './page-action.types';
 import { PAGE_ACTION_DETAIL_INCLUDE, PAGE_ACTION_RUN_ADMIN_INCLUDE } from './page-action.types';
 import type { Response } from 'express';
@@ -236,6 +238,51 @@ export class PageActionService {
   async findOne(id: number): Promise<PageActionResponse> {
     const row = await this.findEntityOrThrow(id);
     return toPageActionResponse(row);
+  }
+
+  async listPageScopes(
+    appClientId: number,
+    query: QueryPageScopeOptionsDto = {},
+  ): Promise<PageScopeOption[]> {
+    await this.assertAppClientExists(appClientId);
+    const activeOnly = query.activeOnly !== false;
+
+    const hostPages = await this.prisma.hostPage.findMany({
+      where: {
+        appClientId,
+        ...(activeOnly ? { isActive: true } : {}),
+      },
+      select: { scope: true, label: true, isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { scope: 'asc' }],
+    });
+
+    const scopeMap = new Map<string, PageScopeOption>();
+    for (const row of hostPages) {
+      scopeMap.set(row.scope, {
+        scope: row.scope,
+        label: row.label,
+        isActive: row.isActive,
+      });
+    }
+
+    const actionScopes = await this.prisma.pageAction.findMany({
+      where: { appClientId, pageScope: { not: null } },
+      select: { pageScope: true },
+      distinct: ['pageScope'],
+    });
+    for (const row of actionScopes) {
+      const scope = row.pageScope?.trim();
+      if (!scope || scopeMap.has(scope)) {
+        continue;
+      }
+      scopeMap.set(scope, {
+        scope,
+        label: null,
+        isActive: true,
+      });
+    }
+
+    return [...scopeMap.values()].sort((a, b) => a.scope.localeCompare(b.scope));
   }
 
   async findPage(

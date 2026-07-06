@@ -9,13 +9,26 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.QueryPageActionRunDto = exports.InvokePageActionDto = exports.UpdatePageActionDto = exports.CreatePageActionDto = exports.QueryPageActionDto = void 0;
+exports.QueryPageActionRunDto = exports.InvokePageActionDto = exports.UpdatePageActionDto = exports.CreatePageActionDto = exports.QueryPageActionDto = exports.QueryPageScopeOptionsDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const client_1 = require("../../../../generated/prisma/client");
 const pagination_1 = require("../../../common/pagination");
 const page_context_fields_dto_1 = require("../../chat/dto/page-context-fields.dto");
+class QueryPageScopeOptionsDto {
+}
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: '仅返回 isActive=true 的 HostPage scope（默认 true，适合下拉）',
+        default: true,
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Boolean),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], QueryPageScopeOptionsDto.prototype, "activeOnly", void 0);
+exports.QueryPageScopeOptionsDto = QueryPageScopeOptionsDto;
 class QueryPageActionDto extends pagination_1.PaginationQueryDto {
 }
 __decorate([
