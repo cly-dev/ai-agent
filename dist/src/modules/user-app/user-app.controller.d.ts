@@ -9,15 +9,15 @@ export declare class UserAppController {
         id: number;
         createdAt: Date;
         userId: number;
-        appId: number;
         roleId: number;
+        appId: number;
     }>;
     addUser(appId: number, body: AddUserToAppDto): Promise<{
         id: number;
         createdAt: Date;
         userId: number;
-        appId: number;
         roleId: number;
+        appId: number;
     }>;
     findAll(): Promise<({
         user: {
@@ -25,22 +25,22 @@ export declare class UserAppController {
             email: string;
             username: string;
         };
-        appClient: {
-            name: string;
-            id: number;
-            dsn: string;
-        };
         role: {
             name: string;
             id: number;
             allowToolLevel: import("../../../generated/prisma/enums").ToolLevel;
         };
+        appClient: {
+            name: string;
+            id: number;
+            dsn: string;
+        };
     } & {
         id: number;
         createdAt: Date;
         userId: number;
-        appId: number;
         roleId: number;
+        appId: number;
     })[]>;
     findOne(id: number): Promise<{
         user: {
@@ -48,22 +48,22 @@ export declare class UserAppController {
             email: string;
             username: string;
         };
-        appClient: {
-            name: string;
-            id: number;
-            dsn: string;
-        };
         role: {
             name: string;
             id: number;
             allowToolLevel: import("../../../generated/prisma/enums").ToolLevel;
         };
+        appClient: {
+            name: string;
+            id: number;
+            dsn: string;
+        };
     } & {
         id: number;
         createdAt: Date;
         userId: number;
-        appId: number;
         roleId: number;
+        appId: number;
     }>;
     update(id: number, body: UpdateUserAppDto): Promise<{
         user: {
@@ -71,28 +71,28 @@ export declare class UserAppController {
             email: string;
             username: string;
         };
-        appClient: {
-            name: string;
-            id: number;
-            dsn: string;
-        };
         role: {
             name: string;
             id: number;
             allowToolLevel: import("../../../generated/prisma/enums").ToolLevel;
         };
+        appClient: {
+            name: string;
+            id: number;
+            dsn: string;
+        };
     } & {
         id: number;
         createdAt: Date;
         userId: number;
-        appId: number;
         roleId: number;
+        appId: number;
     }>;
     remove(id: number): Promise<{
         id: number;
         createdAt: Date;
         userId: number;
-        appId: number;
         roleId: number;
+        appId: number;
     }>;
 }

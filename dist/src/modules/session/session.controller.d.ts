@@ -10,21 +10,21 @@ export declare class SessionController {
             id: number;
             username: string;
         };
-        _count: {
-            messageTurns: number;
-            messages: number;
-            agentRuns: number;
-        };
         appClient: {
             name: string;
             id: number;
             isActive: boolean;
         };
+        _count: {
+            messageTurns: number;
+            agentRuns: number;
+            messages: number;
+        };
     } & {
         id: string;
         createdAt: Date;
-        userId: number;
         appClientId: number;
+        userId: number;
         agentId: number;
         title: string;
     }>;
@@ -33,21 +33,21 @@ export declare class SessionController {
             id: number;
             username: string;
         };
-        _count: {
-            messageTurns: number;
-            messages: number;
-            agentRuns: number;
-        };
         appClient: {
             name: string;
             id: number;
             isActive: boolean;
         };
+        _count: {
+            messageTurns: number;
+            agentRuns: number;
+            messages: number;
+        };
     } & {
         id: string;
         createdAt: Date;
-        userId: number;
         appClientId: number;
+        userId: number;
         agentId: number;
         title: string;
     }>>;
@@ -56,21 +56,21 @@ export declare class SessionController {
             id: number;
             username: string;
         };
-        _count: {
-            messageTurns: number;
-            messages: number;
-            agentRuns: number;
-        };
         appClient: {
             name: string;
             id: number;
             isActive: boolean;
         };
+        _count: {
+            messageTurns: number;
+            agentRuns: number;
+            messages: number;
+        };
     } & {
         id: string;
         createdAt: Date;
-        userId: number;
         appClientId: number;
+        userId: number;
         agentId: number;
         title: string;
     }>;
@@ -79,21 +79,21 @@ export declare class SessionController {
             id: number;
             username: string;
         };
-        _count: {
-            messageTurns: number;
-            messages: number;
-            agentRuns: number;
-        };
         appClient: {
             name: string;
             id: number;
             isActive: boolean;
         };
+        _count: {
+            messageTurns: number;
+            agentRuns: number;
+            messages: number;
+        };
     } & {
         id: string;
         createdAt: Date;
-        userId: number;
         appClientId: number;
+        userId: number;
         agentId: number;
         title: string;
     }>;
@@ -102,21 +102,21 @@ export declare class SessionController {
             id: number;
             username: string;
         };
-        _count: {
-            messageTurns: number;
-            messages: number;
-            agentRuns: number;
-        };
         appClient: {
             name: string;
             id: number;
             isActive: boolean;
         };
+        _count: {
+            messageTurns: number;
+            agentRuns: number;
+            messages: number;
+        };
     } & {
         id: string;
         createdAt: Date;
-        userId: number;
         appClientId: number;
+        userId: number;
         agentId: number;
         title: string;
     }>;

@@ -16,8 +16,8 @@ export declare const llmTaskPlanStepSchema: z.ZodObject<{
     kind: z.ZodEnum<{
         tool: "tool";
         summarize: "summarize";
-        host_tool: "host_tool";
         reason: "reason";
+        host_tool: "host_tool";
     }>;
     toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     hostToolNames: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString>>>;
@@ -38,11 +38,11 @@ export declare const llmOuterPlanStepSchema: z.ZodObject<{
         mutate: "mutate";
     }>;
     kind: z.ZodEnum<{
-        skill: "skill";
         tool: "tool";
+        skill: "skill";
         summarize: "summarize";
-        host_tool: "host_tool";
         reason: "reason";
+        host_tool: "host_tool";
     }>;
     skillId: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
     toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
@@ -73,11 +73,11 @@ export declare const llmOuterPlanSchema: z.ZodObject<{
             mutate: "mutate";
         }>;
         kind: z.ZodEnum<{
-            skill: "skill";
             tool: "tool";
+            skill: "skill";
             summarize: "summarize";
-            host_tool: "host_tool";
             reason: "reason";
+            host_tool: "host_tool";
         }>;
         skillId: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
@@ -111,8 +111,8 @@ export declare const llmTaskPlanSchema: z.ZodObject<{
         kind: z.ZodEnum<{
             tool: "tool";
             summarize: "summarize";
-            host_tool: "host_tool";
             reason: "reason";
+            host_tool: "host_tool";
         }>;
         toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         hostToolNames: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString>>>;

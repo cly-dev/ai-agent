@@ -15,15 +15,15 @@ export declare class AgentController {
         name: string;
         id: number;
         createdAt: Date;
-        appClientId: number;
         description: string;
+        appClientId: number;
+        config: import("@prisma/client/runtime/client").JsonValue;
         systemPrompt: string;
         maxSteps: number;
         enableToolCall: boolean;
         restrictTools: boolean;
         restrictHostTools: boolean;
         restrictSkills: boolean;
-        config: import("@prisma/client/runtime/client").JsonValue;
     }[]>;
     listForClient(req: Request): Promise<import("./types/agent.types").AgentClientListItem[]>;
     listAvailableForClient(req: Request & {
@@ -47,23 +47,23 @@ export declare class AgentController {
             authMode: import("../../../generated/prisma/enums").IntegrationAuthMode;
         };
     } & {
+        path: string;
         name: string;
+        schema: import("@prisma/client/runtime/client").JsonValue;
         id: number;
         createdAt: Date;
-        appClientId: number;
-        updatedAt: Date;
-        integrationId: number;
-        isActive: boolean;
         description: string;
-        path: string;
+        isActive: boolean;
+        updatedAt: Date;
+        appClientId: number;
         definitionKey: string;
         riskLevel: import("../../../generated/prisma/enums").ToolLevel;
-        schema: import("@prisma/client/runtime/client").JsonValue;
         inputSchema: import("@prisma/client/runtime/client").JsonValue;
         outputSchema: import("@prisma/client/runtime/client").JsonValue;
         responseProfile: import("@prisma/client/runtime/client").JsonValue;
         agentMetadata: import("@prisma/client/runtime/client").JsonValue;
         method: import("../../../generated/prisma/enums").HttpMethod;
+        integrationId: number;
         toolCategoryId: number;
         timeout: number;
     })[]>;

@@ -33,13 +33,13 @@ export declare class ApprovalGateService {
         id: number;
         status: import("../../../generated/prisma/enums").ApprovalStatus;
         createdAt: Date;
+        updatedAt: Date;
         appClientId: number;
         title: string;
         sessionId: string;
-        updatedAt: Date;
-        idempotencyKey: string;
         workflowId: number;
         workflowVersion: number;
+        idempotencyKey: string;
         source: ApprovalSource;
         initiatorUserId: number;
         approverUserId: number;

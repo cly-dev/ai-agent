@@ -71,8 +71,8 @@ export declare const messageBlockSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"alert">;
     severity: z.ZodEnum<{
         success: "success";
-        error: "error";
         info: "info";
+        error: "error";
         warning: "warning";
     }>;
     title: z.ZodOptional<z.ZodString>;
@@ -161,8 +161,8 @@ export declare const messageBlocksPayloadSchema: z.ZodObject<{
         type: z.ZodLiteral<"alert">;
         severity: z.ZodEnum<{
             success: "success";
-            error: "error";
             info: "info";
+            error: "error";
             warning: "warning";
         }>;
         title: z.ZodOptional<z.ZodString>;

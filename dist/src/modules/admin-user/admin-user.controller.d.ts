@@ -20,14 +20,14 @@ export declare class AdminUserController {
     login(body: LoginAdminUserDto): Promise<{
         accessToken: string;
         user: {
+            role: AdminRole;
             id: number;
             email: string;
             username: string;
             mustChangePassword: boolean;
             createdAt: Date;
-            updatedAt: Date;
-            role: AdminRole;
             isActive: boolean;
+            updatedAt: Date;
         };
         mustChangePassword: boolean;
     }>;
