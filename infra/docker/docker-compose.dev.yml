@@ -1,0 +1,22 @@
+version: '3.9'
+
+# 本地基础设施。部署单元数量见 MONOREPO.md；不是每个 app 都需要独立容器。
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: omnix
+      POSTGRES_PASSWORD: omnix
+      POSTGRES_DB: omnix
+    volumes:
+      - omnix_pg:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+
+volumes:
+  omnix_pg:

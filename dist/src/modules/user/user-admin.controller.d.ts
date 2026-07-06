@@ -7,52 +7,52 @@ export declare class UserAdminController {
     create(body: CreateUserDto): Promise<{
         generatedPassword: string;
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: import("../../../generated/prisma/enums").UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: import("../../../generated/prisma/enums").UserStatus;
     }>;
     findAll(): Promise<{
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: import("../../../generated/prisma/enums").UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: import("../../../generated/prisma/enums").UserStatus;
     }[]>;
     findOne(id: number): Promise<{
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: import("../../../generated/prisma/enums").UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: import("../../../generated/prisma/enums").UserStatus;
     }>;
     update(id: number, body: UpdateUserDto): Promise<{
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: import("../../../generated/prisma/enums").UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: import("../../../generated/prisma/enums").UserStatus;
     }>;
     remove(id: number): Promise<{
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: import("../../../generated/prisma/enums").UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: import("../../../generated/prisma/enums").UserStatus;
     }>;
 }

@@ -23,14 +23,14 @@ SESSION_RUN_WORKER_ENABLED=1 \
 SESSION_RUN_HTTP_ENABLED=0 \
 SESSION_RUN_WORKER_CONCURRENCY=2 \
 NODE_ENV=dev \
-node dist/src/main.js >"$WORKER_LOG" 2>&1 &
+node dist/src/worker-main.js >"$WORKER_LOG" 2>&1 &
 WORKER_PID=$!
 sleep 6
 
 echo "==> start API (HTTP on, worker off)"
 SESSION_RUN_WORKER_ENABLED=0 \
 NODE_ENV=dev \
-node dist/src/main.js >"$API_LOG" 2>&1 &
+node dist/src/runtime-main.js >"$API_LOG" 2>&1 &
 API_PID=$!
 sleep 8
 
@@ -65,10 +65,18 @@ assert_log "$API_LOG" 'HTTP server listening' 'API: HTTP listening'
 assert_not_log "$API_LOG" 'Session run BullMQ worker started' 'API: no worker consumer'
 
 assert_log "$WORKER_LOG" 'HTTP disabled' 'Worker: HTTP disabled'
+assert_log "$WORKER_LOG" 'health listening on http://localhost:3031/health' 'Worker: health endpoint'
 assert_log "$WORKER_LOG" 'Session run BullMQ worker started' 'Worker: consumer started'
-assert_not_log "$WORKER_LOG" 'HTTP server listening' 'Worker: no HTTP listen'
+assert_not_log "$WORKER_LOG" 'HTTP server listening on http://localhost:3030' 'Worker: no runtime HTTP'
 
 echo "==> HTTP probe"
+if curl -sf -o /dev/null "http://127.0.0.1:3031/health"; then
+  echo "  OK  Worker /health reachable"
+else
+  echo "  FAIL Worker /health not reachable"
+  fail=1
+fi
+
 if curl -sf -o /dev/null "http://127.0.0.1:3030/docs"; then
   echo "  OK  API /docs reachable"
 else

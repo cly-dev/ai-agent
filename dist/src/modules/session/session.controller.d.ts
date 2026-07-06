@@ -6,118 +6,118 @@ export declare class SessionController {
     private readonly service;
     constructor(service: SessionService);
     create(appClientId: number, body: CreateSessionDto): Promise<{
-        user: {
-            id: number;
-            username: string;
-        };
         appClient: {
-            name: string;
             id: number;
             isActive: boolean;
+            name: string;
         };
         _count: {
             messageTurns: number;
             agentRuns: number;
             messages: number;
         };
+        user: {
+            id: number;
+            username: string;
+        };
     } & {
         id: string;
-        createdAt: Date;
         appClientId: number;
-        userId: number;
         agentId: number;
         title: string;
+        createdAt: Date;
+        userId: number;
     }>;
     findPage(appClientId: number, query: QuerySessionDto): Promise<import("../../common/pagination").PaginatedResult<{
-        user: {
-            id: number;
-            username: string;
-        };
         appClient: {
-            name: string;
             id: number;
             isActive: boolean;
+            name: string;
         };
         _count: {
             messageTurns: number;
             agentRuns: number;
             messages: number;
         };
+        user: {
+            id: number;
+            username: string;
+        };
     } & {
         id: string;
-        createdAt: Date;
         appClientId: number;
-        userId: number;
         agentId: number;
         title: string;
+        createdAt: Date;
+        userId: number;
     }>>;
     update(appClientId: number, id: string, body: UpdateSessionDto): Promise<{
-        user: {
-            id: number;
-            username: string;
-        };
         appClient: {
-            name: string;
             id: number;
             isActive: boolean;
+            name: string;
         };
         _count: {
             messageTurns: number;
             agentRuns: number;
             messages: number;
         };
+        user: {
+            id: number;
+            username: string;
+        };
     } & {
         id: string;
-        createdAt: Date;
         appClientId: number;
-        userId: number;
         agentId: number;
         title: string;
+        createdAt: Date;
+        userId: number;
     }>;
     remove(appClientId: number, id: string): Promise<{
-        user: {
-            id: number;
-            username: string;
-        };
         appClient: {
-            name: string;
             id: number;
             isActive: boolean;
+            name: string;
         };
         _count: {
             messageTurns: number;
             agentRuns: number;
             messages: number;
         };
+        user: {
+            id: number;
+            username: string;
+        };
     } & {
         id: string;
-        createdAt: Date;
         appClientId: number;
-        userId: number;
         agentId: number;
         title: string;
+        createdAt: Date;
+        userId: number;
     }>;
     findOne(id: string): Promise<{
-        user: {
-            id: number;
-            username: string;
-        };
         appClient: {
-            name: string;
             id: number;
             isActive: boolean;
+            name: string;
         };
         _count: {
             messageTurns: number;
             agentRuns: number;
             messages: number;
         };
+        user: {
+            id: number;
+            username: string;
+        };
     } & {
         id: string;
-        createdAt: Date;
         appClientId: number;
-        userId: number;
         agentId: number;
         title: string;
+        createdAt: Date;
+        userId: number;
     }>;
 }

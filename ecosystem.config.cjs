@@ -3,7 +3,7 @@ module.exports = {
   apps: [
     {
       name: 'agent-server',
-      script: 'dist/src/main.js',
+      script: 'dist/src/runtime-main.js',
       cwd: __dirname,
       instances: process.env.PM2_INSTANCES
         ? Number.parseInt(process.env.PM2_INSTANCES, 10)
@@ -39,7 +39,7 @@ module.exports = {
     },
     {
       name: 'agent-server-worker',
-      script: 'dist/src/main.js',
+      script: 'dist/src/worker-main.js',
       cwd: __dirname,
       instances: process.env.PM2_WORKER_INSTANCES
         ? Number.parseInt(process.env.PM2_WORKER_INSTANCES, 10)
