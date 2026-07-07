@@ -22,6 +22,7 @@ const draft_review_1 = require("../../core/draft-review");
 const approval_decide_dto_1 = require("./dto/approval-decide.dto");
 const query_approval_inbox_dto_1 = require("./dto/query-approval-inbox.dto");
 const approval_write_draft_mapper_1 = require("./approval-write-draft.mapper");
+const build_approval_entity_reference_util_1 = require("../../core/approval/build-approval-entity-reference.util");
 let ApprovalController = class ApprovalController {
     constructor(approvalRequests, approvalResume) {
         this.approvalRequests = approvalRequests;
@@ -117,6 +118,7 @@ let ApprovalController = class ApprovalController {
                 riskLevel: writeDraft.tool.riskLevel,
             },
             draftReview: this.extractDraftReviewBudget(row),
+            entityReference: (0, build_approval_entity_reference_util_1.buildApprovalEntityReferenceFromSnapshot)(row.resumeSnapshot),
         };
     }
     extractDraftReviewBudget(row) {

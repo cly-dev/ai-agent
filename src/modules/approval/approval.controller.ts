@@ -25,6 +25,7 @@ import {
   buildApprovalWriteDraftPayload,
   resolveApprovalRowToolId,
 } from './approval-write-draft.mapper';
+import { buildApprovalEntityReferenceFromSnapshot } from '../../core/approval/build-approval-entity-reference.util';
 import type { WriteToolPolicyRow } from '../../core/draft-review/load-write-tools-for-policy.util';
 
 type AuthedRequest = Request & {
@@ -163,6 +164,9 @@ export class ApprovalController {
         riskLevel: writeDraft.tool.riskLevel,
       },
       draftReview: this.extractDraftReviewBudget(row),
+      entityReference: buildApprovalEntityReferenceFromSnapshot(
+        row.resumeSnapshot,
+      ),
     };
   }
 

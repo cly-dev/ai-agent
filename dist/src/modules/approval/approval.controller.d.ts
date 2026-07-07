@@ -49,6 +49,7 @@ export declare class ApprovalController {
                 retryMax: number;
                 canRetry: boolean;
             };
+            entityReference: import("../../core/approval/build-approval-entity-reference.util").ApprovalEntityReference;
         }[];
     }>;
     getOne(req: AuthedRequest, id: number): Promise<{
@@ -83,6 +84,7 @@ export declare class ApprovalController {
             retryMax: number;
             canRetry: boolean;
         };
+        entityReference: import("../../core/approval/build-approval-entity-reference.util").ApprovalEntityReference;
     }>;
     decide(req: AuthedRequest, id: number, body: ApprovalDecideDto): Promise<{
         resumed: boolean;

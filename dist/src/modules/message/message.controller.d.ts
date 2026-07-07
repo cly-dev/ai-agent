@@ -14,12 +14,12 @@ export declare class MessageController {
             userId?: number;
         };
     }, sessionId: string, body: SaveMessageDto): Promise<{
-        id: number;
-        content: string;
-        createdAt: Date;
         role: string;
-        toolName: string;
+        id: number;
+        createdAt: Date;
         sessionId: string;
+        content: string;
+        toolName: string;
         toolInput: import("@prisma/client/runtime/client").JsonValue;
         toolOutput: import("@prisma/client/runtime/client").JsonValue;
         pageContextJson: import("@prisma/client/runtime/client").JsonValue;

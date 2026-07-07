@@ -2035,7 +2035,7 @@ export type $PageActionRunPayload<ExtArgs extends runtime.Types.Extensions.Inter
     durationMs: number | null
     idempotencyKey: string | null
     /**
-     * invoke 时由 pageContext 锚点派生的去重键（同用户 + 同 PageAction + 同 key 不重复执行）。
+     * invoke 时由 pageContext 等输入稳定序列化后 hash 得到的去重键（同用户 + 同 PageAction + 同 key 不重复执行）。
      */
     pageActionKey: string | null
     clientActionId: string | null
