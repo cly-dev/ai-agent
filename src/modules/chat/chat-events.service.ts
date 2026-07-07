@@ -3,8 +3,8 @@ import { hostname } from 'node:os';
 import {
   Injectable,
   Logger,
+  OnApplicationBootstrap,
   OnModuleDestroy,
-  OnModuleInit,
 } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { Observable, Subject, Subscription } from 'rxjs';
@@ -101,7 +101,9 @@ export type ChatSseEvent =
   | { event: 'error'; payload: { message: string; code?: string; generation?: number } };
 
 @Injectable()
-export class ChatEventsService implements OnModuleInit, OnModuleDestroy {
+export class ChatEventsService
+  implements OnApplicationBootstrap, OnModuleDestroy
+{
   /** 保留最近事件，避免 SSE 晚于发消息连接时收不到推送 */
   private static readonly REPLAY_BUFFER = 8;
   private readonly logger = new Logger(ChatEventsService.name);
@@ -117,16 +119,18 @@ export class ChatEventsService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
   ) {}
 
-  onModuleInit(): void {
+  /** 等 RedisConnectionService 异步 connect 完成后再订阅，避免 onModuleInit 竞态误判。 */
+  onApplicationBootstrap(): void {
     const isProd =
       process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'prod';
     const client = this.redis.getClient();
-    if (isProd && !client) {
-      this.logger.error(
-        'CHAT SSE: Redis is not configured in production — SSE will not relay across instances. Set REDIS_URL or REDIS_HOST.',
-      );
-    }
     if (!client) {
+      if (isProd) {
+        const message = this.redis.isConfigured()
+          ? 'CHAT SSE: Redis client unavailable in production — SSE will not relay across instances.'
+          : 'CHAT SSE: Redis is not configured in production — SSE will not relay across instances. Set REDIS_URL or REDIS_HOST.';
+        this.logger.error(message);
+      }
       return;
     }
     this.subscriber = client.duplicate();

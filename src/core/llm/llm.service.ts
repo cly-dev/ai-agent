@@ -2,7 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  OnModuleInit,
+  OnApplicationBootstrap,
 } from '@nestjs/common';
 import { AIMessage, AIMessageChunk } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
@@ -36,7 +36,7 @@ import type {
 } from './llm.types';
 
 @Injectable()
-export class LlmService implements OnModuleInit {
+export class LlmService implements OnApplicationBootstrap {
   private readonly logger = new Logger(LlmService.name);
   /** 单次回复默认输出上限（与上下文窗口无关）。 */
   private static readonly DEFAULT_OUTPUT_MAX_TOKENS = 2048;
@@ -60,7 +60,7 @@ export class LlmService implements OnModuleInit {
     private readonly outboundHttp: OutboundHttpService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
+  async onApplicationBootstrap(): Promise<void> {
     try {
       await this.refreshConfigCache();
     } catch (error) {

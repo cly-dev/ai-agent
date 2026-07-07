@@ -3,8 +3,8 @@ import { hostname } from 'node:os';
 import {
   Injectable,
   Logger,
+  OnApplicationBootstrap,
   OnModuleDestroy,
-  OnModuleInit,
 } from '@nestjs/common';
 import type Redis from 'ioredis';
 import {
@@ -31,7 +31,9 @@ type RemoteSupersedeHandler = (event: SessionRunSupersedeEvent) => void;
  * Session run 跨实例共享状态：generation、run 绑定、job 队列、drain 锁、supersede 广播。
  */
 @Injectable()
-export class SessionRunStateStore implements OnModuleInit, OnModuleDestroy {
+export class SessionRunStateStore
+  implements OnApplicationBootstrap, OnModuleDestroy
+{
   private readonly logger = new Logger(SessionRunStateStore.name);
   private readonly instanceId = `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
   private readonly generationLocal = new Map<string, number>();
@@ -42,17 +44,18 @@ export class SessionRunStateStore implements OnModuleInit, OnModuleDestroy {
 
   constructor(private readonly redis: RedisConnectionService) {}
 
-  onModuleInit(): void {
+  onApplicationBootstrap(): void {
     const isProd =
       process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'prod';
-    if (isProd && !this.redis.getClient()) {
-      this.logger.error(
-        'SESSION RUN: Redis is not configured in production — generation will not sync across instances. Set REDIS_URL or REDIS_HOST.',
-      );
-      this.productionRedisWarned = true;
-    }
     const client = this.redis.getClient();
     if (!client) {
+      if (isProd) {
+        const message = this.redis.isConfigured()
+          ? 'SESSION RUN: Redis client unavailable in production — generation will not sync across instances.'
+          : 'SESSION RUN: Redis is not configured in production — generation will not sync across instances. Set REDIS_URL or REDIS_HOST.';
+        this.logger.error(message);
+        this.productionRedisWarned = true;
+      }
       return;
     }
     this.subscriber = client.duplicate();

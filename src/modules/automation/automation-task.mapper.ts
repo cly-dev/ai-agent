@@ -102,8 +102,14 @@ export function toAutomationTaskFromPageActionRun(
 export function toAutomationTaskDetailFromPageActionRun(
   row: AutomationPageActionRunRow,
 ): AutomationTaskDetail {
+  const listItem = toAutomationTaskFromPageActionRun(row);
+  const fillText = row.fillText?.trim() || null;
   return {
-    ...toAutomationTaskFromPageActionRun(row),
+    ...listItem,
+    outputs: {
+      ...listItem.outputs,
+      fillText,
+    },
     actionKey: row.pageAction.actionKey,
     instruction: row.instruction,
     errorCode: row.errorCode,

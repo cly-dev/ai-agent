@@ -58,6 +58,13 @@ export class RedisConnectionService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** 是否配置了 Redis 连接参数（不代表已连上）。 */
+  isConfigured(): boolean {
+    return !!(
+      process.env.REDIS_URL?.trim() || process.env.REDIS_HOST?.trim()
+    );
+  }
+
   /** 未配置或连接失败时为 `null`，调用方应降级或拒绝写操作。 */
   getClient(): Redis | null {
     return this.client;

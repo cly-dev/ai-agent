@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import type { IntentRecallConfig } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IntentRecallConfigCacheStore } from './intent-recall-config-cache.store';
@@ -8,7 +8,7 @@ import type {
 } from './intent-recall-config.types';
 
 @Injectable()
-export class IntentRecallConfigService implements OnModuleInit {
+export class IntentRecallConfigService implements OnApplicationBootstrap {
   private readonly logger = new Logger(IntentRecallConfigService.name);
   private cached: ResolvedIntentRecallConfig | null = null;
 
@@ -17,7 +17,7 @@ export class IntentRecallConfigService implements OnModuleInit {
     private readonly configCache: IntentRecallConfigCacheStore,
   ) {}
 
-  async onModuleInit(): Promise<void> {
+  async onApplicationBootstrap(): Promise<void> {
     try {
       await this.refreshCache();
     } catch (error) {

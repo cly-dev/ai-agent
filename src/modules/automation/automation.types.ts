@@ -50,6 +50,11 @@ export type AutomationTaskListItem = {
   outputs: { preview: string | null; hasFillText: boolean };
 };
 
+export type AutomationTaskDetailOutputs = AutomationTaskListItem['outputs'] & {
+  /** 完整 fill 正文；仅详情返回，列表仍用 preview 截断。 */
+  fillText: string | null;
+};
+
 export type AutomationTaskTimelineEntry = {
   step: number;
   type: string;
@@ -58,7 +63,8 @@ export type AutomationTaskTimelineEntry = {
   status?: string;
 };
 
-export type AutomationTaskDetail = AutomationTaskListItem & {
+export type AutomationTaskDetail = Omit<AutomationTaskListItem, 'outputs'> & {
+  outputs: AutomationTaskDetailOutputs;
   actionKey: string;
   instruction: string | null;
   errorCode: string | null;
