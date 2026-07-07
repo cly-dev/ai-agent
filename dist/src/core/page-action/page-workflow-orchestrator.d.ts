@@ -17,6 +17,7 @@ export type PageWorkflowOrchestratorInput = PageWorkflowRunnerInput & {
     };
     existingApprovalRequestId?: number | null;
     retryInstruction?: string | null;
+    pageActionKey?: string | null;
 };
 export type PageWorkflowOrchestratorResult = PageWorkflowRunnerResult & {
     suspended?: boolean;

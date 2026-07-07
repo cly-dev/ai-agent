@@ -30,6 +30,7 @@ export type PageWorkflowRunnerInput = {
   actionRunId: number;
   actionKey: string;
   generation: number;
+  pageActionKey?: string | null;
   clientActionId?: string | null;
   sseSink: PageActionSseSink;
   stepRecorder?: PageActionRunStepRecorder;

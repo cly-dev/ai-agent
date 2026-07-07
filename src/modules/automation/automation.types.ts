@@ -40,6 +40,7 @@ export type AutomationTaskListItem = {
   taskStatus: AutomationTaskStatus;
   title: string;
   subtitle: string | null;
+  pageActionKey: string | null;
   workflowKey: string | null;
   workflowName: string | null;
   createdAt: string;

@@ -54,6 +54,28 @@ let RedisConnectionService = RedisConnectionService_1 = class RedisConnectionSer
     getClient() {
         return this.client;
     }
+    async ping() {
+        var _a, _b;
+        const url = (_a = process.env.REDIS_URL) === null || _a === void 0 ? void 0 : _a.trim();
+        const host = (_b = process.env.REDIS_HOST) === null || _b === void 0 ? void 0 : _b.trim();
+        if (!url && !host) {
+            return { ok: false, configured: false, error: 'redis not configured' };
+        }
+        if (!this.client) {
+            return { ok: false, configured: true, error: 'redis client unavailable' };
+        }
+        try {
+            await this.client.ping();
+            return { ok: true, configured: true };
+        }
+        catch (error) {
+            return {
+                ok: false,
+                configured: true,
+                error: error instanceof Error ? error.message : String(error),
+            };
+        }
+    }
 };
 RedisConnectionService = RedisConnectionService_1 = __decorate([
     (0, common_1.Injectable)()

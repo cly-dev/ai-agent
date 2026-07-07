@@ -1,6 +1,7 @@
 import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { type PaginatedResult } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { OutboundHttpService } from '../../core/outbound-http/outbound-http.service';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
 import { QueryIntegrationDto } from './dto/query-integration.dto';
 import { UpdateIntegrationDto } from './dto/update-integration.dto';
@@ -9,7 +10,8 @@ import type { TestIntegrationConnectionDto } from './dto/test-integration-connec
 export declare class IntegrationService {
     private readonly prisma;
     private readonly runtimeCacheInvalidator;
-    constructor(prisma: PrismaService, runtimeCacheInvalidator: RuntimeCacheInvalidator);
+    private readonly outboundHttp;
+    constructor(prisma: PrismaService, runtimeCacheInvalidator: RuntimeCacheInvalidator, outboundHttp: OutboundHttpService);
     create(dto: CreateIntegrationDto): Promise<IntegrationResponse>;
     findPageByAppClientId(appClientId: number, query: QueryIntegrationDto): Promise<PaginatedResult<IntegrationResponse>>;
     findPage(query: QueryIntegrationDto): Promise<PaginatedResult<IntegrationResponse>>;

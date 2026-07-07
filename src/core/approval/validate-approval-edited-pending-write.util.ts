@@ -10,7 +10,7 @@ import {
 import type { ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
 import type { ToolEngineService } from '../tool-engine/tool-engine.service';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { buildEngineToolsFromAllowed } from '../agent-engine/engine/main/runtime/agent-tool-runtime.util';
+import { buildEngineToolsFromAllowedWithCredentials } from '../agent-engine/engine/main/runtime/agent-tool-runtime.util';
 import { BadRequestException } from '@nestjs/common';
 import { DraftReviewPolicyViolationError } from '../draft-review/sanitize-draft-review-patch.util';
 
@@ -30,11 +30,13 @@ export async function resolveApprovalSnapshotForDecision(input: {
     where: { id: { in: input.snapshot.scopedToolIds } },
     include: { integration: true },
   });
-  const { tools: resolvedScopedTools } = buildEngineToolsFromAllowed(
-    allowedTools,
-    input.userId,
-    input.toolEngine,
-  );
+  const { tools: resolvedScopedTools } =
+    await buildEngineToolsFromAllowedWithCredentials(
+      allowedTools,
+      input.userId,
+      input.toolEngine,
+      input.prisma,
+    );
   const draft = resolveWriteDraftFromApprovalSnapshot(input.snapshot);
   const writeTool =
     resolvedScopedTools.find(

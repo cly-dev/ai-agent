@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IntegrationModule = void 0;
 const common_1 = require("@nestjs/common");
+const outbound_http_module_1 = require("../../core/outbound-http/outbound-http.module");
 const auth_module_1 = require("../../auth/auth.module");
 const integration_controller_1 = require("./integration.controller");
 const integration_service_1 = require("./integration.service");
@@ -15,7 +16,7 @@ let IntegrationModule = class IntegrationModule {
 };
 IntegrationModule = __decorate([
     (0, common_1.Module)({
-        imports: [auth_module_1.AuthModule],
+        imports: [outbound_http_module_1.OutboundHttpModule, auth_module_1.AuthModule],
         providers: [integration_service_1.IntegrationService],
         controllers: [integration_controller_1.IntegrationController],
         exports: [integration_service_1.IntegrationService],

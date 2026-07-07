@@ -17,14 +17,19 @@ const common_1 = require("@nestjs/common");
 const tools_1 = require("@langchain/core/tools");
 const client_1 = require("../../../generated/prisma/client");
 const prisma_service_1 = require("../../prisma/prisma.service");
+const outbound_http_service_1 = require("../outbound-http/outbound-http.service");
+const outbound_http_policy_util_1 = require("../outbound-http/outbound-http.policy.util");
+const outbound_http_types_1 = require("../outbound-http/outbound-http.types");
 const outbound_url_guard_util_1 = require("../security/outbound-url-guard.util");
 const file_debug_log_util_1 = require("../security/file-debug-log.util");
 const tool_input_sanitize_util_1 = require("./tool-input-sanitize.util");
 const tool_response_source_util_1 = require("./tool-response-source.util");
 const tool_schema_util_1 = require("./tool-schema.util");
+const integration_credential_resolver_util_1 = require("./integration-credential-resolver.util");
 let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
-    constructor(prisma) {
+    constructor(prisma, outboundHttp) {
         this.prisma = prisma;
+        this.outboundHttp = outboundHttp;
         this.logger = new common_1.Logger(ToolEngineService_1.name);
     }
     buildLangChainTools(definitions, ctx) {
@@ -87,9 +92,7 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
         const bodyPayload = this.buildJsonBody(tool.method, input, specs, tool.path);
         const httpMethod = this.toHttpMethod(tool.method);
         const startedAt = Date.now();
-        const controller = new AbortController();
         const timeoutMs = this.resolveTimeoutMs((_d = options.timeoutMs) !== null && _d !== void 0 ? _d : tool.timeout, tool.name);
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
         const baseResult = {
             toolId: tool.id,
             toolName: tool.name,
@@ -101,11 +104,13 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
             },
         };
         try {
-            const response = await fetch(url, {
+            const response = await this.outboundHttp.fetchWithPolicy(url, {
                 method: httpMethod,
                 headers,
                 body: bodyPayload,
-                signal: controller.signal,
+            }, {
+                timeoutMs,
+                label: 'tool_debug',
             });
             const bodyText = await response.text();
             const data = this.safeJsonParse(bodyText);
@@ -119,16 +124,7 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
                     : `HTTP ${response.status} ${response.statusText}` });
         }
         catch (error) {
-            const aborted = error instanceof Error && error.name === 'AbortError';
-            const message = aborted
-                ? `request timed out after ${timeoutMs}ms`
-                : error instanceof Error
-                    ? error.message
-                    : String(error);
-            return Object.assign(Object.assign({}, baseResult), { ok: false, durationMs: Date.now() - startedAt, error: message });
-        }
-        finally {
-            clearTimeout(timer);
+            return Object.assign(Object.assign({}, baseResult), { ok: false, durationMs: Date.now() - startedAt, error: this.formatOutboundFetchError(error, timeoutMs) });
         }
     }
     async executeByName(toolName, input, allowedToolIds, userId, options) {
@@ -185,9 +181,7 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
     async executeFromDefinition(def, input, userId, options) {
         var _a, _b, _c, _d, _e;
         const startedAt = Date.now();
-        const controller = new AbortController();
         const timeoutMs = this.resolveTimeoutMs(def.timeout, def.name);
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
         try {
             const specs = this.loadOpenApiParameterSpecs(def.inputSchema, def.schema);
             input = (0, tool_input_sanitize_util_1.applyToolParameterDefaults)(input, specs, {
@@ -195,7 +189,7 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
                 responseProfile: def.responseProfile,
             });
             input = (0, tool_input_sanitize_util_1.sanitizeToolInvokeInput)(input, specs);
-            const credentialCacheKey = `${userId}:${def.integration.id}`;
+            const credentialCacheKey = (0, integration_credential_resolver_util_1.integrationCredentialCacheKey)(userId, def.integration.id);
             const cachedUserApiKey = (_a = options === null || options === void 0 ? void 0 : options.integrationCredentialCache) === null || _a === void 0 ? void 0 : _a.get(credentialCacheKey);
             let userApiKey = '';
             if (cachedUserApiKey !== undefined) {
@@ -235,11 +229,13 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
             (0, outbound_url_guard_util_1.assertOutboundUrlAllowed)(url);
             const bodyPayload = this.buildJsonBody(def.method, input, specs, def.path);
             const httpMethod = this.toHttpMethod(def.method);
-            const response = await fetch(url, {
+            const response = await this.outboundHttp.fetchWithPolicy(url, {
                 method: httpMethod,
                 headers,
                 body: bodyPayload,
-                signal: controller.signal,
+            }, {
+                timeoutMs,
+                label: `tool_invoke:${def.name}`,
             });
             const bodyText = await response.text();
             const output = this.safeJsonParse(bodyText);
@@ -302,8 +298,13 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
                 httpResponse,
             };
         }
-        finally {
-            clearTimeout(timeout);
+        catch (error) {
+            if (error instanceof common_1.BadRequestException ||
+                error instanceof tool_response_source_util_1.ToolHttpResponseError ||
+                error instanceof outbound_http_types_1.OutboundHttpError) {
+                throw error;
+            }
+            throw new Error(`tool ${def.name} invoke failed: ${this.formatOutboundFetchError(error, timeoutMs)}`);
         }
     }
     buildBaseHeaders(apiKeyRaw) {
@@ -458,18 +459,31 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
         }
     }
     resolveTimeoutMs(configured, toolName) {
+        const fallback = (0, outbound_http_policy_util_1.readToolDefaultTimeoutMs)();
         if (typeof configured !== 'number' || !Number.isFinite(configured)) {
-            return ToolEngineService_1.DEFAULT_TIMEOUT_MS;
+            return fallback;
         }
         const rounded = Math.floor(configured);
         if (rounded < 1) {
-            return ToolEngineService_1.DEFAULT_TIMEOUT_MS;
+            return fallback;
         }
         if (rounded > ToolEngineService_1.MAX_TIMEOUT_MS) {
             this.logger.warn(`tool ${toolName} timeout ${rounded} exceeds setTimeout max; clamped to ${ToolEngineService_1.MAX_TIMEOUT_MS}`);
             return ToolEngineService_1.MAX_TIMEOUT_MS;
         }
         return rounded;
+    }
+    formatOutboundFetchError(error, timeoutMs) {
+        if (error instanceof outbound_http_types_1.OutboundHttpError) {
+            if (error.kind === 'timeout') {
+                return `request timed out after ${timeoutMs}ms`;
+            }
+            return error.message;
+        }
+        if (error instanceof Error) {
+            return error.message;
+        }
+        return String(error);
     }
     writeToolDebugSnapshot(record) {
         var _a, _b, _c, _d;
@@ -519,11 +533,11 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
         return out;
     }
 };
-ToolEngineService.DEFAULT_TIMEOUT_MS = 10000;
 ToolEngineService.MAX_TIMEOUT_MS = 2147483647;
 ToolEngineService = ToolEngineService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        outbound_http_service_1.OutboundHttpService])
 ], ToolEngineService);
 exports.ToolEngineService = ToolEngineService;
 //# sourceMappingURL=tool-engine.service.js.map

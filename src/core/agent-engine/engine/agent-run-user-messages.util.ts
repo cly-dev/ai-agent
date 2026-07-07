@@ -1,4 +1,5 @@
 import { HttpException, NotFoundException } from '@nestjs/common';
+import { OutboundHttpError } from '../../outbound-http/outbound-http.types';
 import { ToolHttpResponseError } from '../../tool-engine/tool-response-source.util';
 import { isRequestedSkillRunError } from './main/skill/requested-skill-run.error';
 import { requestedSkillUserMessage } from './main/skill/requested-skill-run.service';
@@ -183,6 +184,24 @@ export function buildToolFailureUserMessage(
   const downstreamMsg = extractDownstreamMessage(context?.responseSource);
   const isMutation = context?.isMutation === true;
 
+  if (error instanceof OutboundHttpError) {
+    if (error.kind === 'timeout') {
+      return isMutation
+        ? '写操作超时，请稍后重试或联系管理员。'
+        : '查询超时，未能获取到数据。请缩小查询范围或稍后再试。';
+    }
+    if (error.kind === 'abort') {
+      return isMutation
+        ? '写操作已取消。'
+        : '查询已取消。';
+    }
+    if (error.kind === 'network') {
+      return isMutation
+        ? '无法连接下游服务，写操作未完成。请稍后重试或联系管理员。'
+        : '无法连接下游服务，请检查网络或稍后重试。';
+    }
+  }
+
   if (
     lower.includes('401') ||
     lower.includes('403') ||
@@ -247,6 +266,17 @@ export function buildIntentScopeFailureUserMessage(): string {
 
 /** 主循环 LLM 调用失败时给用户的说明。 */
 export function buildLlmFailureUserMessage(error: unknown): string {
+  if (error instanceof OutboundHttpError) {
+    if (error.kind === 'timeout') {
+      return '生成回复超时，请稍后重试。';
+    }
+    if (error.kind === 'network') {
+      return '无法连接智能服务，请稍后重试；若持续失败请联系管理员。';
+    }
+    if (error.kind === 'abort') {
+      return '生成已停止。';
+    }
+  }
   const text = error instanceof Error ? error.message : String(error);
   const lower = text.toLowerCase();
 
@@ -282,6 +312,14 @@ export function resolveToolFailureCode(
   const lower = text.toLowerCase();
   const httpStatus =
     context?.httpStatus ?? parseHttpStatusFromToolError(error);
+  if (error instanceof OutboundHttpError) {
+    if (error.kind === 'timeout' || error.kind === 'abort') {
+      return 'TOOL_TIMEOUT';
+    }
+    if (error.kind === 'network') {
+      return 'TOOL_DOWNSTREAM_ERROR';
+    }
+  }
   if (
     lower.includes('401') ||
     lower.includes('403') ||
@@ -308,6 +346,14 @@ export function resolveToolFailureCode(
 }
 
 export function resolveLlmFailureCode(error: unknown): AgentMachineCode {
+  if (error instanceof OutboundHttpError) {
+    if (error.kind === 'timeout' || error.kind === 'abort') {
+      return 'LLM_TIMEOUT';
+    }
+    if (error.kind === 'network') {
+      return 'LLM_TIMEOUT';
+    }
+  }
   const text = error instanceof Error ? error.message : String(error);
   const lower = text.toLowerCase();
   if (

@@ -12,6 +12,9 @@ import {
   IntegrationAuthMode,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { OutboundHttpService } from '../outbound-http/outbound-http.service';
+import { readToolDefaultTimeoutMs } from '../outbound-http/outbound-http.policy.util';
+import { OutboundHttpError } from '../outbound-http/outbound-http.types';
 import { assertOutboundUrlAllowed } from '../security/outbound-url-guard.util';
 import { isToolEngineFileDebugEnabled } from '../security/file-debug-log.util';
 import {
@@ -29,6 +32,7 @@ import {
   resolveToolZodSchema,
   type ToolDefinitionInput,
 } from './tool-schema.util';
+import { integrationCredentialCacheKey } from './integration-credential-resolver.util';
 import type {
   BuiltLangChainTools,
   ToolBuildContext,
@@ -52,10 +56,12 @@ export type {
 @Injectable()
 export class ToolEngineService {
   private readonly logger = new Logger(ToolEngineService.name);
-  private static readonly DEFAULT_TIMEOUT_MS = 10_000;
   private static readonly MAX_TIMEOUT_MS = 2_147_483_647;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly outboundHttp: OutboundHttpService,
+  ) {}
 
   /**
    * 将数据库工具定义统一构建为 LangChain tool（Zod schema），
@@ -162,12 +168,10 @@ export class ToolEngineService {
     const httpMethod = this.toHttpMethod(tool.method);
 
     const startedAt = Date.now();
-    const controller = new AbortController();
     const timeoutMs = this.resolveTimeoutMs(
       options.timeoutMs ?? tool.timeout,
       tool.name,
     );
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     const baseResult: Omit<ToolDebugResult, 'ok' | 'durationMs' | 'response' | 'error'> = {
       toolId: tool.id,
@@ -181,12 +185,18 @@ export class ToolEngineService {
     };
 
     try {
-      const response = await fetch(url, {
-        method: httpMethod,
-        headers,
-        body: bodyPayload,
-        signal: controller.signal,
-      });
+      const response = await this.outboundHttp.fetchWithPolicy(
+        url,
+        {
+          method: httpMethod,
+          headers,
+          body: bodyPayload,
+        },
+        {
+          timeoutMs,
+          label: 'tool_debug',
+        },
+      );
       const bodyText = await response.text();
       const data = this.safeJsonParse(bodyText);
       return {
@@ -204,20 +214,12 @@ export class ToolEngineService {
           : `HTTP ${response.status} ${response.statusText}`,
       };
     } catch (error) {
-      const aborted = error instanceof Error && error.name === 'AbortError';
-      const message = aborted
-        ? `request timed out after ${timeoutMs}ms`
-        : error instanceof Error
-          ? error.message
-          : String(error);
       return {
         ...baseResult,
         ok: false,
         durationMs: Date.now() - startedAt,
-        error: message,
+        error: this.formatOutboundFetchError(error, timeoutMs),
       };
-    } finally {
-      clearTimeout(timer);
     }
   }
 
@@ -296,9 +298,7 @@ export class ToolEngineService {
     options?: Pick<ToolBuildContext, 'integrationCredentialCache'>,
   ): Promise<ToolExecutionResult> {
     const startedAt = Date.now();
-    const controller = new AbortController();
     const timeoutMs = this.resolveTimeoutMs(def.timeout, def.name);
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const specs = this.loadOpenApiParameterSpecs(def.inputSchema, def.schema);
       input = applyToolParameterDefaults(input, specs, {
@@ -307,7 +307,10 @@ export class ToolEngineService {
       });
       input = sanitizeToolInvokeInput(input, specs);
 
-      const credentialCacheKey = `${userId}:${def.integration.id}`;
+      const credentialCacheKey = integrationCredentialCacheKey(
+        userId,
+        def.integration.id,
+      );
       const cachedUserApiKey =
         options?.integrationCredentialCache?.get(credentialCacheKey);
       let userApiKey = '';
@@ -365,12 +368,18 @@ export class ToolEngineService {
 
       const httpMethod = this.toHttpMethod(def.method);
 
-      const response = await fetch(url, {
-        method: httpMethod,
-        headers,
-        body: bodyPayload,
-        signal: controller.signal,
-      });
+      const response = await this.outboundHttp.fetchWithPolicy(
+        url,
+        {
+          method: httpMethod,
+          headers,
+          body: bodyPayload,
+        },
+        {
+          timeoutMs,
+          label: `tool_invoke:${def.name}`,
+        },
+      );
       const bodyText = await response.text();
       const output = this.safeJsonParse(bodyText);
       const httpResponse = buildHttpResponseSource(response, bodyText, output);
@@ -437,8 +446,17 @@ export class ToolEngineService {
         responseSource: bodyText,
         httpResponse,
       };
-    } finally {
-      clearTimeout(timeout);
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ToolHttpResponseError ||
+        error instanceof OutboundHttpError
+      ) {
+        throw error;
+      }
+      throw new Error(
+        `tool ${def.name} invoke failed: ${this.formatOutboundFetchError(error, timeoutMs)}`,
+      );
     }
   }
 
@@ -652,12 +670,13 @@ export class ToolEngineService {
     configured: number | null,
     toolName: string,
   ): number {
+    const fallback = readToolDefaultTimeoutMs();
     if (typeof configured !== 'number' || !Number.isFinite(configured)) {
-      return ToolEngineService.DEFAULT_TIMEOUT_MS;
+      return fallback;
     }
     const rounded = Math.floor(configured);
     if (rounded < 1) {
-      return ToolEngineService.DEFAULT_TIMEOUT_MS;
+      return fallback;
     }
     if (rounded > ToolEngineService.MAX_TIMEOUT_MS) {
       this.logger.warn(
@@ -666,6 +685,19 @@ export class ToolEngineService {
       return ToolEngineService.MAX_TIMEOUT_MS;
     }
     return rounded;
+  }
+
+  private formatOutboundFetchError(error: unknown, timeoutMs: number): string {
+    if (error instanceof OutboundHttpError) {
+      if (error.kind === 'timeout') {
+        return `request timed out after ${timeoutMs}ms`;
+      }
+      return error.message;
+    }
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return String(error);
   }
 
   private writeToolDebugSnapshot(record: Record<string, unknown>): void {

@@ -16,7 +16,7 @@ async function resolveApprovalSnapshotForDecision(input) {
         where: { id: { in: input.snapshot.scopedToolIds } },
         include: { integration: true },
     });
-    const { tools: resolvedScopedTools } = (0, agent_tool_runtime_util_1.buildEngineToolsFromAllowed)(allowedTools, input.userId, input.toolEngine);
+    const { tools: resolvedScopedTools } = await (0, agent_tool_runtime_util_1.buildEngineToolsFromAllowedWithCredentials)(allowedTools, input.userId, input.toolEngine, input.prisma);
     const draft = (0, write_draft_util_1.resolveWriteDraftFromApprovalSnapshot)(input.snapshot);
     const writeTool = (_a = resolvedScopedTools.find((tool) => tool.name === draft.tool.name)) !== null && _a !== void 0 ? _a : null;
     if (!writeTool) {

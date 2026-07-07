@@ -6,6 +6,7 @@ import { AdminPrefixJwtGuard } from './auth/admin-prefix-jwt.guard';
 import { AdminRoleGuard } from './auth/admin-role.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { OutboundHttpModule } from './core/outbound-http/outbound-http.module';
 import { LlmModule } from './core/llm/llm.module';
 import { MemoryModule } from './core/memory/memory.module';
 import { RuntimeCacheModule } from './core/runtime-cache/runtime-cache.module';
@@ -36,6 +37,7 @@ import { PageAgentModule } from './modules/page-agent/page-agent.module';
 import { ApprovalModule } from './core/approval/approval.module';
 import { ApprovalModule as ApprovalInboxModule } from './modules/approval/approval.module';
 import { WorkflowModule } from './modules/workflow/workflow.module';
+import { ConnectivityModule } from './modules/connectivity/connectivity.module';
 
 @Module({
   imports: [
@@ -43,6 +45,7 @@ import { WorkflowModule } from './modules/workflow/workflow.module';
       ttl: 60,
       limit: 120,
     }),
+    OutboundHttpModule,
     LlmModule,
     MemoryModule,
     RuntimeCacheModule,
@@ -73,6 +76,7 @@ import { WorkflowModule } from './modules/workflow/workflow.module';
     AgentRunModule,
     SkillModule,
     IntegrationModule,
+    ConnectivityModule,
   ],
   controllers: [AppController],
   providers: [

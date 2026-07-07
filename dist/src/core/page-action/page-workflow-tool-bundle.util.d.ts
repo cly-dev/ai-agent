@@ -1,6 +1,6 @@
 import type { Prisma } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { buildEngineToolsFromAllowed } from '../agent-engine/engine/main/runtime/agent-tool-runtime.util';
+import type { AgentEngineTool } from '../agent-engine/engine/main/types/agent-engine.types';
 import type { ToolEngineService } from '../tool-engine/tool-engine.service';
 import type { ToolBuildContext, ToolExecutionDefinition } from '../tool-engine/tool-engine.types';
 declare const TOOL_WITH_INTEGRATION_INCLUDE: {
@@ -13,7 +13,7 @@ export type PageWorkflowToolBundle = {
     allowedToolIds: number[];
     prismaTools: PageWorkflowPrismaTool[];
     toolById: Map<number, PageWorkflowPrismaTool>;
-    engineTools: ReturnType<typeof buildEngineToolsFromAllowed>['tools'];
+    engineTools: AgentEngineTool[];
     toolBuildCtx: ToolBuildContext;
 };
 export declare function loadPageWorkflowToolBundle(input: {

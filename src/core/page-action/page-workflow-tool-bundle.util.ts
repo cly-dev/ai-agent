@@ -1,6 +1,7 @@
 import type { Prisma } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { buildEngineToolsFromAllowed } from '../agent-engine/engine/main/runtime/agent-tool-runtime.util';
+import { buildEngineToolsFromAllowedWithCredentials } from '../agent-engine/engine/main/runtime/agent-tool-runtime.util';
+import type { AgentEngineTool } from '../agent-engine/engine/main/types/agent-engine.types';
 import type { ToolEngineService } from '../tool-engine/tool-engine.service';
 import type {
   ToolBuildContext,
@@ -17,16 +18,9 @@ export type PageWorkflowToolBundle = {
   allowedToolIds: number[];
   prismaTools: PageWorkflowPrismaTool[];
   toolById: Map<number, PageWorkflowPrismaTool>;
-  engineTools: ReturnType<typeof buildEngineToolsFromAllowed>['tools'];
+  engineTools: AgentEngineTool[];
   toolBuildCtx: ToolBuildContext;
 };
-
-function integrationCredentialCacheKey(
-  userId: number,
-  integrationId: number,
-): string {
-  return `${userId}:${integrationId}`;
-}
 
 export async function loadPageWorkflowToolBundle(input: {
   prisma: PrismaService;
@@ -58,45 +52,21 @@ export async function loadPageWorkflowToolBundle(input: {
     },
     include: TOOL_WITH_INTEGRATION_INCLUDE,
   });
-  const integrationCredentialCache = new Map<string, string>();
-  const integrationIds = [
-    ...new Set(prismaTools.map((tool) => tool.integration.id)),
-  ];
-  if (integrationIds.length > 0) {
-    const userIntegrations = await input.prisma.userIntegration.findMany({
-      where: {
-        userId: input.userId,
-        integrationId: { in: integrationIds },
-        isActive: true,
-      },
-      select: {
-        integrationId: true,
-        userApiKey: true,
-      },
-    });
-    for (const row of userIntegrations) {
-      integrationCredentialCache.set(
-        integrationCredentialCacheKey(input.userId, row.integrationId),
-        row.userApiKey?.trim() ?? '',
-      );
-    }
-  }
 
-  const { tools: engineTools, toolBuildCtx } = buildEngineToolsFromAllowed(
-    prismaTools,
-    input.userId,
-    input.toolEngine,
-  );
+  const { tools: engineTools, toolBuildCtx } =
+    await buildEngineToolsFromAllowedWithCredentials(
+      prismaTools,
+      input.userId,
+      input.toolEngine,
+      input.prisma,
+    );
 
   return {
     allowedToolIds,
     prismaTools,
     toolById: new Map(prismaTools.map((tool) => [tool.id, tool])),
     engineTools,
-    toolBuildCtx: {
-      ...toolBuildCtx,
-      integrationCredentialCache,
-    },
+    toolBuildCtx,
   };
 }
 

@@ -8,11 +8,13 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ToolEngineModule = void 0;
 const common_1 = require("@nestjs/common");
+const outbound_http_module_1 = require("../outbound-http/outbound-http.module");
 const tool_engine_service_1 = require("./tool-engine.service");
 let ToolEngineModule = class ToolEngineModule {
 };
 ToolEngineModule = __decorate([
     (0, common_1.Module)({
+        imports: [outbound_http_module_1.OutboundHttpModule],
         providers: [tool_engine_service_1.ToolEngineService],
         exports: [tool_engine_service_1.ToolEngineService],
     })

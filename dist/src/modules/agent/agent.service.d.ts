@@ -22,18 +22,18 @@ export declare class AgentService {
     create(dto: CreateAgentDto): Promise<import("./types/agent.types").AgentWithToolsResponse>;
     findAll(): Promise<import("./types/agent.types").AgentWithToolsResponse[]>;
     findByAppClientId(appClientId: number): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
-        description: string;
         appClientId: number;
+        description: string;
+        createdAt: Date;
+        name: string;
         config: import("@prisma/client/runtime/client").JsonValue;
-        systemPrompt: string;
-        maxSteps: number;
-        enableToolCall: boolean;
         restrictTools: boolean;
         restrictHostTools: boolean;
         restrictSkills: boolean;
+        systemPrompt: string;
+        maxSteps: number;
+        enableToolCall: boolean;
     }[]>;
     findClientListByAppClientId(appClientId: number): Promise<AgentClientListItem[]>;
     findClientAvailableAgentsForUser(userId: number, appClientId: number): Promise<AgentClientListItem[]>;
@@ -46,30 +46,30 @@ export declare class AgentService {
     removeToolsFromAgent(agentId: number, appClientId: number, dto: BindAgentToolsDto): Promise<AgentToolsBindingResponse>;
     getAllowedTools(agentId: number, userId: number, appClientId: number): Promise<({
         integration: {
-            name: string;
             id: number;
             updatedAt: Date;
+            name: string;
             apiKey: string;
             baseUrl: string;
             authMode: import("../../../generated/prisma/enums").IntegrationAuthMode;
         };
     } & {
         path: string;
-        name: string;
-        schema: import("@prisma/client/runtime/client").JsonValue;
         id: number;
-        createdAt: Date;
+        appClientId: number;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
-        appClientId: number;
+        name: string;
+        method: import("../../../generated/prisma/enums").HttpMethod;
         definitionKey: string;
         riskLevel: import("../../../generated/prisma/enums").ToolLevel;
+        schema: import("@prisma/client/runtime/client").JsonValue;
         inputSchema: import("@prisma/client/runtime/client").JsonValue;
         outputSchema: import("@prisma/client/runtime/client").JsonValue;
         responseProfile: import("@prisma/client/runtime/client").JsonValue;
         agentMetadata: import("@prisma/client/runtime/client").JsonValue;
-        method: import("../../../generated/prisma/enums").HttpMethod;
         integrationId: number;
         toolCategoryId: number;
         timeout: number;

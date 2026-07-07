@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchHttpProfileAccount = exports.buildBrowserLikeHeaders = exports.formatFetchError = exports.parseFetchBody = exports.mapHttpProfileResponse = exports.resolveProfilePayloadRoot = exports.pickMappedField = void 0;
 const common_1 = require("@nestjs/common");
+const outbound_http_policy_util_1 = require("../../../core/outbound-http/outbound-http.policy.util");
 const app_client_auth_profile_util_1 = require("./app-client-auth-profile.util");
 function pickMappedField(source, path) {
     const trimmed = path.trim();
@@ -139,15 +140,25 @@ async function fetchHttpProfileAccount(http, accountToken, appClientId) {
     const headers = buildBrowserLikeHeaders(accountUrl.origin, (_a = http.extraHeaders) !== null && _a !== void 0 ? _a : {});
     applyTokenPlacement(accountUrl, headers, accountToken, (_b = http.tokenPlacement) !== null && _b !== void 0 ? _b : 'authorization_bearer');
     let accountResponse;
+    const timeoutMs = (0, outbound_http_policy_util_1.readAppClientAuthTimeoutMs)();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
         accountResponse = await fetch(accountUrl, {
             method: (_c = http.method) !== null && _c !== void 0 ? _c : 'GET',
             headers,
+            signal: controller.signal,
         });
     }
     catch (error) {
-        const detail = formatFetchError(error);
+        const aborted = error instanceof Error && error.name === 'AbortError';
+        const detail = aborted
+            ? `request timed out after ${timeoutMs}ms`
+            : formatFetchError(error);
         throw new common_1.ServiceUnavailableException(`无法连接外部账号服务 ${accountUrl.origin}：${detail}。请检查 authConfig.http、VPN/内网连通性及 x-account-token 是否有效。`);
+    }
+    finally {
+        clearTimeout(timer);
     }
     const account = await parseFetchBody(accountResponse);
     if (!accountResponse.ok) {

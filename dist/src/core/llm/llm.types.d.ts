@@ -16,6 +16,7 @@ export type LlmToolCall = {
     name: string;
     arguments: Record<string, unknown>;
 };
+import type { LlmModelKind } from '../../../generated/prisma/client';
 import type { PromptBudgetHints } from './prompt-budget/prompt-budget.types';
 export type LlmChatInput = {
     messages: LlmChatMessage[];
@@ -56,4 +57,15 @@ export type LlmStreamDelta = {
 export type LlmStreamHandlers = {
     onDelta?: (delta: LlmStreamDelta) => void;
     signal?: AbortSignal;
+};
+export type LlmConnectionTestResult = {
+    ok: boolean;
+    configId: number;
+    kind: LlmModelKind;
+    provider: string;
+    model: string;
+    probe: 'chat' | 'embedding_api' | 'embedding_local' | 'unsupported';
+    durationMs: number;
+    error?: string;
+    detail?: Record<string, unknown>;
 };

@@ -15,14 +15,18 @@ const runtime_cache_invalidator_service_1 = require("../../core/runtime-cache/ru
 const client_1 = require("../../../generated/prisma/client");
 const pagination_1 = require("../../common/pagination");
 const prisma_service_1 = require("../../prisma/prisma.service");
+const outbound_http_service_1 = require("../../core/outbound-http/outbound-http.service");
+const outbound_http_policy_util_1 = require("../../core/outbound-http/outbound-http.policy.util");
+const outbound_http_types_1 = require("../../core/outbound-http/outbound-http.types");
 const outbound_url_guard_util_1 = require("../../core/security/outbound-url-guard.util");
 const integration_mapper_1 = require("./integration.mapper");
 const integration_types_1 = require("./integration.types");
-const CONNECTION_PROBE_TIMEOUT_MS = 10000;
+const CONNECTION_PROBE_TIMEOUT_MS = (0, outbound_http_policy_util_1.readIntegrationProbeTimeoutMs)();
 let IntegrationService = class IntegrationService {
-    constructor(prisma, runtimeCacheInvalidator) {
+    constructor(prisma, runtimeCacheInvalidator, outboundHttp) {
         this.prisma = prisma;
         this.runtimeCacheInvalidator = runtimeCacheInvalidator;
+        this.outboundHttp = outboundHttp;
     }
     async create(dto) {
         var _a;
@@ -254,14 +258,14 @@ let IntegrationService = class IntegrationService {
         return Object.assign(Object.assign({}, headResult), { durationMs: Date.now() - startedAt });
     }
     async fetchProbe(url, method, headers) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), CONNECTION_PROBE_TIMEOUT_MS);
         try {
-            const response = await fetch(url, {
+            const response = await this.outboundHttp.fetchWithPolicy(url, {
                 method,
                 headers,
-                signal: controller.signal,
                 redirect: 'follow',
+            }, {
+                timeoutMs: CONNECTION_PROBE_TIMEOUT_MS,
+                label: 'integration_probe',
             });
             return {
                 reachable: true,
@@ -272,19 +276,15 @@ let IntegrationService = class IntegrationService {
             };
         }
         catch (error) {
-            const message = this.formatFetchError(error);
-            const aborted = error instanceof Error && error.name === 'AbortError';
+            const message = error instanceof outbound_http_types_1.OutboundHttpError
+                ? error.message
+                : this.formatFetchError(error);
             return {
                 reachable: false,
                 url,
                 method,
-                error: aborted
-                    ? `request timed out after ${CONNECTION_PROBE_TIMEOUT_MS}ms`
-                    : message,
+                error: message,
             };
-        }
-        finally {
-            clearTimeout(timer);
         }
     }
     formatFetchError(error) {
@@ -302,7 +302,8 @@ let IntegrationService = class IntegrationService {
 IntegrationService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        runtime_cache_invalidator_service_1.RuntimeCacheInvalidator])
+        runtime_cache_invalidator_service_1.RuntimeCacheInvalidator,
+        outbound_http_service_1.OutboundHttpService])
 ], IntegrationService);
 exports.IntegrationService = IntegrationService;
 //# sourceMappingURL=integration.service.js.map

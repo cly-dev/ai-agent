@@ -62,4 +62,29 @@ export class RedisConnectionService implements OnModuleInit, OnModuleDestroy {
   getClient(): Redis | null {
     return this.client;
   }
+
+  async ping(): Promise<{
+    ok: boolean;
+    configured: boolean;
+    error?: string;
+  }> {
+    const url = process.env.REDIS_URL?.trim();
+    const host = process.env.REDIS_HOST?.trim();
+    if (!url && !host) {
+      return { ok: false, configured: false, error: 'redis not configured' };
+    }
+    if (!this.client) {
+      return { ok: false, configured: true, error: 'redis client unavailable' };
+    }
+    try {
+      await this.client.ping();
+      return { ok: true, configured: true };
+    } catch (error) {
+      return {
+        ok: false,
+        configured: true,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 }

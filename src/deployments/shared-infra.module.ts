@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { OutboundHttpModule } from '../core/outbound-http/outbound-http.module';
 import { LlmModule } from '../core/llm/llm.module';
 import { MemoryModule } from '../core/memory/memory.module';
 import { RuntimeCacheModule } from '../core/runtime-cache/runtime-cache.module';
@@ -15,6 +16,7 @@ import { ApprovalModule } from '../core/approval/approval.module';
       ttl: 60,
       limit: 120,
     }),
+    OutboundHttpModule,
     PrismaModule,
     MemoryModule,
     LlmModule,
@@ -25,6 +27,7 @@ import { ApprovalModule } from '../core/approval/approval.module';
   ],
   exports: [
     ThrottlerModule,
+    OutboundHttpModule,
     PrismaModule,
     MemoryModule,
     LlmModule,

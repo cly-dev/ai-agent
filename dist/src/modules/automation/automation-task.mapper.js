@@ -65,6 +65,7 @@ function toAutomationTaskFromPageActionRun(row) {
         taskStatus: mapRunStatus(row.status),
         title: row.pageAction.name,
         subtitle: buildAutomationTaskSubtitle(row.pageContext),
+        pageActionKey: row.pageActionKey,
         workflowKey: (_a = workflow === null || workflow === void 0 ? void 0 : workflow.workflowKey) !== null && _a !== void 0 ? _a : null,
         workflowName: (_b = workflow === null || workflow === void 0 ? void 0 : workflow.name) !== null && _b !== void 0 ? _b : null,
         createdAt: row.createdAt.toISOString(),

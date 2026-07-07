@@ -6,4 +6,9 @@ export declare class RedisConnectionService implements OnModuleInit, OnModuleDes
     onModuleInit(): Promise<void>;
     onModuleDestroy(): void;
     getClient(): Redis | null;
+    ping(): Promise<{
+        ok: boolean;
+        configured: boolean;
+        error?: string;
+    }>;
 }

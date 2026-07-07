@@ -51,6 +51,7 @@ export type PageActionRunMinAggregateOutputType = {
     completionTokens: number | null;
     durationMs: number | null;
     idempotencyKey: string | null;
+    pageActionKey: string | null;
     clientActionId: string | null;
     workflowId: number | null;
     workflowVersion: number | null;
@@ -76,6 +77,7 @@ export type PageActionRunMaxAggregateOutputType = {
     completionTokens: number | null;
     durationMs: number | null;
     idempotencyKey: string | null;
+    pageActionKey: string | null;
     clientActionId: string | null;
     workflowId: number | null;
     workflowVersion: number | null;
@@ -103,6 +105,7 @@ export type PageActionRunCountAggregateOutputType = {
     completionTokens: number;
     durationMs: number;
     idempotencyKey: number;
+    pageActionKey: number;
     clientActionId: number;
     steps: number;
     workflowId: number;
@@ -155,6 +158,7 @@ export type PageActionRunMinAggregateInputType = {
     completionTokens?: true;
     durationMs?: true;
     idempotencyKey?: true;
+    pageActionKey?: true;
     clientActionId?: true;
     workflowId?: true;
     workflowVersion?: true;
@@ -180,6 +184,7 @@ export type PageActionRunMaxAggregateInputType = {
     completionTokens?: true;
     durationMs?: true;
     idempotencyKey?: true;
+    pageActionKey?: true;
     clientActionId?: true;
     workflowId?: true;
     workflowVersion?: true;
@@ -207,6 +212,7 @@ export type PageActionRunCountAggregateInputType = {
     completionTokens?: true;
     durationMs?: true;
     idempotencyKey?: true;
+    pageActionKey?: true;
     clientActionId?: true;
     steps?: true;
     workflowId?: true;
@@ -265,6 +271,7 @@ export type PageActionRunGroupByOutputType = {
     completionTokens: number | null;
     durationMs: number | null;
     idempotencyKey: string | null;
+    pageActionKey: string | null;
     clientActionId: string | null;
     steps: runtime.JsonValue;
     workflowId: number | null;
@@ -305,6 +312,7 @@ export type PageActionRunWhereInput = {
     completionTokens?: Prisma.IntNullableFilter<"PageActionRun"> | number | null;
     durationMs?: Prisma.IntNullableFilter<"PageActionRun"> | number | null;
     idempotencyKey?: Prisma.StringNullableFilter<"PageActionRun"> | string | null;
+    pageActionKey?: Prisma.StringNullableFilter<"PageActionRun"> | string | null;
     clientActionId?: Prisma.StringNullableFilter<"PageActionRun"> | string | null;
     steps?: Prisma.JsonFilter<"PageActionRun">;
     workflowId?: Prisma.IntNullableFilter<"PageActionRun"> | number | null;
@@ -338,6 +346,7 @@ export type PageActionRunOrderByWithRelationInput = {
     completionTokens?: Prisma.SortOrderInput | Prisma.SortOrder;
     durationMs?: Prisma.SortOrderInput | Prisma.SortOrder;
     idempotencyKey?: Prisma.SortOrderInput | Prisma.SortOrder;
+    pageActionKey?: Prisma.SortOrderInput | Prisma.SortOrder;
     clientActionId?: Prisma.SortOrderInput | Prisma.SortOrder;
     steps?: Prisma.SortOrder;
     workflowId?: Prisma.SortOrderInput | Prisma.SortOrder;
@@ -374,6 +383,7 @@ export type PageActionRunWhereUniqueInput = Prisma.AtLeast<{
     completionTokens?: Prisma.IntNullableFilter<"PageActionRun"> | number | null;
     durationMs?: Prisma.IntNullableFilter<"PageActionRun"> | number | null;
     idempotencyKey?: Prisma.StringNullableFilter<"PageActionRun"> | string | null;
+    pageActionKey?: Prisma.StringNullableFilter<"PageActionRun"> | string | null;
     clientActionId?: Prisma.StringNullableFilter<"PageActionRun"> | string | null;
     steps?: Prisma.JsonFilter<"PageActionRun">;
     workflowId?: Prisma.IntNullableFilter<"PageActionRun"> | number | null;
@@ -407,6 +417,7 @@ export type PageActionRunOrderByWithAggregationInput = {
     completionTokens?: Prisma.SortOrderInput | Prisma.SortOrder;
     durationMs?: Prisma.SortOrderInput | Prisma.SortOrder;
     idempotencyKey?: Prisma.SortOrderInput | Prisma.SortOrder;
+    pageActionKey?: Prisma.SortOrderInput | Prisma.SortOrder;
     clientActionId?: Prisma.SortOrderInput | Prisma.SortOrder;
     steps?: Prisma.SortOrder;
     workflowId?: Prisma.SortOrderInput | Prisma.SortOrder;
@@ -444,6 +455,7 @@ export type PageActionRunScalarWhereWithAggregatesInput = {
     completionTokens?: Prisma.IntNullableWithAggregatesFilter<"PageActionRun"> | number | null;
     durationMs?: Prisma.IntNullableWithAggregatesFilter<"PageActionRun"> | number | null;
     idempotencyKey?: Prisma.StringNullableWithAggregatesFilter<"PageActionRun"> | string | null;
+    pageActionKey?: Prisma.StringNullableWithAggregatesFilter<"PageActionRun"> | string | null;
     clientActionId?: Prisma.StringNullableWithAggregatesFilter<"PageActionRun"> | string | null;
     steps?: Prisma.JsonWithAggregatesFilter<"PageActionRun">;
     workflowId?: Prisma.IntNullableWithAggregatesFilter<"PageActionRun"> | number | null;
@@ -469,6 +481,7 @@ export type PageActionRunCreateInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -502,6 +515,7 @@ export type PageActionRunUncheckedCreateInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -528,6 +542,7 @@ export type PageActionRunUpdateInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -561,6 +576,7 @@ export type PageActionRunUncheckedUpdateInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -591,6 +607,7 @@ export type PageActionRunCreateManyInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -616,6 +633,7 @@ export type PageActionRunUpdateManyMutationInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -645,6 +663,7 @@ export type PageActionRunUncheckedUpdateManyInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -682,6 +701,7 @@ export type PageActionRunCountOrderByAggregateInput = {
     completionTokens?: Prisma.SortOrder;
     durationMs?: Prisma.SortOrder;
     idempotencyKey?: Prisma.SortOrder;
+    pageActionKey?: Prisma.SortOrder;
     clientActionId?: Prisma.SortOrder;
     steps?: Prisma.SortOrder;
     workflowId?: Prisma.SortOrder;
@@ -721,6 +741,7 @@ export type PageActionRunMaxOrderByAggregateInput = {
     completionTokens?: Prisma.SortOrder;
     durationMs?: Prisma.SortOrder;
     idempotencyKey?: Prisma.SortOrder;
+    pageActionKey?: Prisma.SortOrder;
     clientActionId?: Prisma.SortOrder;
     workflowId?: Prisma.SortOrder;
     workflowVersion?: Prisma.SortOrder;
@@ -746,6 +767,7 @@ export type PageActionRunMinOrderByAggregateInput = {
     completionTokens?: Prisma.SortOrder;
     durationMs?: Prisma.SortOrder;
     idempotencyKey?: Prisma.SortOrder;
+    pageActionKey?: Prisma.SortOrder;
     clientActionId?: Prisma.SortOrder;
     workflowId?: Prisma.SortOrder;
     workflowVersion?: Prisma.SortOrder;
@@ -916,6 +938,7 @@ export type PageActionRunCreateWithoutUserInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -947,6 +970,7 @@ export type PageActionRunUncheckedCreateWithoutUserInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -1001,6 +1025,7 @@ export type PageActionRunScalarWhereInput = {
     completionTokens?: Prisma.IntNullableFilter<"PageActionRun"> | number | null;
     durationMs?: Prisma.IntNullableFilter<"PageActionRun"> | number | null;
     idempotencyKey?: Prisma.StringNullableFilter<"PageActionRun"> | string | null;
+    pageActionKey?: Prisma.StringNullableFilter<"PageActionRun"> | string | null;
     clientActionId?: Prisma.StringNullableFilter<"PageActionRun"> | string | null;
     steps?: Prisma.JsonFilter<"PageActionRun">;
     workflowId?: Prisma.IntNullableFilter<"PageActionRun"> | number | null;
@@ -1026,6 +1051,7 @@ export type PageActionRunCreateWithoutAppClientInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -1057,6 +1083,7 @@ export type PageActionRunUncheckedCreateWithoutAppClientInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -1104,6 +1131,7 @@ export type PageActionRunCreateWithoutPageActionInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -1135,6 +1163,7 @@ export type PageActionRunUncheckedCreateWithoutPageActionInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -1182,6 +1211,7 @@ export type PageActionRunCreateWithoutApprovalRequestInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -1214,6 +1244,7 @@ export type PageActionRunUncheckedCreateWithoutApprovalRequestInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -1252,6 +1283,7 @@ export type PageActionRunUpdateWithoutApprovalRequestInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1284,6 +1316,7 @@ export type PageActionRunUncheckedUpdateWithoutApprovalRequestInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1312,6 +1345,7 @@ export type PageActionRunCreateManyUserInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -1337,6 +1371,7 @@ export type PageActionRunUpdateWithoutUserInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1368,6 +1403,7 @@ export type PageActionRunUncheckedUpdateWithoutUserInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1397,6 +1433,7 @@ export type PageActionRunUncheckedUpdateManyWithoutUserInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1425,6 +1462,7 @@ export type PageActionRunCreateManyAppClientInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -1450,6 +1488,7 @@ export type PageActionRunUpdateWithoutAppClientInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1481,6 +1520,7 @@ export type PageActionRunUncheckedUpdateWithoutAppClientInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1510,6 +1550,7 @@ export type PageActionRunUncheckedUpdateManyWithoutAppClientInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1538,6 +1579,7 @@ export type PageActionRunCreateManyPageActionInput = {
     completionTokens?: number | null;
     durationMs?: number | null;
     idempotencyKey?: string | null;
+    pageActionKey?: string | null;
     clientActionId?: string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: number | null;
@@ -1563,6 +1605,7 @@ export type PageActionRunUpdateWithoutPageActionInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1594,6 +1637,7 @@ export type PageActionRunUncheckedUpdateWithoutPageActionInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1623,6 +1667,7 @@ export type PageActionRunUncheckedUpdateManyWithoutPageActionInput = {
     completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
     idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
     workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
@@ -1652,6 +1697,7 @@ export type PageActionRunSelect<ExtArgs extends runtime.Types.Extensions.Interna
     completionTokens?: boolean;
     durationMs?: boolean;
     idempotencyKey?: boolean;
+    pageActionKey?: boolean;
     clientActionId?: boolean;
     steps?: boolean;
     workflowId?: boolean;
@@ -1685,6 +1731,7 @@ export type PageActionRunSelectCreateManyAndReturn<ExtArgs extends runtime.Types
     completionTokens?: boolean;
     durationMs?: boolean;
     idempotencyKey?: boolean;
+    pageActionKey?: boolean;
     clientActionId?: boolean;
     steps?: boolean;
     workflowId?: boolean;
@@ -1717,6 +1764,7 @@ export type PageActionRunSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
     completionTokens?: boolean;
     durationMs?: boolean;
     idempotencyKey?: boolean;
+    pageActionKey?: boolean;
     clientActionId?: boolean;
     steps?: boolean;
     workflowId?: boolean;
@@ -1749,6 +1797,7 @@ export type PageActionRunSelectScalar = {
     completionTokens?: boolean;
     durationMs?: boolean;
     idempotencyKey?: boolean;
+    pageActionKey?: boolean;
     clientActionId?: boolean;
     steps?: boolean;
     workflowId?: boolean;
@@ -1758,7 +1807,7 @@ export type PageActionRunSelectScalar = {
     createdAt?: boolean;
     finishedAt?: boolean;
 };
-export type PageActionRunOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "pageActionId" | "appClientId" | "userId" | "delivery" | "status" | "instruction" | "context" | "pageContext" | "fillText" | "dslOutcome" | "errorCode" | "errorMessage" | "streamId" | "model" | "promptTokens" | "completionTokens" | "durationMs" | "idempotencyKey" | "clientActionId" | "steps" | "workflowId" | "workflowVersion" | "workflowRun" | "generation" | "createdAt" | "finishedAt", ExtArgs["result"]["pageActionRun"]>;
+export type PageActionRunOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "pageActionId" | "appClientId" | "userId" | "delivery" | "status" | "instruction" | "context" | "pageContext" | "fillText" | "dslOutcome" | "errorCode" | "errorMessage" | "streamId" | "model" | "promptTokens" | "completionTokens" | "durationMs" | "idempotencyKey" | "pageActionKey" | "clientActionId" | "steps" | "workflowId" | "workflowVersion" | "workflowRun" | "generation" | "createdAt" | "finishedAt", ExtArgs["result"]["pageActionRun"]>;
 export type PageActionRunInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     pageAction?: boolean | Prisma.PageActionDefaultArgs<ExtArgs>;
     appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>;
@@ -1803,6 +1852,7 @@ export type $PageActionRunPayload<ExtArgs extends runtime.Types.Extensions.Inter
         completionTokens: number | null;
         durationMs: number | null;
         idempotencyKey: string | null;
+        pageActionKey: string | null;
         clientActionId: string | null;
         steps: runtime.JsonValue;
         workflowId: number | null;
@@ -1891,6 +1941,7 @@ export interface PageActionRunFieldRefs {
     readonly completionTokens: Prisma.FieldRef<"PageActionRun", 'Int'>;
     readonly durationMs: Prisma.FieldRef<"PageActionRun", 'Int'>;
     readonly idempotencyKey: Prisma.FieldRef<"PageActionRun", 'String'>;
+    readonly pageActionKey: Prisma.FieldRef<"PageActionRun", 'String'>;
     readonly clientActionId: Prisma.FieldRef<"PageActionRun", 'String'>;
     readonly steps: Prisma.FieldRef<"PageActionRun", 'Json'>;
     readonly workflowId: Prisma.FieldRef<"PageActionRun", 'Int'>;

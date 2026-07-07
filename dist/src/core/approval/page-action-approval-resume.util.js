@@ -101,6 +101,7 @@ async function resumePageActionFromApprovalSnapshot(input) {
         allowedToolIds: effectiveSnapshot.scopedToolIds,
         toolBundle,
         approvalGate: input.approvalGate,
+        pageActionKey: run.pageActionKey,
         resumeFrom: {
             workflowRun: effectiveSnapshot.workflowRun,
             nodeOutputs: effectiveSnapshot.workflowNodeOutputs,
@@ -220,6 +221,7 @@ async function retryPageActionFromApprovalSnapshot(input) {
         approvalGate: input.approvalGate,
         existingApprovalRequestId: input.approvalRequestId,
         retryInstruction: input.retryInstruction,
+        pageActionKey: run.pageActionKey,
         resumeFrom: {
             workflowRun: retrySnapshot.workflowRun,
             nodeOutputs: retrySnapshot.workflowNodeOutputs,
@@ -233,7 +235,7 @@ async function retryPageActionFromApprovalSnapshot(input) {
                 ? client_1.PageActionRunStatus.awaiting_approval
                 : result.errorCode
                     ? client_1.PageActionRunStatus.failed
-                    : client_1.PageActionRunStatus.running, workflowRun: result.workflowRun, fillText: result.fillText || null, dslOutcome: result.dslOutcome, model: result.model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, finishedAt: result.suspended || result.errorCode ? null : new Date(), steps: recorder.toJson() }, (result.errorCode
+                    : client_1.PageActionRunStatus.completed, workflowRun: result.workflowRun, fillText: result.fillText || null, dslOutcome: result.dslOutcome, model: result.model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, finishedAt: result.suspended || result.errorCode ? null : new Date(), steps: recorder.toJson() }, (result.errorCode
             ? {
                 errorCode: result.errorCode,
                 errorMessage: (_h = result.errorMessage) !== null && _h !== void 0 ? _h : result.errorCode,

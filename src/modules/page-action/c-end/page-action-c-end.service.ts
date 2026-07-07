@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -15,6 +16,10 @@ import {
 } from '../../../core/page-action/page-action-host-tool.util';
 import { replayPageActionInlineStream } from '../../../core/page-action/page-action-host-fill.executor';
 import { buildPageActionRunStreamPath } from '../../../core/page-action/page-action.constants';
+import {
+  computePageActionKey,
+  PAGE_ACTION_ACTIVE_RUN_STATUSES,
+} from '../../../core/page-action/page-action-key.util';
 import { resolvePageActionInvokePageContext } from '../../../core/page-action/page-action-invoke-context.util';
 import { assertPageActionPromptLimits } from '../../../core/page-action/page-action-prompt-limits.util';
 import { mapPageActionRunStatusToLifecyclePhase } from '../../../core/page-action/page-action-run-lifecycle.util';
@@ -91,6 +96,22 @@ export class PageActionCEndService {
       ? resolvePageActionHostTool(hostToolRow, pageContext)
       : null;
 
+    const pageActionKey = computePageActionKey({
+      actionKey: pageAction.actionKey,
+      pageContext,
+      instruction,
+      context: dto.context ?? null,
+    });
+
+    const activeRun = await this.findActiveRunByPageActionKey({
+      pageActionId: pageAction.id,
+      userId,
+      pageActionKey,
+    });
+    if (activeRun) {
+      this.throwPageActionAlreadyActive(pageActionKey, activeRun);
+    }
+
     if (dto.idempotencyKey?.trim()) {
       const prior = await this.prisma.pageActionRun.findFirst({
         where: {
@@ -101,34 +122,59 @@ export class PageActionCEndService {
         orderBy: { id: 'desc' },
       });
       if (prior) {
-        return this.toInvokeAccepted(prior.id, prior.generation, prior.clientActionId, prior.status);
+        return this.toInvokeAccepted(
+          prior.id,
+          prior.generation,
+          prior.clientActionId,
+          prior.pageActionKey ?? pageActionKey,
+          prior.status,
+        );
       }
     }
 
-    const run = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.pageActionRun.create({
-        data: {
+    let run;
+    try {
+      run = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.pageActionRun.create({
+          data: {
+            pageActionId: pageAction.id,
+            appClientId,
+            userId,
+            delivery: PageActionDelivery.inline_stream,
+            status: PageActionRunStatus.running,
+            instruction,
+            context:
+              dto.context === undefined
+                ? undefined
+                : (dto.context as Prisma.InputJsonValue),
+            pageContext: pageContext as Prisma.InputJsonValue,
+            pageActionKey,
+            idempotencyKey: dto.idempotencyKey?.trim() || null,
+            clientActionId: dto.clientActionId?.trim() || null,
+            steps: [] as Prisma.InputJsonValue,
+          },
+        });
+        return tx.pageActionRun.update({
+          where: { id: created.id },
+          data: { generation: created.id },
+        });
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const raced = await this.findActiveRunByPageActionKey({
           pageActionId: pageAction.id,
-          appClientId,
           userId,
-          delivery: PageActionDelivery.inline_stream,
-          status: PageActionRunStatus.running,
-          instruction,
-          context:
-            dto.context === undefined
-              ? undefined
-              : (dto.context as Prisma.InputJsonValue),
-          pageContext: pageContext as Prisma.InputJsonValue,
-          idempotencyKey: dto.idempotencyKey?.trim() || null,
-          clientActionId: dto.clientActionId?.trim() || null,
-          steps: [] as Prisma.InputJsonValue,
-        },
-      });
-      return tx.pageActionRun.update({
-        where: { id: created.id },
-        data: { generation: created.id },
-      });
-    });
+          pageActionKey,
+        });
+        if (raced) {
+          this.throwPageActionAlreadyActive(pageActionKey, raced);
+        }
+      }
+      throw error;
+    }
 
     this.runStreamHub.prepareSession(run.id);
 
@@ -146,6 +192,7 @@ export class PageActionCEndService {
       instruction,
       context: dto.context ?? null,
       pageContext,
+      pageActionKey,
       clientActionId: dto.clientActionId?.trim() || null,
       pageActionConfig: pageAction.config,
       hostToolResolved,
@@ -155,6 +202,7 @@ export class PageActionCEndService {
       run.id,
       run.id,
       dto.clientActionId?.trim() || null,
+      pageActionKey,
       PageActionRunStatus.running,
     );
   }
@@ -250,16 +298,55 @@ export class PageActionCEndService {
     });
   }
 
+  private async findActiveRunByPageActionKey(input: {
+    pageActionId: number;
+    userId: number;
+    pageActionKey: string;
+  }) {
+    return this.prisma.pageActionRun.findFirst({
+      where: {
+        pageActionId: input.pageActionId,
+        userId: input.userId,
+        pageActionKey: input.pageActionKey,
+        status: { in: [...PAGE_ACTION_ACTIVE_RUN_STATUSES] },
+      },
+      include: { approvalRequest: { select: { id: true } } },
+      orderBy: { id: 'desc' },
+    });
+  }
+
+  private throwPageActionAlreadyActive(
+    pageActionKey: string,
+    activeRun: {
+      id: number;
+      status: PageActionRunStatus;
+      approvalRequest: { id: number } | null;
+    },
+  ): never {
+    throw new ConflictException({
+      code: 'PAGE_ACTION_ALREADY_ACTIVE',
+      message:
+        'An active PageAction run already exists for the same page context',
+      pageActionKey,
+      existingRunId: activeRun.id,
+      existingStatus: activeRun.status,
+      approvalRequestId: activeRun.approvalRequest?.id ?? null,
+      streamUrl: buildPageActionRunStreamPath(activeRun.id),
+    });
+  }
+
   private toInvokeAccepted(
     runId: number,
     generation: number,
     clientActionId: string | null | undefined,
+    pageActionKey: string,
     status: PageActionRunStatus,
   ): PageActionInvokeAccepted {
     return {
       runId,
       generation,
       clientActionId: clientActionId ?? null,
+      pageActionKey,
       streamUrl: buildPageActionRunStreamPath(runId),
       status,
     };

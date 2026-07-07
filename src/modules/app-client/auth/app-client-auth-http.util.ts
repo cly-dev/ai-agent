@@ -8,6 +8,7 @@ import type {
   AppClientProfileFieldMapping,
   AppClientTokenPlacement,
 } from './app-client-auth.types';
+import { readAppClientAuthTimeoutMs } from '../../../core/outbound-http/outbound-http.policy.util';
 import { normalizeExternalAccountProfile } from './app-client-auth-profile.util';
 
 export function pickMappedField(
@@ -196,16 +197,25 @@ export async function fetchHttpProfileAccount(
   );
 
   let accountResponse: Response;
+  const timeoutMs = readAppClientAuthTimeoutMs();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     accountResponse = await fetch(accountUrl, {
       method: http.method ?? 'GET',
       headers,
+      signal: controller.signal,
     });
   } catch (error) {
-    const detail = formatFetchError(error);
+    const aborted = error instanceof Error && error.name === 'AbortError';
+    const detail = aborted
+      ? `request timed out after ${timeoutMs}ms`
+      : formatFetchError(error);
     throw new ServiceUnavailableException(
       `无法连接外部账号服务 ${accountUrl.origin}：${detail}。请检查 authConfig.http、VPN/内网连通性及 x-account-token 是否有效。`,
     );
+  } finally {
+    clearTimeout(timer);
   }
 
   const account = await parseFetchBody(accountResponse);

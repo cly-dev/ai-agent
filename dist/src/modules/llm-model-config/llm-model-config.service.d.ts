@@ -15,6 +15,8 @@ export declare class LlmModelConfigService {
     create(dto: UpsertLlmModelConfigDto): Promise<LlmModelConfig>;
     update(id: number, dto: UpdateLlmModelConfigDto): Promise<LlmModelConfig>;
     activate(id: number): Promise<LlmModelConfig>;
+    testConnection(id: number): Promise<import("../../core/llm/llm.types").LlmConnectionTestResult>;
+    private llmModelConfigActivate;
     getIntentRecallConfig(): Promise<IntentRecallConfig>;
     updateIntentRecallConfig(dto: UpdateIntentRecallConfigDto): Promise<IntentRecallConfig>;
     private ensureIntentRecallConfig;

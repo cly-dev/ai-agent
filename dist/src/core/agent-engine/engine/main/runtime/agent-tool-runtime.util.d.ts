@@ -6,6 +6,7 @@ import type { ToolRoundMeta } from '../../tool/tool-result-check.util';
 import { type RunMetricsAccumulator } from '../../run-metrics.util';
 import type { AgentEngineTool, AgentRunStep, GraphToolCall, ToolObservation } from '../types/agent-engine.types';
 import type { AgentService } from '../../../../../modules/agent/agent.service';
+import type { PrismaService } from '../../../../../prisma/prisma.service';
 import { type ToolErrorDisposition, type ToolExecutionStatus } from '../../tool/tool-execution-status.util';
 export type ToolExecutionResultWithMeta = ToolExecutionResult & {
     attempts: number;
@@ -19,6 +20,7 @@ export declare function buildEngineToolsFromAllowed(allowedTools: Awaited<Return
     langChainTools: BuiltLangChainTools;
     toolBuildCtx: ToolBuildContext;
 };
+export declare function buildEngineToolsFromAllowedWithCredentials(allowedTools: Awaited<ReturnType<AgentService['getAllowedTools']>>, userId: number, toolEngine: ToolEngineService, prisma: PrismaService): Promise<ReturnType<typeof buildEngineToolsFromAllowed>>;
 export declare function invokeToolWithRetry(toolEngine: ToolEngineService, bundle: BuiltLangChainTools, scopedTools: AgentEngineTool[], toolCall: GraphToolCall): Promise<ToolExecutionResultWithMeta>;
 export type ExecuteToolCallsRoundInput = {
     latestUserMessage: string;

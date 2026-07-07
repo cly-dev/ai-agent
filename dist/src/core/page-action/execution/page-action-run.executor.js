@@ -218,6 +218,7 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
             toolBundle,
             approvalGate: this.approvalGate,
             approvalTriggerBinding: (0, resolve_approval_parties_util_1.parseApprovalTriggerBinding)(run.pageActionConfig),
+            pageActionKey: run.pageActionKey,
         });
         if (result.suspended) {
             (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sseSink, Object.assign({ phase: 'awaiting_approval' }, lifecycleBase), stepRecorder);

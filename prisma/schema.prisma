@@ -867,6 +867,8 @@ model PageActionRun {
   completionTokens Int?
   durationMs       Int?
   idempotencyKey   String?
+  /// invoke 时由 pageContext 等输入稳定序列化后 hash 得到的去重键（同用户 + 同 PageAction + 同 key 不重复执行）。
+  pageActionKey    String?
   clientActionId   String?
   /// 运行步骤审计（lifecycle / llm / dsl），供 B 端后台展示。
   steps            Json                 @default("[]")
@@ -885,6 +887,7 @@ model PageActionRun {
   @@index([pageActionId, createdAt])
   @@index([appClientId, userId, createdAt])
   @@index([appClientId, idempotencyKey])
+  @@index([pageActionId, userId, pageActionKey])
 
   approvalRequest ApprovalRequest?
 }

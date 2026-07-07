@@ -4,7 +4,7 @@ import { hydrateTaskPlanWithWorkflowDefs } from '../../../workflow/workflow-resu
 import { logWorkflowDebug } from '../../../workflow/trace/workflow-debug.util';
 import { deserializePendingObservations } from '../agent-write-confirmation.util';
 import { createRunMetricsAccumulator } from '../run-metrics.util';
-import { buildEngineToolsFromAllowed } from '../main/runtime/agent-tool-runtime.util';
+import { buildEngineToolsFromAllowedWithCredentials } from '../main/runtime/agent-tool-runtime.util';
 import { maxRunStepNumber } from '../main/run/agent-run-steps.util';
 import { isAgentRunAbortedError } from '../../../session-run/run-aborted.error';
 import type { AgentGraphState, AgentRunResult, ToolObservation } from '../main/types/agent-engine.types';
@@ -118,10 +118,11 @@ export async function runWriteGateRetry(
     allowedToolIds,
     langChainTools,
     toolBuildCtx,
-  } = buildEngineToolsFromAllowed(
+  } = await buildEngineToolsFromAllowedWithCredentials(
     allowedTools,
     resumeInput.userId,
     deps.toolEngine,
+    deps.prisma,
   );
 
   const scopedIdSet = new Set(consumed.resumeContext.scopedToolIds);

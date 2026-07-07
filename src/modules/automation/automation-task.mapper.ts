@@ -83,6 +83,7 @@ export function toAutomationTaskFromPageActionRun(
     taskStatus: mapRunStatus(row.status),
     title: row.pageAction.name,
     subtitle: buildAutomationTaskSubtitle(row.pageContext),
+    pageActionKey: row.pageActionKey,
     workflowKey: workflow?.workflowKey ?? null,
     workflowName: workflow?.name ?? null,
     createdAt: row.createdAt.toISOString(),

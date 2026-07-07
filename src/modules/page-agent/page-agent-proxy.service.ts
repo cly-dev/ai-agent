@@ -17,6 +17,9 @@ import {
   type PaginatedResult,
 } from '../../common/pagination';
 import { LlmService } from '../../core/llm/llm.service';
+import { OutboundHttpService } from '../../core/outbound-http/outbound-http.service';
+import { readPageAgentProxyTimeoutMs } from '../../core/outbound-http/outbound-http.policy.util';
+import { OutboundHttpError } from '../../core/outbound-http/outbound-http.types';
 import { summarizeRecordForAudit } from '../../core/page-action/page-action-run-audit.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QueryPageAgentLlmProxyAuditDto } from './dto/page-agent-audit.dto';
@@ -49,7 +52,6 @@ type ProxyChatInput = {
   res: Response;
 };
 
-const DEFAULT_TIMEOUT_MS = 60_000;
 const ERROR_PREVIEW_MAX_CHARS = 2000;
 
 @Injectable()
@@ -59,6 +61,7 @@ export class PageAgentProxyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly llmService: LlmService,
+    private readonly outboundHttp: OutboundHttpService,
   ) {}
 
   async proxyChatCompletions(input: ProxyChatInput): Promise<void> {
@@ -82,10 +85,6 @@ export class PageAgentProxyService {
     const abortController = new AbortController();
     let timedOut = false;
     let clientClosed = false;
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      abortController.abort();
-    }, timeoutMs);
     const onClientClose = () => {
       if (!input.res.writableEnded) {
         clientClosed = true;
@@ -95,14 +94,23 @@ export class PageAgentProxyService {
     input.res.on('close', onClientClose);
 
     try {
-      const upstream = await fetch(this.resolveEndpoint(config), {
-        method: 'POST',
-        headers: this.buildHeaders(config),
-        body: JSON.stringify(payload),
-        signal: abortController.signal,
-      });
+      const upstream = await this.outboundHttp.fetchWithPolicy(
+        this.resolveEndpoint(config),
+        {
+          method: 'POST',
+          headers: this.buildHeaders(config),
+          body: JSON.stringify(payload),
+        },
+        {
+          timeoutMs,
+          signal: abortController.signal,
+          label: 'page_agent_proxy',
+        },
+      );
       await this.writeUpstreamResponse(input.res, upstream, audit.id, startedAt);
     } catch (error) {
+      timedOut =
+        error instanceof OutboundHttpError && error.kind === 'timeout';
       const message = this.errorMessage(error, timedOut, clientClosed);
       await this.updateAuditFailed(audit.id, startedAt, message);
       if (input.res.headersSent) {
@@ -119,7 +127,6 @@ export class PageAgentProxyService {
       }
       throw new BadGatewayException(`page-agent proxy failed: ${message}`);
     } finally {
-      clearTimeout(timeout);
       input.res.off('close', onClientClose);
     }
   }
@@ -443,11 +450,7 @@ export class PageAgentProxyService {
   }
 
   private readTimeoutMs(): number {
-    const raw = Number(process.env.PAGE_AGENT_PROXY_TIMEOUT_MS);
-    if (Number.isFinite(raw) && raw > 0) {
-      return Math.floor(raw);
-    }
-    return DEFAULT_TIMEOUT_MS;
+    return readPageAgentProxyTimeoutMs();
   }
 
   private pickString(value: unknown): string | null {

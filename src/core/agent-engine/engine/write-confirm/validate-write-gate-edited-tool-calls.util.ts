@@ -7,7 +7,8 @@ import { DraftReviewPolicyViolationError } from '../../../draft-review/sanitize-
 import type { PendingWriteConfirmationSnapshot } from '../../../../modules/chat/pending-write-confirmation.types';
 import type { AgentService } from '../../../../modules/agent/agent.service';
 import type { ToolEngineService } from '../../../tool-engine/tool-engine.service';
-import { buildEngineToolsFromAllowed } from '../main/runtime/agent-tool-runtime.util';
+import type { PrismaService } from '../../../../prisma/prisma.service';
+import { buildEngineToolsFromAllowedWithCredentials } from '../main/runtime/agent-tool-runtime.util';
 import { WriteGateDecisionRejectedError } from './write-gate-decision.error';
 
 export async function validateWriteGateEditedToolCalls(input: {
@@ -16,6 +17,7 @@ export async function validateWriteGateEditedToolCalls(input: {
   userId: number;
   agentService: AgentService;
   toolEngine: ToolEngineService;
+  prisma: PrismaService;
 }): Promise<void> {
   if (input.decision.action !== 'confirm_with_edits') {
     return;
@@ -26,10 +28,11 @@ export async function validateWriteGateEditedToolCalls(input: {
     input.userId,
     input.consumed.appClientId,
   );
-  const { tools } = buildEngineToolsFromAllowed(
+  const { tools } = await buildEngineToolsFromAllowedWithCredentials(
     allowedTools,
     input.userId,
     input.toolEngine,
+    input.prisma,
   );
   const scopedIdSet = new Set(input.consumed.resumeContext.scopedToolIds);
   const resolvedScopedTools =

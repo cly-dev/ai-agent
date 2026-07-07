@@ -1,10 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.executePendingWriteToolCalls = exports.executeToolCallsRound = exports.invokeToolWithRetry = exports.buildEngineToolsFromAllowed = void 0;
+exports.executePendingWriteToolCalls = exports.executeToolCallsRound = exports.invokeToolWithRetry = exports.buildEngineToolsFromAllowedWithCredentials = exports.buildEngineToolsFromAllowed = void 0;
 const observation_format_util_1 = require("../../observation-format.util");
 const tool_output_projection_util_1 = require("../../../../tool-engine/tool-output-projection.util");
 const agent_run_user_messages_util_1 = require("../../agent-run-user-messages.util");
 const run_metrics_util_1 = require("../../run-metrics.util");
+const integration_credential_resolver_util_1 = require("../../../../tool-engine/integration-credential-resolver.util");
 const tool_execution_status_util_1 = require("../../tool/tool-execution-status.util");
 const tool_http_request_layout_util_1 = require("../../../../tool-engine/tool-http-request-layout.util");
 const tool_response_source_util_1 = require("../../../../tool-engine/tool-response-source.util");
@@ -55,6 +56,26 @@ function buildEngineToolsFromAllowed(allowedTools, userId, toolEngine) {
     };
 }
 exports.buildEngineToolsFromAllowed = buildEngineToolsFromAllowed;
+function rebuildLangChainToolsWithCredentialCache(built, toolEngine, integrationCredentialCache) {
+    const toolBuildCtx = Object.assign(Object.assign({}, built.toolBuildCtx), { integrationCredentialCache });
+    return Object.assign(Object.assign({}, built), { toolBuildCtx, langChainTools: toolEngine.buildLangChainTools(built.tools, toolBuildCtx) });
+}
+async function buildEngineToolsFromAllowedWithCredentials(allowedTools, userId, toolEngine, prisma) {
+    const built = buildEngineToolsFromAllowed(allowedTools, userId, toolEngine);
+    const integrationIds = [
+        ...new Set(built.tools.map((tool) => tool.integration.id)),
+    ];
+    if (integrationIds.length === 0) {
+        return built;
+    }
+    const integrationCredentialCache = await (0, integration_credential_resolver_util_1.warmupIntegrationCredentials)({
+        prisma,
+        userId,
+        integrationIds,
+    });
+    return rebuildLangChainToolsWithCredentialCache(built, toolEngine, integrationCredentialCache);
+}
+exports.buildEngineToolsFromAllowedWithCredentials = buildEngineToolsFromAllowedWithCredentials;
 function sleep(ms) {
     return new Promise((resolve) => {
         setTimeout(resolve, ms);

@@ -16,7 +16,7 @@ import { logWorkflowDebug } from '../../../workflow/trace/workflow-debug.util';
 import { deserializePendingObservations } from '../agent-write-confirmation.util';
 import { buildWriteConfirmResumeSummaryObservation } from '../write-confirm-resume-summary.util';
 import { createRunMetricsAccumulator } from '../run-metrics.util';
-import { buildEngineToolsFromAllowed, executePendingWriteToolCalls } from '../main/runtime/agent-tool-runtime.util';
+import { buildEngineToolsFromAllowedWithCredentials, executePendingWriteToolCalls } from '../main/runtime/agent-tool-runtime.util';
 import { maxRunStepNumber } from '../main/run/agent-run-steps.util';
 import { resolveTaskPlanAdvance } from '../main/plan/task-plan.util';
 import { pendingRespondFromObservation } from '../turn/turn-respond.util';
@@ -94,10 +94,11 @@ export async function runWriteConfirmResume(
     allowedToolIds,
     langChainTools,
     toolBuildCtx,
-  } = buildEngineToolsFromAllowed(
+  } = await buildEngineToolsFromAllowedWithCredentials(
     allowedTools,
     resumeInput.userId,
     deps.toolEngine,
+    deps.prisma,
   );
 
   const scopedIdSet = new Set(consumed.resumeContext.scopedToolIds);

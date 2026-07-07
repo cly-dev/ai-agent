@@ -48,6 +48,8 @@ export type PageWorkflowOrchestratorInput = PageWorkflowRunnerInput & {
   existingApprovalRequestId?: number | null;
   /** 重试时附加到 objective 的补充说明。 */
   retryInstruction?: string | null;
+  /** invoke 时派生的去重键；挂审批时写入 ApprovalRequest.idempotencyKey。 */
+  pageActionKey?: string | null;
 };
 
 export type PageWorkflowOrchestratorResult = PageWorkflowRunnerResult & {
@@ -239,6 +241,7 @@ export async function orchestratePageWorkflow(
         scopedToolIds: input.allowedToolIds,
         pageContext: input.pageContext,
         pageActionRunId: input.actionRunId,
+        idempotencyKey: input.pageActionKey ?? null,
         channel: { kind: 'page_action', pageActionRunId: input.actionRunId },
         stepRecorder: recorder,
         existingApprovalRequestId: input.existingApprovalRequestId ?? null,

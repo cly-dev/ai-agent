@@ -16,6 +16,8 @@ exports.LlmModelConfigController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const client_1 = require("../../../generated/prisma/client");
+const admin_roles_decorator_1 = require("../../auth/admin-roles.decorator");
+const admin_role_guard_1 = require("../../auth/admin-role.guard");
 const update_intent_recall_config_dto_1 = require("./dto/update-intent-recall-config.dto");
 const update_llm_model_config_dto_1 = require("./dto/update-llm-model-config.dto");
 const upsert_llm_model_config_dto_1 = require("./dto/upsert-llm-model-config.dto");
@@ -38,6 +40,9 @@ let LlmModelConfigController = class LlmModelConfigController {
     }
     activate(id) {
         return this.service.activate(id);
+    }
+    testConnection(id) {
+        return this.service.testConnection(id);
     }
     getIntentRecall() {
         return this.service.getIntentRecallConfig();
@@ -91,6 +96,20 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], LlmModelConfigController.prototype, "activate", null);
 __decorate([
+    (0, common_1.Post)(':id/test-connection'),
+    (0, admin_roles_decorator_1.AdminRoles)(client_1.AdminRole.OPERATOR),
+    (0, swagger_1.ApiOperation)({
+        summary: '探测 LLM / Embedding 配置连通性',
+        description: 'Chat：最小 invoke；api_embedding：单次 embedding 请求；transformers_embedding：本地模型加载探测。',
+    }),
+    (0, swagger_1.ApiParam)({ name: 'id', type: Number }),
+    (0, swagger_1.ApiResponse)({ status: 200 }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], LlmModelConfigController.prototype, "testConnection", null);
+__decorate([
     (0, common_1.Get)('intent-recall'),
     (0, swagger_1.ApiOperation)({ summary: '获取意图召回配置' }),
     __metadata("design:type", Function),
@@ -109,6 +128,7 @@ LlmModelConfigController = __decorate([
     (0, swagger_1.ApiTags)('llm-model-config'),
     (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.Controller)('llm-model-config'),
+    (0, common_1.UseGuards)(admin_role_guard_1.AdminRoleGuard),
     __metadata("design:paramtypes", [llm_model_config_service_1.LlmModelConfigService])
 ], LlmModelConfigController);
 exports.LlmModelConfigController = LlmModelConfigController;

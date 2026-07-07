@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PageAgentModule = void 0;
 const common_1 = require("@nestjs/common");
+const outbound_http_module_1 = require("../../core/outbound-http/outbound-http.module");
 const auth_module_1 = require("../../auth/auth.module");
 const llm_module_1 = require("../../core/llm/llm.module");
 const prisma_module_1 = require("../../prisma/prisma.module");
@@ -17,7 +18,7 @@ let PageAgentModule = class PageAgentModule {
 };
 PageAgentModule = __decorate([
     (0, common_1.Module)({
-        imports: [prisma_module_1.PrismaModule, auth_module_1.AuthModule, llm_module_1.LlmModule],
+        imports: [outbound_http_module_1.OutboundHttpModule, prisma_module_1.PrismaModule, auth_module_1.AuthModule, llm_module_1.LlmModule],
         controllers: [page_agent_controller_1.PageAgentController],
         providers: [page_agent_proxy_service_1.PageAgentProxyService],
         exports: [page_agent_proxy_service_1.PageAgentProxyService],

@@ -13,7 +13,7 @@ const page_workflow_node_util_1 = require("./page-workflow-node.util");
 const draft_review_1 = require("../draft-review");
 const resolve_approval_parties_util_1 = require("../approval/resolve-approval-parties.util");
 async function orchestratePageWorkflow(input) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     const recorder = (_a = input.stepRecorder) !== null && _a !== void 0 ? _a : new page_action_run_steps_util_1.PageActionRunStepRecorder();
     const runtime = (0, page_workflow_runtime_util_1.createPageWorkflowExecutorRuntime)(input, recorder);
     if (input.resumeFrom) {
@@ -168,9 +168,10 @@ async function orchestratePageWorkflow(input) {
                 scopedToolIds: input.allowedToolIds,
                 pageContext: input.pageContext,
                 pageActionRunId: input.actionRunId,
+                idempotencyKey: (_h = input.pageActionKey) !== null && _h !== void 0 ? _h : null,
                 channel: { kind: 'page_action', pageActionRunId: input.actionRunId },
                 stepRecorder: recorder,
-                existingApprovalRequestId: (_h = input.existingApprovalRequestId) !== null && _h !== void 0 ? _h : null,
+                existingApprovalRequestId: (_j = input.existingApprovalRequestId) !== null && _j !== void 0 ? _j : null,
             });
             (0, workflow_debug_util_1.logWorkflowDebug)('page_workflow_suspended', {
                 actionRunId: input.actionRunId,

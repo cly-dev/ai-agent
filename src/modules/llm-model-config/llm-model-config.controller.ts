@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -6,7 +6,9 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { LlmModelKind } from '../../../generated/prisma/client';
+import { AdminRole, LlmModelKind } from '../../../generated/prisma/client';
+import { AdminRoles } from '../../auth/admin-roles.decorator';
+import { AdminRoleGuard } from '../../auth/admin-role.guard';
 import { UpdateIntentRecallConfigDto } from './dto/update-intent-recall-config.dto';
 import { UpdateLlmModelConfigDto } from './dto/update-llm-model-config.dto';
 import { UpsertLlmModelConfigDto } from './dto/upsert-llm-model-config.dto';
@@ -15,6 +17,7 @@ import { LlmModelConfigService } from './llm-model-config.service';
 @ApiTags('llm-model-config')
 @ApiBearerAuth()
 @Controller('llm-model-config')
+@UseGuards(AdminRoleGuard)
 export class LlmModelConfigController {
   constructor(private readonly service: LlmModelConfigService) {}
 
@@ -53,6 +56,19 @@ export class LlmModelConfigController {
   @ApiParam({ name: 'id', type: Number })
   activate(@Param('id', ParseIntPipe) id: number) {
     return this.service.activate(id);
+  }
+
+  @Post(':id/test-connection')
+  @AdminRoles(AdminRole.OPERATOR)
+  @ApiOperation({
+    summary: '探测 LLM / Embedding 配置连通性',
+    description:
+      'Chat：最小 invoke；api_embedding：单次 embedding 请求；transformers_embedding：本地模型加载探测。',
+  })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 200 })
+  testConnection(@Param('id', ParseIntPipe) id: number) {
+    return this.service.testConnection(id);
   }
 
   @Get('intent-recall')

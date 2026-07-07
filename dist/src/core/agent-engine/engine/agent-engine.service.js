@@ -219,6 +219,7 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
                 userId: input.userId,
                 agentService: this.agentService,
                 toolEngine: this.toolEngine,
+                prisma: this.prisma,
             });
         }
         await (0, prepare_write_confirm_resume_util_1.releaseWriteConfirmGate)({
@@ -330,7 +331,7 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
             pageContext,
         });
         scope.assertActive();
-        const { tools, toolProfilesByName, allowedToolIds, langChainTools, toolBuildCtx, } = (0, agent_tool_runtime_util_1.buildEngineToolsFromAllowed)(allowedTools, input.userId, this.toolEngine);
+        const { tools, toolProfilesByName, allowedToolIds, langChainTools, toolBuildCtx, } = await (0, agent_tool_runtime_util_1.buildEngineToolsFromAllowedWithCredentials)(allowedTools, input.userId, this.toolEngine, this.prisma);
         scope.assertActive();
         const { turn, run } = await (0, create_primary_agent_run_util_1.createPrimaryAgentRunTurn)(this.prisma, {
             messageId: input.userMessageId,

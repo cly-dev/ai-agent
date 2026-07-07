@@ -30,6 +30,8 @@ import type {
   ToolObservation,
 } from '../types/agent-engine.types';
 import type { AgentService } from '../../../../../modules/agent/agent.service';
+import type { PrismaService } from '../../../../../prisma/prisma.service';
+import { warmupIntegrationCredentials } from '../../../../tool-engine/integration-credential-resolver.util';
 import {
   classifyToolExecutionStatus,
   finalizeToolErrorDispositionAfterInvoke,
@@ -120,6 +122,47 @@ export function buildEngineToolsFromAllowed(
     langChainTools,
     toolBuildCtx,
   };
+}
+
+function rebuildLangChainToolsWithCredentialCache(
+  built: ReturnType<typeof buildEngineToolsFromAllowed>,
+  toolEngine: ToolEngineService,
+  integrationCredentialCache: ReadonlyMap<string, string>,
+): ReturnType<typeof buildEngineToolsFromAllowed> {
+  const toolBuildCtx: ToolBuildContext = {
+    ...built.toolBuildCtx,
+    integrationCredentialCache,
+  };
+  return {
+    ...built,
+    toolBuildCtx,
+    langChainTools: toolEngine.buildLangChainTools(built.tools, toolBuildCtx),
+  };
+}
+
+export async function buildEngineToolsFromAllowedWithCredentials(
+  allowedTools: Awaited<ReturnType<AgentService['getAllowedTools']>>,
+  userId: number,
+  toolEngine: ToolEngineService,
+  prisma: PrismaService,
+): Promise<ReturnType<typeof buildEngineToolsFromAllowed>> {
+  const built = buildEngineToolsFromAllowed(allowedTools, userId, toolEngine);
+  const integrationIds = [
+    ...new Set(built.tools.map((tool) => tool.integration.id)),
+  ];
+  if (integrationIds.length === 0) {
+    return built;
+  }
+  const integrationCredentialCache = await warmupIntegrationCredentials({
+    prisma,
+    userId,
+    integrationIds,
+  });
+  return rebuildLangChainToolsWithCredentialCache(
+    built,
+    toolEngine,
+    integrationCredentialCache,
+  );
 }
 
 function sleep(ms: number): Promise<void> {

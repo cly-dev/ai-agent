@@ -46,6 +46,7 @@ import { AgentSessionScopeService } from './main/session/agent-session-scope.ser
 import { RequestedSkillRunService } from './main/skill/requested-skill-run.service';
 import {
   buildEngineToolsFromAllowed,
+  buildEngineToolsFromAllowedWithCredentials,
 } from './main/runtime/agent-tool-runtime.util';
 import { maxRunStepNumber } from './main/run/agent-run-steps.util';
 import { createPrimaryAgentRunTurn } from './main/run/create-primary-agent-run.util';
@@ -320,6 +321,7 @@ export class AgentEngineService {
         userId: input.userId,
         agentService: this.agentService,
         toolEngine: this.toolEngine,
+        prisma: this.prisma,
       });
     }
 
@@ -474,10 +476,11 @@ export class AgentEngineService {
       allowedToolIds,
       langChainTools,
       toolBuildCtx,
-    } = buildEngineToolsFromAllowed(
+    } = await buildEngineToolsFromAllowedWithCredentials(
       allowedTools,
       input.userId,
       this.toolEngine,
+      this.prisma,
     );
 
     scope.assertActive();

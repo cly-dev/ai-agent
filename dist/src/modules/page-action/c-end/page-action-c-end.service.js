@@ -15,6 +15,7 @@ const client_1 = require("../../../../generated/prisma/client");
 const page_action_host_tool_util_1 = require("../../../core/page-action/page-action-host-tool.util");
 const page_action_host_fill_executor_1 = require("../../../core/page-action/page-action-host-fill.executor");
 const page_action_constants_1 = require("../../../core/page-action/page-action.constants");
+const page_action_key_util_1 = require("../../../core/page-action/page-action-key.util");
 const page_action_invoke_context_util_1 = require("../../../core/page-action/page-action-invoke-context.util");
 const page_action_prompt_limits_util_1 = require("../../../core/page-action/page-action-prompt-limits.util");
 const page_action_run_lifecycle_util_1 = require("../../../core/page-action/page-action-run-lifecycle.util");
@@ -34,7 +35,7 @@ let PageActionCEndService = class PageActionCEndService {
         this.automationTasks = automationTasks;
     }
     async invoke(userId, appClientId, dto) {
-        var _a, _b, _c, _d, _e, _f, _g;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
         const actionKey = dto.actionKey.trim();
         const pageAction = await this.prisma.pageAction.findFirst({
             where: { appClientId, actionKey, isActive: true },
@@ -70,7 +71,21 @@ let PageActionCEndService = class PageActionCEndService {
         const hostToolResolved = hostToolRow
             ? (0, page_action_host_tool_util_1.resolvePageActionHostTool)(hostToolRow, pageContext)
             : null;
-        if ((_d = dto.idempotencyKey) === null || _d === void 0 ? void 0 : _d.trim()) {
+        const pageActionKey = (0, page_action_key_util_1.computePageActionKey)({
+            actionKey: pageAction.actionKey,
+            pageContext,
+            instruction,
+            context: (_d = dto.context) !== null && _d !== void 0 ? _d : null,
+        });
+        const activeRun = await this.findActiveRunByPageActionKey({
+            pageActionId: pageAction.id,
+            userId,
+            pageActionKey,
+        });
+        if (activeRun) {
+            this.throwPageActionAlreadyActive(pageActionKey, activeRun);
+        }
+        if ((_e = dto.idempotencyKey) === null || _e === void 0 ? void 0 : _e.trim()) {
             const prior = await this.prisma.pageActionRun.findFirst({
                 where: {
                     appClientId,
@@ -80,33 +95,51 @@ let PageActionCEndService = class PageActionCEndService {
                 orderBy: { id: 'desc' },
             });
             if (prior) {
-                return this.toInvokeAccepted(prior.id, prior.generation, prior.clientActionId, prior.status);
+                return this.toInvokeAccepted(prior.id, prior.generation, prior.clientActionId, (_f = prior.pageActionKey) !== null && _f !== void 0 ? _f : pageActionKey, prior.status);
             }
         }
-        const run = await this.prisma.$transaction(async (tx) => {
-            var _a, _b;
-            const created = await tx.pageActionRun.create({
-                data: {
+        let run;
+        try {
+            run = await this.prisma.$transaction(async (tx) => {
+                var _a, _b;
+                const created = await tx.pageActionRun.create({
+                    data: {
+                        pageActionId: pageAction.id,
+                        appClientId,
+                        userId,
+                        delivery: client_1.PageActionDelivery.inline_stream,
+                        status: client_1.PageActionRunStatus.running,
+                        instruction,
+                        context: dto.context === undefined
+                            ? undefined
+                            : dto.context,
+                        pageContext: pageContext,
+                        pageActionKey,
+                        idempotencyKey: ((_a = dto.idempotencyKey) === null || _a === void 0 ? void 0 : _a.trim()) || null,
+                        clientActionId: ((_b = dto.clientActionId) === null || _b === void 0 ? void 0 : _b.trim()) || null,
+                        steps: [],
+                    },
+                });
+                return tx.pageActionRun.update({
+                    where: { id: created.id },
+                    data: { generation: created.id },
+                });
+            });
+        }
+        catch (error) {
+            if (error instanceof client_1.Prisma.PrismaClientKnownRequestError &&
+                error.code === 'P2002') {
+                const raced = await this.findActiveRunByPageActionKey({
                     pageActionId: pageAction.id,
-                    appClientId,
                     userId,
-                    delivery: client_1.PageActionDelivery.inline_stream,
-                    status: client_1.PageActionRunStatus.running,
-                    instruction,
-                    context: dto.context === undefined
-                        ? undefined
-                        : dto.context,
-                    pageContext: pageContext,
-                    idempotencyKey: ((_a = dto.idempotencyKey) === null || _a === void 0 ? void 0 : _a.trim()) || null,
-                    clientActionId: ((_b = dto.clientActionId) === null || _b === void 0 ? void 0 : _b.trim()) || null,
-                    steps: [],
-                },
-            });
-            return tx.pageActionRun.update({
-                where: { id: created.id },
-                data: { generation: created.id },
-            });
-        });
+                    pageActionKey,
+                });
+                if (raced) {
+                    this.throwPageActionAlreadyActive(pageActionKey, raced);
+                }
+            }
+            throw error;
+        }
         this.runStreamHub.prepareSession(run.id);
         this.runExecutor.executeInBackground({
             runId: run.id,
@@ -120,13 +153,14 @@ let PageActionCEndService = class PageActionCEndService {
             workflowOverrides: pageAction.workflowOverrides,
             systemPrompt: pageAction.systemPrompt,
             instruction,
-            context: (_e = dto.context) !== null && _e !== void 0 ? _e : null,
+            context: (_g = dto.context) !== null && _g !== void 0 ? _g : null,
             pageContext,
-            clientActionId: ((_f = dto.clientActionId) === null || _f === void 0 ? void 0 : _f.trim()) || null,
+            pageActionKey,
+            clientActionId: ((_h = dto.clientActionId) === null || _h === void 0 ? void 0 : _h.trim()) || null,
             pageActionConfig: pageAction.config,
             hostToolResolved,
         });
-        return this.toInvokeAccepted(run.id, run.id, ((_g = dto.clientActionId) === null || _g === void 0 ? void 0 : _g.trim()) || null, client_1.PageActionRunStatus.running);
+        return this.toInvokeAccepted(run.id, run.id, ((_j = dto.clientActionId) === null || _j === void 0 ? void 0 : _j.trim()) || null, pageActionKey, client_1.PageActionRunStatus.running);
     }
     async subscribeRunStream(userId, appClientId, runId, res) {
         var _a, _b, _c;
@@ -199,11 +233,36 @@ let PageActionCEndService = class PageActionCEndService {
             offset: query.offset,
         });
     }
-    toInvokeAccepted(runId, generation, clientActionId, status) {
+    async findActiveRunByPageActionKey(input) {
+        return this.prisma.pageActionRun.findFirst({
+            where: {
+                pageActionId: input.pageActionId,
+                userId: input.userId,
+                pageActionKey: input.pageActionKey,
+                status: { in: [...page_action_key_util_1.PAGE_ACTION_ACTIVE_RUN_STATUSES] },
+            },
+            include: { approvalRequest: { select: { id: true } } },
+            orderBy: { id: 'desc' },
+        });
+    }
+    throwPageActionAlreadyActive(pageActionKey, activeRun) {
+        var _a, _b;
+        throw new common_1.ConflictException({
+            code: 'PAGE_ACTION_ALREADY_ACTIVE',
+            message: 'An active PageAction run already exists for the same page context',
+            pageActionKey,
+            existingRunId: activeRun.id,
+            existingStatus: activeRun.status,
+            approvalRequestId: (_b = (_a = activeRun.approvalRequest) === null || _a === void 0 ? void 0 : _a.id) !== null && _b !== void 0 ? _b : null,
+            streamUrl: (0, page_action_constants_1.buildPageActionRunStreamPath)(activeRun.id),
+        });
+    }
+    toInvokeAccepted(runId, generation, clientActionId, pageActionKey, status) {
         return {
             runId,
             generation,
             clientActionId: clientActionId !== null && clientActionId !== void 0 ? clientActionId : null,
+            pageActionKey,
             streamUrl: (0, page_action_constants_1.buildPageActionRunStreamPath)(runId),
             status,
         };

@@ -512,6 +512,7 @@ export declare const PageActionRunScalarFieldEnum: {
     readonly completionTokens: "completionTokens";
     readonly durationMs: "durationMs";
     readonly idempotencyKey: "idempotencyKey";
+    readonly pageActionKey: "pageActionKey";
     readonly clientActionId: "clientActionId";
     readonly steps: "steps";
     readonly workflowId: "workflowId";

@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LlmModule = void 0;
 const common_1 = require("@nestjs/common");
+const outbound_http_module_1 = require("../outbound-http/outbound-http.module");
 const llm_model_config_cache_store_1 = require("./llm-model-config-cache.store");
 const llm_service_1 = require("./llm.service");
 const prompt_budget_service_1 = require("./prompt-budget/prompt-budget.service");
@@ -15,6 +16,7 @@ let LlmModule = class LlmModule {
 };
 LlmModule = __decorate([
     (0, common_1.Module)({
+        imports: [outbound_http_module_1.OutboundHttpModule],
         providers: [llm_model_config_cache_store_1.LlmModelConfigCacheStore, prompt_budget_service_1.PromptBudgetService, llm_service_1.LlmService],
         exports: [llm_service_1.LlmService, llm_model_config_cache_store_1.LlmModelConfigCacheStore, prompt_budget_service_1.PromptBudgetService],
     })

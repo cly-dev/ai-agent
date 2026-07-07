@@ -363,6 +363,8 @@ type CreateWorkflowBody = {
 
 ## 8. C 端 PageAction invoke
 
+> **完整 C 端对接**（去重 `pageActionKey`、409 处理、SSE、任务列表）见 [c-end-page-action-integration.md](./c-end-page-action-integration.md)。
+
 **POST** `/page-action/invoke`（无 `/admin` 前缀）
 
 ### 8.1 行为变更

@@ -3919,6 +3919,7 @@ export const PageActionRunScalarFieldEnum = {
   completionTokens: 'completionTokens',
   durationMs: 'durationMs',
   idempotencyKey: 'idempotencyKey',
+  pageActionKey: 'pageActionKey',
   clientActionId: 'clientActionId',
   steps: 'steps',
   workflowId: 'workflowId',

@@ -98,6 +98,12 @@ let LlmModelConfigService = class LlmModelConfigService {
         return row;
     }
     async activate(id) {
+        return this.llmModelConfigActivate(id);
+    }
+    testConnection(id) {
+        return this.llmService.testModelConfigConnection(id);
+    }
+    async llmModelConfigActivate(id) {
         const existing = await this.prisma.llmModelConfig.findUnique({ where: { id } });
         if (!existing) {
             throw new common_1.NotFoundException(`llm model config id=${id} not found`);

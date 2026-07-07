@@ -3,11 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.toToolExecutionDefinition = exports.loadPageWorkflowToolBundle = void 0;
 const agent_tool_runtime_util_1 = require("../agent-engine/engine/main/runtime/agent-tool-runtime.util");
 const TOOL_WITH_INTEGRATION_INCLUDE = { integration: true };
-function integrationCredentialCacheKey(userId, integrationId) {
-    return `${userId}:${integrationId}`;
-}
 async function loadPageWorkflowToolBundle(input) {
-    var _a, _b;
     const allowedToolIds = [...new Set(input.allowedToolIds)];
     if (allowedToolIds.length === 0) {
         return {
@@ -30,33 +26,13 @@ async function loadPageWorkflowToolBundle(input) {
         },
         include: TOOL_WITH_INTEGRATION_INCLUDE,
     });
-    const integrationCredentialCache = new Map();
-    const integrationIds = [
-        ...new Set(prismaTools.map((tool) => tool.integration.id)),
-    ];
-    if (integrationIds.length > 0) {
-        const userIntegrations = await input.prisma.userIntegration.findMany({
-            where: {
-                userId: input.userId,
-                integrationId: { in: integrationIds },
-                isActive: true,
-            },
-            select: {
-                integrationId: true,
-                userApiKey: true,
-            },
-        });
-        for (const row of userIntegrations) {
-            integrationCredentialCache.set(integrationCredentialCacheKey(input.userId, row.integrationId), (_b = (_a = row.userApiKey) === null || _a === void 0 ? void 0 : _a.trim()) !== null && _b !== void 0 ? _b : '');
-        }
-    }
-    const { tools: engineTools, toolBuildCtx } = (0, agent_tool_runtime_util_1.buildEngineToolsFromAllowed)(prismaTools, input.userId, input.toolEngine);
+    const { tools: engineTools, toolBuildCtx } = await (0, agent_tool_runtime_util_1.buildEngineToolsFromAllowedWithCredentials)(prismaTools, input.userId, input.toolEngine, input.prisma);
     return {
         allowedToolIds,
         prismaTools,
         toolById: new Map(prismaTools.map((tool) => [tool.id, tool])),
         engineTools,
-        toolBuildCtx: Object.assign(Object.assign({}, toolBuildCtx), { integrationCredentialCache }),
+        toolBuildCtx,
     };
 }
 exports.loadPageWorkflowToolBundle = loadPageWorkflowToolBundle;

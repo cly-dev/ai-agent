@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveAgentRunFailureCode = exports.resolveAgentRunFailureUserMessage = exports.resolveLlmFailureCode = exports.resolveToolFailureCode = exports.buildLlmFailureUserMessage = exports.buildIntentScopeFailureUserMessage = exports.buildToolFailureUserMessage = exports.buildToolErrorObservation = exports.formatResponseSourceForDisplay = exports.extractToolErrorResponseSource = exports.extractToolErrorCode = exports.extractToolErrorUserHint = exports.isAgentToolErrorObservation = void 0;
 const common_1 = require("@nestjs/common");
+const outbound_http_types_1 = require("../../outbound-http/outbound-http.types");
 const tool_response_source_util_1 = require("../../tool-engine/tool-response-source.util");
 const requested_skill_run_error_1 = require("./main/skill/requested-skill-run.error");
 const requested_skill_run_service_1 = require("./main/skill/requested-skill-run.service");
@@ -134,6 +135,23 @@ function buildToolFailureUserMessage(error, context) {
     const httpStatus = (_a = context === null || context === void 0 ? void 0 : context.httpStatus) !== null && _a !== void 0 ? _a : parseHttpStatusFromToolError(error);
     const downstreamMsg = extractDownstreamMessage(context === null || context === void 0 ? void 0 : context.responseSource);
     const isMutation = (context === null || context === void 0 ? void 0 : context.isMutation) === true;
+    if (error instanceof outbound_http_types_1.OutboundHttpError) {
+        if (error.kind === 'timeout') {
+            return isMutation
+                ? '写操作超时，请稍后重试或联系管理员。'
+                : '查询超时，未能获取到数据。请缩小查询范围或稍后再试。';
+        }
+        if (error.kind === 'abort') {
+            return isMutation
+                ? '写操作已取消。'
+                : '查询已取消。';
+        }
+        if (error.kind === 'network') {
+            return isMutation
+                ? '无法连接下游服务，写操作未完成。请稍后重试或联系管理员。'
+                : '无法连接下游服务，请检查网络或稍后重试。';
+        }
+    }
     if (lower.includes('401') ||
         lower.includes('403') ||
         lower.includes('auth unresolved') ||
@@ -192,6 +210,17 @@ function buildIntentScopeFailureUserMessage() {
 }
 exports.buildIntentScopeFailureUserMessage = buildIntentScopeFailureUserMessage;
 function buildLlmFailureUserMessage(error) {
+    if (error instanceof outbound_http_types_1.OutboundHttpError) {
+        if (error.kind === 'timeout') {
+            return '生成回复超时，请稍后重试。';
+        }
+        if (error.kind === 'network') {
+            return '无法连接智能服务，请稍后重试；若持续失败请联系管理员。';
+        }
+        if (error.kind === 'abort') {
+            return '生成已停止。';
+        }
+    }
     const text = error instanceof Error ? error.message : String(error);
     const lower = text.toLowerCase();
     if (lower.includes('rate limit') ||
@@ -217,6 +246,14 @@ function resolveToolFailureCode(error, context) {
     const text = error instanceof Error ? error.message : String(error);
     const lower = text.toLowerCase();
     const httpStatus = (_a = context === null || context === void 0 ? void 0 : context.httpStatus) !== null && _a !== void 0 ? _a : parseHttpStatusFromToolError(error);
+    if (error instanceof outbound_http_types_1.OutboundHttpError) {
+        if (error.kind === 'timeout' || error.kind === 'abort') {
+            return 'TOOL_TIMEOUT';
+        }
+        if (error.kind === 'network') {
+            return 'TOOL_DOWNSTREAM_ERROR';
+        }
+    }
     if (lower.includes('401') ||
         lower.includes('403') ||
         lower.includes('auth unresolved') ||
@@ -239,6 +276,14 @@ function resolveToolFailureCode(error, context) {
 }
 exports.resolveToolFailureCode = resolveToolFailureCode;
 function resolveLlmFailureCode(error) {
+    if (error instanceof outbound_http_types_1.OutboundHttpError) {
+        if (error.kind === 'timeout' || error.kind === 'abort') {
+            return 'LLM_TIMEOUT';
+        }
+        if (error.kind === 'network') {
+            return 'LLM_TIMEOUT';
+        }
+    }
     const text = error instanceof Error ? error.message : String(error);
     const lower = text.toLowerCase();
     if (lower.includes('rate limit') ||

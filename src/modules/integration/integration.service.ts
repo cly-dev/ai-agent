@@ -12,6 +12,9 @@ import {
   toPaginatedResult,
 } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { OutboundHttpService } from '../../core/outbound-http/outbound-http.service';
+import { readIntegrationProbeTimeoutMs } from '../../core/outbound-http/outbound-http.policy.util';
+import { OutboundHttpError } from '../../core/outbound-http/outbound-http.types';
 import { assertOutboundUrlAllowed } from '../../core/security/outbound-url-guard.util';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
 import {
@@ -30,13 +33,14 @@ import {
 } from './integration.types';
 import type { TestIntegrationConnectionDto } from './dto/test-integration-connection.dto';
 
-const CONNECTION_PROBE_TIMEOUT_MS = 10_000;
+const CONNECTION_PROBE_TIMEOUT_MS = readIntegrationProbeTimeoutMs();
 
 @Injectable()
 export class IntegrationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
+    private readonly outboundHttp: OutboundHttpService,
   ) {}
 
   async create(dto: CreateIntegrationDto): Promise<IntegrationResponse> {
@@ -324,18 +328,19 @@ export class IntegrationService {
     method: 'GET' | 'HEAD',
     headers: Record<string, string>,
   ): Promise<Omit<IntegrationConnectionTestResult, 'durationMs'>> {
-    const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      CONNECTION_PROBE_TIMEOUT_MS,
-    );
     try {
-      const response = await fetch(url, {
-        method,
-        headers,
-        signal: controller.signal,
-        redirect: 'follow',
-      });
+      const response = await this.outboundHttp.fetchWithPolicy(
+        url,
+        {
+          method,
+          headers,
+          redirect: 'follow',
+        },
+        {
+          timeoutMs: CONNECTION_PROBE_TIMEOUT_MS,
+          label: 'integration_probe',
+        },
+      );
       return {
         reachable: true,
         url,
@@ -344,19 +349,16 @@ export class IntegrationService {
         statusText: response.statusText,
       };
     } catch (error) {
-      const message = this.formatFetchError(error);
-      const aborted =
-        error instanceof Error && error.name === 'AbortError';
+      const message =
+        error instanceof OutboundHttpError
+          ? error.message
+          : this.formatFetchError(error);
       return {
         reachable: false,
         url,
         method,
-        error: aborted
-          ? `request timed out after ${CONNECTION_PROBE_TIMEOUT_MS}ms`
-          : message,
+        error: message,
       };
-    } finally {
-      clearTimeout(timer);
     }
   }
 

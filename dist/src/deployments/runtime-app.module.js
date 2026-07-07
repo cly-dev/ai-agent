@@ -37,6 +37,7 @@ const page_action_module_1 = require("../modules/page-action/page-action.module"
 const page_agent_module_1 = require("../modules/page-agent/page-agent.module");
 const approval_module_1 = require("../modules/approval/approval.module");
 const workflow_module_1 = require("../modules/workflow/workflow.module");
+const connectivity_module_1 = require("../modules/connectivity/connectivity.module");
 const shared_infra_module_1 = require("./shared-infra.module");
 let RuntimeAppModule = class RuntimeAppModule {
 };
@@ -67,6 +68,7 @@ RuntimeAppModule = __decorate([
             agent_run_module_1.AgentRunModule,
             skill_module_1.SkillModule,
             integration_module_1.IntegrationModule,
+            connectivity_module_1.ConnectivityModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [

@@ -48,7 +48,7 @@ async function runWriteConfirmResume(input) {
         },
         pageContext: resumePageContext,
     });
-    const { tools, toolProfilesByName, allowedToolIds, langChainTools, toolBuildCtx, } = (0, agent_tool_runtime_util_1.buildEngineToolsFromAllowed)(allowedTools, resumeInput.userId, deps.toolEngine);
+    const { tools, toolProfilesByName, allowedToolIds, langChainTools, toolBuildCtx, } = await (0, agent_tool_runtime_util_1.buildEngineToolsFromAllowedWithCredentials)(allowedTools, resumeInput.userId, deps.toolEngine, deps.prisma);
     const scopedIdSet = new Set(consumed.resumeContext.scopedToolIds);
     const resolvedScopedTools = tools.filter((tool) => scopedIdSet.has(tool.id)).length > 0
         ? tools.filter((tool) => scopedIdSet.has(tool.id))

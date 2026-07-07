@@ -12,6 +12,12 @@ import {
 } from '../../../generated/prisma/client';
 import { readEmbeddingRuntimeParameters } from './llm-embedding-parameters.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import { OutboundHttpService } from '../outbound-http/outbound-http.service';
+import {
+  readLlmEmbeddingTimeoutMs,
+  readLlmOutboundTimeoutMs,
+} from '../outbound-http/outbound-http.policy.util';
+import { OutboundHttpError } from '../outbound-http/outbound-http.types';
 import { LlmModelConfigCacheStore } from './llm-model-config-cache.store';
 import { normalizeToolCallArgs as normalizeToolArguments } from './tool-call-args.util';
 import {
@@ -23,6 +29,7 @@ import type {
   LlmChatInput,
   LlmChatMessage,
   LlmChatResult,
+  LlmConnectionTestResult,
   LlmStreamHandlers,
   LlmToolCall,
   LlmToolDefinition,
@@ -50,6 +57,7 @@ export class LlmService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly modelConfigCache: LlmModelConfigCacheStore,
     private readonly promptBudgetService: PromptBudgetService,
+    private readonly outboundHttp: OutboundHttpService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -248,17 +256,24 @@ export class LlmService implements OnModuleInit {
     texts: string[],
     runtime: { url: string; apiKey: string; model: string },
   ): Promise<number[][]> {
-    const response = await fetch(runtime.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${runtime.apiKey}`,
+    const response = await this.outboundHttp.fetchWithPolicy(
+      runtime.url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${runtime.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: runtime.model,
+          input: texts,
+        }),
       },
-      body: JSON.stringify({
-        model: runtime.model,
-        input: texts,
-      }),
-    });
+      {
+        timeoutMs: readLlmEmbeddingTimeoutMs(),
+        label: 'llm_embedding',
+      },
+    );
     if (!response.ok) {
       const body = await response.text().catch(() => '');
       throw new Error(
@@ -331,6 +346,111 @@ export class LlmService implements OnModuleInit {
     maxTokens?: number;
   }): Promise<ChatOpenAI> {
     const config = await this.getCachedConfig();
+    return this.buildChatOpenAiFromConfig(config, options);
+  }
+
+  async testModelConfigConnection(
+    configId: number,
+  ): Promise<LlmConnectionTestResult> {
+    const config = await this.prisma.llmModelConfig.findUnique({
+      where: { id: configId },
+    });
+    if (!config) {
+      throw new NotFoundException(`llm model config ${configId} not found`);
+    }
+    const startedAt = Date.now();
+    const base = {
+      configId: config.id,
+      kind: config.kind,
+      provider: config.provider,
+      model: config.model,
+      durationMs: 0,
+    };
+    try {
+      if (config.kind === LlmModelKind.chat) {
+        const model = await this.buildChatOpenAiFromConfig(config, {
+          streaming: false,
+          maxTokens: 1,
+          temperature: 0,
+        });
+        await model.invoke([{ role: 'user', content: 'ping' }]);
+        return {
+          ...base,
+          ok: true,
+          probe: 'chat',
+          durationMs: Date.now() - startedAt,
+        };
+      }
+      if (config.kind === LlmModelKind.api_embedding) {
+        await this.embedTextsByRemoteApi(['ping'], config);
+        return {
+          ...base,
+          ok: true,
+          probe: 'embedding_api',
+          durationMs: Date.now() - startedAt,
+        };
+      }
+      if (config.kind === LlmModelKind.transformers_embedding) {
+        const runtimeParams = readEmbeddingRuntimeParameters(config);
+        await this.embedTextsByLocalTransformer(
+          ['ping'],
+          config.model,
+          runtimeParams,
+        );
+        return {
+          ...base,
+          ok: true,
+          probe: 'embedding_local',
+          durationMs: Date.now() - startedAt,
+          detail: { note: 'local transformers embedding loaded successfully' },
+        };
+      }
+      return {
+        ...base,
+        ok: false,
+        probe: 'unsupported',
+        durationMs: Date.now() - startedAt,
+        error: `kind ${config.kind} does not support connectivity probe`,
+      };
+    } catch (error) {
+      return {
+        ...base,
+        ok: false,
+        probe:
+          config.kind === LlmModelKind.chat
+            ? 'chat'
+            : config.kind === LlmModelKind.api_embedding
+              ? 'embedding_api'
+              : config.kind === LlmModelKind.transformers_embedding
+                ? 'embedding_local'
+                : 'unsupported',
+        durationMs: Date.now() - startedAt,
+        error: this.formatConnectionTestError(error),
+      };
+    }
+  }
+
+  async testActiveChatConnection(): Promise<LlmConnectionTestResult> {
+    const config = await this.getCachedChatConfig();
+    return this.testModelConfigConnection(config.id);
+  }
+
+  async testActiveEmbeddingConnection(): Promise<LlmConnectionTestResult | null> {
+    const config = await this.getCachedEmbeddingConfig();
+    if (!config) {
+      return null;
+    }
+    return this.testModelConfigConnection(config.id);
+  }
+
+  private buildChatOpenAiFromConfig(
+    config: LlmModelConfig,
+    options?: {
+      streaming?: boolean;
+      temperature?: number;
+      maxTokens?: number;
+    },
+  ): ChatOpenAI {
     const parameters = this.normalizeParameters(config.parameters);
     const resolvedTemperature =
       options?.temperature ??
@@ -348,19 +468,29 @@ export class LlmService implements OnModuleInit {
     const fromEnv = process.env.OPENAI_API_KEY
       ? String(process.env.OPENAI_API_KEY).trim()
       : '';
-    // Must be non-empty: '' is treated as “no key” by the OpenAI client. Intranet gateways ignore it.
     const apiKey = fromDb || fromEnv || 'local-internal';
-    const model = new ChatOpenAI({
+    return new ChatOpenAI({
       model: config.model,
       apiKey,
       temperature: resolvedTemperature ?? undefined,
       maxTokens: configuredOutput,
       streaming: options?.streaming ?? true,
+      timeout: readLlmOutboundTimeoutMs(),
+      maxRetries: 0,
       configuration: {
         baseURL: this.resolveLangChainBaseUrl(config.baseUrl, config.chatPath),
       },
     });
-    return model;
+  }
+
+  private formatConnectionTestError(error: unknown): string {
+    if (error instanceof OutboundHttpError) {
+      return error.message;
+    }
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return String(error);
   }
 
   /**

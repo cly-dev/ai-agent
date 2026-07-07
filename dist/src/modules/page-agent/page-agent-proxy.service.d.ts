@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { type PaginatedResult } from '../../common/pagination';
 import { LlmService } from '../../core/llm/llm.service';
+import { OutboundHttpService } from '../../core/outbound-http/outbound-http.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QueryPageAgentLlmProxyAuditDto } from './dto/page-agent-audit.dto';
 import { type PageAgentLlmProxyAuditDetail, type PageAgentLlmProxyAuditListItem } from './page-agent.types';
@@ -14,8 +15,9 @@ type ProxyChatInput = {
 export declare class PageAgentProxyService {
     private readonly prisma;
     private readonly llmService;
+    private readonly outboundHttp;
     private readonly logger;
-    constructor(prisma: PrismaService, llmService: LlmService);
+    constructor(prisma: PrismaService, llmService: LlmService, outboundHttp: OutboundHttpService);
     proxyChatCompletions(input: ProxyChatInput): Promise<void>;
     findAuditPage(appClientId: number, query: QueryPageAgentLlmProxyAuditDto): Promise<PaginatedResult<PageAgentLlmProxyAuditListItem>>;
     findAuditDetail(appClientId: number, id: number): Promise<PageAgentLlmProxyAuditDetail>;

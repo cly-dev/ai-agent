@@ -293,6 +293,7 @@ export class PageActionRunExecutor {
       toolBundle,
       approvalGate: this.approvalGate,
       approvalTriggerBinding: parseApprovalTriggerBinding(run.pageActionConfig),
+      pageActionKey: run.pageActionKey,
     });
 
     if (result.suspended) {

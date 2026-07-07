@@ -2,20 +2,22 @@ import { OnModuleInit } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { type LlmModelConfig } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { OutboundHttpService } from '../outbound-http/outbound-http.service';
 import { LlmModelConfigCacheStore } from './llm-model-config-cache.store';
 import { PromptBudgetService } from './prompt-budget/prompt-budget.service';
 import type { FitMessagesResult, PromptBudgetHints } from './prompt-budget/prompt-budget.types';
-import type { LlmChatInput, LlmChatMessage, LlmChatResult, LlmStreamHandlers } from './llm.types';
+import type { LlmChatInput, LlmChatMessage, LlmChatResult, LlmConnectionTestResult, LlmStreamHandlers } from './llm.types';
 export declare class LlmService implements OnModuleInit {
     private readonly prisma;
     private readonly modelConfigCache;
     private readonly promptBudgetService;
+    private readonly outboundHttp;
     private readonly logger;
     private static readonly DEFAULT_OUTPUT_MAX_TOKENS;
     private static readonly INVOCATION_TOKEN_BUFFER;
     private static readonly LOCAL_EMBED_BATCH_SIZE;
     private localEmbeddingRuntime;
-    constructor(prisma: PrismaService, modelConfigCache: LlmModelConfigCacheStore, promptBudgetService: PromptBudgetService);
+    constructor(prisma: PrismaService, modelConfigCache: LlmModelConfigCacheStore, promptBudgetService: PromptBudgetService, outboundHttp: OutboundHttpService);
     onModuleInit(): Promise<void>;
     refreshConfigCache(): Promise<void>;
     chat(input: LlmChatInput): Promise<LlmChatResult>;
@@ -39,6 +41,11 @@ export declare class LlmService implements OnModuleInit {
         temperature?: number;
         maxTokens?: number;
     }): Promise<ChatOpenAI>;
+    testModelConfigConnection(configId: number): Promise<LlmConnectionTestResult>;
+    testActiveChatConnection(): Promise<LlmConnectionTestResult>;
+    testActiveEmbeddingConnection(): Promise<LlmConnectionTestResult | null>;
+    private buildChatOpenAiFromConfig;
+    private formatConnectionTestError;
     createLangChainChatModelForMessages(messages: LlmChatMessage[], options?: {
         temperature?: number;
         maxTokens?: number;

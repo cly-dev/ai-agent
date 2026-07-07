@@ -18,5 +18,7 @@ export declare class PageActionCEndService {
         items: import("../../automation/automation.types").AutomationTaskListItem[];
         total: number;
     }>;
+    private findActiveRunByPageActionKey;
+    private throwPageActionAlreadyActive;
     private toInvokeAccepted;
 }

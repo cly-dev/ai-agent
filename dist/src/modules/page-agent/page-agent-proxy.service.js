@@ -14,16 +14,19 @@ exports.PageAgentProxyService = void 0;
 const common_1 = require("@nestjs/common");
 const pagination_1 = require("../../common/pagination");
 const llm_service_1 = require("../../core/llm/llm.service");
+const outbound_http_service_1 = require("../../core/outbound-http/outbound-http.service");
+const outbound_http_policy_util_1 = require("../../core/outbound-http/outbound-http.policy.util");
+const outbound_http_types_1 = require("../../core/outbound-http/outbound-http.types");
 const page_action_run_audit_util_1 = require("../../core/page-action/page-action-run-audit.util");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const page_agent_mapper_1 = require("./page-agent.mapper");
 const page_agent_types_1 = require("./page-agent.types");
-const DEFAULT_TIMEOUT_MS = 60000;
 const ERROR_PREVIEW_MAX_CHARS = 2000;
 let PageAgentProxyService = PageAgentProxyService_1 = class PageAgentProxyService {
-    constructor(prisma, llmService) {
+    constructor(prisma, llmService, outboundHttp) {
         this.prisma = prisma;
         this.llmService = llmService;
+        this.outboundHttp = outboundHttp;
         this.logger = new common_1.Logger(PageAgentProxyService_1.name);
     }
     async proxyChatCompletions(input) {
@@ -46,10 +49,6 @@ let PageAgentProxyService = PageAgentProxyService_1 = class PageAgentProxyServic
         const abortController = new AbortController();
         let timedOut = false;
         let clientClosed = false;
-        const timeout = setTimeout(() => {
-            timedOut = true;
-            abortController.abort();
-        }, timeoutMs);
         const onClientClose = () => {
             if (!input.res.writableEnded) {
                 clientClosed = true;
@@ -58,15 +57,20 @@ let PageAgentProxyService = PageAgentProxyService_1 = class PageAgentProxyServic
         };
         input.res.on('close', onClientClose);
         try {
-            const upstream = await fetch(this.resolveEndpoint(config), {
+            const upstream = await this.outboundHttp.fetchWithPolicy(this.resolveEndpoint(config), {
                 method: 'POST',
                 headers: this.buildHeaders(config),
                 body: JSON.stringify(payload),
+            }, {
+                timeoutMs,
                 signal: abortController.signal,
+                label: 'page_agent_proxy',
             });
             await this.writeUpstreamResponse(input.res, upstream, audit.id, startedAt);
         }
         catch (error) {
+            timedOut =
+                error instanceof outbound_http_types_1.OutboundHttpError && error.kind === 'timeout';
             const message = this.errorMessage(error, timedOut, clientClosed);
             await this.updateAuditFailed(audit.id, startedAt, message);
             if (input.res.headersSent) {
@@ -84,7 +88,6 @@ let PageAgentProxyService = PageAgentProxyService_1 = class PageAgentProxyServic
             throw new common_1.BadGatewayException(`page-agent proxy failed: ${message}`);
         }
         finally {
-            clearTimeout(timeout);
             input.res.off('close', onClientClose);
         }
     }
@@ -308,11 +311,7 @@ let PageAgentProxyService = PageAgentProxyService_1 = class PageAgentProxyServic
         return row;
     }
     readTimeoutMs() {
-        const raw = Number(process.env.PAGE_AGENT_PROXY_TIMEOUT_MS);
-        if (Number.isFinite(raw) && raw > 0) {
-            return Math.floor(raw);
-        }
-        return DEFAULT_TIMEOUT_MS;
+        return (0, outbound_http_policy_util_1.readPageAgentProxyTimeoutMs)();
     }
     pickString(value) {
         return typeof value === 'string' && value.trim() ? value : null;
@@ -336,7 +335,8 @@ let PageAgentProxyService = PageAgentProxyService_1 = class PageAgentProxyServic
 PageAgentProxyService = PageAgentProxyService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        llm_service_1.LlmService])
+        llm_service_1.LlmService,
+        outbound_http_service_1.OutboundHttpService])
 ], PageAgentProxyService);
 exports.PageAgentProxyService = PageAgentProxyService;
 //# sourceMappingURL=page-agent-proxy.service.js.map

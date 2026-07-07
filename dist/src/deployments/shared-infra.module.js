@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SharedInfraModule = void 0;
 const common_1 = require("@nestjs/common");
 const throttler_1 = require("@nestjs/throttler");
+const outbound_http_module_1 = require("../core/outbound-http/outbound-http.module");
 const llm_module_1 = require("../core/llm/llm.module");
 const memory_module_1 = require("../core/memory/memory.module");
 const runtime_cache_module_1 = require("../core/runtime-cache/runtime-cache.module");
@@ -25,6 +26,7 @@ SharedInfraModule = __decorate([
                 ttl: 60,
                 limit: 120,
             }),
+            outbound_http_module_1.OutboundHttpModule,
             prisma_module_1.PrismaModule,
             memory_module_1.MemoryModule,
             llm_module_1.LlmModule,
@@ -35,6 +37,7 @@ SharedInfraModule = __decorate([
         ],
         exports: [
             throttler_1.ThrottlerModule,
+            outbound_http_module_1.OutboundHttpModule,
             prisma_module_1.PrismaModule,
             memory_module_1.MemoryModule,
             llm_module_1.LlmModule,

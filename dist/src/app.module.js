@@ -15,6 +15,7 @@ const admin_prefix_jwt_guard_1 = require("./auth/admin-prefix-jwt.guard");
 const admin_role_guard_1 = require("./auth/admin-role.guard");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
+const outbound_http_module_1 = require("./core/outbound-http/outbound-http.module");
 const llm_module_1 = require("./core/llm/llm.module");
 const memory_module_1 = require("./core/memory/memory.module");
 const runtime_cache_module_1 = require("./core/runtime-cache/runtime-cache.module");
@@ -45,6 +46,7 @@ const page_agent_module_1 = require("./modules/page-agent/page-agent.module");
 const approval_module_1 = require("./core/approval/approval.module");
 const approval_module_2 = require("./modules/approval/approval.module");
 const workflow_module_1 = require("./modules/workflow/workflow.module");
+const connectivity_module_1 = require("./modules/connectivity/connectivity.module");
 let AppModule = class AppModule {
 };
 AppModule = __decorate([
@@ -54,6 +56,7 @@ AppModule = __decorate([
                 ttl: 60,
                 limit: 120,
             }),
+            outbound_http_module_1.OutboundHttpModule,
             llm_module_1.LlmModule,
             memory_module_1.MemoryModule,
             runtime_cache_module_1.RuntimeCacheModule,
@@ -84,6 +87,7 @@ AppModule = __decorate([
             agent_run_module_1.AgentRunModule,
             skill_module_1.SkillModule,
             integration_module_1.IntegrationModule,
+            connectivity_module_1.ConnectivityModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [

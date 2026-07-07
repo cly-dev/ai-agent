@@ -91,6 +91,7 @@ export declare class LlmModelConfigController {
         temperature: number;
         enabled: boolean;
     }>;
+    testConnection(id: number): Promise<import("../../core/llm/llm.types").LlmConnectionTestResult>;
     getIntentRecall(): Promise<{
         id: number;
         createdAt: Date;

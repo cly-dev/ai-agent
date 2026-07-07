@@ -135,6 +135,7 @@ export async function resumePageActionFromApprovalSnapshot(input: {
     allowedToolIds: effectiveSnapshot.scopedToolIds,
     toolBundle,
     approvalGate: input.approvalGate,
+    pageActionKey: run.pageActionKey,
     resumeFrom: {
       workflowRun: effectiveSnapshot.workflowRun,
       nodeOutputs: effectiveSnapshot.workflowNodeOutputs,
@@ -299,6 +300,7 @@ export async function retryPageActionFromApprovalSnapshot(input: {
     approvalGate: input.approvalGate,
     existingApprovalRequestId: input.approvalRequestId,
     retryInstruction: input.retryInstruction,
+    pageActionKey: run.pageActionKey,
     resumeFrom: {
       workflowRun: retrySnapshot.workflowRun,
       nodeOutputs: retrySnapshot.workflowNodeOutputs,
@@ -315,7 +317,7 @@ export async function retryPageActionFromApprovalSnapshot(input: {
         ? PageActionRunStatus.awaiting_approval
         : result.errorCode
           ? PageActionRunStatus.failed
-          : PageActionRunStatus.running,
+          : PageActionRunStatus.completed,
       workflowRun: result.workflowRun as object,
       fillText: result.fillText || null,
       dslOutcome: result.dslOutcome,
