@@ -1,0 +1,22 @@
+import type { ToolLevel } from '../../../../../../generated/prisma/client';
+import type { TaskPlanSource, TaskPlanStep, TaskStepPhase } from './task-plan.types';
+export type PlanFrame = {
+    frameId: string;
+    skillId: number | null;
+    skillName: string | null;
+    source: TaskPlanSource;
+    steps: TaskPlanStep[];
+    pendingStepIds: string[];
+    completedStepIds: string[];
+    taskPhase: TaskStepPhase;
+    currentObjective: string;
+    currentStepId: string | null;
+    parentSkillStepId?: string | null;
+    skillPrompt?: string | null;
+    skillDescription?: string | null;
+    skillConfig?: unknown;
+    skillRiskLevel?: ToolLevel | null;
+    skillHostToolIds?: number[];
+    skillToolIds?: number[];
+    skillRunnableKind?: 'http' | 'host' | 'both';
+};
