@@ -10,6 +10,7 @@ import {
   isAgentToolErrorObservation,
 } from '../../../agent-run-user-messages.util';
 import { allToolObservations } from '../../../graph-tool-observations.util';
+import { resolveHostToolPushSuccessContent } from '../../host-tool/host-tool-push-success.util';
 import {
   formatSplitToolObservationsForSummarize,
   isSplitToolObservationsOutput,
@@ -146,6 +147,46 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
           const primaryObservation = resolvePrimaryObservationForSummarize(
             pendingObservation.output,
           );
+          const hostPushSuccess = resolveHostToolPushSuccessContent({
+            taskPlan: state.taskPlan,
+            observations: allToolObservations(state),
+          });
+          if (hostPushSuccess) {
+            const stored = serializeMessageBlocksForStorage(hostPushSuccess.blocks);
+            deps.sse.publishAssistantBlocks(
+              ctx.input.sessionId,
+              ctx.input.runId,
+              hostPushSuccess.blocks,
+            );
+            const summaryStep: AgentRunStep = {
+              step: nextRunStepNumber(state.steps),
+              type: 'summarize',
+              name: hostPushSuccess.summaryStepName,
+              output: hostPushSuccess.plainText,
+            };
+            const nextSteps = [...state.steps, summaryStep];
+            await runHelpers.updateRun(
+              ctx.input.runId,
+              nextSteps,
+              AgentRunStatus.success,
+            );
+            return mergeWorkflowSummarizeCompletion(
+              {
+                ...state,
+                steps: nextSteps,
+                pendingRespond: null,
+                taskPlan: finalizePlanAfterSummarize(state.taskPlan),
+                finalOutput:
+                  deps.assistantArtifact.peekSerialized(
+                    ctx.input.sessionId,
+                    ctx.input.runId,
+                  ) ?? stored,
+                status: AgentRunStatus.success,
+                finished: true,
+              },
+              { continuePlan: false, finished: true },
+            );
+          }
           const effectiveToolName =
             pendingObservation.name === SPLIT_TOOL_OBSERVATIONS_NAME &&
             primaryObservation

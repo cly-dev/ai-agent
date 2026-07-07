@@ -16,6 +16,7 @@ import {
 } from './runtime-revision.util';
 import type {
   AgentToolCatalogSnapshot,
+  RuntimeRevision,
 } from './runtime-cache.types';
 
 @Injectable()
@@ -112,6 +113,18 @@ export class AgentToolCatalogService {
       ctx.revisionToolRows,
     );
     return `${toolsPart}|${integrations}|r:${ctx.agent.restrictTools ? 1 : 0}`;
+  }
+
+  /** 仅拉 id/updatedAt 指纹，用于 L1 session prepare 缓存校验（避免全量 getAllowedTools）。 */
+  async fetchRuntimeRevisionParts(
+    appClientId: number,
+    agentId: number,
+  ): Promise<Pick<RuntimeRevision, 'tools' | 'integrations'>> {
+    const ctx = await this.loadToolCatalogContext(appClientId, agentId);
+    if (!ctx) {
+      return { tools: '', integrations: '' };
+    }
+    return buildToolsRuntimeRevision(ctx.revisionToolRows);
   }
 
   private async buildFromDb(

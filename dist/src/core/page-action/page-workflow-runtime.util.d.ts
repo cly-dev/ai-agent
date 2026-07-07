@@ -1,11 +1,12 @@
-import type { Response } from 'express';
 import type { PrismaService } from '../../prisma/prisma.service';
+import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 import type { LlmChatMessage } from '../llm/llm.types';
 import type { LlmService } from '../llm/llm.service';
 import type { ToolEngineService } from '../tool-engine/tool-engine.service';
 import type { ResolvedPageActionHostTool } from './page-action-host-tool.util';
 import { PageActionRunStepRecorder, type PageActionRunStep } from './page-action-run-steps.util';
+import type { PageWorkflowToolBundle } from './page-workflow-tool-bundle.util';
 import type { PageWorkflowExecutorRuntime } from '../workflow/page/page-workflow-runtime.types';
 import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
 export type PageWorkflowRunnerInput = {
@@ -26,8 +27,9 @@ export type PageWorkflowRunnerInput = {
     actionKey: string;
     generation: number;
     clientActionId?: string | null;
-    res: Response;
+    sseSink: PageActionSseSink;
     stepRecorder?: PageActionRunStepRecorder;
+    toolBundle?: PageWorkflowToolBundle | null;
 };
 export declare function createPageWorkflowExecutorRuntime(input: PageWorkflowRunnerInput, recorder: PageActionRunStepRecorder): PageWorkflowExecutorRuntime;
 export type PageWorkflowRunnerResult = {

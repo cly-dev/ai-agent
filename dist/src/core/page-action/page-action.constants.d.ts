@@ -8,3 +8,4 @@ export declare function buildPageActionStreamId(input: {
     actionRunId: number;
     actionKey: string;
 }): string;
+export declare function buildPageActionRunStreamPath(runId: number): string;

@@ -19,12 +19,15 @@ const redis_keys_1 = require("../../core/memory/redis/redis-keys");
 const redis_connection_service_1 = require("../../core/memory/redis/redis-connection.service");
 const host_tool_stream_replay_util_1 = require("../../core/host-bridge/host-tool-stream-replay.util");
 const write_confirmation_gate_util_1 = require("../../core/agent-engine/engine/write-confirmation-gate.util");
+const load_write_tools_for_policy_util_1 = require("../../core/draft-review/load-write-tools-for-policy.util");
 const chat_pending_write_gate_mapper_1 = require("./chat-pending-write-gate.mapper");
 const pending_write_confirmation_store_1 = require("./pending-write-confirmation.store");
+const prisma_service_1 = require("../../prisma/prisma.service");
 let ChatEventsService = ChatEventsService_1 = class ChatEventsService {
-    constructor(pendingWriteConfirmationStore, redis) {
+    constructor(pendingWriteConfirmationStore, redis, prisma) {
         this.pendingWriteConfirmationStore = pendingWriteConfirmationStore;
         this.redis = redis;
+        this.prisma = prisma;
         this.logger = new common_1.Logger(ChatEventsService_1.name);
         this.instanceId = `${(0, node_os_1.hostname)()}:${process.pid}:${(0, node_crypto_1.randomUUID)().slice(0, 8)}`;
         this.subjects = new Map();
@@ -73,9 +76,9 @@ let ChatEventsService = ChatEventsService_1 = class ChatEventsService {
             }
             void this.pendingWriteConfirmationStore
                 .get(normalized, userId)
-                .then((pending) => {
+                .then(async (pending) => {
                 if (pending) {
-                    subscriber.next(this.buildPendingWriteConfirmationEvent(pending));
+                    subscriber.next(await this.buildPendingWriteConfirmationEvent(pending));
                 }
                 inner = subject.subscribe({
                     next: (evt) => subscriber.next(evt),
@@ -205,8 +208,9 @@ let ChatEventsService = ChatEventsService_1 = class ChatEventsService {
         }
         return evt.payload.runId === runId;
     }
-    buildPendingWriteConfirmationEvent(pending) {
-        const gate = (0, chat_pending_write_gate_mapper_1.buildPendingWriteGatePublicState)(pending);
+    async buildPendingWriteConfirmationEvent(pending) {
+        const writeToolsById = await (0, load_write_tools_for_policy_util_1.loadWriteToolsForPolicy)(this.prisma, pending.resumeContext.scopedToolIds);
+        const gate = (0, chat_pending_write_gate_mapper_1.buildPendingWriteGatePublicState)(pending, writeToolsById);
         return {
             event: 'message',
             payload: Object.assign({ source: 'agent-run', action: 'confirmation_required', message: (0, write_confirmation_gate_util_1.buildWriteConfirmationUserMessage)() }, gate),
@@ -264,7 +268,8 @@ ChatEventsService.REPLAY_BUFFER = 8;
 ChatEventsService = ChatEventsService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [pending_write_confirmation_store_1.PendingWriteConfirmationStore,
-        redis_connection_service_1.RedisConnectionService])
+        redis_connection_service_1.RedisConnectionService,
+        prisma_service_1.PrismaService])
 ], ChatEventsService);
 exports.ChatEventsService = ChatEventsService;
 //# sourceMappingURL=chat-events.service.js.map

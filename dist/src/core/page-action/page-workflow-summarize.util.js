@@ -58,12 +58,12 @@ async function executePageWorkflowSummarize(input) {
             mode,
             existingFillText: input.existingFillText,
             summaryText,
-            responseWritable: !input.res.writableEnded,
+            responseWritable: !input.sseSink.writableEnded,
         });
     if (shouldEmitTerminal) {
-        (0, page_action_inline_sse_util_1.writePageActionLifecycle)(input.res, Object.assign({ phase: 'started' }, lifecycleBase), recorder);
-        (0, page_action_inline_sse_util_1.writePageActionLifecycle)(input.res, Object.assign(Object.assign({ phase: 'completed' }, lifecycleBase), { text: summaryText, dslOutcome: null }), recorder);
-        (0, page_action_inline_sse_util_1.endInlineSseResponse)(input.res);
+        (0, page_action_inline_sse_util_1.writePageActionLifecycle)(input.sseSink, Object.assign({ phase: 'started' }, lifecycleBase), recorder);
+        (0, page_action_inline_sse_util_1.writePageActionLifecycle)(input.sseSink, Object.assign(Object.assign({ phase: 'completed' }, lifecycleBase), { text: summaryText, dslOutcome: null }), recorder);
+        (0, page_action_inline_sse_util_1.endInlineSseResponse)(input.sseSink);
     }
     (0, workflow_debug_util_1.logWorkflowDebug)('page_summarize', {
         actionRunId: input.actionRunId,

@@ -19,6 +19,7 @@ const chat_controller_1 = require("./chat.controller");
 const chat_service_1 = require("./chat.service");
 const session_prepare_service_1 = require("./session-prepare.service");
 const session_prepare_store_1 = require("./session-prepare.store");
+const session_runtime_resolver_service_1 = require("./session-runtime-resolver.service");
 const session_runtime_cache_hooks_service_1 = require("./session-runtime-cache-hooks.service");
 const chat_events_module_1 = require("./chat-events.module");
 const chat_session_run_bridge_module_1 = require("./chat-session-run-bridge.module");
@@ -42,6 +43,7 @@ ChatModule = __decorate([
         providers: [
             chat_service_1.ChatService,
             session_prepare_store_1.SessionPrepareStore,
+            session_runtime_resolver_service_1.SessionRuntimeResolverService,
             session_prepare_service_1.SessionPrepareService,
             session_runtime_cache_hooks_service_1.SessionRuntimeCacheHooksService,
             {
@@ -57,6 +59,7 @@ ChatModule = __decorate([
             chat_session_run_bridge_module_1.ChatSessionRunBridgeModule,
             session_prepare_store_1.SessionPrepareStore,
             session_prepare_service_1.SessionPrepareService,
+            session_runtime_resolver_service_1.SessionRuntimeResolverService,
         ],
     })
 ], ChatModule);

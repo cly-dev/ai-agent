@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import Redis from 'ioredis';
+import { buildIoRedisClientOptions } from './redis-client-options.util';
 
 @Injectable()
 export class RedisConnectionService implements OnModuleInit, OnModuleDestroy {
@@ -23,17 +24,18 @@ export class RedisConnectionService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
+      const clientOptions = buildIoRedisClientOptions({ password });
       this.client = url
-        ? new Redis(url, { maxRetriesPerRequest: 2, password })
+        ? new Redis(url, clientOptions)
         : new Redis({
             host,
             port: Number.parseInt(process.env.REDIS_PORT ?? '6379', 10),
-            password,
             db: process.env.REDIS_DB
               ? Number.parseInt(process.env.REDIS_DB, 10)
               : undefined,
-            maxRetriesPerRequest: 2,
+            ...clientOptions,
           });
+      await this.client.connect();
       await this.client.ping();
       this.logger.log('Redis connected');
     } catch (err) {

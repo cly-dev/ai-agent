@@ -28,6 +28,8 @@ export type ToolExecutionDefinition = ToolDefinitionInput & {
 export type ToolBuildContext = {
   userId: number;
   allowedToolIds: number[];
+  /** 单次 run 预热的 userIntegration 凭证，避免每次 HTTP tool 查库。 */
+  integrationCredentialCache?: ReadonlyMap<string, string>;
 };
 
 /** 下游 HTTP 响应源数据（未经过 responseProfile 投影）。 */

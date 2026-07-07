@@ -23,15 +23,17 @@ const validate_approval_edited_pending_write_util_1 = require("./validate-approv
 const write_draft_util_1 = require("../draft-review/write-draft.util");
 const llm_service_1 = require("../llm/llm.service");
 const tool_engine_service_1 = require("../tool-engine/tool-engine.service");
+const page_action_run_stream_hub_1 = require("../page-action/stream/page-action-run-stream.hub");
 const draft_review_1 = require("../draft-review");
 let ApprovalResumeService = class ApprovalResumeService {
-    constructor(prisma, approvalRequests, approvalGate, triggerPermission, llmService, toolEngine) {
+    constructor(prisma, approvalRequests, approvalGate, triggerPermission, llmService, toolEngine, runStreamHub) {
         this.prisma = prisma;
         this.approvalRequests = approvalRequests;
         this.approvalGate = approvalGate;
         this.triggerPermission = triggerPermission;
         this.llmService = llmService;
         this.toolEngine = toolEngine;
+        this.runStreamHub = runStreamHub;
     }
     async decide(input) {
         var _a;
@@ -109,6 +111,7 @@ let ApprovalResumeService = class ApprovalResumeService {
                 llmService: this.llmService,
                 toolEngine: this.toolEngine,
                 approvalGate: this.approvalGate,
+                runEventBus: this.runStreamHub,
             });
         }
         return { resumed: true };
@@ -203,6 +206,7 @@ let ApprovalResumeService = class ApprovalResumeService {
             llmService: this.llmService,
             toolEngine: this.toolEngine,
             approvalGate: this.approvalGate,
+            runEventBus: this.runStreamHub,
         });
         return { resumed: true, suspended };
     }
@@ -241,7 +245,8 @@ ApprovalResumeService = __decorate([
         approval_gate_service_1.ApprovalGateService,
         approval_trigger_permission_service_1.ApprovalTriggerPermissionService,
         llm_service_1.LlmService,
-        tool_engine_service_1.ToolEngineService])
+        tool_engine_service_1.ToolEngineService,
+        page_action_run_stream_hub_1.PageActionRunStreamHub])
 ], ApprovalResumeService);
 exports.ApprovalResumeService = ApprovalResumeService;
 //# sourceMappingURL=approval-resume.service.js.map

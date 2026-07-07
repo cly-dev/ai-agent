@@ -1,5 +1,5 @@
 import type { PageActionRunStep } from '../../core/page-action/page-action-run-steps.util';
-import { PageActionRunStepRecorder } from '../../core/page-action/page-action-run-steps.util';
+import { parsePageActionRunSteps } from '../../core/page-action/page-action-run-steps.util';
 import type {
   PageActionDetailRow,
   PageActionRunAdminDetail,
@@ -35,7 +35,7 @@ export function toPageActionResponse(row: PageActionDetailRow): PageActionRespon
 }
 
 function parseRunSteps(value: unknown): PageActionRunStep[] {
-  return PageActionRunStepRecorder.fromJson(value).toJson();
+  return parsePageActionRunSteps(value);
 }
 
 function stepCount(value: unknown): number {

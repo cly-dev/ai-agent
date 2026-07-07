@@ -59,6 +59,8 @@ import {
   resolveWriteDraftFromChatGate,
   syncChatGateToolCallsFromWriteDraft,
   toWriteDraftPublic,
+  buildEditPolicyGateFields,
+  resolveWriteDraftEditPoliciesForPublicDrafts,
 } from '../../../../../draft-review';
 import type { AgentRunStep, GraphToolCall, ToolObservation } from '../../types/agent-engine.types';
 
@@ -524,6 +526,11 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
             const publicDraftList = writeDraftList.map((draft) =>
               toWriteDraftPublic(draft),
             );
+            const editPolicyFields = buildEditPolicyGateFields(
+              resolveWriteDraftEditPoliciesForPublicDrafts(publicDraftList, {
+                scopedTools: state.scopedTools,
+              }),
+            );
             await deps.pendingWriteConfirmationStore.set({
               runId: ctx.input.runId,
               turnId: ctx.input.turnId,
@@ -589,6 +596,7 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
                 writeDraft: publicDraftList[0],
                 writeDrafts:
                   publicDraftList.length > 1 ? publicDraftList : undefined,
+                ...editPolicyFields,
               },
             );
             if (!published) {

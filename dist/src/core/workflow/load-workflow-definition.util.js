@@ -14,6 +14,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.toWorkflowDefinition = exports.loadWorkflowForRun = exports.loadWorkflowForRunDetailed = exports.parseWorkflowOverridesJson = exports.parseWorkflowNodesJson = void 0;
 const apply_workflow_overrides_util_1 = require("./apply-workflow-overrides.util");
 const workflow_run_util_1 = require("./workflow-run.util");
+const workflow_definition_cache_util_1 = require("./workflow-definition-cache.util");
 const validate_workflow_against_scope_util_1 = require("./validate-workflow-against-scope.util");
 function isRecord(value) {
     return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -67,8 +68,10 @@ async function loadWorkflowForRunDetailed(prisma, input) {
         };
     }
     const pinVersion = (_a = input.workflowVersion) !== null && _a !== void 0 ? _a : null;
+    const cacheKey = (0, workflow_definition_cache_util_1.workflowLoadCacheKey)(input);
     let nodesJson = workflow.nodes;
     let version = workflow.version;
+    let revisionFingerprint = null;
     if (pinVersion != null && pinVersion !== workflow.version) {
         const revision = await prisma.workflowRevision.findUnique({
             where: {
@@ -87,8 +90,21 @@ async function loadWorkflowForRunDetailed(prisma, input) {
         }
         nodesJson = revision.nodes;
         version = revision.version;
+        revisionFingerprint = `${revision.id}:${revision.createdAt.toISOString()}`;
     }
-    const baseNodes = parseWorkflowNodesJson(nodesJson);
+    let baseNodes = (0, workflow_definition_cache_util_1.readCachedWorkflowLoad)(cacheKey, workflow.updatedAt, revisionFingerprint, version);
+    if (!baseNodes) {
+        baseNodes = parseWorkflowNodesJson(nodesJson);
+        if (baseNodes.length > 0) {
+            (0, workflow_definition_cache_util_1.rememberWorkflowLoadCache)(cacheKey, {
+                workflowId: workflow.id,
+                version,
+                workflowUpdatedAt: workflow.updatedAt.toISOString(),
+                revisionFingerprint,
+                baseNodes,
+            });
+        }
+    }
     if (baseNodes.length === 0) {
         return {
             status: 'failed',

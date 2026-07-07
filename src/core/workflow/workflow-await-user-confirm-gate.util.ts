@@ -20,6 +20,8 @@ import {
   resolveWriteDraftFromChatGate,
   syncChatGateToolCallsFromWriteDraft,
   toWriteDraftPublic,
+  buildEditPolicyGateFields,
+  resolveWriteDraftEditPoliciesForPublicDrafts,
 } from '../draft-review';
 import type { WorkflowRunState } from './workflow.types';
 
@@ -122,6 +124,11 @@ export async function applyWorkflowAwaitUserConfirmGate(
   });
   const primaryWriteDraft = writeDraftList[0] ?? writeDraft;
   const publicDraftList = writeDraftList.map((draft) => toWriteDraftPublic(draft));
+  const editPolicyFields = buildEditPolicyGateFields(
+    resolveWriteDraftEditPoliciesForPublicDrafts(publicDraftList, {
+      scopedTools: state.scopedTools,
+    }),
+  );
   await deps.pendingWriteConfirmationStore.set({
     runId: ctx.input.runId,
     turnId: ctx.input.turnId,
@@ -163,6 +170,7 @@ export async function applyWorkflowAwaitUserConfirmGate(
       canRetry: draftRetryBudget.canRetry,
       writeDraft: publicDraftList[0],
       writeDrafts: publicDraftList.length > 1 ? publicDraftList : undefined,
+      ...editPolicyFields,
     },
   );
   emitAgentMessageSseDebug({

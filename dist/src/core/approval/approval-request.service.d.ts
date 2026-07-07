@@ -2,6 +2,7 @@ import { ApprovalStatus, type ApprovalRequest, type Prisma } from '../../../gene
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
 import type { ApprovalCasResult, ApprovalDecisionInput, CreateApprovalRequestInput } from './approval.types';
+import type { ApprovalInboxStatusFilter } from './approval-inbox-status.util';
 export declare const APPROVAL_INBOX_SOURCES: readonly ["page_action", "webhook"];
 declare const APPROVAL_INBOX_INCLUDE: {
     workflow: {
@@ -29,7 +30,15 @@ export declare class ApprovalRequestService {
         appClientId: number;
         idempotencyKey: string;
     }): Promise<ApprovalRequest | null>;
-    findByIdForApprover(approvalRequestId: number, approverUserId: number): Promise<ApprovalRequest | null>;
+    findByIdForApprover(approvalRequestId: number, approverUserId: number): Promise<ApprovalInboxRow | null>;
+    loadWriteToolsByIds(toolIds: number[]): Promise<Map<number, import("../draft-review").WriteToolPolicyRow>>;
+    listInboxForApprover(input: {
+        appClientId: number;
+        approverUserId: number;
+        status?: ApprovalInboxStatusFilter;
+        limit?: number;
+        offset?: number;
+    }): Promise<ApprovalInboxRow[]>;
     listPendingForApprover(input: {
         appClientId: number;
         approverUserId: number;

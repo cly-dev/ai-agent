@@ -1,10 +1,12 @@
 import type { ApprovalPendingWrite } from '../approval/approval-resume-snapshot.types';
+import type { PageWorkflowToolBundle } from './page-workflow-tool-bundle.util';
 import type { ApprovalGateService } from '../approval/approval-gate.service';
 import { type PageWorkflowRunnerInput, type PageWorkflowRunnerResult } from './page-workflow-runtime.util';
 import type { ApprovalTriggerBinding } from '../approval/resolve-approval-parties.util';
 import type { WorkflowRunState } from '../workflow/workflow.types';
 export type PageWorkflowOrchestratorInput = PageWorkflowRunnerInput & {
     allowedToolIds: number[];
+    toolBundle?: PageWorkflowToolBundle | null;
     approvalGate?: ApprovalGateService;
     approvalTriggerBinding?: ApprovalTriggerBinding | null;
     resumeFrom?: {

@@ -2,6 +2,8 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import type { PageWorkflowToolBundle } from './page-workflow-tool-bundle.util';
+import { toToolExecutionDefinition } from './page-workflow-tool-bundle.util';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { resolvePageContextEntityId } from '../host-bridge/page-context-metadata-scan.util';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
@@ -105,12 +107,17 @@ export async function executePageWorkflowFetchData(input: {
   pageContext: AgentChatPageContext | null;
   stepRecorder?: PageActionRunStepRecorder;
   nodeId?: string;
+  toolBundle?: PageWorkflowToolBundle | null;
 }): Promise<PageWorkflowFetchObservation> {
-  const tool = await resolveFetchDataTool(input.prisma, {
-    appClientId: input.appClientId,
-    toolId: input.nodeInput.toolId,
-    definitionKey: input.nodeInput.definitionKey,
-  });
+  const tool =
+    (input.nodeInput.toolId != null
+      ? input.toolBundle?.toolById.get(input.nodeInput.toolId)
+      : undefined) ??
+    (await resolveFetchDataTool(input.prisma, {
+      appClientId: input.appClientId,
+      toolId: input.nodeInput.toolId,
+      definitionKey: input.nodeInput.definitionKey,
+    }));
   const args = buildReadToolInputFromPageContext(
     input.pageContext,
     tool.path,
@@ -128,27 +135,13 @@ export async function executePageWorkflowFetchData(input: {
     }),
   });
   const result = await input.toolEngine.executeFromDefinition(
-    {
-      id: tool.id,
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-      schema: tool.schema,
-      method: tool.method,
-      path: tool.path,
-      timeout: tool.timeout,
-      integration: {
-        id: tool.integration.id,
-        name: tool.integration.name,
-        baseUrl: tool.integration.baseUrl,
-        authMode: tool.integration.authMode,
-        apiKey: tool.integration.apiKey,
-      },
-      agentMetadata: tool.agentMetadata,
-      responseProfile: tool.responseProfile,
-    },
+    toToolExecutionDefinition(tool),
     args,
     input.userId,
+    {
+      integrationCredentialCache:
+        input.toolBundle?.toolBuildCtx.integrationCredentialCache,
+    },
   );
   input.stepRecorder?.record({
     type: 'workflow',

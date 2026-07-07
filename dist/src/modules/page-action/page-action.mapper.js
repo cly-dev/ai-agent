@@ -30,7 +30,7 @@ function toPageActionResponse(row) {
 }
 exports.toPageActionResponse = toPageActionResponse;
 function parseRunSteps(value) {
-    return page_action_run_steps_util_1.PageActionRunStepRecorder.fromJson(value).toJson();
+    return (0, page_action_run_steps_util_1.parsePageActionRunSteps)(value);
 }
 function stepCount(value) {
     return parseRunSteps(value).length;

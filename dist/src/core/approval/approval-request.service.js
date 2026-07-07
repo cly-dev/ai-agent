@@ -14,6 +14,8 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("../../../generated/prisma/client");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const draft_review_1 = require("../draft-review");
+const load_write_tools_for_policy_util_1 = require("../draft-review/load-write-tools-for-policy.util");
+const approval_inbox_status_util_1 = require("./approval-inbox-status.util");
 exports.APPROVAL_INBOX_SOURCES = [
     client_1.ApprovalSource.page_action,
     client_1.ApprovalSource.webhook,
@@ -66,22 +68,28 @@ let ApprovalRequestService = class ApprovalRequestService {
                 approverUserId,
                 source: { in: [...exports.APPROVAL_INBOX_SOURCES] },
             },
+            include: APPROVAL_INBOX_INCLUDE,
         });
     }
-    async listPendingForApprover(input) {
+    async loadWriteToolsByIds(toolIds) {
+        return (0, load_write_tools_for_policy_util_1.loadWriteToolsForPolicy)(this.prisma, toolIds);
+    }
+    async listInboxForApprover(input) {
         var _a, _b;
+        const statuses = (0, approval_inbox_status_util_1.resolveApprovalInboxStatuses)(input.status);
         return this.prisma.approvalRequest.findMany({
-            where: {
-                appClientId: input.appClientId,
-                approverUserId: input.approverUserId,
-                status: client_1.ApprovalStatus.pending,
-                source: { in: [...exports.APPROVAL_INBOX_SOURCES] },
-            },
-            orderBy: { createdAt: 'desc' },
+            where: Object.assign(Object.assign({ appClientId: input.appClientId, approverUserId: input.approverUserId }, (statuses ? { status: { in: statuses } } : {})), { source: { in: [...exports.APPROVAL_INBOX_SOURCES] } }),
+            orderBy: [
+                { decidedAt: 'desc' },
+                { createdAt: 'desc' },
+            ],
             take: (_a = input.limit) !== null && _a !== void 0 ? _a : 50,
             skip: (_b = input.offset) !== null && _b !== void 0 ? _b : 0,
             include: APPROVAL_INBOX_INCLUDE,
         });
+    }
+    async listPendingForApprover(input) {
+        return this.listInboxForApprover(Object.assign(Object.assign({}, input), { status: 'pending' }));
     }
     parseResumeSnapshot(row) {
         return row.resumeSnapshot;

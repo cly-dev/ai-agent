@@ -83,3 +83,50 @@ export class WriteDraftPublicDto {
   @ApiProperty({ type: WriteDraftProvenancePublicDto })
   provenance!: WriteDraftProvenancePublicDto;
 }
+
+export class WriteDraftFieldPolicyDto {
+  @ApiProperty({ example: 'content' })
+  path!: string;
+
+  @ApiProperty({ example: '回复内容' })
+  label!: string;
+
+  @ApiProperty({
+    enum: ['content', 'identifier', 'scenario', 'enum', 'system'],
+  })
+  role!: string;
+
+  @ApiProperty({
+    enum: ['text', 'textarea', 'select', 'readonly', 'hidden'],
+  })
+  widget!: string;
+
+  @ApiProperty()
+  editable!: boolean;
+
+  @ApiProperty()
+  required!: boolean;
+
+  @ApiPropertyOptional()
+  value?: unknown;
+
+  @ApiPropertyOptional()
+  reason?: string;
+}
+
+export class WriteDraftEditPolicyDto {
+  @ApiProperty({
+    enum: ['preview_only', 'allowlisted_fields', 'full'],
+    example: 'preview_only',
+  })
+  editMode!: string;
+
+  @ApiPropertyOptional({ nullable: true, example: 'content' })
+  submitPath!: string | null;
+
+  @ApiProperty()
+  allowArgumentsPatch!: boolean;
+
+  @ApiProperty({ type: [WriteDraftFieldPolicyDto] })
+  fields!: WriteDraftFieldPolicyDto[];
+}

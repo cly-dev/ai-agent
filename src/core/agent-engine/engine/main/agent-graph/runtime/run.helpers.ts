@@ -141,6 +141,31 @@ export function bindRunContextHelpers(
   };
 }
 
+const RUN_STEP_WRITE_COALESCE_MS = 2_000;
+const runStepWriteCoalescers = new Map<
+  number,
+  { lastWriteAt: number; lastStep: number; lastStatus: AgentRunStatus }
+>();
+
+function shouldSkipRunStepWrite(
+  runId: number,
+  currentStep: number,
+  status: AgentRunStatus,
+): boolean {
+  if (status !== AgentRunStatus.running) {
+    return false;
+  }
+  const prev = runStepWriteCoalescers.get(runId);
+  if (!prev) {
+    return false;
+  }
+  return (
+    prev.lastStatus === status &&
+    prev.lastStep === currentStep &&
+    Date.now() - prev.lastWriteAt < RUN_STEP_WRITE_COALESCE_MS
+  );
+}
+
 export async function updateRun(
   deps: AgentGraphDeps,
   runId: number,
@@ -148,14 +173,27 @@ export async function updateRun(
   status: AgentRunStatus,
 ): Promise<void> {
   const persistedSteps = stepsForRunPersistence(steps);
+  const currentStep = maxRunStepNumber(persistedSteps);
+  if (shouldSkipRunStepWrite(runId, currentStep, status)) {
+    return;
+  }
   await deps.prisma.agentRun.update({
     where: { id: runId },
     data: {
       steps: persistedSteps as unknown as Prisma.InputJsonValue,
-      currentStep: maxRunStepNumber(persistedSteps),
+      currentStep,
       status,
     },
   });
+  if (status === AgentRunStatus.running) {
+    runStepWriteCoalescers.set(runId, {
+      lastWriteAt: Date.now(),
+      lastStep: currentStep,
+      lastStatus: status,
+    });
+    return;
+  }
+  runStepWriteCoalescers.delete(runId);
 }
 
 export function normalizeJsonLike(

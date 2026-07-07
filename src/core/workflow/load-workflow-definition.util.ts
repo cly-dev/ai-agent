@@ -1,6 +1,11 @@
 import type { PrismaService } from '../../prisma/prisma.service';
 import { applyWorkflowOverrides } from './apply-workflow-overrides.util';
 import { initWorkflowRun } from './workflow-run.util';
+import {
+  readCachedWorkflowLoad,
+  rememberWorkflowLoadCache,
+  workflowLoadCacheKey,
+} from './workflow-definition-cache.util';
 import type {
   WorkflowDefinition,
   WorkflowNodeDef,
@@ -101,8 +106,10 @@ export async function loadWorkflowForRunDetailed(
   }
 
   const pinVersion = input.workflowVersion ?? null;
+  const cacheKey = workflowLoadCacheKey(input);
   let nodesJson: unknown = workflow.nodes;
   let version = workflow.version;
+  let revisionFingerprint: string | null = null;
 
   if (pinVersion != null && pinVersion !== workflow.version) {
     const revision = await prisma.workflowRevision.findUnique({
@@ -122,9 +129,28 @@ export async function loadWorkflowForRunDetailed(
     }
     nodesJson = revision.nodes;
     version = revision.version;
+    revisionFingerprint = `${revision.id}:${revision.createdAt.toISOString()}`;
   }
 
-  const baseNodes = parseWorkflowNodesJson(nodesJson);
+  let baseNodes = readCachedWorkflowLoad(
+    cacheKey,
+    workflow.updatedAt,
+    revisionFingerprint,
+    version,
+  );
+  if (!baseNodes) {
+    baseNodes = parseWorkflowNodesJson(nodesJson);
+    if (baseNodes.length > 0) {
+      rememberWorkflowLoadCache(cacheKey, {
+        workflowId: workflow.id,
+        version,
+        workflowUpdatedAt: workflow.updatedAt.toISOString(),
+        revisionFingerprint,
+        baseNodes,
+      });
+    }
+  }
+
   if (baseNodes.length === 0) {
     return {
       status: 'failed',

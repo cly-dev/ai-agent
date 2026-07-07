@@ -25,6 +25,8 @@ const agent_run_steps_util_1 = require("./agent-run-steps.util");
 const agent_run_audit_util_1 = require("./agent-run-audit.util");
 const session_goa_run_snapshot_util_1 = require("../../../../memory/goa/session-goa-run-snapshot.util");
 const session_graph_resume_util_1 = require("../session/session-graph-resume.util");
+const graph_tool_observations_util_1 = require("../../graph-tool-observations.util");
+const host_tool_push_success_util_1 = require("../host-tool/host-tool-push-success.util");
 function newToolObservationsFromGraph(graphState) {
     return graphState.toolObservations.map((row) => {
         var _a;
@@ -244,14 +246,24 @@ let AgentRunLifecycleService = class AgentRunLifecycleService {
         });
         if (!input.graphState.awaitingWriteConfirmation &&
             status !== client_1.AgentRunStatus.success) {
-            const fallback = this.resolveFallbackReply(input.agent.config);
-            if (!fallback) {
-                throw new common_1.BadRequestException('agent run exceeded max steps');
+            const hostPushSuccess = (0, host_tool_push_success_util_1.resolveHostToolPushSuccessContent)({
+                taskPlan: input.graphState.taskPlan,
+                observations: (0, graph_tool_observations_util_1.allToolObservations)(input.graphState),
+            });
+            if (hostPushSuccess) {
+                this.sse.publishAssistantBlocks(input.sessionId, input.runId, hostPushSuccess.blocks);
+                status = client_1.AgentRunStatus.success;
             }
-            this.sse.publishAssistantBlocks(input.sessionId, input.runId, [
-                (0, message_blocks_util_1.textBlock)(fallback),
-            ]);
-            status = client_1.AgentRunStatus.success;
+            else {
+                const fallback = this.resolveFallbackReply(input.agent.config);
+                if (!fallback) {
+                    throw new common_1.BadRequestException('agent run exceeded max steps');
+                }
+                this.sse.publishAssistantBlocks(input.sessionId, input.runId, [
+                    (0, message_blocks_util_1.textBlock)(fallback),
+                ]);
+                status = client_1.AgentRunStatus.success;
+            }
         }
         const result = await this.finishAgentRun({
             userId: input.userId,

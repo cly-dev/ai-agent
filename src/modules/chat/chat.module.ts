@@ -10,6 +10,7 @@ import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { SessionPrepareService } from './session-prepare.service';
 import { SessionPrepareStore } from './session-prepare.store';
+import { SessionRuntimeResolverService } from './session-runtime-resolver.service';
 import { SessionRuntimeCacheHooksService } from './session-runtime-cache-hooks.service';
 import { ChatEventsModule } from './chat-events.module';
 import { ChatSessionRunBridgeModule } from './chat-session-run-bridge.module';
@@ -31,6 +32,7 @@ import { PrismaService } from '../../prisma/prisma.service';
   providers: [
     ChatService,
     SessionPrepareStore,
+    SessionRuntimeResolverService,
     SessionPrepareService,
     SessionRuntimeCacheHooksService,
     {
@@ -46,6 +48,7 @@ import { PrismaService } from '../../prisma/prisma.service';
     ChatSessionRunBridgeModule,
     SessionPrepareStore,
     SessionPrepareService,
+    SessionRuntimeResolverService,
   ],
 })
 export class ChatModule {}

@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildPageWorkflowRunnerResult = exports.createPageWorkflowExecutorRuntime = void 0;
 function createPageWorkflowExecutorRuntime(input, recorder) {
-    var _a;
+    var _a, _b;
     return {
         pageContext: input.pageContext,
         messages: input.messages,
@@ -18,9 +18,10 @@ function createPageWorkflowExecutorRuntime(input, recorder) {
         actionKey: input.actionKey,
         generation: input.generation,
         clientActionId: (_a = input.clientActionId) !== null && _a !== void 0 ? _a : null,
-        res: input.res,
+        sseSink: input.sseSink,
         hostTool: input.hostTool,
         stepRecorder: recorder,
+        toolBundle: (_b = input.toolBundle) !== null && _b !== void 0 ? _b : null,
         fillText: '',
         dslOutcome: null,
         metrics: {

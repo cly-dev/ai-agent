@@ -1,5 +1,5 @@
 import type { HostActionSsePayload } from '../host-bridge/host-action.types';
-import type { WriteDraftPublic } from '../draft-review/write-draft.types';
+import type { WriteDraftPublic, WriteDraftEditPolicy } from '../draft-review/write-draft.types';
 export declare abstract class RunEventPublisher {
     abstract purgeReplayForSession(sessionId: string): void;
     abstract purgeWriteConfirmationGate(sessionId: string, runId: number): void;
@@ -31,6 +31,8 @@ export declare abstract class RunEventPublisher {
         canRetry?: boolean;
         writeDraft?: WriteDraftPublic;
         writeDrafts?: WriteDraftPublic[];
+        editPolicy?: WriteDraftEditPolicy | null;
+        editPolicies?: WriteDraftEditPolicy[];
     }): void;
     abstract emitWriteConfirmationCancelled(sessionId: string, input: {
         runId: number;

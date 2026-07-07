@@ -2,14 +2,20 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runPageWorkflowMutationReact = void 0;
 const common_1 = require("@nestjs/common");
+const page_workflow_tool_bundle_util_1 = require("./page-workflow-tool-bundle.util");
 const workflow_run_util_1 = require("../workflow/workflow-run.util");
 const workflow_node_output_util_1 = require("../workflow/workflow-node-output.util");
 const page_workflow_pending_write_util_1 = require("./page-workflow-pending-write.util");
 const page_workflow_compose_mutation_util_1 = require("./page-workflow-compose-mutation.util");
 const page_action_run_audit_util_1 = require("./page-action-run-audit.util");
-async function resolveWriteTool(prisma, appClientId, toolId) {
-    const tool = await prisma.tool.findFirst({
-        where: { id: toolId, appClientId, isActive: true },
+async function resolveWriteTool(runtime, toolId) {
+    var _a;
+    const cached = (_a = runtime.toolBundle) === null || _a === void 0 ? void 0 : _a.toolById.get(toolId);
+    if (cached) {
+        return cached;
+    }
+    const tool = await runtime.prisma.tool.findFirst({
+        where: { id: toolId, appClientId: runtime.appClientId, isActive: true },
     });
     if (!tool) {
         throw new common_1.NotFoundException({
@@ -20,7 +26,7 @@ async function resolveWriteTool(prisma, appClientId, toolId) {
     return tool;
 }
 async function runPageWorkflowMutationReact(input) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const { def, nodeId, runtime } = input;
     if (def.action === 'compose_mutation') {
         const nodeInput = def.input;
@@ -50,7 +56,7 @@ async function runPageWorkflowMutationReact(input) {
             };
         }
         try {
-            const tool = await resolveWriteTool(runtime.prisma, runtime.appClientId, toolId);
+            const tool = await resolveWriteTool(runtime, toolId);
             const recomposedFromPendingWrite = input.pendingWrite != null;
             const composedArgs = (_b = (_a = input.pendingWrite) === null || _a === void 0 ? void 0 : _a.arguments) !== null && _b !== void 0 ? _b : (await (0, page_workflow_compose_mutation_util_1.executePageWorkflowComposeMutation)({
                 runtime,
@@ -142,7 +148,13 @@ async function runPageWorkflowMutationReact(input) {
                     arguments: pending.arguments,
                 }),
             });
-            const result = await runtime.toolEngine.executeByName(pending.name, pending.arguments, input.allowedToolIds, runtime.userId);
+            const preloadedTool = (_g = runtime.toolBundle) === null || _g === void 0 ? void 0 : _g.prismaTools.find((row) => row.name === pending.name);
+            const result = await runtime.toolEngine.executeByName(pending.name, pending.arguments, input.allowedToolIds, runtime.userId, {
+                integrationCredentialCache: (_h = runtime.toolBundle) === null || _h === void 0 ? void 0 : _h.toolBuildCtx.integrationCredentialCache,
+                preloadedDefinition: preloadedTool
+                    ? (0, page_workflow_tool_bundle_util_1.toToolExecutionDefinition)(preloadedTool)
+                    : undefined,
+            });
             runtime.stepRecorder.record({
                 type: 'workflow',
                 name: `${nodeId}:write:complete`,

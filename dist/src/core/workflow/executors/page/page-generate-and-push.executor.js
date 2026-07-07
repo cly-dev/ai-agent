@@ -33,7 +33,7 @@ exports.pageGenerateAndPushExecutor = {
             messages,
             pageContext: runtime.pageContext,
             hostTool,
-            res: runtime.res,
+            sseSink: runtime.sseSink,
             stepRecorder: runtime.stepRecorder,
         });
         runtime.fillText = fillResult.fillText;

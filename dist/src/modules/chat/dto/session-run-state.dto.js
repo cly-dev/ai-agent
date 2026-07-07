@@ -52,6 +52,21 @@ __decorate([
     }),
     __metadata("design:type", Array)
 ], PendingWriteGatePublicStateDto.prototype, "writeDrafts", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: write_draft_public_dto_1.WriteDraftEditPolicyDto,
+        nullable: true,
+        description: '主写草稿的字段编辑策略（由 Tool.agentMetadata.draftReview 推导）',
+    }),
+    __metadata("design:type", write_draft_public_dto_1.WriteDraftEditPolicyDto)
+], PendingWriteGatePublicStateDto.prototype, "editPolicy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: [write_draft_public_dto_1.WriteDraftEditPolicyDto],
+        description: '多写工具时各草稿对应的编辑策略',
+    }),
+    __metadata("design:type", Array)
+], PendingWriteGatePublicStateDto.prototype, "editPolicies", void 0);
 exports.PendingWriteGatePublicStateDto = PendingWriteGatePublicStateDto;
 class SessionRunStateResponseDto {
 }

@@ -1,6 +1,9 @@
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import type { HostActionSsePayload } from '../host-bridge/host-action.types';
-import type { WriteDraftPublic } from '../draft-review/write-draft.types';
+import type {
+  WriteDraftEditPolicy,
+  WriteDraftPublic,
+} from '../draft-review/write-draft.types';
 import { RunEventPublisher } from './run-event.publisher';
 import type { SessionRunCoordinator } from './session-run-coordinator.service';
 
@@ -127,6 +130,8 @@ export class AgentRunSseGateway {
       canRetry?: boolean;
       writeDraft?: WriteDraftPublic;
       writeDrafts?: WriteDraftPublic[];
+      editPolicy?: WriteDraftEditPolicy | null;
+      editPolicies?: WriteDraftEditPolicy[];
     },
   ): boolean {
     if (!this.coordinator.canPublishRun(sessionId, input.runId)) {

@@ -3,8 +3,9 @@ import { Observable } from 'rxjs';
 import { RedisConnectionService } from '../../core/memory/redis/redis-connection.service';
 import type { HostActionSsePayload } from '../../core/host-bridge/host-action.types';
 import type { MessageBlock, MessageBlockPatch } from '../../core/agent-engine/engine/message/message-blocks.types';
-import type { WriteDraftPublic } from '../../core/draft-review/write-draft.types';
+import type { WriteDraftEditPolicy, WriteDraftPublic } from '../../core/draft-review/write-draft.types';
 import { PendingWriteConfirmationStore } from './pending-write-confirmation.store';
+import { PrismaService } from '../../prisma/prisma.service';
 type EmitOptions = {
     fromRelay?: boolean;
 };
@@ -42,6 +43,8 @@ export type ChatSseEvent = {
         canRetry?: boolean;
         writeDraft?: WriteDraftPublic;
         writeDrafts?: WriteDraftPublic[];
+        editPolicy?: WriteDraftEditPolicy | null;
+        editPolicies?: WriteDraftEditPolicy[];
     } | {
         source: 'agent-run';
         action: 'write_confirmation_cancelled';
@@ -72,13 +75,14 @@ export type ChatSseEvent = {
 export declare class ChatEventsService implements OnModuleInit, OnModuleDestroy {
     private readonly pendingWriteConfirmationStore;
     private readonly redis;
+    private readonly prisma;
     private static readonly REPLAY_BUFFER;
     private readonly logger;
     private readonly instanceId;
     private readonly subjects;
     private readonly replayBuffers;
     private subscriber;
-    constructor(pendingWriteConfirmationStore: PendingWriteConfirmationStore, redis: RedisConnectionService);
+    constructor(pendingWriteConfirmationStore: PendingWriteConfirmationStore, redis: RedisConnectionService, prisma: PrismaService);
     onModuleInit(): void;
     onModuleDestroy(): void;
     isRelayEnabled(): boolean;

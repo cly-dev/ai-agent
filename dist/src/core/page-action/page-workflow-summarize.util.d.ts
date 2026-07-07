@@ -1,4 +1,4 @@
-import type { Response } from 'express';
+import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
 import type { LlmService } from '../llm/llm.service';
 import type { LlmChatMessage } from '../llm/llm.types';
 import type { SummarizeNodeInput } from '../workflow/workflow-node-input.types';
@@ -21,7 +21,7 @@ export declare function executePageWorkflowSummarize(input: {
     llmService: LlmService;
     messages: LlmChatMessage[];
     nodeInput: SummarizeNodeInput;
-    res: Response;
+    sseSink: PageActionSseSink;
     actionRunId: number;
     actionKey: string;
     generation: number;

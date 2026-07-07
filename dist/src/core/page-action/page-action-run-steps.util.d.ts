@@ -24,3 +24,6 @@ export declare class PageActionRunStepRecorder {
     recordHostActionPayload(payload: HostActionSsePayload): PageActionRunStep | null;
     toJson(): PageActionRunStep[];
 }
+export declare function parsePageActionRunSteps(value: unknown): PageActionRunStep[];
+export type PublicPageActionRunStep = Pick<PageActionRunStep, 'step' | 'type' | 'name' | 'at' | 'status'>;
+export declare function toPublicPageActionRunTimeline(value: unknown): PublicPageActionRunStep[];

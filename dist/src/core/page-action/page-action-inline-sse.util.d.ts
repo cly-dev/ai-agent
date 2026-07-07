@@ -1,8 +1,9 @@
-import type { Response } from 'express';
 import type { HostActionSsePayload } from '../host-bridge/host-action.types';
 import type { HostActionEventPublisher } from '../host-bridge/host-action-dispatch.util';
 import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
 import type { WorkflowActionKind } from '../workflow/workflow.types';
+import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
+export type PageActionSseTarget = PageActionSseSink;
 export type PageActionSsePhase = 'started' | 'completed' | 'failed' | 'awaiting_approval';
 export type PageWorkflowNodeSsePhase = 'start' | 'complete' | 'failed' | 'awaiting_approval';
 export type PageWorkflowNodeSsePayload = {
@@ -32,11 +33,10 @@ export type PageActionLifecyclePayload = {
     errorCode?: string | null;
     errorMessage?: string | null;
 };
-export declare function writeSseEvent(res: Response, event: string, data: unknown): void;
-export declare function initInlineSseResponse(res: Response): void;
-export declare function createInlineHostActionPublisher(res: Response, options?: {
+export declare function writeSseEvent(target: PageActionSseTarget, event: string, data: unknown): void;
+export declare function createInlineHostActionPublisher(target: PageActionSseTarget, options?: {
     onPayload?: (payload: HostActionSsePayload) => void;
 }): HostActionEventPublisher;
-export declare function writePageActionLifecycle(res: Response, payload: PageActionLifecyclePayload, recorder?: PageActionRunStepRecorder): void;
-export declare function writePageWorkflowNodeSse(res: Response | Pick<Response, 'writableEnded' | 'write'>, payload: PageWorkflowNodeSsePayload): void;
-export declare function endInlineSseResponse(res: Response): void;
+export declare function writePageActionLifecycle(target: PageActionSseTarget, payload: PageActionLifecyclePayload, recorder?: PageActionRunStepRecorder): void;
+export declare function writePageWorkflowNodeSse(target: PageActionSseTarget, payload: PageWorkflowNodeSsePayload): void;
+export declare function endInlineSseResponse(target: PageActionSseTarget): void;

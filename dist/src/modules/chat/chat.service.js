@@ -28,6 +28,7 @@ const runtime_cache_invalidator_service_1 = require("../../core/runtime-cache/ru
 const session_run_coordinator_service_1 = require("../../core/session-run/session-run-coordinator.service");
 const pending_write_confirmation_store_1 = require("./pending-write-confirmation.store");
 const chat_pending_write_gate_mapper_1 = require("./chat-pending-write-gate.mapper");
+const load_write_tools_for_policy_util_1 = require("../../core/draft-review/load-write-tools-for-policy.util");
 const host_bridge_1 = require("../../core/host-bridge");
 const agent_auto_select_service_1 = require("./agent-auto-select.service");
 let ChatService = ChatService_1 = class ChatService {
@@ -54,8 +55,11 @@ let ChatService = ChatService_1 = class ChatService {
             this.sessionRunCoordinator.getRunState(sessionId),
             this.pendingWriteConfirmationStore.get(sessionId, userId),
         ]);
+        const writeToolsById = pending
+            ? await (0, load_write_tools_for_policy_util_1.loadWriteToolsForPolicy)(this.prisma, pending.resumeContext.scopedToolIds)
+            : undefined;
         return Object.assign(Object.assign({}, runState), { pendingWriteGate: pending
-                ? (0, chat_pending_write_gate_mapper_1.buildPendingWriteGatePublicState)(pending)
+                ? (0, chat_pending_write_gate_mapper_1.buildPendingWriteGatePublicState)(pending, writeToolsById)
                 : null });
     }
     async create(userId, appClientId, dto) {

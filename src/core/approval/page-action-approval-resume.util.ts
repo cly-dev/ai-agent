@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { PageActionRunStatus, Prisma } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { orchestratePageWorkflow } from '../page-action/page-workflow-orchestrator';
+import { loadPageWorkflowToolBundle } from '../page-action/page-workflow-tool-bundle.util';
 import { PageActionRunStepRecorder } from '../page-action/page-action-run-steps.util';
 import type { ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
 import type { ApprovalGateService } from './approval-gate.service';
@@ -15,7 +16,8 @@ import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 import { HOST_TOOL_DETAIL_INCLUDE } from '../../modules/host-tool/host-tool.types';
 import type { LlmService } from '../llm/llm.service';
 import type { ToolEngineService } from '../tool-engine/tool-engine.service';
-import type { Response } from 'express';
+import type { PageActionRunEventBus } from '../page-action/stream/page-action-run-event-bus.types';
+import { createNullPageActionSseSink } from '../page-action/stream/page-action-sse-sink.util';
 import {
   buildRetryUserMessage,
   resolveWriteDraftFromApprovalSnapshot,
@@ -34,6 +36,7 @@ export async function resumePageActionFromApprovalSnapshot(input: {
   llmService: LlmService;
   toolEngine: ToolEngineService;
   approvalGate: ApprovalGateService;
+  runEventBus?: PageActionRunEventBus | null;
 }): Promise<void> {
   const { snapshot } = input;
   if (snapshot.channel.kind !== 'page_action') {
@@ -53,13 +56,20 @@ export async function resumePageActionFromApprovalSnapshot(input: {
     throw new NotFoundException('PageActionRun not found for resume');
   }
 
-  const effectiveSnapshot = await resolveApprovalSnapshotForDecision({
-    snapshot,
-    decision: input.decision ?? null,
-    userId: run.userId,
-    prisma: input.prisma,
-    toolEngine: input.toolEngine,
-  });
+  const draft = resolveWriteDraftFromApprovalSnapshot(snapshot);
+  const editsAlreadyApplied =
+    draft.provenance.lastEvent === 'user_edit' &&
+    input.decision?.action === 'confirm_with_edits';
+
+  const effectiveSnapshot = editsAlreadyApplied
+    ? snapshot
+    : await resolveApprovalSnapshotForDecision({
+        snapshot,
+        decision: input.decision ?? null,
+        userId: run.userId,
+        prisma: input.prisma,
+        toolEngine: input.toolEngine,
+      });
 
   const pageContext = (run.pageContext ?? null) as AgentChatPageContext | null;
   const hostTool = run.pageAction.hostTool
@@ -90,7 +100,17 @@ export async function resumePageActionFromApprovalSnapshot(input: {
     throw new NotFoundException('Workflow not loadable for resume');
   }
 
-  const noopRes = { write: () => undefined, end: () => undefined } as unknown as Response;
+  input.runEventBus?.prepareSession(run.id);
+  const sseSink =
+    input.runEventBus?.openWriter(run.id) ?? createNullPageActionSseSink();
+
+  const toolBundle = await loadPageWorkflowToolBundle({
+    prisma: input.prisma,
+    toolEngine: input.toolEngine,
+    userId: run.userId,
+    appClientId: run.appClientId,
+    allowedToolIds: effectiveSnapshot.scopedToolIds,
+  });
 
   const result = await orchestratePageWorkflow({
     workflowId: loadResult.workflowId,
@@ -110,9 +130,10 @@ export async function resumePageActionFromApprovalSnapshot(input: {
     actionKey: run.pageAction.actionKey,
     generation: run.generation,
     clientActionId: run.clientActionId,
-    res: noopRes,
+    sseSink,
     stepRecorder: recorder,
     allowedToolIds: effectiveSnapshot.scopedToolIds,
+    toolBundle,
     approvalGate: input.approvalGate,
     resumeFrom: {
       workflowRun: effectiveSnapshot.workflowRun,
@@ -121,6 +142,8 @@ export async function resumePageActionFromApprovalSnapshot(input: {
       advancePastAwait: true,
     },
   });
+
+  input.runEventBus?.closeSession(run.id);
 
   recorder.recordLifecycle(
     result.errorCode ? 'failed' : 'completed',
@@ -166,6 +189,7 @@ export async function retryPageActionFromApprovalSnapshot(input: {
   llmService: LlmService;
   toolEngine: ToolEngineService;
   approvalGate: ApprovalGateService;
+  runEventBus?: PageActionRunEventBus | null;
 }): Promise<boolean> {
   const { snapshot } = input;
   if (snapshot.channel.kind !== 'page_action') {
@@ -238,7 +262,17 @@ export async function retryPageActionFromApprovalSnapshot(input: {
     throw new NotFoundException('Workflow not loadable for retry');
   }
 
-  const noopRes = { write: () => undefined, end: () => undefined } as unknown as Response;
+  input.runEventBus?.prepareSession(run.id);
+  const sseSink =
+    input.runEventBus?.openWriter(run.id) ?? createNullPageActionSseSink();
+
+  const toolBundle = await loadPageWorkflowToolBundle({
+    prisma: input.prisma,
+    toolEngine: input.toolEngine,
+    userId: run.userId,
+    appClientId: run.appClientId,
+    allowedToolIds: retrySnapshot.scopedToolIds,
+  });
 
   const result = await orchestratePageWorkflow({
     workflowId: loadResult.workflowId,
@@ -258,9 +292,10 @@ export async function retryPageActionFromApprovalSnapshot(input: {
     actionKey: run.pageAction.actionKey,
     generation: run.generation,
     clientActionId: run.clientActionId,
-    res: noopRes,
+    sseSink,
     stepRecorder: recorder,
     allowedToolIds: retrySnapshot.scopedToolIds,
+    toolBundle,
     approvalGate: input.approvalGate,
     existingApprovalRequestId: input.approvalRequestId,
     retryInstruction: input.retryInstruction,
@@ -270,6 +305,8 @@ export async function retryPageActionFromApprovalSnapshot(input: {
       advancePastAwait: false,
     },
   });
+
+  input.runEventBus?.closeSession(run.id);
 
   await input.prisma.pageActionRun.update({
     where: { id: run.id },

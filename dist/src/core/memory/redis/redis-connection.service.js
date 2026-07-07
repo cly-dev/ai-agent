@@ -10,6 +10,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RedisConnectionService = void 0;
 const common_1 = require("@nestjs/common");
 const ioredis_1 = require("ioredis");
+const redis_client_options_util_1 = require("./redis-client-options.util");
 let RedisConnectionService = RedisConnectionService_1 = class RedisConnectionService {
     constructor() {
         this.logger = new common_1.Logger(RedisConnectionService_1.name);
@@ -25,17 +26,13 @@ let RedisConnectionService = RedisConnectionService_1 = class RedisConnectionSer
             return;
         }
         try {
+            const clientOptions = (0, redis_client_options_util_1.buildIoRedisClientOptions)({ password });
             this.client = url
-                ? new ioredis_1.default(url, { maxRetriesPerRequest: 2, password })
-                : new ioredis_1.default({
-                    host,
-                    port: Number.parseInt((_d = process.env.REDIS_PORT) !== null && _d !== void 0 ? _d : '6379', 10),
-                    password,
-                    db: process.env.REDIS_DB
+                ? new ioredis_1.default(url, clientOptions)
+                : new ioredis_1.default(Object.assign({ host, port: Number.parseInt((_d = process.env.REDIS_PORT) !== null && _d !== void 0 ? _d : '6379', 10), db: process.env.REDIS_DB
                         ? Number.parseInt(process.env.REDIS_DB, 10)
-                        : undefined,
-                    maxRetriesPerRequest: 2,
-                });
+                        : undefined }, clientOptions));
+            await this.client.connect();
             await this.client.ping();
             this.logger.log('Redis connected');
         }

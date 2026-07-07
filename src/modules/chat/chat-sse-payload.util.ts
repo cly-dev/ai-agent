@@ -46,6 +46,13 @@ export function serializeChatSseData(evt: ChatSseEvent): string {
       evt.payload.writeDrafts.length > 0
         ? { writeDrafts: evt.payload.writeDrafts }
         : {}),
+      ...(evt.payload.editPolicy != null
+        ? { editPolicy: evt.payload.editPolicy }
+        : {}),
+      ...(Array.isArray(evt.payload.editPolicies) &&
+      evt.payload.editPolicies.length > 0
+        ? { editPolicies: evt.payload.editPolicies }
+        : {}),
     });
   }
   if (

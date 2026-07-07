@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
-import { LlmModule } from '../../core/llm/llm.module';
-import { ToolEngineModule } from '../../core/tool-engine/tool-engine.module';
-import { ApprovalModule as CoreApprovalModule } from '../../core/approval/approval.module';
+import { PageActionExecutionModule } from '../../core/page-action/execution/page-action-execution.module';
 import { AuthModule } from '../../auth/auth.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { WorkflowModule } from '../workflow/workflow.module';
+import { AutomationModule } from '../automation/automation.module';
+import { PageActionCEndController } from './c-end/page-action-c-end.controller';
+import { PageActionCEndService } from './c-end/page-action-c-end.service';
 import { PageActionController } from './page-action.controller';
 import { PageActionService } from './page-action.service';
 
@@ -12,13 +13,12 @@ import { PageActionService } from './page-action.service';
   imports: [
     PrismaModule,
     AuthModule,
-    LlmModule,
-    ToolEngineModule,
     WorkflowModule,
-    CoreApprovalModule,
+    PageActionExecutionModule,
+    AutomationModule,
   ],
-  controllers: [PageActionController],
-  providers: [PageActionService],
-  exports: [PageActionService],
+  controllers: [PageActionController, PageActionCEndController],
+  providers: [PageActionService, PageActionCEndService],
+  exports: [PageActionService, PageActionCEndService],
 })
 export class PageActionModule {}

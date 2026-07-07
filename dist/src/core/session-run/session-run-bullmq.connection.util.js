@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.readHttpServerEnabled = exports.readSessionRunJobAttempts = exports.readSessionRunWorkerEnabled = exports.readSessionRunWorkerConcurrency = exports.buildSessionRunBullMqConnection = void 0;
+const redis_client_options_util_1 = require("../memory/redis/redis-client-options.util");
 function buildSessionRunBullMqConnection() {
     var _a, _b, _c, _d;
     const url = (_a = process.env.REDIS_URL) === null || _a === void 0 ? void 0 : _a.trim();
@@ -9,8 +10,9 @@ function buildSessionRunBullMqConnection() {
         return null;
     }
     const password = ((_c = process.env.REDIS_PASSWORD) === null || _c === void 0 ? void 0 : _c.trim()) || undefined;
+    const connectTimeout = (0, redis_client_options_util_1.readRedisConnectTimeoutMs)();
     if (url) {
-        return { url, password, maxRetriesPerRequest: null };
+        return { url, password, maxRetriesPerRequest: null, connectTimeout };
     }
     return {
         host,
@@ -20,6 +22,7 @@ function buildSessionRunBullMqConnection() {
             ? Number.parseInt(process.env.REDIS_DB, 10)
             : undefined,
         maxRetriesPerRequest: null,
+        connectTimeout,
     };
 }
 exports.buildSessionRunBullMqConnection = buildSessionRunBullMqConnection;

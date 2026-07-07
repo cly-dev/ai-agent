@@ -20,6 +20,7 @@ export type ToolExecutionDefinition = ToolDefinitionInput & {
 export type ToolBuildContext = {
     userId: number;
     allowedToolIds: number[];
+    integrationCredentialCache?: ReadonlyMap<string, string>;
 };
 export type ToolHttpResponseSource = {
     ok: boolean;

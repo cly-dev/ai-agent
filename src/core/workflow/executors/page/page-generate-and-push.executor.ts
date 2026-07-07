@@ -43,7 +43,7 @@ export const pageGenerateAndPushExecutor: WorkflowExecutor = {
       messages,
       pageContext: runtime.pageContext,
       hostTool,
-      res: runtime.res,
+      sseSink: runtime.sseSink,
       stepRecorder: runtime.stepRecorder,
     });
 

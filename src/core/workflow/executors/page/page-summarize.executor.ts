@@ -25,7 +25,7 @@ export const pageSummarizeExecutor: WorkflowExecutor = {
       llmService: runtime.llmService,
       messages,
       nodeInput,
-      res: runtime.res,
+      sseSink: runtime.sseSink,
       actionRunId: runtime.actionRunId,
       actionKey: runtime.actionKey,
       generation: runtime.generation,

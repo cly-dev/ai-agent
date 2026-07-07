@@ -1,5 +1,5 @@
 import type { HostActionSsePayload } from '../host-bridge/host-action.types';
-import type { WriteDraftPublic } from '../draft-review/write-draft.types';
+import type { WriteDraftEditPolicy, WriteDraftPublic } from '../draft-review/write-draft.types';
 import { RunEventPublisher } from './run-event.publisher';
 import type { SessionRunCoordinator } from './session-run-coordinator.service';
 export declare class AgentRunSseGateway {
@@ -31,6 +31,8 @@ export declare class AgentRunSseGateway {
         canRetry?: boolean;
         writeDraft?: WriteDraftPublic;
         writeDrafts?: WriteDraftPublic[];
+        editPolicy?: WriteDraftEditPolicy | null;
+        editPolicies?: WriteDraftEditPolicy[];
     }): boolean;
     emitRunComplete(sessionId: string, input: {
         runId: number;

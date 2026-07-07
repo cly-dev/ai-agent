@@ -28,3 +28,19 @@ export declare class WriteDraftPublicDto {
     presentation: WriteDraftPresentationPublicDto;
     provenance: WriteDraftProvenancePublicDto;
 }
+export declare class WriteDraftFieldPolicyDto {
+    path: string;
+    label: string;
+    role: string;
+    widget: string;
+    editable: boolean;
+    required: boolean;
+    value?: unknown;
+    reason?: string;
+}
+export declare class WriteDraftEditPolicyDto {
+    editMode: string;
+    submitPath: string | null;
+    allowArgumentsPatch: boolean;
+    fields: WriteDraftFieldPolicyDto[];
+}

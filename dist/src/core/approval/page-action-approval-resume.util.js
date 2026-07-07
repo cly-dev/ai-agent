@@ -4,16 +4,18 @@ exports.retryPageActionFromApprovalSnapshot = exports.resumePageActionFromApprov
 const common_1 = require("@nestjs/common");
 const client_1 = require("../../../generated/prisma/client");
 const page_workflow_orchestrator_1 = require("../page-action/page-workflow-orchestrator");
+const page_workflow_tool_bundle_util_1 = require("../page-action/page-workflow-tool-bundle.util");
 const page_action_run_steps_util_1 = require("../page-action/page-action-run-steps.util");
 const load_workflow_definition_util_1 = require("../workflow/load-workflow-definition.util");
 const page_action_host_tool_util_1 = require("../page-action/page-action-host-tool.util");
 const page_action_prompt_util_1 = require("../page-action/page-action-prompt.util");
 const host_tool_types_1 = require("../../modules/host-tool/host-tool.types");
+const page_action_sse_sink_util_1 = require("../page-action/stream/page-action-sse-sink.util");
 const draft_review_1 = require("../draft-review");
 const page_action_run_audit_util_1 = require("../page-action/page-action-run-audit.util");
 const validate_approval_edited_pending_write_util_1 = require("./validate-approval-edited-pending-write.util");
 async function resumePageActionFromApprovalSnapshot(input) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const { snapshot } = input;
     if (snapshot.channel.kind !== 'page_action') {
         return;
@@ -31,14 +33,19 @@ async function resumePageActionFromApprovalSnapshot(input) {
     if (!(run === null || run === void 0 ? void 0 : run.pageAction)) {
         throw new common_1.NotFoundException('PageActionRun not found for resume');
     }
-    const effectiveSnapshot = await (0, validate_approval_edited_pending_write_util_1.resolveApprovalSnapshotForDecision)({
-        snapshot,
-        decision: (_a = input.decision) !== null && _a !== void 0 ? _a : null,
-        userId: run.userId,
-        prisma: input.prisma,
-        toolEngine: input.toolEngine,
-    });
-    const pageContext = ((_b = run.pageContext) !== null && _b !== void 0 ? _b : null);
+    const draft = (0, draft_review_1.resolveWriteDraftFromApprovalSnapshot)(snapshot);
+    const editsAlreadyApplied = draft.provenance.lastEvent === 'user_edit' &&
+        ((_a = input.decision) === null || _a === void 0 ? void 0 : _a.action) === 'confirm_with_edits';
+    const effectiveSnapshot = editsAlreadyApplied
+        ? snapshot
+        : await (0, validate_approval_edited_pending_write_util_1.resolveApprovalSnapshotForDecision)({
+            snapshot,
+            decision: (_b = input.decision) !== null && _b !== void 0 ? _b : null,
+            userId: run.userId,
+            prisma: input.prisma,
+            toolEngine: input.toolEngine,
+        });
+    const pageContext = ((_c = run.pageContext) !== null && _c !== void 0 ? _c : null);
     const hostTool = run.pageAction.hostTool
         ? (0, page_action_host_tool_util_1.resolvePageActionHostTool)(run.pageAction.hostTool, pageContext)
         : null;
@@ -51,7 +58,7 @@ async function resumePageActionFromApprovalSnapshot(input) {
     const recorder = page_action_run_steps_util_1.PageActionRunStepRecorder.fromJson(run.steps);
     recorder.recordLifecycle('approval_confirmed', {
         approvalRequestId: input.approvalRequestId,
-        edited: ((_c = input.decision) === null || _c === void 0 ? void 0 : _c.action) === 'confirm_with_edits',
+        edited: ((_d = input.decision) === null || _d === void 0 ? void 0 : _d.action) === 'confirm_with_edits',
     });
     const loadResult = await (0, load_workflow_definition_util_1.loadWorkflowForRunDetailed)(input.prisma, {
         workflowId: effectiveSnapshot.workflowRun.workflowId,
@@ -62,7 +69,15 @@ async function resumePageActionFromApprovalSnapshot(input) {
     if (loadResult.status !== 'loaded') {
         throw new common_1.NotFoundException('Workflow not loadable for resume');
     }
-    const noopRes = { write: () => undefined, end: () => undefined };
+    (_e = input.runEventBus) === null || _e === void 0 ? void 0 : _e.prepareSession(run.id);
+    const sseSink = (_g = (_f = input.runEventBus) === null || _f === void 0 ? void 0 : _f.openWriter(run.id)) !== null && _g !== void 0 ? _g : (0, page_action_sse_sink_util_1.createNullPageActionSseSink)();
+    const toolBundle = await (0, page_workflow_tool_bundle_util_1.loadPageWorkflowToolBundle)({
+        prisma: input.prisma,
+        toolEngine: input.toolEngine,
+        userId: run.userId,
+        appClientId: run.appClientId,
+        allowedToolIds: effectiveSnapshot.scopedToolIds,
+    });
     const result = await (0, page_workflow_orchestrator_1.orchestratePageWorkflow)({
         workflowId: loadResult.workflowId,
         version: loadResult.version,
@@ -81,9 +96,10 @@ async function resumePageActionFromApprovalSnapshot(input) {
         actionKey: run.pageAction.actionKey,
         generation: run.generation,
         clientActionId: run.clientActionId,
-        res: noopRes,
+        sseSink,
         stepRecorder: recorder,
         allowedToolIds: effectiveSnapshot.scopedToolIds,
+        toolBundle,
         approvalGate: input.approvalGate,
         resumeFrom: {
             workflowRun: effectiveSnapshot.workflowRun,
@@ -92,9 +108,10 @@ async function resumePageActionFromApprovalSnapshot(input) {
             advancePastAwait: true,
         },
     });
+    (_h = input.runEventBus) === null || _h === void 0 ? void 0 : _h.closeSession(run.id);
     recorder.recordLifecycle(result.errorCode ? 'failed' : 'completed', {
         approvalRequestId: input.approvalRequestId,
-        errorCode: (_d = result.errorCode) !== null && _d !== void 0 ? _d : null,
+        errorCode: (_j = result.errorCode) !== null && _j !== void 0 ? _j : null,
     }, result.errorCode ? 'failed' : 'ok');
     await input.prisma.pageActionRun.update({
         where: { id: run.id },
@@ -105,14 +122,14 @@ async function resumePageActionFromApprovalSnapshot(input) {
                     : client_1.PageActionRunStatus.completed, workflowRun: result.workflowRun, fillText: result.fillText || null, dslOutcome: result.dslOutcome, model: result.model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, finishedAt: result.suspended ? null : new Date(), steps: recorder.toJson() }, (result.errorCode
             ? {
                 errorCode: result.errorCode,
-                errorMessage: (_e = result.errorMessage) !== null && _e !== void 0 ? _e : result.errorCode,
+                errorMessage: (_k = result.errorMessage) !== null && _k !== void 0 ? _k : result.errorCode,
             }
             : {})),
     });
 }
 exports.resumePageActionFromApprovalSnapshot = resumePageActionFromApprovalSnapshot;
 async function retryPageActionFromApprovalSnapshot(input) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const { snapshot } = input;
     if (snapshot.channel.kind !== 'page_action') {
         return false;
@@ -169,7 +186,15 @@ async function retryPageActionFromApprovalSnapshot(input) {
     if (loadResult.status !== 'loaded') {
         throw new common_1.NotFoundException('Workflow not loadable for retry');
     }
-    const noopRes = { write: () => undefined, end: () => undefined };
+    (_d = input.runEventBus) === null || _d === void 0 ? void 0 : _d.prepareSession(run.id);
+    const sseSink = (_f = (_e = input.runEventBus) === null || _e === void 0 ? void 0 : _e.openWriter(run.id)) !== null && _f !== void 0 ? _f : (0, page_action_sse_sink_util_1.createNullPageActionSseSink)();
+    const toolBundle = await (0, page_workflow_tool_bundle_util_1.loadPageWorkflowToolBundle)({
+        prisma: input.prisma,
+        toolEngine: input.toolEngine,
+        userId: run.userId,
+        appClientId: run.appClientId,
+        allowedToolIds: retrySnapshot.scopedToolIds,
+    });
     const result = await (0, page_workflow_orchestrator_1.orchestratePageWorkflow)({
         workflowId: loadResult.workflowId,
         version: loadResult.version,
@@ -188,9 +213,10 @@ async function retryPageActionFromApprovalSnapshot(input) {
         actionKey: run.pageAction.actionKey,
         generation: run.generation,
         clientActionId: run.clientActionId,
-        res: noopRes,
+        sseSink,
         stepRecorder: recorder,
         allowedToolIds: retrySnapshot.scopedToolIds,
+        toolBundle,
         approvalGate: input.approvalGate,
         existingApprovalRequestId: input.approvalRequestId,
         retryInstruction: input.retryInstruction,
@@ -200,6 +226,7 @@ async function retryPageActionFromApprovalSnapshot(input) {
             advancePastAwait: false,
         },
     });
+    (_g = input.runEventBus) === null || _g === void 0 ? void 0 : _g.closeSession(run.id);
     await input.prisma.pageActionRun.update({
         where: { id: run.id },
         data: Object.assign({ status: result.suspended
@@ -209,7 +236,7 @@ async function retryPageActionFromApprovalSnapshot(input) {
                     : client_1.PageActionRunStatus.running, workflowRun: result.workflowRun, fillText: result.fillText || null, dslOutcome: result.dslOutcome, model: result.model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, finishedAt: result.suspended || result.errorCode ? null : new Date(), steps: recorder.toJson() }, (result.errorCode
             ? {
                 errorCode: result.errorCode,
-                errorMessage: (_d = result.errorMessage) !== null && _d !== void 0 ? _d : result.errorCode,
+                errorMessage: (_h = result.errorMessage) !== null && _h !== void 0 ? _h : result.errorCode,
             }
             : {})),
     });

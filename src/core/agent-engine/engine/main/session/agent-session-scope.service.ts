@@ -1,24 +1,15 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { PrismaService } from '../../../../../prisma/prisma.service';
-import { SessionPrepareStore } from '../../../../../modules/chat/session-prepare.store';
-import { AgentService } from '../../../../../modules/agent/agent.service';
+import { SessionRuntimeResolverService } from '../../../../../modules/chat/session-runtime-resolver.service';
 import { IntentScopeService } from '../../../../intent/intent-scope.service';
-import { SkillService } from '../../../../skill/skill.service';
 import {
   ToolEngineService,
-  type BuiltLangChainTools,
   type ToolBuildContext,
 } from '../../../../tool-engine/tool-engine.service';
-import {
-  buildSessionRuntimeRevision,
-  areSessionRuntimeRevisionsEqual,
-} from '../../../../../modules/chat/session-prepare.util';
 import { buildEntityRevisionsFingerprint } from '../../../../runtime-cache/runtime-revision.util';
+import { logRuntimeCacheEvent } from '../../../../runtime-cache/runtime-cache-observability.util';
 import { RuntimeCacheInvalidator } from '../../../../runtime-cache/runtime-cache-invalidator.service';
 import { RunScopeCacheService } from '../../../../runtime-cache/run-scope-cache.service';
 import { ToolCategoryCacheService } from '../../../../runtime-cache/tool-category-cache.service';
-import { AgentHostToolCatalogService } from '../../../../runtime-cache/agent-host-tool-catalog.service';
-import { logRuntimeCacheEvent } from '../../../../runtime-cache/runtime-cache-observability.util';
 import type {
   AgentEngineTool,
   ParsedIntentPayload,
@@ -28,16 +19,12 @@ import type {
 @Injectable()
 export class AgentSessionScopeService implements OnModuleInit {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly agentService: AgentService,
-    private readonly sessionPrepareStore: SessionPrepareStore,
-    private readonly skillService: SkillService,
+    private readonly sessionRuntimeResolver: SessionRuntimeResolverService,
     private readonly intentScopeService: IntentScopeService,
     private readonly toolEngine: ToolEngineService,
     private readonly invalidator: RuntimeCacheInvalidator,
     private readonly runScopeCache: RunScopeCacheService,
     private readonly toolCategoryCache: ToolCategoryCacheService,
-    private readonly hostToolCatalogService: AgentHostToolCatalogService,
   ) {}
 
   onModuleInit(): void {
@@ -60,84 +47,14 @@ export class AgentSessionScopeService implements OnModuleInit {
     agentId: number,
     userId: number,
     appClientId: number,
-  ): Promise<Awaited<ReturnType<AgentService['getAllowedTools']>>> {
-    const freshTools = await this.agentService.getAllowedTools(
-      agentId,
-      userId,
-      appClientId,
-    );
-    const freshSkills =
-      await this.skillService.listRunnableAgentSkillsForUser(
-        { agentId, userId, appClientId },
-        new Set(freshTools.map((tool) => tool.id)),
-      );
-    const skillRows = await this.loadSkillRevisionRows(
-      freshSkills.map((skill) => skill.id),
-    );
-    const hostToolsRevision =
-      await this.hostToolCatalogService.fetchRevisionFromDb(
-        appClientId,
-        agentId,
-      );
-    const freshRevision = buildSessionRuntimeRevision({
-      tools: freshTools,
-      skills: skillRows,
-      hostToolsRevision,
-    });
-
-    const fromRedis = await this.sessionPrepareStore.get(
+  ) {
+    const bundle = await this.sessionRuntimeResolver.resolveAllowedToolsBundle({
       sessionId,
+      agentId,
       userId,
       appClientId,
-      agentId,
-      freshRevision,
-    );
-    if (
-      fromRedis &&
-      areSessionRuntimeRevisionsEqual(fromRedis.revision, freshRevision)
-    ) {
-      logRuntimeCacheEvent({
-        layer: 'L1',
-        operation: 'getSessionAllowedTools',
-        cacheHit: true,
-        sessionId,
-        agentId,
-        appClientId,
-      });
-      return fromRedis.tools;
-    }
-    if (fromRedis) {
-      logRuntimeCacheEvent({
-        layer: 'L1',
-        operation: 'getSessionAllowedTools',
-        cacheHit: false,
-        revisionMismatch: true,
-        sessionId,
-        agentId,
-        appClientId,
-      });
-      await this.sessionPrepareStore.delete(sessionId);
-    } else {
-      logRuntimeCacheEvent({
-        layer: 'L1',
-        operation: 'getSessionAllowedTools',
-        cacheHit: false,
-        sessionId,
-        agentId,
-        appClientId,
-      });
-    }
-
-    void this.sessionPrepareStore.trySet({
-      sessionId,
-      userId,
-      appClientId,
-      agentId,
-      revision: freshRevision,
-      tools: freshTools,
-      skills: skillRows,
     });
-    return freshTools;
+    return bundle.tools;
   }
 
   invalidateCachesForAgent(_agentId: number, sessionIds: string[]): void {
@@ -155,6 +72,7 @@ export class AgentSessionScopeService implements OnModuleInit {
   }
 
   invalidateCachesForSession(sessionId: string): void {
+    this.sessionRuntimeResolver.invalidateSession(sessionId);
     this.runScopeCache.clearForSession(sessionId);
   }
 
@@ -278,21 +196,5 @@ export class AgentSessionScopeService implements OnModuleInit {
       bindCap: result.bindCap,
       fallbackReason: result.fallbackReason,
     };
-  }
-
-  private async loadSkillRevisionRows(skillIds: number[]) {
-    if (skillIds.length === 0) {
-      return [];
-    }
-    const rows = await this.prisma.skill.findMany({
-      where: { id: { in: skillIds } },
-      select: { id: true, name: true, updatedAt: true },
-      orderBy: { id: 'asc' },
-    });
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      updatedAt: row.updatedAt.toISOString(),
-    }));
   }
 }

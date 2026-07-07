@@ -8,12 +8,13 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PageActionModule = void 0;
 const common_1 = require("@nestjs/common");
-const llm_module_1 = require("../../core/llm/llm.module");
-const tool_engine_module_1 = require("../../core/tool-engine/tool-engine.module");
-const approval_module_1 = require("../../core/approval/approval.module");
+const page_action_execution_module_1 = require("../../core/page-action/execution/page-action-execution.module");
 const auth_module_1 = require("../../auth/auth.module");
 const prisma_module_1 = require("../../prisma/prisma.module");
 const workflow_module_1 = require("../workflow/workflow.module");
+const automation_module_1 = require("../automation/automation.module");
+const page_action_c_end_controller_1 = require("./c-end/page-action-c-end.controller");
+const page_action_c_end_service_1 = require("./c-end/page-action-c-end.service");
 const page_action_controller_1 = require("./page-action.controller");
 const page_action_service_1 = require("./page-action.service");
 let PageActionModule = class PageActionModule {
@@ -23,14 +24,13 @@ PageActionModule = __decorate([
         imports: [
             prisma_module_1.PrismaModule,
             auth_module_1.AuthModule,
-            llm_module_1.LlmModule,
-            tool_engine_module_1.ToolEngineModule,
             workflow_module_1.WorkflowModule,
-            approval_module_1.ApprovalModule,
+            page_action_execution_module_1.PageActionExecutionModule,
+            automation_module_1.AutomationModule,
         ],
-        controllers: [page_action_controller_1.PageActionController],
-        providers: [page_action_service_1.PageActionService],
-        exports: [page_action_service_1.PageActionService],
+        controllers: [page_action_controller_1.PageActionController, page_action_c_end_controller_1.PageActionCEndController],
+        providers: [page_action_service_1.PageActionService, page_action_c_end_service_1.PageActionCEndService],
+        exports: [page_action_service_1.PageActionService, page_action_c_end_service_1.PageActionCEndService],
     })
 ], PageActionModule);
 exports.PageActionModule = PageActionModule;

@@ -116,3 +116,24 @@ export class PageActionRunStepRecorder {
     return [...this.steps];
   }
 }
+
+export function parsePageActionRunSteps(value: unknown): PageActionRunStep[] {
+  return PageActionRunStepRecorder.fromJson(value).toJson();
+}
+
+export type PublicPageActionRunStep = Pick<
+  PageActionRunStep,
+  'step' | 'type' | 'name' | 'at' | 'status'
+>;
+
+export function toPublicPageActionRunTimeline(
+  value: unknown,
+): PublicPageActionRunStep[] {
+  return parsePageActionRunSteps(value).map((step) => ({
+    step: step.step,
+    type: step.type,
+    name: step.name,
+    at: step.at,
+    ...(step.status ? { status: step.status } : {}),
+  }));
+}

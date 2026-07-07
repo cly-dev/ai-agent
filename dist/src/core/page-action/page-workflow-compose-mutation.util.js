@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.executePageWorkflowComposeMutation = void 0;
 const decision_util_1 = require("../agent-engine/engine/main/agent-graph/runtime/decision.util");
 const plan_compose_write_util_1 = require("../agent-engine/engine/main/plan-present/plan-compose-write.util");
-const agent_tool_runtime_util_1 = require("../agent-engine/engine/main/runtime/agent-tool-runtime.util");
 const write_tool_draft_injection_util_1 = require("../tool-engine/write-tool-draft-injection.util");
 const page_workflow_messages_util_1 = require("./page-workflow-messages.util");
 const page_workflow_node_util_1 = require("./page-workflow-node.util");
@@ -33,15 +32,12 @@ async function executePageWorkflowComposeMutation(input) {
     var _a, _b, _c, _d, _e, _f, _g;
     const { runtime } = input;
     const recorder = (_a = input.stepRecorder) !== null && _a !== void 0 ? _a : runtime.stepRecorder;
-    const allowedTools = await runtime.prisma.tool.findMany({
-        where: {
-            id: { in: input.allowedToolIds },
-            appClientId: runtime.appClientId,
-            isActive: true,
-        },
-        include: { integration: true },
-    });
-    const { tools: scopedTools, toolBuildCtx } = (0, agent_tool_runtime_util_1.buildEngineToolsFromAllowed)(allowedTools, runtime.userId, runtime.toolEngine);
+    const toolBundle = runtime.toolBundle;
+    if (!toolBundle) {
+        throw new Error('Page workflow tool bundle is not initialized');
+    }
+    const scopedTools = toolBundle.engineTools;
+    const toolBuildCtx = toolBundle.toolBuildCtx;
     const writeTool = scopedTools.find((row) => row.id === input.writeToolId);
     if (!writeTool) {
         throw new Error(`Write tool id=${input.writeToolId} not in allowed tools`);

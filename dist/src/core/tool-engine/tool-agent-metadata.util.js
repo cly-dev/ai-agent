@@ -39,6 +39,58 @@ function parseParamFormatHints(value) {
     }
     return rows;
 }
+function parseDraftReviewPolicy(value) {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const editMode = pickEnum(value.editMode, tool_agent_metadata_types_1.DRAFT_REVIEW_EDIT_MODES);
+    const submitPath = typeof value.submitPath === 'string' && value.submitPath.trim().length > 0
+        ? value.submitPath.trim()
+        : undefined;
+    const editablePaths = asStringArray(value.editablePaths);
+    const lockedPaths = asStringArray(value.lockedPaths);
+    const fieldOverrides = parseDraftReviewFieldOverrides(value.fieldOverrides);
+    const allowArgumentsPatch = typeof value.allowArgumentsPatch === 'boolean'
+        ? value.allowArgumentsPatch
+        : undefined;
+    if (!editMode &&
+        !submitPath &&
+        editablePaths.length === 0 &&
+        lockedPaths.length === 0 &&
+        fieldOverrides.length === 0 &&
+        allowArgumentsPatch === undefined) {
+        return null;
+    }
+    return Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (editMode ? { editMode } : {})), (submitPath ? { submitPath } : {})), (editablePaths.length > 0 ? { editablePaths } : {})), (lockedPaths.length > 0 ? { lockedPaths } : {})), (fieldOverrides.length > 0 ? { fieldOverrides } : {})), (allowArgumentsPatch !== undefined ? { allowArgumentsPatch } : {}));
+}
+function parseDraftReviewFieldOverrides(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    const rows = [];
+    for (const item of value) {
+        if (!isRecord(item)) {
+            continue;
+        }
+        const path = typeof item.path === 'string' ? item.path.trim() : '';
+        if (!path) {
+            continue;
+        }
+        const role = pickEnum(item.role, tool_agent_metadata_types_1.DRAFT_REVIEW_FIELD_ROLES);
+        const label = typeof item.label === 'string' && item.label.trim().length > 0
+            ? item.label.trim()
+            : undefined;
+        const reason = typeof item.reason === 'string' && item.reason.trim().length > 0
+            ? item.reason.trim()
+            : undefined;
+        const widget = typeof item.widget === 'string' &&
+            ['text', 'textarea', 'select', 'hidden'].includes(item.widget)
+            ? item.widget
+            : undefined;
+        rows.push(Object.assign(Object.assign(Object.assign(Object.assign({ path }, (role ? { role } : {})), (label ? { label } : {})), (reason ? { reason } : {})), (widget ? { widget } : {})));
+    }
+    return rows;
+}
 function pickEnum(value, allowed) {
     if (typeof value !== 'string') {
         return undefined;
@@ -66,14 +118,15 @@ function parseAgentMetadata(raw) {
             : 100;
     const isMutation = typeof raw.isMutation === 'boolean' ? raw.isMutation : mode === tool_agent_metadata_types_1.ToolMode.WRITE;
     const paramFormatHints = parseParamFormatHints(raw.paramFormatHints);
-    return Object.assign({ mode,
+    const draftReview = parseDraftReviewPolicy(raw.draftReview);
+    return Object.assign(Object.assign({ mode,
         resource,
         operation,
         businessFields,
         aliases,
         examples,
         priority,
-        isMutation }, (paramFormatHints.length > 0 ? { paramFormatHints } : {}));
+        isMutation }, (paramFormatHints.length > 0 ? { paramFormatHints } : {})), (draftReview ? { draftReview } : {}));
 }
 exports.parseAgentMetadata = parseAgentMetadata;
 function normalizeAgentMetadata(raw) {

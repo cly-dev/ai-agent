@@ -16,18 +16,17 @@ const page_context_anchor_util_1 = require("../../core/host-bridge/page-context-
 const prompt_composer_service_1 = require("../../core/prompt/prompt-composer.service");
 const parse_page_context_util_1 = require("../../core/host-bridge/parse-page-context.util");
 const agent_host_tool_catalog_service_1 = require("../../core/runtime-cache/agent-host-tool-catalog.service");
-const skill_service_1 = require("../../core/skill/skill.service");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const agent_service_1 = require("../agent/agent.service");
-const session_prepare_util_1 = require("./session-prepare.util");
 const session_prepare_store_1 = require("./session-prepare.store");
+const session_runtime_resolver_service_1 = require("./session-runtime-resolver.service");
 let SessionPrepareService = SessionPrepareService_1 = class SessionPrepareService {
-    constructor(prisma, agentService, skillService, promptComposer, sessionPrepareStore, hostToolCatalogService) {
+    constructor(prisma, agentService, promptComposer, sessionPrepareStore, sessionRuntimeResolver, hostToolCatalogService) {
         this.prisma = prisma;
         this.agentService = agentService;
-        this.skillService = skillService;
         this.promptComposer = promptComposer;
         this.sessionPrepareStore = sessionPrepareStore;
+        this.sessionRuntimeResolver = sessionRuntimeResolver;
         this.hostToolCatalogService = hostToolCatalogService;
         this.logger = new common_1.Logger(SessionPrepareService_1.name);
     }
@@ -58,43 +57,33 @@ let SessionPrepareService = SessionPrepareService_1 = class SessionPrepareServic
         }
         const pageScope = (0, page_context_anchor_util_1.resolveHostToolPageScope)(pageContext);
         if (session.agentId) {
-            const freshTools = await this.agentService.getAllowedTools(session.agentId, userId, appClientId);
-            const freshSkills = await this.skillService.listRunnableAgentSkillsForUser({
+            const bundle = await this.sessionRuntimeResolver.resolveAllowedToolsBundle({
+                sessionId: session.id,
                 agentId: session.agentId,
                 userId,
                 appClientId,
-            }, new Set(freshTools.map((tool) => tool.id)));
-            const freshSkillRows = await this.loadSkillRevisionRows(freshSkills.map((skill) => skill.id));
-            const hostToolsRevision = await this.hostToolCatalogService.fetchRevisionFromDb(appClientId, session.agentId);
-            const freshRevision = (0, session_prepare_util_1.buildSessionRuntimeRevision)({
-                tools: freshTools,
-                skills: freshSkillRows,
-                hostToolsRevision,
             });
-            const cached = await this.sessionPrepareStore.get(session.id, userId, appClientId, session.agentId, freshRevision);
-            if (cached && (0, session_prepare_util_1.areSessionRuntimeRevisionsEqual)(cached.revision, freshRevision)) {
-                const hostToolsCount = pageScope && ((_a = cached.hostToolsByPage) === null || _a === void 0 ? void 0 : _a[pageScope])
-                    ? cached.hostToolsByPage[pageScope].llmTools.length
+            const cachedSnapshot = await this.sessionPrepareStore.get(session.id, userId, appClientId, session.agentId, bundle.revision);
+            if (bundle.fromCache && cachedSnapshot) {
+                const hostToolsCount = pageScope && ((_a = cachedSnapshot.hostToolsByPage) === null || _a === void 0 ? void 0 : _a[pageScope])
+                    ? cachedSnapshot.hostToolsByPage[pageScope].llmTools.length
                     : 0;
-                const needsHostPageWarm = pageScope != null && !((_b = cached.hostToolsByPage) === null || _b === void 0 ? void 0 : _b[pageScope]);
+                const needsHostPageWarm = pageScope != null && !((_b = cachedSnapshot.hostToolsByPage) === null || _b === void 0 ? void 0 : _b[pageScope]);
                 if (!needsHostPageWarm) {
                     return {
                         sessionId: session.id,
                         prepared: true,
                         agentReady: true,
-                        toolsCount: cached.tools.length,
-                        skillsCount: cached.skills.length,
+                        toolsCount: bundle.tools.length,
+                        skillsCount: bundle.skillRows.length,
                         hostToolsCount,
                         pageScope,
                         sessionContextWarmed: await this.promptComposer.warmSessionContext(session.id),
-                        warmedAt: cached.snapshot.warmedAt,
+                        warmedAt: cachedSnapshot.snapshot.warmedAt,
                         fromCache: true,
-                        revision: cached.revision,
+                        revision: bundle.revision,
                     };
                 }
-            }
-            else if (cached) {
-                await this.sessionPrepareStore.delete(session.id);
             }
             const [agent, sessionContextWarmed, llmHostTools] = await Promise.all([
                 this.agentService.getRuntimeAgent(appClientId, session.agentId),
@@ -118,29 +107,31 @@ let SessionPrepareService = SessionPrepareService_1 = class SessionPrepareServic
                     },
                 }
                 : undefined;
-            await this.sessionPrepareStore.trySet({
-                sessionId: session.id,
-                userId,
-                appClientId,
-                agentId: session.agentId,
-                revision: freshRevision,
-                tools: freshTools,
-                skills: freshSkillRows,
-                hostToolsByPage,
-                lastPreparedPage: pageScope !== null && pageScope !== void 0 ? pageScope : undefined,
-            });
+            if (hostToolsByPage) {
+                await this.sessionPrepareStore.trySet({
+                    sessionId: session.id,
+                    userId,
+                    appClientId,
+                    agentId: session.agentId,
+                    revision: bundle.revision,
+                    tools: bundle.tools,
+                    skills: bundle.skillRows,
+                    hostToolsByPage,
+                    lastPreparedPage: pageScope !== null && pageScope !== void 0 ? pageScope : undefined,
+                });
+            }
             return {
                 sessionId: session.id,
                 prepared: true,
                 agentReady: agent != null,
-                toolsCount: freshTools.length,
-                skillsCount: freshSkillRows.length,
+                toolsCount: bundle.tools.length,
+                skillsCount: bundle.skillRows.length,
                 hostToolsCount: llmHostTools.length,
                 pageScope,
                 sessionContextWarmed,
                 warmedAt: new Date().toISOString(),
-                fromCache: false,
-                revision: freshRevision,
+                fromCache: bundle.fromCache && !hostToolsByPage,
+                revision: bundle.revision,
             };
         }
         const warmedAt = new Date().toISOString();
@@ -158,21 +149,6 @@ let SessionPrepareService = SessionPrepareService_1 = class SessionPrepareServic
             fromCache: false,
         };
     }
-    async loadSkillRevisionRows(skillIds) {
-        if (skillIds.length === 0) {
-            return [];
-        }
-        const rows = await this.prisma.skill.findMany({
-            where: { id: { in: skillIds } },
-            select: { id: true, name: true, updatedAt: true },
-            orderBy: { id: 'asc' },
-        });
-        return rows.map((row) => ({
-            id: row.id,
-            name: row.name,
-            updatedAt: row.updatedAt.toISOString(),
-        }));
-    }
     normalizeSessionId(sessionId) {
         const value = sessionId.trim().toLowerCase();
         if (!SessionPrepareService_1.SESSION_ID_HEX.test(value)) {
@@ -186,9 +162,9 @@ SessionPrepareService = SessionPrepareService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         agent_service_1.AgentService,
-        skill_service_1.SkillService,
         prompt_composer_service_1.PromptComposerService,
         session_prepare_store_1.SessionPrepareStore,
+        session_runtime_resolver_service_1.SessionRuntimeResolverService,
         agent_host_tool_catalog_service_1.AgentHostToolCatalogService])
 ], SessionPrepareService);
 exports.SessionPrepareService = SessionPrepareService;

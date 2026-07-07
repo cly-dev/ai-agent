@@ -49,6 +49,28 @@ export type AgentMetadata = {
     priority: number;
     isMutation: boolean;
     paramFormatHints?: ParamFormatHint[];
+    draftReview?: DraftReviewPolicy;
+};
+export declare const DRAFT_REVIEW_EDIT_MODES: readonly ["preview_only", "allowlisted_fields", "full"];
+export type DraftReviewEditMode = (typeof DRAFT_REVIEW_EDIT_MODES)[number];
+export declare const DRAFT_REVIEW_FIELD_ROLES: readonly ["content", "identifier", "scenario", "enum", "system"];
+export type DraftReviewFieldRole = (typeof DRAFT_REVIEW_FIELD_ROLES)[number];
+export declare const DRAFT_REVIEW_FIELD_WIDGETS: readonly ["text", "textarea", "select", "readonly", "hidden"];
+export type DraftReviewFieldWidget = (typeof DRAFT_REVIEW_FIELD_WIDGETS)[number];
+export type DraftReviewFieldOverride = {
+    path: string;
+    role?: DraftReviewFieldRole;
+    label?: string;
+    reason?: string;
+    widget?: Exclude<DraftReviewFieldWidget, 'readonly'>;
+};
+export type DraftReviewPolicy = {
+    editMode?: DraftReviewEditMode;
+    submitPath?: string;
+    editablePaths?: string[];
+    lockedPaths?: string[];
+    fieldOverrides?: DraftReviewFieldOverride[];
+    allowArgumentsPatch?: boolean;
 };
 export type ParsedUserToolIntent = {
     mode?: ToolMode;

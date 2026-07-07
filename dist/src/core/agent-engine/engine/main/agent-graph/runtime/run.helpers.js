@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createAgentGraphRunHelpers = exports.resolveFallbackReply = exports.loadScopedHostTools = exports.sanitizeFinalOutput = exports.publishMutationGateBlockedDraft = exports.resolveAssistantOutputFromArtifact = exports.graphFinalOutputFromArtifact = exports.tryParseJsonObject = exports.normalizeJsonLike = exports.updateRun = exports.bindRunContextHelpers = exports.createIsIntentMatched = exports.createBuildTurnRespondState = void 0;
+const client_1 = require("../../../../../../../generated/prisma/client");
 const host_bridge_1 = require("../../../../../host-bridge");
 const host_tool_resolve_debug_util_1 = require("../../../../../host-bridge/host-tool-resolve-debug.util");
 const agent_run_steps_util_1 = require("../../run/agent-run-steps.util");
@@ -60,16 +61,43 @@ function bindRunContextHelpers(helpers, ctx) {
     return Object.assign(Object.assign({}, helpers), { isIntentMatched: createIsIntentMatched(ctx.requestedSkillCtx) });
 }
 exports.bindRunContextHelpers = bindRunContextHelpers;
+const RUN_STEP_WRITE_COALESCE_MS = 2000;
+const runStepWriteCoalescers = new Map();
+function shouldSkipRunStepWrite(runId, currentStep, status) {
+    if (status !== client_1.AgentRunStatus.running) {
+        return false;
+    }
+    const prev = runStepWriteCoalescers.get(runId);
+    if (!prev) {
+        return false;
+    }
+    return (prev.lastStatus === status &&
+        prev.lastStep === currentStep &&
+        Date.now() - prev.lastWriteAt < RUN_STEP_WRITE_COALESCE_MS);
+}
 async function updateRun(deps, runId, steps, status) {
     const persistedSteps = (0, agent_run_audit_util_1.stepsForRunPersistence)(steps);
+    const currentStep = (0, agent_run_steps_util_1.maxRunStepNumber)(persistedSteps);
+    if (shouldSkipRunStepWrite(runId, currentStep, status)) {
+        return;
+    }
     await deps.prisma.agentRun.update({
         where: { id: runId },
         data: {
             steps: persistedSteps,
-            currentStep: (0, agent_run_steps_util_1.maxRunStepNumber)(persistedSteps),
+            currentStep,
             status,
         },
     });
+    if (status === client_1.AgentRunStatus.running) {
+        runStepWriteCoalescers.set(runId, {
+            lastWriteAt: Date.now(),
+            lastStep: currentStep,
+            lastStatus: status,
+        });
+        return;
+    }
+    runStepWriteCoalescers.delete(runId);
 }
 exports.updateRun = updateRun;
 function normalizeJsonLike(value) {

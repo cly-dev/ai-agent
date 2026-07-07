@@ -32,6 +32,8 @@ import { filterUserVisibleRunSteps, stepsForRunPersistence } from './agent-run-a
 import { buildAgentRunGoaSnapshot } from '../../../../memory/goa/session-goa-run-snapshot.util';
 import type { AgentRunGoaSnapshot } from '../../../../memory/goa/session-goa.types';
 import { toStoredTaskPlan } from '../session/session-graph-resume.util';
+import { allToolObservations } from '../../graph-tool-observations.util';
+import { resolveHostToolPushSuccessContent } from '../host-tool/host-tool-push-success.util';
 
 function newToolObservationsFromGraph(
   graphState: Pick<AgentGraphState, 'toolObservations'>,
@@ -412,14 +414,27 @@ export class AgentRunLifecycleService {
       !input.graphState.awaitingWriteConfirmation &&
       status !== AgentRunStatus.success
     ) {
-      const fallback = this.resolveFallbackReply(input.agent.config);
-      if (!fallback) {
-        throw new BadRequestException('agent run exceeded max steps');
+      const hostPushSuccess = resolveHostToolPushSuccessContent({
+        taskPlan: input.graphState.taskPlan,
+        observations: allToolObservations(input.graphState),
+      });
+      if (hostPushSuccess) {
+        this.sse.publishAssistantBlocks(
+          input.sessionId,
+          input.runId,
+          hostPushSuccess.blocks,
+        );
+        status = AgentRunStatus.success;
+      } else {
+        const fallback = this.resolveFallbackReply(input.agent.config);
+        if (!fallback) {
+          throw new BadRequestException('agent run exceeded max steps');
+        }
+        this.sse.publishAssistantBlocks(input.sessionId, input.runId, [
+          textBlock(fallback),
+        ]);
+        status = AgentRunStatus.success;
       }
-      this.sse.publishAssistantBlocks(input.sessionId, input.runId, [
-        textBlock(fallback),
-      ]);
-      status = AgentRunStatus.success;
     }
 
     const result = await this.finishAgentRun({

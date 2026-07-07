@@ -3,7 +3,7 @@ import type { LlmService } from '../llm/llm.service';
 import type { LlmChatMessage } from '../llm/llm.types';
 import type { ResolvedPageActionHostTool } from './page-action-host-tool.util';
 import { PageActionRunStepRecorder, type PageActionRunStep } from './page-action-run-steps.util';
-import type { Response } from 'express';
+import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
 export type PageActionHostFillExecuteInput = {
     actionRunId: number;
     actionKey: string;
@@ -13,7 +13,7 @@ export type PageActionHostFillExecuteInput = {
     messages: LlmChatMessage[];
     pageContext: AgentChatPageContext | null;
     hostTool: ResolvedPageActionHostTool;
-    res: Response;
+    sseSink: PageActionSseSink;
     signal?: AbortSignal;
     stepRecorder?: PageActionRunStepRecorder;
 };
@@ -30,7 +30,7 @@ export type PageActionHostFillExecuteResult = {
 };
 export declare function executePageActionHostFill(llmService: LlmService, input: PageActionHostFillExecuteInput): Promise<PageActionHostFillExecuteResult>;
 export declare function replayPageActionInlineStream(input: {
-    res: Response;
+    sseSink: PageActionSseSink;
     actionRunId: number;
     actionKey: string;
     generation: number;

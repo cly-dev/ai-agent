@@ -25,6 +25,7 @@ import { SessionRunCoordinator } from '../../core/session-run/session-run-coordi
 import type { CancelSessionRunResult } from '../../core/session-run/session-run.types';
 import { PendingWriteConfirmationStore } from './pending-write-confirmation.store';
 import { buildPendingWriteGatePublicState } from './chat-pending-write-gate.mapper';
+import { loadWriteToolsForPolicy } from '../../core/draft-review/load-write-tools-for-policy.util';
 import { parsePageContextFromMessageFields } from '../../core/host-bridge';
 import { AgentAutoSelectService } from './agent-auto-select.service';
 import type { AgentChatPageContext } from '../../core/host-bridge';
@@ -68,10 +69,16 @@ export class ChatService {
       this.sessionRunCoordinator.getRunState(sessionId),
       this.pendingWriteConfirmationStore.get(sessionId, userId),
     ]);
+    const writeToolsById = pending
+      ? await loadWriteToolsForPolicy(
+          this.prisma,
+          pending.resumeContext.scopedToolIds,
+        )
+      : undefined;
     return {
       ...runState,
       pendingWriteGate: pending
-        ? buildPendingWriteGatePublicState(pending)
+        ? buildPendingWriteGatePublicState(pending, writeToolsById)
         : null,
     };
   }

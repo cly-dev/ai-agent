@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PageActionRunStepRecorder = void 0;
+exports.toPublicPageActionRunTimeline = exports.parsePageActionRunSteps = exports.PageActionRunStepRecorder = void 0;
 const host_tool_stream_types_1 = require("../host-bridge/host-tool-stream.types");
 class PageActionRunStepRecorder {
     constructor(steps = []) {
@@ -78,4 +78,12 @@ class PageActionRunStepRecorder {
     }
 }
 exports.PageActionRunStepRecorder = PageActionRunStepRecorder;
+function parsePageActionRunSteps(value) {
+    return PageActionRunStepRecorder.fromJson(value).toJson();
+}
+exports.parsePageActionRunSteps = parsePageActionRunSteps;
+function toPublicPageActionRunTimeline(value) {
+    return parsePageActionRunSteps(value).map((step) => (Object.assign({ step: step.step, type: step.type, name: step.name, at: step.at }, (step.status ? { status: step.status } : {}))));
+}
+exports.toPublicPageActionRunTimeline = toPublicPageActionRunTimeline;
 //# sourceMappingURL=page-action-run-steps.util.js.map

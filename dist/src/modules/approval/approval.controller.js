@@ -20,6 +20,7 @@ const approval_request_service_1 = require("../../core/approval/approval-request
 const approval_resume_service_1 = require("../../core/approval/approval-resume.service");
 const draft_review_1 = require("../../core/draft-review");
 const approval_decide_dto_1 = require("./dto/approval-decide.dto");
+const query_approval_inbox_dto_1 = require("./dto/query-approval-inbox.dto");
 const approval_write_draft_mapper_1 = require("./approval-write-draft.mapper");
 let ApprovalController = class ApprovalController {
     constructor(approvalRequests, approvalResume) {
@@ -29,47 +30,19 @@ let ApprovalController = class ApprovalController {
     userId(req) {
         return req.user.userId;
     }
-    async listInbox(req, limit, offset) {
-        const rows = await this.approvalRequests.listPendingForApprover({
+    async listInbox(req, query) {
+        const rows = await this.approvalRequests.listInboxForApprover({
             appClientId: req.appClient.id,
             approverUserId: this.userId(req),
-            limit: limit ? Number(limit) : undefined,
-            offset: offset ? Number(offset) : undefined,
+            status: query.status,
+            limit: query.limit,
+            offset: query.offset,
         });
+        const toolMap = await this.approvalRequests.loadWriteToolsByIds(rows
+            .map((row) => (0, approval_write_draft_mapper_1.resolveApprovalRowToolId)(row))
+            .filter((id) => id != null));
         return {
-            items: rows.map((row) => {
-                var _a, _b, _c, _d;
-                const writeDraft = (0, approval_write_draft_mapper_1.extractWriteDraftPublicFromApprovalRow)(row);
-                return {
-                    id: row.id,
-                    source: row.source,
-                    status: row.status,
-                    title: row.title,
-                    summary: row.summary,
-                    workflowId: row.workflowId,
-                    workflowVersion: row.workflowVersion,
-                    workflowKey: (_b = (_a = row.workflow) === null || _a === void 0 ? void 0 : _a.workflowKey) !== null && _b !== void 0 ? _b : null,
-                    workflowName: (_d = (_c = row.workflow) === null || _c === void 0 ? void 0 : _c.name) !== null && _d !== void 0 ? _d : null,
-                    nodeId: row.nodeId,
-                    sessionId: row.sessionId,
-                    pageActionRunId: row.pageActionRunId,
-                    initiator: row.initiator
-                        ? {
-                            id: row.initiator.id,
-                            username: row.initiator.username,
-                            employeeId: row.initiator.employeeId,
-                        }
-                        : null,
-                    createdAt: row.createdAt,
-                    writeDraft,
-                    previewBlocks: row.previewBlocks,
-                    pendingWrite: {
-                        tool: writeDraft.tool.name,
-                        riskLevel: writeDraft.tool.riskLevel,
-                    },
-                    draftReview: this.extractDraftReviewBudget(row),
-                };
-            }),
+            items: rows.map((row) => this.toInboxItem(row, toolMap)),
         };
     }
     async getOne(req, id) {
@@ -77,28 +50,11 @@ let ApprovalController = class ApprovalController {
         if (!row) {
             throw new common_1.NotFoundException('Approval request not found');
         }
-        const writeDraft = (0, approval_write_draft_mapper_1.extractWriteDraftPublicFromApprovalRow)(row);
-        return {
-            id: row.id,
-            source: row.source,
-            status: row.status,
-            title: row.title,
-            summary: row.summary,
-            workflowId: row.workflowId,
-            workflowVersion: row.workflowVersion,
-            nodeId: row.nodeId,
-            sessionId: row.sessionId,
-            pageActionRunId: row.pageActionRunId,
-            createdAt: row.createdAt,
-            decidedAt: row.decidedAt,
-            writeDraft,
-            previewBlocks: row.previewBlocks,
-            pendingWrite: {
-                tool: writeDraft.tool.name,
-                riskLevel: writeDraft.tool.riskLevel,
-            },
-            draftReview: this.extractDraftReviewBudget(row),
-        };
+        const toolId = (0, approval_write_draft_mapper_1.resolveApprovalRowToolId)(row);
+        const toolMap = toolId
+            ? await this.approvalRequests.loadWriteToolsByIds([toolId])
+            : new Map();
+        return this.toInboxItem(row, toolMap);
     }
     async decide(req, id, body) {
         var _a;
@@ -126,6 +82,43 @@ let ApprovalController = class ApprovalController {
         });
         return { ok: true };
     }
+    toInboxItem(row, toolMap) {
+        var _a, _b, _c, _d, _e;
+        const toolId = (0, approval_write_draft_mapper_1.resolveApprovalRowToolId)(row);
+        const writeTool = toolId != null ? (_a = toolMap.get(toolId)) !== null && _a !== void 0 ? _a : null : null;
+        const { writeDraft, editPolicy } = (0, approval_write_draft_mapper_1.buildApprovalWriteDraftPayload)(row, writeTool);
+        return {
+            id: row.id,
+            source: row.source,
+            status: row.status,
+            title: row.title,
+            summary: row.summary,
+            workflowId: row.workflowId,
+            workflowVersion: row.workflowVersion,
+            workflowKey: (_c = (_b = row.workflow) === null || _b === void 0 ? void 0 : _b.workflowKey) !== null && _c !== void 0 ? _c : null,
+            workflowName: (_e = (_d = row.workflow) === null || _d === void 0 ? void 0 : _d.name) !== null && _e !== void 0 ? _e : null,
+            nodeId: row.nodeId,
+            sessionId: row.sessionId,
+            pageActionRunId: row.pageActionRunId,
+            initiator: row.initiator
+                ? {
+                    id: row.initiator.id,
+                    username: row.initiator.username,
+                    employeeId: row.initiator.employeeId,
+                }
+                : null,
+            createdAt: row.createdAt,
+            decidedAt: row.decidedAt,
+            writeDraft,
+            editPolicy,
+            previewBlocks: row.previewBlocks,
+            pendingWrite: {
+                tool: writeDraft.tool.name,
+                riskLevel: writeDraft.tool.riskLevel,
+            },
+            draftReview: this.extractDraftReviewBudget(row),
+        };
+    }
     extractDraftReviewBudget(row) {
         const snapshot = row.resumeSnapshot;
         const budget = (0, draft_review_1.resolveDraftRetryBudget)(snapshot === null || snapshot === void 0 ? void 0 : snapshot.draftRetryCount);
@@ -139,10 +132,9 @@ let ApprovalController = class ApprovalController {
 __decorate([
     (0, common_1.Get)('inbox'),
     __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Query)('limit')),
-    __param(2, (0, common_1.Query)('offset')),
+    __param(1, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:paramtypes", [Object, query_approval_inbox_dto_1.QueryApprovalInboxDto]),
     __metadata("design:returntype", Promise)
 ], ApprovalController.prototype, "listInbox", null);
 __decorate([

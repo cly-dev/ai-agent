@@ -46,15 +46,15 @@ async function executePageActionHostFill(llmService, input) {
     let completionTokens = null;
     let llmCallCount = 0;
     let appendCount = 0;
-    const res = input.res;
-    (0, page_action_inline_sse_util_1.writePageActionLifecycle)(res, Object.assign({ phase: 'started' }, lifecycleBase(input, streamId)), recorder);
+    const sink = input.sseSink;
+    (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sink, Object.assign({ phase: 'started' }, lifecycleBase(input, streamId)), recorder);
     let dslOutcome = 'skipped';
     let fillText = '';
     const canDispatchDsl = fillTools.length > 0;
     let streamSession = null;
     try {
         const pageContext = (_b = input.pageContext) !== null && _b !== void 0 ? _b : {};
-        const publish = (0, page_action_inline_sse_util_1.createInlineHostActionPublisher)(res, {
+        const publish = (0, page_action_inline_sse_util_1.createInlineHostActionPublisher)(sink, {
             onPayload: (payload) => {
                 recorder.recordHostActionPayload(payload);
             },
@@ -196,7 +196,7 @@ async function executePageActionHostFill(llmService, input) {
                 fillTextPreview: (0, page_action_fill_debug_util_1.truncateForPageActionLog)(fillText, 500),
             });
         }
-        (0, page_action_inline_sse_util_1.writePageActionLifecycle)(res, Object.assign(Object.assign({ phase: 'completed' }, lifecycleBase(input, streamId)), { text: fillText, dslOutcome }), recorder);
+        (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sink, Object.assign(Object.assign({ phase: 'completed' }, lifecycleBase(input, streamId)), { text: fillText, dslOutcome }), recorder);
     }
     catch (error) {
         if ((streamSession === null || streamSession === void 0 ? void 0 : streamSession.hasBegun) && !streamSession.isClosed) {
@@ -205,11 +205,11 @@ async function executePageActionHostFill(llmService, input) {
         const message = error instanceof Error ? error.message : String(error);
         (0, page_action_fill_debug_util_1.logPageActionFillError)(probe, error);
         recorder.recordLlm('streamChat.error', { message }, 'failed');
-        (0, page_action_inline_sse_util_1.writePageActionLifecycle)(res, Object.assign(Object.assign({ phase: 'failed' }, lifecycleBase(input, streamId)), { errorCode: 'LLM_FAILED', errorMessage: message }), recorder);
-        (0, page_action_inline_sse_util_1.endInlineSseResponse)(res);
+        (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sink, Object.assign(Object.assign({ phase: 'failed' }, lifecycleBase(input, streamId)), { errorCode: 'LLM_FAILED', errorMessage: message }), recorder);
+        (0, page_action_inline_sse_util_1.endInlineSseResponse)(sink);
         throw error;
     }
-    (0, page_action_inline_sse_util_1.endInlineSseResponse)(res);
+    (0, page_action_inline_sse_util_1.endInlineSseResponse)(sink);
     return {
         fillText,
         dslOutcome,
@@ -226,7 +226,7 @@ exports.executePageActionHostFill = executePageActionHostFill;
 async function replayPageActionInlineStream(input) {
     var _a, _b, _c, _d, _e, _f;
     const recorder = (_a = input.stepRecorder) !== null && _a !== void 0 ? _a : new page_action_run_steps_util_1.PageActionRunStepRecorder();
-    const res = input.res;
+    const sink = input.sseSink;
     const streamId = (_b = input.streamId) !== null && _b !== void 0 ? _b : (0, page_action_constants_1.buildPageActionStreamId)({
         actionRunId: input.actionRunId,
         actionKey: input.actionKey,
@@ -239,8 +239,7 @@ async function replayPageActionInlineStream(input) {
         streamId,
         clientActionId: (_c = input.clientActionId) !== null && _c !== void 0 ? _c : null,
     };
-    (0, page_action_inline_sse_util_1.initInlineSseResponse)(res);
-    (0, page_action_inline_sse_util_1.writePageActionLifecycle)(res, Object.assign({ phase: 'started' }, lifecycle), recorder);
+    (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sink, Object.assign({ phase: 'started' }, lifecycle), recorder);
     recorder.record({
         type: 'lifecycle',
         name: 'idempotency_replay',
@@ -255,7 +254,7 @@ async function replayPageActionInlineStream(input) {
             allowedToolNames: new Set([input.hostTool.definition.name]),
         });
         if (fillTools.length > 0) {
-            const publish = (0, page_action_inline_sse_util_1.createInlineHostActionPublisher)(res, {
+            const publish = (0, page_action_inline_sse_util_1.createInlineHostActionPublisher)(sink, {
                 onPayload: (payload) => {
                     recorder.recordHostActionPayload(payload);
                 },
@@ -291,8 +290,8 @@ async function replayPageActionInlineStream(input) {
             }
         }
     }
-    (0, page_action_inline_sse_util_1.writePageActionLifecycle)(res, Object.assign(Object.assign({ phase: 'completed' }, lifecycle), { text: fillText, dslOutcome: input.dslOutcome }), recorder);
-    (0, page_action_inline_sse_util_1.endInlineSseResponse)(res);
+    (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sink, Object.assign(Object.assign({ phase: 'completed' }, lifecycle), { text: fillText, dslOutcome: input.dslOutcome }), recorder);
+    (0, page_action_inline_sse_util_1.endInlineSseResponse)(sink);
     return recorder.toJson();
 }
 exports.replayPageActionInlineStream = replayPageActionInlineStream;

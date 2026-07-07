@@ -54,6 +54,8 @@ let ChatRunEventPublisher = class ChatRunEventPublisher extends run_event_publis
                 canRetry: input.canRetry,
                 writeDraft: input.writeDraft,
                 writeDrafts: input.writeDrafts,
+                editPolicy: input.editPolicy,
+                editPolicies: input.editPolicies,
             },
         });
     }

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { WriteDraftPublicDto } from '../../../common/dto/write-draft-public.dto';
+import { WriteDraftEditPolicyDto, WriteDraftPublicDto } from '../../../common/dto/write-draft-public.dto';
 
 export class PendingWriteGatePublicStateDto {
   @ApiProperty({ description: '挂起时的 Agent Run ID' })
@@ -32,6 +32,19 @@ export class PendingWriteGatePublicStateDto {
     description: '多写工具时全部草稿（含 writeDraft 本身）',
   })
   writeDrafts?: WriteDraftPublicDto[];
+
+  @ApiPropertyOptional({
+    type: WriteDraftEditPolicyDto,
+    nullable: true,
+    description: '主写草稿的字段编辑策略（由 Tool.agentMetadata.draftReview 推导）',
+  })
+  editPolicy?: WriteDraftEditPolicyDto | null;
+
+  @ApiPropertyOptional({
+    type: [WriteDraftEditPolicyDto],
+    description: '多写工具时各草稿对应的编辑策略',
+  })
+  editPolicies?: WriteDraftEditPolicyDto[];
 }
 
 export class SessionRunStateResponseDto {

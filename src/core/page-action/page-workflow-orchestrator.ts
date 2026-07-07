@@ -1,4 +1,5 @@
 import type { ApprovalPendingWrite } from '../approval/approval-resume-snapshot.types';
+import type { PageWorkflowToolBundle } from './page-workflow-tool-bundle.util';
 import type { ApprovalGateService } from '../approval/approval-gate.service';
 import {
   PageActionRunStepRecorder,
@@ -32,6 +33,7 @@ import type { WorkflowRunState } from '../workflow/workflow.types';
 
 export type PageWorkflowOrchestratorInput = PageWorkflowRunnerInput & {
   allowedToolIds: number[];
+  toolBundle?: PageWorkflowToolBundle | null;
   approvalGate?: ApprovalGateService;
   /** 可选：PageAction.config 等触发绑定上的审批人覆盖。 */
   approvalTriggerBinding?: ApprovalTriggerBinding | null;

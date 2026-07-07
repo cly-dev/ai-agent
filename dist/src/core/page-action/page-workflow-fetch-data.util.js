@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.executePageWorkflowFetchData = void 0;
 const common_1 = require("@nestjs/common");
+const page_workflow_tool_bundle_util_1 = require("./page-workflow-tool-bundle.util");
 const page_context_metadata_scan_util_1 = require("../host-bridge/page-context-metadata-scan.util");
 const page_action_run_audit_util_1 = require("./page-action-run-audit.util");
 function buildReadToolInputFromPageContext(pageContext, pathTemplate) {
@@ -67,15 +68,17 @@ async function resolveFetchDataTool(prisma, input) {
     });
 }
 async function executePageWorkflowFetchData(input) {
-    var _a, _b, _c;
-    const tool = await resolveFetchDataTool(input.prisma, {
+    var _a, _b, _c, _d, _e, _f;
+    const tool = (_b = (input.nodeInput.toolId != null
+        ? (_a = input.toolBundle) === null || _a === void 0 ? void 0 : _a.toolById.get(input.nodeInput.toolId)
+        : undefined)) !== null && _b !== void 0 ? _b : (await resolveFetchDataTool(input.prisma, {
         appClientId: input.appClientId,
         toolId: input.nodeInput.toolId,
         definitionKey: input.nodeInput.definitionKey,
-    });
+    }));
     const args = buildReadToolInputFromPageContext(input.pageContext, tool.path);
-    const toolStepId = (_a = input.nodeId) !== null && _a !== void 0 ? _a : 'fetch_data';
-    (_b = input.stepRecorder) === null || _b === void 0 ? void 0 : _b.record({
+    const toolStepId = (_c = input.nodeId) !== null && _c !== void 0 ? _c : 'fetch_data';
+    (_d = input.stepRecorder) === null || _d === void 0 ? void 0 : _d.record({
         type: 'workflow',
         name: `${toolStepId}:tool:start`,
         detail: (0, page_action_run_audit_util_1.buildToolCallRequestAudit)({
@@ -86,26 +89,10 @@ async function executePageWorkflowFetchData(input) {
             httpPath: tool.path,
         }),
     });
-    const result = await input.toolEngine.executeFromDefinition({
-        id: tool.id,
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-        schema: tool.schema,
-        method: tool.method,
-        path: tool.path,
-        timeout: tool.timeout,
-        integration: {
-            id: tool.integration.id,
-            name: tool.integration.name,
-            baseUrl: tool.integration.baseUrl,
-            authMode: tool.integration.authMode,
-            apiKey: tool.integration.apiKey,
-        },
-        agentMetadata: tool.agentMetadata,
-        responseProfile: tool.responseProfile,
-    }, args, input.userId);
-    (_c = input.stepRecorder) === null || _c === void 0 ? void 0 : _c.record({
+    const result = await input.toolEngine.executeFromDefinition((0, page_workflow_tool_bundle_util_1.toToolExecutionDefinition)(tool), args, input.userId, {
+        integrationCredentialCache: (_e = input.toolBundle) === null || _e === void 0 ? void 0 : _e.toolBuildCtx.integrationCredentialCache,
+    });
+    (_f = input.stepRecorder) === null || _f === void 0 ? void 0 : _f.record({
         type: 'workflow',
         name: `${toolStepId}:tool:complete`,
         detail: (0, page_action_run_audit_util_1.buildToolCallResultAudit)(result),

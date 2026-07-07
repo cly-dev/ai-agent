@@ -1,4 +1,4 @@
-import { WriteDraftPublicDto } from '../../../common/dto/write-draft-public.dto';
+import { WriteDraftEditPolicyDto, WriteDraftPublicDto } from '../../../common/dto/write-draft-public.dto';
 export declare class PendingWriteGatePublicStateDto {
     runId: number;
     turnId: number;
@@ -7,6 +7,8 @@ export declare class PendingWriteGatePublicStateDto {
     canRetry: boolean;
     writeDraft?: WriteDraftPublicDto;
     writeDrafts?: WriteDraftPublicDto[];
+    editPolicy?: WriteDraftEditPolicyDto | null;
+    editPolicies?: WriteDraftEditPolicyDto[];
 }
 export declare class SessionRunStateResponseDto {
     generation: number;

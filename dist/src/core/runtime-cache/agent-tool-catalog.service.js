@@ -92,6 +92,13 @@ let AgentToolCatalogService = AgentToolCatalogService_1 = class AgentToolCatalog
         const { tools: toolsPart, integrations } = (0, runtime_revision_util_1.buildToolsRuntimeRevision)(ctx.revisionToolRows);
         return `${toolsPart}|${integrations}|r:${ctx.agent.restrictTools ? 1 : 0}`;
     }
+    async fetchRuntimeRevisionParts(appClientId, agentId) {
+        const ctx = await this.loadToolCatalogContext(appClientId, agentId);
+        if (!ctx) {
+            return { tools: '', integrations: '' };
+        }
+        return (0, runtime_revision_util_1.buildToolsRuntimeRevision)(ctx.revisionToolRows);
+    }
     async buildFromDb(appClientId, agentId) {
         const ctx = await this.loadToolCatalogContext(appClientId, agentId);
         if (!ctx) {

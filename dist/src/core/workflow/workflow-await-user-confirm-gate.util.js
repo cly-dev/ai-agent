@@ -78,6 +78,9 @@ async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
     });
     const primaryWriteDraft = (_h = writeDraftList[0]) !== null && _h !== void 0 ? _h : writeDraft;
     const publicDraftList = writeDraftList.map((draft) => (0, draft_review_1.toWriteDraftPublic)(draft));
+    const editPolicyFields = (0, draft_review_1.buildEditPolicyGateFields)((0, draft_review_1.resolveWriteDraftEditPoliciesForPublicDrafts)(publicDraftList, {
+        scopedTools: state.scopedTools,
+    }));
     await deps.pendingWriteConfirmationStore.set({
         runId: ctx.input.runId,
         turnId: ctx.input.turnId,
@@ -106,16 +109,7 @@ async function applyWorkflowAwaitUserConfirmGate(bundle, state, input) {
         turnId: ctx.input.turnId,
         message,
     };
-    const published = deps.runSseGateway.emitConfirmationRequired(ctx.input.sessionId, {
-        runId: ctx.input.runId,
-        turnId: ctx.input.turnId,
-        message,
-        draftRetryCount: draftRetryBudget.used,
-        draftRetryMax: draftRetryBudget.max,
-        canRetry: draftRetryBudget.canRetry,
-        writeDraft: publicDraftList[0],
-        writeDrafts: publicDraftList.length > 1 ? publicDraftList : undefined,
-    });
+    const published = deps.runSseGateway.emitConfirmationRequired(ctx.input.sessionId, Object.assign({ runId: ctx.input.runId, turnId: ctx.input.turnId, message, draftRetryCount: draftRetryBudget.used, draftRetryMax: draftRetryBudget.max, canRetry: draftRetryBudget.canRetry, writeDraft: publicDraftList[0], writeDrafts: publicDraftList.length > 1 ? publicDraftList : undefined }, editPolicyFields));
     (0, message_blocks_debug_util_1.emitAgentMessageSseDebug)({
         tag: published ? 'confirmation_required' : 'confirmation_required_suppressed',
         sessionId: ctx.input.sessionId,

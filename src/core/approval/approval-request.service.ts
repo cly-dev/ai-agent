@@ -13,6 +13,9 @@ import type {
   CreateApprovalRequestInput,
 } from './approval.types';
 import { canRequestDraftRetry } from '../draft-review';
+import { loadWriteToolsForPolicy } from '../draft-review/load-write-tools-for-policy.util';
+import { resolveApprovalInboxStatuses } from './approval-inbox-status.util';
+import type { ApprovalInboxStatusFilter } from './approval-inbox-status.util';
 
 /** 收件箱可见的审批来源（chat 写确认走会话内路径，不进收件箱）。 */
 export const APPROVAL_INBOX_SOURCES = [
@@ -76,34 +79,54 @@ export class ApprovalRequestService {
   async findByIdForApprover(
     approvalRequestId: number,
     approverUserId: number,
-  ): Promise<ApprovalRequest | null> {
+  ): Promise<ApprovalInboxRow | null> {
     return this.prisma.approvalRequest.findFirst({
       where: {
         id: approvalRequestId,
         approverUserId,
         source: { in: [...APPROVAL_INBOX_SOURCES] },
       },
+      include: APPROVAL_INBOX_INCLUDE,
     });
   }
 
+  async loadWriteToolsByIds(toolIds: number[]) {
+    return loadWriteToolsForPolicy(this.prisma, toolIds);
+  }
+
+  async listInboxForApprover(input: {
+    appClientId: number;
+    approverUserId: number;
+    status?: ApprovalInboxStatusFilter;
+    limit?: number;
+    offset?: number;
+  }): Promise<ApprovalInboxRow[]> {
+    const statuses = resolveApprovalInboxStatuses(input.status);
+    return this.prisma.approvalRequest.findMany({
+      where: {
+        appClientId: input.appClientId,
+        approverUserId: input.approverUserId,
+        ...(statuses ? { status: { in: statuses } } : {}),
+        source: { in: [...APPROVAL_INBOX_SOURCES] },
+      },
+      orderBy: [
+        { decidedAt: 'desc' },
+        { createdAt: 'desc' },
+      ],
+      take: input.limit ?? 50,
+      skip: input.offset ?? 0,
+      include: APPROVAL_INBOX_INCLUDE,
+    });
+  }
+
+  /** @deprecated 使用 listInboxForApprover({ status: 'pending' }) */
   async listPendingForApprover(input: {
     appClientId: number;
     approverUserId: number;
     limit?: number;
     offset?: number;
   }): Promise<ApprovalInboxRow[]> {
-    return this.prisma.approvalRequest.findMany({
-      where: {
-        appClientId: input.appClientId,
-        approverUserId: input.approverUserId,
-        status: ApprovalStatus.pending,
-        source: { in: [...APPROVAL_INBOX_SOURCES] },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: input.limit ?? 50,
-      skip: input.offset ?? 0,
-      include: APPROVAL_INBOX_INCLUDE,
-    });
+    return this.listInboxForApprover({ ...input, status: 'pending' });
   }
 
   parseResumeSnapshot(row: ApprovalRequest): ApprovalResumeSnapshot {

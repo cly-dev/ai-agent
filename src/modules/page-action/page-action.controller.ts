@@ -7,28 +7,14 @@ import {
   Patch,
   Post,
   Query,
-  Req,
-  Res,
-  UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import {
-  ApiBearerAuth,
-  ApiHeader,
   ApiOperation,
   ApiParam,
-  ApiProduces,
-  ApiResponse,
-  ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
-import { AppClientDsnGuard } from '../../auth/app-client-dsn.guard';
-import { APP_CLIENT_DSN_HEADER } from '../../auth/app-client-dsn.constants';
-import { UserJwtAuthGuard } from '../../auth/user-jwt-auth.guard';
 import {
   CreatePageActionDto,
-  InvokePageActionDto,
   QueryPageActionDto,
   QueryPageActionRunDto,
   QueryPageScopeOptionsDto,
@@ -37,26 +23,9 @@ import {
 import { PageActionService } from './page-action.service';
 
 @ApiTags('page-action')
-@ApiBearerAuth()
 @Controller()
 export class PageActionController {
   constructor(private readonly service: PageActionService) {}
-
-  private appClientId(req: Request): number {
-    const id = req.appClient?.id;
-    if (id === undefined) {
-      throw new UnauthorizedException('missing app client context');
-    }
-    return id;
-  }
-
-  private userId(req: Request & { user?: { userId?: number } }): number {
-    const id = req.user?.userId;
-    if (id === undefined) {
-      throw new UnauthorizedException('invalid user token');
-    }
-    return id;
-  }
 
   @Post('page-action')
   @ApiOperation({
@@ -137,33 +106,5 @@ export class PageActionController {
   })
   findRunAdmin(@Param('id', ParseIntPipe) id: number) {
     return this.service.findRunAdmin(id);
-  }
-
-  @Post('page-action/invoke')
-  @UseGuards(UserJwtAuthGuard, AppClientDsnGuard)
-  @ApiSecurity('app-dsn')
-  @ApiHeader({
-    name: APP_CLIENT_DSN_HEADER,
-    description: '业务方 DSN',
-    required: true,
-  })
-  @ApiOperation({
-    summary: 'C 端：one-shot 执行 PageAction',
-    description:
-      '响应为 text/event-stream（host_action DSL 真流式 + page_action 生命周期）。无需 Chat session。',
-  })
-  @ApiProduces('text/event-stream')
-  @ApiResponse({ status: 200, description: 'inline_stream SSE' })
-  async invoke(
-    @Req() req: Request & { user?: { userId?: number } },
-    @Body() body: InvokePageActionDto,
-    @Res() res: Response,
-  ) {
-    await this.service.invoke(
-      this.userId(req),
-      this.appClientId(req),
-      body,
-      res,
-    );
   }
 }

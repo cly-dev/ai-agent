@@ -1,31 +1,26 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.endInlineSseResponse = exports.writePageWorkflowNodeSse = exports.writePageActionLifecycle = exports.createInlineHostActionPublisher = exports.initInlineSseResponse = exports.writeSseEvent = void 0;
-function writeSseEvent(res, event, data) {
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
+exports.endInlineSseResponse = exports.writePageWorkflowNodeSse = exports.writePageActionLifecycle = exports.createInlineHostActionPublisher = exports.writeSseEvent = void 0;
+function resolveSseTarget(target) {
+    return target;
+}
+function writeSseEvent(target, event, data) {
+    const sink = resolveSseTarget(target);
+    if (sink.writableEnded) {
+        return;
+    }
+    sink.emit(event, data);
 }
 exports.writeSseEvent = writeSseEvent;
-function initInlineSseResponse(res) {
-    res.status(200);
-    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    if (typeof res.flushHeaders === 'function') {
-        res.flushHeaders();
-    }
-}
-exports.initInlineSseResponse = initInlineSseResponse;
-function createInlineHostActionPublisher(res, options) {
+function createInlineHostActionPublisher(target, options) {
     return (_sessionId, envelope) => {
         var _a;
         (_a = options === null || options === void 0 ? void 0 : options.onPayload) === null || _a === void 0 ? void 0 : _a.call(options, envelope.payload);
-        writeSseEvent(res, 'host_action', envelope.payload);
+        writeSseEvent(target, 'host_action', envelope.payload);
     };
 }
 exports.createInlineHostActionPublisher = createInlineHostActionPublisher;
-function writePageActionLifecycle(res, payload, recorder) {
+function writePageActionLifecycle(target, payload, recorder) {
     var _a, _b, _c, _d, _e, _f, _g;
     recorder === null || recorder === void 0 ? void 0 : recorder.recordLifecycle(payload.phase, {
         actionRunId: payload.actionRunId,
@@ -39,20 +34,19 @@ function writePageActionLifecycle(res, payload, recorder) {
         errorMessage: (_e = payload.errorMessage) !== null && _e !== void 0 ? _e : null,
         textLength: (_g = (_f = payload.text) === null || _f === void 0 ? void 0 : _f.length) !== null && _g !== void 0 ? _g : null,
     }, payload.phase === 'failed' ? 'failed' : payload.phase === 'completed' ? 'ok' : undefined);
-    writeSseEvent(res, 'page_action', payload);
+    writeSseEvent(target, 'page_action', payload);
 }
 exports.writePageActionLifecycle = writePageActionLifecycle;
-function writePageWorkflowNodeSse(res, payload) {
-    if (res.writableEnded || typeof res.write !== 'function') {
+function writePageWorkflowNodeSse(target, payload) {
+    const sink = resolveSseTarget(target);
+    if (sink.writableEnded) {
         return;
     }
-    writeSseEvent(res, 'page_workflow', payload);
+    writeSseEvent(sink, 'page_workflow', payload);
 }
 exports.writePageWorkflowNodeSse = writePageWorkflowNodeSse;
-function endInlineSseResponse(res) {
-    if (!res.writableEnded) {
-        res.end();
-    }
+function endInlineSseResponse(target) {
+    resolveSseTarget(target).end();
 }
 exports.endInlineSseResponse = endInlineSseResponse;
 //# sourceMappingURL=page-action-inline-sse.util.js.map

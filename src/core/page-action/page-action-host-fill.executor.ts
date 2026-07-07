@@ -16,7 +16,6 @@ import {
 import {
   createInlineHostActionPublisher,
   endInlineSseResponse,
-  initInlineSseResponse,
   writePageActionLifecycle,
 } from './page-action-inline-sse.util';
 import type { ResolvedPageActionHostTool } from './page-action-host-tool.util';
@@ -35,7 +34,7 @@ import {
   recordPageActionFillStreamDelta,
   truncateForPageActionLog,
 } from './page-action-fill-debug.util';
-import type { Response } from 'express';
+import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
 
 export type PageActionHostFillExecuteInput = {
   actionRunId: number;
@@ -46,7 +45,7 @@ export type PageActionHostFillExecuteInput = {
   messages: LlmChatMessage[];
   pageContext: AgentChatPageContext | null;
   hostTool: ResolvedPageActionHostTool;
-  res: Response;
+  sseSink: PageActionSseSink;
   signal?: AbortSignal;
   stepRecorder?: PageActionRunStepRecorder;
 };
@@ -108,9 +107,9 @@ export async function executePageActionHostFill(
   let llmCallCount = 0;
   let appendCount = 0;
 
-  const res = input.res;
+  const sink = input.sseSink;
   writePageActionLifecycle(
-    res,
+    sink,
     { phase: 'started', ...lifecycleBase(input, streamId) },
     recorder,
   );
@@ -122,7 +121,7 @@ export async function executePageActionHostFill(
 
   try {
     const pageContext = input.pageContext ?? {};
-    const publish = createInlineHostActionPublisher(res, {
+    const publish = createInlineHostActionPublisher(sink, {
       onPayload: (payload) => {
         recorder.recordHostActionPayload(payload);
       },
@@ -285,7 +284,7 @@ export async function executePageActionHostFill(
     }
 
     writePageActionLifecycle(
-      res,
+      sink,
       {
         phase: 'completed',
         ...lifecycleBase(input, streamId),
@@ -302,7 +301,7 @@ export async function executePageActionHostFill(
     logPageActionFillError(probe, error);
     recorder.recordLlm('streamChat.error', { message }, 'failed');
     writePageActionLifecycle(
-      res,
+      sink,
       {
         phase: 'failed',
         ...lifecycleBase(input, streamId),
@@ -311,11 +310,11 @@ export async function executePageActionHostFill(
       },
       recorder,
     );
-    endInlineSseResponse(res);
+    endInlineSseResponse(sink);
     throw error;
   }
 
-  endInlineSseResponse(res);
+  endInlineSseResponse(sink);
   return {
     fillText,
     dslOutcome,
@@ -331,7 +330,7 @@ export async function executePageActionHostFill(
 
 /** 幂等命中时重放已完成的 inline_stream SSE，不重复调用 LLM。 */
 export async function replayPageActionInlineStream(input: {
-  res: Response;
+  sseSink: PageActionSseSink;
   actionRunId: number;
   actionKey: string;
   generation: number;
@@ -344,7 +343,7 @@ export async function replayPageActionInlineStream(input: {
   stepRecorder?: PageActionRunStepRecorder;
 }): Promise<PageActionRunStep[]> {
   const recorder = input.stepRecorder ?? new PageActionRunStepRecorder();
-  const res = input.res;
+  const sink = input.sseSink;
   const streamId =
     input.streamId ??
     buildPageActionStreamId({
@@ -360,9 +359,8 @@ export async function replayPageActionInlineStream(input: {
     clientActionId: input.clientActionId ?? null,
   };
 
-  initInlineSseResponse(res);
   writePageActionLifecycle(
-    res,
+    sink,
     { phase: 'started', ...lifecycle },
     recorder,
   );
@@ -384,7 +382,7 @@ export async function replayPageActionInlineStream(input: {
       allowedToolNames: new Set([input.hostTool.definition.name]),
     });
     if (fillTools.length > 0) {
-    const publish = createInlineHostActionPublisher(res, {
+    const publish = createInlineHostActionPublisher(sink, {
       onPayload: (payload) => {
         recorder.recordHostActionPayload(payload);
       },
@@ -421,7 +419,7 @@ export async function replayPageActionInlineStream(input: {
   }
 
   writePageActionLifecycle(
-    res,
+    sink,
     {
       phase: 'completed',
       ...lifecycle,
@@ -430,6 +428,6 @@ export async function replayPageActionInlineStream(input: {
     },
     recorder,
   );
-  endInlineSseResponse(res);
+  endInlineSseResponse(sink);
   return recorder.toJson();
 }

@@ -36,7 +36,9 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
                 continue;
             }
             const parameters = (0, tool_schema_util_1.resolveToolZodSchema)(def.inputSchema, def.schema);
-            const lcTool = (0, tools_1.tool)(async (input) => this.executeFromDefinition(def, input, ctx.userId), {
+            const lcTool = (0, tools_1.tool)(async (input) => this.executeFromDefinition(def, input, ctx.userId, {
+                integrationCredentialCache: ctx.integrationCredentialCache,
+            }), {
                 name: def.name,
                 description: def.description,
                 schema: parameters,
@@ -129,7 +131,24 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
             clearTimeout(timer);
         }
     }
-    async executeByName(toolName, input, allowedToolIds, userId) {
+    async executeByName(toolName, input, allowedToolIds, userId, options) {
+        var _a;
+        const def = (_a = options === null || options === void 0 ? void 0 : options.preloadedDefinition) !== null && _a !== void 0 ? _a : (await this.loadToolDefinitionByName(toolName, allowedToolIds));
+        if (!def) {
+            this.writeToolDebugSnapshot({
+                phase: 'tool_not_found',
+                at: new Date().toISOString(),
+                toolNameRequested: toolName,
+                allowedToolIds,
+                input,
+            });
+            throw new common_1.NotFoundException(`tool ${toolName} not found or not allowed`);
+        }
+        return this.executeFromDefinition(def, input, userId, {
+            integrationCredentialCache: options === null || options === void 0 ? void 0 : options.integrationCredentialCache,
+        });
+    }
+    async loadToolDefinitionByName(toolName, allowedToolIds) {
         const tool = await this.prisma.tool.findFirst({
             where: {
                 name: toolName,
@@ -141,16 +160,9 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
             },
         });
         if (!tool) {
-            this.writeToolDebugSnapshot({
-                phase: 'tool_not_found',
-                at: new Date().toISOString(),
-                toolNameRequested: toolName,
-                allowedToolIds,
-                input,
-            });
-            throw new common_1.NotFoundException(`tool ${toolName} not found or not allowed`);
+            return null;
         }
-        return this.executeFromDefinition({
+        return {
             id: tool.id,
             name: tool.name,
             description: tool.description,
@@ -168,10 +180,10 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
             },
             agentMetadata: tool.agentMetadata,
             responseProfile: tool.responseProfile,
-        }, input, userId);
+        };
     }
-    async executeFromDefinition(def, input, userId) {
-        var _a, _b, _c, _d;
+    async executeFromDefinition(def, input, userId, options) {
+        var _a, _b, _c, _d, _e;
         const startedAt = Date.now();
         const controller = new AbortController();
         const timeoutMs = this.resolveTimeoutMs(def.timeout, def.name);
@@ -183,25 +195,34 @@ let ToolEngineService = ToolEngineService_1 = class ToolEngineService {
                 responseProfile: def.responseProfile,
             });
             input = (0, tool_input_sanitize_util_1.sanitizeToolInvokeInput)(input, specs);
-            const userIntegration = await this.prisma.userIntegration.findUnique({
-                where: {
-                    userId_integrationId: {
-                        userId,
-                        integrationId: def.integration.id,
+            const credentialCacheKey = `${userId}:${def.integration.id}`;
+            const cachedUserApiKey = (_a = options === null || options === void 0 ? void 0 : options.integrationCredentialCache) === null || _a === void 0 ? void 0 : _a.get(credentialCacheKey);
+            let userApiKey = '';
+            if (cachedUserApiKey !== undefined) {
+                userApiKey = cachedUserApiKey;
+            }
+            else {
+                const userIntegration = await this.prisma.userIntegration.findUnique({
+                    where: {
+                        userId_integrationId: {
+                            userId,
+                            integrationId: def.integration.id,
+                        },
                     },
-                },
-                select: {
-                    userApiKey: true,
-                    isActive: true,
-                },
-            });
+                    select: {
+                        userApiKey: true,
+                        isActive: true,
+                    },
+                });
+                userApiKey =
+                    (userIntegration === null || userIntegration === void 0 ? void 0 : userIntegration.isActive) === true
+                        ? (_c = (_b = userIntegration.userApiKey) === null || _b === void 0 ? void 0 : _b.trim()) !== null && _c !== void 0 ? _c : ''
+                        : '';
+            }
             const authMode = def.integration.authMode;
-            const userApiKey = (userIntegration === null || userIntegration === void 0 ? void 0 : userIntegration.isActive) === true
-                ? (_b = (_a = userIntegration.userApiKey) === null || _a === void 0 ? void 0 : _a.trim()) !== null && _b !== void 0 ? _b : ''
-                : '';
             const systemApiKey = authMode === client_1.IntegrationAuthMode.SYSTEM_ONLY ||
                 authMode === client_1.IntegrationAuthMode.USER_PREFERRED
-                ? (_d = (_c = def.integration.apiKey) === null || _c === void 0 ? void 0 : _c.trim()) !== null && _d !== void 0 ? _d : ''
+                ? (_e = (_d = def.integration.apiKey) === null || _d === void 0 ? void 0 : _d.trim()) !== null && _e !== void 0 ? _e : ''
                 : '';
             const { apiKey: selectedApiKey, source: authSource } = this.resolveAuthCredential(authMode, userApiKey, systemApiKey);
             if (!selectedApiKey) {

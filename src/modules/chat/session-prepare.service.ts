@@ -9,15 +9,11 @@ import { resolveHostToolPageScope } from '../../core/host-bridge/page-context-an
 import { PromptComposerService } from '../../core/prompt/prompt-composer.service';
 import { parsePageContextFromMessageFields } from '../../core/host-bridge/parse-page-context.util';
 import { AgentHostToolCatalogService } from '../../core/runtime-cache/agent-host-tool-catalog.service';
-import { SkillService } from '../../core/skill/skill.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentService } from '../agent/agent.service';
 import type { SessionPrepareResult } from './session-prepare.types';
-import {
-  areSessionRuntimeRevisionsEqual,
-  buildSessionRuntimeRevision,
-} from './session-prepare.util';
 import { SessionPrepareStore } from './session-prepare.store';
+import { SessionRuntimeResolverService } from './session-runtime-resolver.service';
 import type { PrepareChatDto } from './dto/prepare-chat.dto';
 
 @Injectable()
@@ -28,9 +24,9 @@ export class SessionPrepareService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agentService: AgentService,
-    private readonly skillService: SkillService,
     private readonly promptComposer: PromptComposerService,
     private readonly sessionPrepareStore: SessionPrepareStore,
+    private readonly sessionRuntimeResolver: SessionRuntimeResolverService,
     private readonly hostToolCatalogService: AgentHostToolCatalogService,
   ) {}
 
@@ -82,68 +78,46 @@ export class SessionPrepareService {
     const pageScope = resolveHostToolPageScope(pageContext);
 
     if (session.agentId) {
-      const freshTools = await this.agentService.getAllowedTools(
-        session.agentId,
+      const bundle = await this.sessionRuntimeResolver.resolveAllowedToolsBundle({
+        sessionId: session.id,
+        agentId: session.agentId,
         userId,
         appClientId,
-      );
-      const freshSkills =
-        await this.skillService.listRunnableAgentSkillsForUser(
-          {
-            agentId: session.agentId,
-            userId,
-            appClientId,
-          },
-          new Set(freshTools.map((tool) => tool.id)),
-        );
-      const freshSkillRows = await this.loadSkillRevisionRows(
-        freshSkills.map((skill) => skill.id),
-      );
-      const hostToolsRevision =
-        await this.hostToolCatalogService.fetchRevisionFromDb(
-          appClientId,
-          session.agentId,
-        );
-      const freshRevision = buildSessionRuntimeRevision({
-        tools: freshTools,
-        skills: freshSkillRows,
-        hostToolsRevision,
       });
 
-      const cached = await this.sessionPrepareStore.get(
+      const cachedSnapshot = await this.sessionPrepareStore.get(
         session.id,
         userId,
         appClientId,
         session.agentId,
-        freshRevision,
+        bundle.revision,
       );
-      if (cached && areSessionRuntimeRevisionsEqual(cached.revision, freshRevision)) {
+
+      if (bundle.fromCache && cachedSnapshot) {
         const hostToolsCount =
-          pageScope && cached.hostToolsByPage?.[pageScope]
-            ? cached.hostToolsByPage[pageScope].llmTools.length
+          pageScope && cachedSnapshot.hostToolsByPage?.[pageScope]
+            ? cachedSnapshot.hostToolsByPage[pageScope].llmTools.length
             : 0;
         const needsHostPageWarm =
-          pageScope != null && !cached.hostToolsByPage?.[pageScope];
+          pageScope != null && !cachedSnapshot.hostToolsByPage?.[pageScope];
 
         if (!needsHostPageWarm) {
           return {
             sessionId: session.id,
             prepared: true,
             agentReady: true,
-            toolsCount: cached.tools.length,
-            skillsCount: cached.skills.length,
+            toolsCount: bundle.tools.length,
+            skillsCount: bundle.skillRows.length,
             hostToolsCount,
             pageScope,
             sessionContextWarmed: await this.promptComposer.warmSessionContext(
               session.id,
             ),
-            warmedAt: cached.snapshot.warmedAt,
+            warmedAt: cachedSnapshot.snapshot.warmedAt,
             fromCache: true,
-            revision: cached.revision,
+            revision: bundle.revision,
           };
         }
-      } else if (cached) {
-        await this.sessionPrepareStore.delete(session.id);
       }
 
       const [agent, sessionContextWarmed, llmHostTools] = await Promise.all([
@@ -171,30 +145,32 @@ export class SessionPrepareService {
             }
           : undefined;
 
-      await this.sessionPrepareStore.trySet({
-        sessionId: session.id,
-        userId,
-        appClientId,
-        agentId: session.agentId,
-        revision: freshRevision,
-        tools: freshTools,
-        skills: freshSkillRows,
-        hostToolsByPage,
-        lastPreparedPage: pageScope ?? undefined,
-      });
+      if (hostToolsByPage) {
+        await this.sessionPrepareStore.trySet({
+          sessionId: session.id,
+          userId,
+          appClientId,
+          agentId: session.agentId,
+          revision: bundle.revision,
+          tools: bundle.tools,
+          skills: bundle.skillRows,
+          hostToolsByPage,
+          lastPreparedPage: pageScope ?? undefined,
+        });
+      }
 
       return {
         sessionId: session.id,
         prepared: true,
         agentReady: agent != null,
-        toolsCount: freshTools.length,
-        skillsCount: freshSkillRows.length,
+        toolsCount: bundle.tools.length,
+        skillsCount: bundle.skillRows.length,
         hostToolsCount: llmHostTools.length,
         pageScope,
         sessionContextWarmed,
         warmedAt: new Date().toISOString(),
-        fromCache: false,
-        revision: freshRevision,
+        fromCache: bundle.fromCache && !hostToolsByPage,
+        revision: bundle.revision,
       };
     }
 
@@ -213,22 +189,6 @@ export class SessionPrepareService {
       warmedAt,
       fromCache: false,
     };
-  }
-
-  private async loadSkillRevisionRows(skillIds: number[]) {
-    if (skillIds.length === 0) {
-      return [];
-    }
-    const rows = await this.prisma.skill.findMany({
-      where: { id: { in: skillIds } },
-      select: { id: true, name: true, updatedAt: true },
-      orderBy: { id: 'asc' },
-    });
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      updatedAt: row.updatedAt.toISOString(),
-    }));
   }
 
   private normalizeSessionId(sessionId: string): string {

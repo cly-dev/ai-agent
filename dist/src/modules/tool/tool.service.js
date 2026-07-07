@@ -25,6 +25,7 @@ const tool_list_filter_util_1 = require("./tool-list-filter.util");
 const tool_mapper_1 = require("./tool.mapper");
 const tool_types_1 = require("./tool.types");
 const tool_decision_input_util_1 = require("../../core/tool-engine/tool-decision-input.util");
+const draft_review_policy_normalize_util_1 = require("../../core/tool-engine/draft-review-policy-normalize.util");
 const tool_response_profile_spec_util_1 = require("../../core/tool-engine/tool-response-profile.spec.util");
 const tool_schema_inference_util_1 = require("./tool-schema-inference.util");
 const workflow_node_reference_guard_util_1 = require("../../core/workflow/workflow-node-reference-guard.util");
@@ -327,7 +328,19 @@ let ToolService = class ToolService {
         if (raw === undefined) {
             return undefined;
         }
-        const normalized = (0, tool_decision_input_util_1.normalizeAgentMetadataForPersist)(raw, inputSchema, fallbackSchema);
+        let normalized;
+        try {
+            normalized = (0, tool_decision_input_util_1.normalizeAgentMetadataForPersist)(raw, inputSchema, fallbackSchema);
+        }
+        catch (error) {
+            if (error instanceof draft_review_policy_normalize_util_1.DraftReviewPolicyConfigError) {
+                throw new common_1.BadRequestException({
+                    code: error.code,
+                    message: error.message,
+                });
+            }
+            throw error;
+        }
         if (!normalized) {
             throw new common_1.BadRequestException('agentMetadata invalid: mode, resource, and operation are required');
         }
@@ -339,9 +352,20 @@ let ToolService = class ToolService {
             return this.resolveAgentMetadataForPersist(agentMetadataRaw, inputSchema, fallbackSchema);
         }
         if (inputSchemaTouched && existingAgentMetadata != null) {
-            const synced = (0, tool_decision_input_util_1.normalizeAgentMetadataForPersist)(existingAgentMetadata, inputSchema, fallbackSchema);
-            if (synced) {
-                return synced;
+            try {
+                const synced = (0, tool_decision_input_util_1.normalizeAgentMetadataForPersist)(existingAgentMetadata, inputSchema, fallbackSchema);
+                if (synced) {
+                    return synced;
+                }
+            }
+            catch (error) {
+                if (error instanceof draft_review_policy_normalize_util_1.DraftReviewPolicyConfigError) {
+                    throw new common_1.BadRequestException({
+                        code: error.code,
+                        message: error.message,
+                    });
+                }
+                throw error;
             }
         }
         return undefined;

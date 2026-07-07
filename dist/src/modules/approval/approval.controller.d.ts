@@ -2,6 +2,7 @@ import type { Request } from 'express';
 import { ApprovalRequestService } from '../../core/approval/approval-request.service';
 import { ApprovalResumeService } from '../../core/approval/approval-resume.service';
 import { ApprovalDecideDto } from './dto/approval-decide.dto';
+import { QueryApprovalInboxDto } from './dto/query-approval-inbox.dto';
 type AuthedRequest = Request & {
     user: {
         userId: number;
@@ -15,7 +16,7 @@ export declare class ApprovalController {
     private readonly approvalResume;
     constructor(approvalRequests: ApprovalRequestService, approvalResume: ApprovalResumeService);
     private userId;
-    listInbox(req: AuthedRequest, limit?: string, offset?: string): Promise<{
+    listInbox(req: AuthedRequest, query: QueryApprovalInboxDto): Promise<{
         items: {
             id: number;
             source: import("../../../generated/prisma/enums").ApprovalSource;
@@ -35,7 +36,9 @@ export declare class ApprovalController {
                 employeeId: string;
             };
             createdAt: Date;
+            decidedAt: Date;
             writeDraft: import("../../core/draft-review").WriteDraftPublic;
+            editPolicy: import("../../core/draft-review").WriteDraftEditPolicy;
             previewBlocks: import("@prisma/client/runtime/client").JsonValue;
             pendingWrite: {
                 tool: string;
@@ -56,12 +59,20 @@ export declare class ApprovalController {
         summary: string;
         workflowId: number;
         workflowVersion: number;
+        workflowKey: string;
+        workflowName: string;
         nodeId: string;
         sessionId: string;
         pageActionRunId: number;
+        initiator: {
+            id: number;
+            username: string;
+            employeeId: string;
+        };
         createdAt: Date;
         decidedAt: Date;
         writeDraft: import("../../core/draft-review").WriteDraftPublic;
+        editPolicy: import("../../core/draft-review").WriteDraftEditPolicy;
         previewBlocks: import("@prisma/client/runtime/client").JsonValue;
         pendingWrite: {
             tool: string;
@@ -86,6 +97,7 @@ export declare class ApprovalController {
     }): Promise<{
         ok: boolean;
     }>;
+    private toInboxItem;
     private extractDraftReviewBudget;
 }
 export {};

@@ -66,7 +66,7 @@ export async function executePageWorkflowNode(input: {
     harnessSensorsForWorkflowAction(input.def.action),
   );
 
-  writePageWorkflowNodeSse(input.runtime.res, {
+  writePageWorkflowNodeSse(input.runtime.sseSink, {
     phase: 'start',
     actionRunId: input.runtime.actionRunId,
     actionKey: input.runtime.actionKey,
@@ -83,7 +83,7 @@ export async function executePageWorkflowNode(input: {
     errorMessage?: string,
     workflowRun = input.workflowRun,
   ) => {
-    writePageWorkflowNodeSse(input.runtime.res, {
+    writePageWorkflowNodeSse(input.runtime.sseSink, {
       phase: 'failed',
       actionRunId: input.runtime.actionRunId,
       actionKey: input.runtime.actionKey,
@@ -152,7 +152,7 @@ export async function executePageWorkflowNode(input: {
   }
 
   if (dispatch.action === 'suspend') {
-    writePageWorkflowNodeSse(input.runtime.res, {
+    writePageWorkflowNodeSse(input.runtime.sseSink, {
       phase: 'awaiting_approval',
       actionRunId: input.runtime.actionRunId,
       actionKey: input.runtime.actionKey,
@@ -232,7 +232,7 @@ export async function executePageWorkflowNode(input: {
     },
   });
 
-  writePageWorkflowNodeSse(input.runtime.res, {
+  writePageWorkflowNodeSse(input.runtime.sseSink, {
     phase: 'complete',
     actionRunId: input.runtime.actionRunId,
     actionKey: input.runtime.actionKey,

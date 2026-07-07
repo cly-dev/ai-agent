@@ -12,6 +12,7 @@ import type { ToolEngineService } from '../tool-engine/tool-engine.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { buildEngineToolsFromAllowed } from '../agent-engine/engine/main/runtime/agent-tool-runtime.util';
 import { BadRequestException } from '@nestjs/common';
+import { DraftReviewPolicyViolationError } from '../draft-review/sanitize-draft-review-patch.util';
 
 export async function resolveApprovalSnapshotForDecision(input: {
   snapshot: ApprovalResumeSnapshot;
@@ -39,12 +40,29 @@ export async function resolveApprovalSnapshotForDecision(input: {
     resolvedScopedTools.find(
       (tool) => tool.name === draft.tool.name,
     ) ?? null;
+  if (!writeTool) {
+    throw new BadRequestException({
+      code: 'WRITE_TOOL_NOT_RESOLVED',
+      message: `write tool not found for draft: ${draft.tool.name}`,
+    });
+  }
 
-  const editedDraft = applyDraftReviewToWriteDraft({
-    draft,
-    decision,
-    writeTool,
-  });
+  let editedDraft;
+  try {
+    editedDraft = applyDraftReviewToWriteDraft({
+      draft,
+      decision,
+      writeTool,
+    });
+  } catch (error) {
+    if (error instanceof DraftReviewPolicyViolationError) {
+      throw new BadRequestException({
+        code: error.code,
+        message: error.message,
+      });
+    }
+    throw error;
+  }
 
   try {
     assertDraftReviewToolCallsValid({

@@ -3,6 +3,7 @@ import {
   applyDraftReviewToChatGateToolCalls,
   assertDraftReviewToolCallsValid,
 } from '../../../draft-review';
+import { DraftReviewPolicyViolationError } from '../../../draft-review/sanitize-draft-review-patch.util';
 import type { PendingWriteConfirmationSnapshot } from '../../../../modules/chat/pending-write-confirmation.types';
 import type { AgentService } from '../../../../modules/agent/agent.service';
 import type { ToolEngineService } from '../../../tool-engine/tool-engine.service';
@@ -36,18 +37,21 @@ export async function validateWriteGateEditedToolCalls(input: {
       ? tools.filter((tool) => scopedIdSet.has(tool.id))
       : tools;
 
-  const toolCallsForWrite = applyDraftReviewToChatGateToolCalls({
-    pending: input.consumed,
-    decision: input.decision,
-    scopedTools: resolvedScopedTools,
-  });
-
   try {
+    const toolCallsForWrite = applyDraftReviewToChatGateToolCalls({
+      pending: input.consumed,
+      decision: input.decision,
+      scopedTools: resolvedScopedTools,
+    });
+
     assertDraftReviewToolCallsValid({
       toolCalls: toolCallsForWrite,
       scopedTools: resolvedScopedTools,
     });
   } catch (error) {
+    if (error instanceof DraftReviewPolicyViolationError) {
+      throw new WriteGateDecisionRejectedError(error.message, error.code);
+    }
     const detail =
       error instanceof Error ? error.message : 'edited write arguments invalid';
     throw new WriteGateDecisionRejectedError(detail, 'EDITED_WRITE_ARGS_INVALID');

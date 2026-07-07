@@ -13,11 +13,19 @@ import {
 import type { Request } from 'express';
 import { AppClientDsnGuard } from '../../auth/app-client-dsn.guard';
 import { UserJwtAuthGuard } from '../../auth/user-jwt-auth.guard';
-import { ApprovalRequestService } from '../../core/approval/approval-request.service';
+import {
+  ApprovalRequestService,
+  type ApprovalInboxRow,
+} from '../../core/approval/approval-request.service';
 import { ApprovalResumeService } from '../../core/approval/approval-resume.service';
 import { resolveDraftRetryBudget } from '../../core/draft-review';
 import { ApprovalDecideDto } from './dto/approval-decide.dto';
-import { extractWriteDraftPublicFromApprovalRow } from './approval-write-draft.mapper';
+import { QueryApprovalInboxDto } from './dto/query-approval-inbox.dto';
+import {
+  buildApprovalWriteDraftPayload,
+  resolveApprovalRowToolId,
+} from './approval-write-draft.mapper';
+import type { WriteToolPolicyRow } from '../../core/draft-review/load-write-tools-for-policy.util';
 
 type AuthedRequest = Request & {
   user: { userId: number };
@@ -37,50 +45,21 @@ export class ApprovalController {
   }
 
   @Get('inbox')
-  async listInbox(
-    @Req() req: AuthedRequest,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
-  ) {
-    const rows = await this.approvalRequests.listPendingForApprover({
+  async listInbox(@Req() req: AuthedRequest, @Query() query: QueryApprovalInboxDto) {
+    const rows = await this.approvalRequests.listInboxForApprover({
       appClientId: req.appClient.id,
       approverUserId: this.userId(req),
-      limit: limit ? Number(limit) : undefined,
-      offset: offset ? Number(offset) : undefined,
+      status: query.status,
+      limit: query.limit,
+      offset: query.offset,
     });
+    const toolMap = await this.approvalRequests.loadWriteToolsByIds(
+      rows
+        .map((row) => resolveApprovalRowToolId(row))
+        .filter((id): id is number => id != null),
+    );
     return {
-      items: rows.map((row) => {
-        const writeDraft = extractWriteDraftPublicFromApprovalRow(row);
-        return {
-          id: row.id,
-          source: row.source,
-          status: row.status,
-          title: row.title,
-          summary: row.summary,
-          workflowId: row.workflowId,
-          workflowVersion: row.workflowVersion,
-          workflowKey: row.workflow?.workflowKey ?? null,
-          workflowName: row.workflow?.name ?? null,
-          nodeId: row.nodeId,
-          sessionId: row.sessionId,
-          pageActionRunId: row.pageActionRunId,
-          initiator: row.initiator
-            ? {
-                id: row.initiator.id,
-                username: row.initiator.username,
-                employeeId: row.initiator.employeeId,
-              }
-            : null,
-          createdAt: row.createdAt,
-          writeDraft,
-          previewBlocks: row.previewBlocks,
-          pendingWrite: {
-            tool: writeDraft.tool.name,
-            riskLevel: writeDraft.tool.riskLevel,
-          },
-          draftReview: this.extractDraftReviewBudget(row),
-        };
-      }),
+      items: rows.map((row) => this.toInboxItem(row, toolMap)),
     };
   }
 
@@ -96,28 +75,11 @@ export class ApprovalController {
     if (!row) {
       throw new NotFoundException('Approval request not found');
     }
-    const writeDraft = extractWriteDraftPublicFromApprovalRow(row);
-    return {
-      id: row.id,
-      source: row.source,
-      status: row.status,
-      title: row.title,
-      summary: row.summary,
-      workflowId: row.workflowId,
-      workflowVersion: row.workflowVersion,
-      nodeId: row.nodeId,
-      sessionId: row.sessionId,
-      pageActionRunId: row.pageActionRunId,
-      createdAt: row.createdAt,
-      decidedAt: row.decidedAt,
-      writeDraft,
-      previewBlocks: row.previewBlocks,
-      pendingWrite: {
-        tool: writeDraft.tool.name,
-        riskLevel: writeDraft.tool.riskLevel,
-      },
-      draftReview: this.extractDraftReviewBudget(row),
-    };
+    const toolId = resolveApprovalRowToolId(row);
+    const toolMap = toolId
+      ? await this.approvalRequests.loadWriteToolsByIds([toolId])
+      : new Map<number, WriteToolPolicyRow>();
+    return this.toInboxItem(row, toolMap);
   }
 
   @Post(':id/decide')
@@ -159,6 +121,49 @@ export class ApprovalController {
       decision: { action: 'cancel' },
     });
     return { ok: true };
+  }
+
+  private toInboxItem(
+    row: ApprovalInboxRow,
+    toolMap: Map<number, WriteToolPolicyRow>,
+  ) {
+    const toolId = resolveApprovalRowToolId(row);
+    const writeTool = toolId != null ? toolMap.get(toolId) ?? null : null;
+    const { writeDraft, editPolicy } = buildApprovalWriteDraftPayload(
+      row,
+      writeTool,
+    );
+    return {
+      id: row.id,
+      source: row.source,
+      status: row.status,
+      title: row.title,
+      summary: row.summary,
+      workflowId: row.workflowId,
+      workflowVersion: row.workflowVersion,
+      workflowKey: row.workflow?.workflowKey ?? null,
+      workflowName: row.workflow?.name ?? null,
+      nodeId: row.nodeId,
+      sessionId: row.sessionId,
+      pageActionRunId: row.pageActionRunId,
+      initiator: row.initiator
+        ? {
+            id: row.initiator.id,
+            username: row.initiator.username,
+            employeeId: row.initiator.employeeId,
+          }
+        : null,
+      createdAt: row.createdAt,
+      decidedAt: row.decidedAt,
+      writeDraft,
+      editPolicy,
+      previewBlocks: row.previewBlocks,
+      pendingWrite: {
+        tool: writeDraft.tool.name,
+        riskLevel: writeDraft.tool.riskLevel,
+      },
+      draftReview: this.extractDraftReviewBudget(row),
+    };
   }
 
   private extractDraftReviewBudget(row: { resumeSnapshot: unknown }) {

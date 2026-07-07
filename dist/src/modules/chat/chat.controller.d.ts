@@ -77,12 +77,12 @@ export declare class ChatController {
         agentId: number;
         createdAt: Date;
         messages: import("../../common/pagination").PaginatedResult<{
-            role: string;
             id: number;
-            createdAt: Date;
-            sessionId: string;
             content: string;
+            createdAt: Date;
+            role: string;
             toolName: string;
+            sessionId: string;
             toolInput: import("@prisma/client/runtime/client").JsonValue;
             toolOutput: import("@prisma/client/runtime/client").JsonValue;
             pageContextJson: import("@prisma/client/runtime/client").JsonValue;

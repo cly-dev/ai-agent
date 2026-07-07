@@ -1,4 +1,4 @@
-import type { AgentMetadata, ParamFormatHint } from './tool-agent-metadata.types';
+import { type AgentMetadata, type ParamFormatHint } from './tool-agent-metadata.types';
 export type ToolParamCompact = {
     name: string;
     required: boolean;

@@ -41,6 +41,7 @@ import type {
   ToolResponse,
 } from './tool.types';
 import { normalizeAgentMetadataForPersist } from '../../core/tool-engine/tool-decision-input.util';
+import { DraftReviewPolicyConfigError } from '../../core/tool-engine/draft-review-policy-normalize.util';
 import { parseAndNormalizeResponseProfile } from '../../core/tool-engine/tool-response-profile.spec.util';
 import { inferToolSchemasFromSample } from './tool-schema-inference.util';
 import { findWorkflowNodeReferences } from '../../core/workflow/workflow-node-reference-guard.util';
@@ -436,11 +437,22 @@ export class ToolService {
     if (raw === undefined) {
       return undefined;
     }
-    const normalized = normalizeAgentMetadataForPersist(
-      raw,
-      inputSchema,
-      fallbackSchema,
-    );
+    let normalized;
+    try {
+      normalized = normalizeAgentMetadataForPersist(
+        raw,
+        inputSchema,
+        fallbackSchema,
+      );
+    } catch (error) {
+      if (error instanceof DraftReviewPolicyConfigError) {
+        throw new BadRequestException({
+          code: error.code,
+          message: error.message,
+        });
+      }
+      throw error;
+    }
     if (!normalized) {
       throw new BadRequestException(
         'agentMetadata invalid: mode, resource, and operation are required',
@@ -477,13 +489,23 @@ export class ToolService {
     }
 
     if (inputSchemaTouched && existingAgentMetadata != null) {
-      const synced = normalizeAgentMetadataForPersist(
-        existingAgentMetadata,
-        inputSchema,
-        fallbackSchema,
-      );
-      if (synced) {
-        return synced as unknown as Prisma.InputJsonValue;
+      try {
+        const synced = normalizeAgentMetadataForPersist(
+          existingAgentMetadata,
+          inputSchema,
+          fallbackSchema,
+        );
+        if (synced) {
+          return synced as unknown as Prisma.InputJsonValue;
+        }
+      } catch (error) {
+        if (error instanceof DraftReviewPolicyConfigError) {
+          throw new BadRequestException({
+            code: error.code,
+            message: error.message,
+          });
+        }
+        throw error;
       }
     }
 

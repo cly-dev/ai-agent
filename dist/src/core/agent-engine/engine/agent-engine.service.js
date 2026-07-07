@@ -34,6 +34,7 @@ const agent_session_scope_service_1 = require("./main/session/agent-session-scop
 const requested_skill_run_service_1 = require("./main/skill/requested-skill-run.service");
 const agent_tool_runtime_util_1 = require("./main/runtime/agent-tool-runtime.util");
 const agent_run_steps_util_1 = require("./main/run/agent-run-steps.util");
+const create_primary_agent_run_util_1 = require("./main/run/create-primary-agent-run.util");
 const host_tool_run_step_util_1 = require("./main/host-tool/host-tool-run-step.util");
 const run_aborted_error_1 = require("../../session-run/run-aborted.error");
 const agent_run_sse_gateway_1 = require("../../session-run/agent-run-sse.gateway");
@@ -312,7 +313,10 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
         if (!agent) {
             throw new common_1.NotFoundException(`agent ${session.agentId} not found`);
         }
-        const pageContext = await this.goaService.syncHostPageContext(input.sessionId, (_a = input.pageContext) !== null && _a !== void 0 ? _a : null);
+        const [pageContext, allowedTools] = await Promise.all([
+            this.goaService.syncHostPageContext(input.sessionId, (_a = input.pageContext) !== null && _a !== void 0 ? _a : null),
+            this.sessionScope.getSessionAllowedTools(input.sessionId, agent.id, input.userId, session.appClientId),
+        ]);
         scope.assertActive();
         const prompt = await this.promptComposer.compose({
             userId: input.userId,
@@ -326,40 +330,17 @@ let AgentEngineService = AgentEngineService_1 = class AgentEngineService {
             pageContext,
         });
         scope.assertActive();
-        const [allowedTools, turn] = await Promise.all([
-            this.sessionScope.getSessionAllowedTools(input.sessionId, agent.id, input.userId, session.appClientId),
-            this.prisma.messageTurn.create({
-                data: {
-                    messageId: input.userMessageId,
-                    sessionId: session.id,
-                    userId: input.userId,
-                    appClientId: session.appClientId,
-                    userInput: input.input,
-                    primaryAgentId: agent.id,
-                    agentRunCount: 1,
-                    status: client_1.AgentRunStatus.running,
-                    startedAt,
-                },
-            }),
-        ]);
         const { tools, toolProfilesByName, allowedToolIds, langChainTools, toolBuildCtx, } = (0, agent_tool_runtime_util_1.buildEngineToolsFromAllowed)(allowedTools, input.userId, this.toolEngine);
         scope.assertActive();
-        const run = await this.prisma.agentRun.create({
-            data: {
-                turnId: turn.id,
-                agentId: agent.id,
-                appClientId: session.appClientId,
-                sessionId: session.id,
-                userId: input.userId,
-                role: client_1.AgentRunRole.primary,
-                sequence: 1,
-                input: input.input,
-                status: client_1.AgentRunStatus.running,
-                steps: [],
-                currentStep: 0,
-                maxSteps: agent.maxSteps,
-                startedAt,
-            },
+        const { turn, run } = await (0, create_primary_agent_run_util_1.createPrimaryAgentRunTurn)(this.prisma, {
+            messageId: input.userMessageId,
+            sessionId: session.id,
+            userId: input.userId,
+            appClientId: session.appClientId,
+            userInput: input.input,
+            agentId: agent.id,
+            maxSteps: agent.maxSteps,
+            startedAt,
         });
         const runMetrics = (0, run_metrics_util_1.createRunMetricsAccumulator)();
         this.assistantArtifact.reset(input.sessionId, run.id, turn.id);

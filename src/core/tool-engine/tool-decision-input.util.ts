@@ -2,7 +2,12 @@ import {
   normalizeAgentMetadata,
   parseAgentMetadata,
 } from './tool-agent-metadata.util';
-import type { AgentMetadata, ParamFormatHint } from './tool-agent-metadata.types';
+import {
+  ToolMode,
+  type AgentMetadata,
+  type ParamFormatHint,
+} from './tool-agent-metadata.types';
+import { normalizeDraftReviewPolicyForPersist, normalizeBusinessFieldsForPersist } from './draft-review-policy-normalize.util';
 
 /**
  * Compact input for the decision loop.
@@ -338,6 +343,25 @@ function extractParametersFromOpenApiDocument(source: unknown): ToolParamCompact
   return rows;
 }
 
+function readRequestBodyJsonSchema(
+  document: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const requestBody = document.requestBody;
+  if (!isRecord(requestBody)) {
+    return null;
+  }
+  const content = requestBody.content;
+  if (!isRecord(content)) {
+    return null;
+  }
+  const appJson = content['application/json'];
+  if (!isRecord(appJson)) {
+    return null;
+  }
+  const schema = appJson.schema;
+  return isRecord(schema) ? schema : null;
+}
+
 function extractRequestBodyFromOpenApiDocument(
   source: unknown,
 ): RequestBodyCompact | null | undefined {
@@ -558,12 +582,23 @@ function listAllCompactParamsFromInputDocument(
   }
 
   const bodyProps = extractRequestBodyFromOpenApiDocument(document)?.properties ?? [];
+  const requestBodySchema = readRequestBodyJsonSchema(document);
+  const requestBodyProperties =
+    requestBodySchema && isRecord(requestBodySchema.properties)
+      ? requestBodySchema.properties
+      : null;
   for (const row of bodyProps) {
     if (seen.has(row.name)) {
       continue;
     }
     seen.add(row.name);
     merged.push(row);
+    if (requestBodyProperties) {
+      const raw = requestBodyProperties[row.name];
+      if (isRecord(raw)) {
+        appendNestedHintParams(merged, seen, row.name, raw, 'body');
+      }
+    }
   }
 
   return merged;
@@ -638,7 +673,22 @@ export function normalizeAgentMetadataForPersist(
     return null;
   }
   const { paramFormatHints: _removed, ...base } = normalized;
-  return syncAgentMetadataParamFormatHints(base, inputSchema, fallbackSchema);
+  const synced = syncAgentMetadataParamFormatHints(base, inputSchema, fallbackSchema);
+  if (synced.businessFields.length > 0) {
+    synced.businessFields = normalizeBusinessFieldsForPersist(
+      synced.businessFields,
+      inputSchema,
+      fallbackSchema,
+    );
+  }
+  if (synced.mode === ToolMode.WRITE && synced.draftReview) {
+    synced.draftReview = normalizeDraftReviewPolicyForPersist(
+      synced.draftReview,
+      inputSchema,
+      fallbackSchema,
+    );
+  }
+  return synced;
 }
 
 function enrichParamWithFormatHint(

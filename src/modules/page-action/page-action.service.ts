@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import {
   PageActionDelivery,
-  PageActionRunStatus,
   Prisma,
 } from '../../../generated/prisma/client';
 import {
@@ -14,46 +13,11 @@ import {
   toPaginatedResult,
   type PaginatedResult,
 } from '../../common/pagination';
-import {
-  executePageActionHostFill,
-  replayPageActionInlineStream,
-} from '../../core/page-action/page-action-host-fill.executor';
-import { orchestratePageWorkflow } from '../../core/page-action/page-workflow-orchestrator';
-import { ApprovalGateService } from '../../core/approval/approval-gate.service';
-import { ApprovalTriggerPermissionService } from '../../core/approval/approval-trigger-permission.service';
-import { parseApprovalTriggerBinding } from '../../core/approval/resolve-approval-parties.util';
-import {
-  loadWorkflowForRunDetailed,
-  parseWorkflowOverridesJson,
-} from '../../core/workflow/load-workflow-definition.util';
-import {
-  pageActionWorkflowLoadErrorCode,
-  pageActionWorkflowLoadFailureMessage,
-} from '../../core/page-action/page-action-workflow-load.util';
-import {
-  assertPageActionScopeMatch,
-  resolvePageActionHostTool,
-} from '../../core/page-action/page-action-host-tool.util';
-import {
-  endInlineSseResponse,
-  initInlineSseResponse,
-  writePageActionLifecycle,
-} from '../../core/page-action/page-action-inline-sse.util';
-import { PageActionRunStepRecorder } from '../../core/page-action/page-action-run-steps.util';
-import { PAGE_ACTION_PROMPT_LIMITS } from '../../core/page-action/page-action.constants';
-import { buildPageActionLlmMessages } from '../../core/page-action/page-action-prompt.util';
-import {
-  coalescePageContext,
-  parsePageContextFromMessageFields,
-  type AgentChatPageContext,
-} from '../../core/host-bridge';
-import { LlmService } from '../../core/llm/llm.service';
-import { ToolEngineService } from '../../core/tool-engine/tool-engine.service';
+import { assertPageActionPromptLimits } from '../../core/page-action/page-action-prompt-limits.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HOST_TOOL_DETAIL_INCLUDE } from '../host-tool/host-tool.types';
 import type {
   CreatePageActionDto,
-  InvokePageActionDto,
   QueryPageActionDto,
   QueryPageActionRunDto,
   QueryPageScopeOptionsDto,
@@ -71,29 +35,20 @@ import type {
   PageScopeOption,
 } from './page-action.types';
 import { PAGE_ACTION_DETAIL_INCLUDE, PAGE_ACTION_RUN_ADMIN_INCLUDE } from './page-action.types';
-import type { Response } from 'express';
 import { WorkflowService } from '../workflow/workflow.service';
-import {
-  resolvePageActionHostToolResolved,
-  resolvePageActionHostToolRow,
-} from '../../core/page-action/page-action-workflow-host.util';
 
 @Injectable()
 export class PageActionService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly llmService: LlmService,
-    private readonly toolEngine: ToolEngineService,
     private readonly workflowService: WorkflowService,
-    private readonly approvalGate: ApprovalGateService,
-    private readonly triggerPermission: ApprovalTriggerPermissionService,
   ) {}
 
   async create(dto: CreatePageActionDto): Promise<PageActionResponse> {
     await this.assertAppClientExists(dto.appClientId);
     this.assertInlineStreamOnly(dto.defaultDelivery);
     const actionKey = dto.actionKey.trim();
-    this.assertPromptLimits(dto.systemPrompt, null);
+    assertPageActionPromptLimits({ systemPrompt: dto.systemPrompt });
 
     if (dto.hostToolId != null) {
       await this.assertHostToolForApp(dto.appClientId, dto.hostToolId);
@@ -166,7 +121,7 @@ export class PageActionService {
       await this.assertHostToolForApp(existing.appClientId, dto.hostToolId);
     }
     if (dto.systemPrompt != null) {
-      this.assertPromptLimits(dto.systemPrompt, null);
+      assertPageActionPromptLimits({ systemPrompt: dto.systemPrompt });
     }
     if (dto.workflowId != null) {
       await this.workflowService.assertWorkflowReferenceCompatible({
@@ -378,407 +333,12 @@ export class PageActionService {
     );
   }
 
-  async invoke(
-    userId: number,
-    appClientId: number,
-    dto: InvokePageActionDto,
-    res: Response,
-  ): Promise<void> {
-    const actionKey = dto.actionKey.trim();
-    const pageAction = await this.prisma.pageAction.findFirst({
-      where: { appClientId, actionKey, isActive: true },
-      include: PAGE_ACTION_DETAIL_INCLUDE,
-    });
-    if (!pageAction) {
-      throw new NotFoundException({
-        code: 'PAGE_ACTION_NOT_FOUND',
-        message: `PageAction "${actionKey}" is not registered or inactive`,
-      });
-    }
-
-    const hostToolRow = await resolvePageActionHostToolRow(
-      this.prisma,
-      pageAction,
-    );
-    if (hostToolRow && !hostToolRow.isActive) {
-      throw new BadRequestException({
-        code: 'HOST_TOOL_INACTIVE',
-        message: `Bound HostTool "${hostToolRow.name}" is inactive`,
-      });
-    }
-
-    const pageContext = this.resolvePageContext(dto);
-    assertPageActionScopeMatch({
-      pageScope: pageAction.pageScope,
-      hostPageScope: hostToolRow?.hostPage?.scope ?? null,
-      pageContext,
-    });
-
-    const instruction = pageAction.allowCustomInstruction
-      ? dto.instruction?.trim() || null
-      : null;
-    this.assertPromptLimits(pageAction.systemPrompt, instruction, dto.context);
-
-    const hostToolResolved = hostToolRow
-      ? resolvePageActionHostTool(hostToolRow, pageContext)
-      : null;
-
-    if (dto.idempotencyKey?.trim()) {
-      const prior = await this.prisma.pageActionRun.findFirst({
-        where: {
-          appClientId,
-          idempotencyKey: dto.idempotencyKey.trim(),
-          status: PageActionRunStatus.completed,
-        },
-        include: { pageAction: { select: { actionKey: true } } },
-      });
-      if (prior && prior.pageActionId === pageAction.id) {
-        initInlineSseResponse(res);
-        const replaySteps = await replayPageActionInlineStream({
-          res,
-          actionRunId: prior.id,
-          actionKey: prior.pageAction.actionKey,
-          generation: prior.generation,
-          clientActionId: prior.clientActionId,
-          fillText: prior.fillText,
-          dslOutcome: prior.dslOutcome,
-          streamId: prior.streamId,
-          pageContext,
-          hostTool: hostToolResolved,
-        });
-        void replaySteps;
-        return;
-      }
-    }
-
-    const messages = buildPageActionLlmMessages({
-      systemPrompt: pageAction.systemPrompt,
-      instruction,
-      context: dto.context ?? null,
-      pageContext,
-    });
-
-    const run = await this.prisma.pageActionRun.create({
-      data: {
-        pageActionId: pageAction.id,
-        appClientId,
-        userId,
-        delivery: PageActionDelivery.inline_stream,
-        status: PageActionRunStatus.running,
-        instruction,
-        context:
-          dto.context === undefined
-            ? undefined
-            : (dto.context as Prisma.InputJsonValue),
-        pageContext: pageContext as Prisma.InputJsonValue,
-        idempotencyKey: dto.idempotencyKey?.trim() || null,
-        clientActionId: dto.clientActionId?.trim() || null,
-        steps: [] as Prisma.InputJsonValue,
-      },
-    });
-    await this.prisma.pageActionRun.update({
-      where: { id: run.id },
-      data: { generation: run.id },
-    });
-    const generation = run.id;
-
-    const startedAt = Date.now();
-    const stepRecorder = new PageActionRunStepRecorder();
-    try {
-      if (pageAction.workflowId) {
-        const loadResult = await loadWorkflowForRunDetailed(this.prisma, {
-          workflowId: pageAction.workflowId,
-          appClientId,
-          workflowVersion: pageAction.workflowVersion,
-          workflowOverrides: parseWorkflowOverridesJson(
-            pageAction.workflowOverrides,
-          ),
-        });
-        if (loadResult.status === 'failed') {
-          const errorCode = pageActionWorkflowLoadErrorCode(loadResult.reason);
-          const errorMessage = pageActionWorkflowLoadFailureMessage(
-            loadResult.reason,
-          );
-          initInlineSseResponse(res);
-          writePageActionLifecycle(
-            res,
-            {
-              phase: 'failed',
-              actionRunId: run.id,
-              actionKey: pageAction.actionKey,
-              delivery: PageActionDelivery.inline_stream,
-              generation,
-              clientActionId: dto.clientActionId?.trim() || null,
-              errorCode,
-              errorMessage,
-            },
-            stepRecorder,
-          );
-          endInlineSseResponse(res);
-          await this.prisma.pageActionRun.update({
-            where: { id: run.id },
-            data: {
-              status: PageActionRunStatus.failed,
-              workflowId: loadResult.workflowId,
-              errorCode,
-              errorMessage,
-              durationMs: Date.now() - startedAt,
-              finishedAt: new Date(),
-              steps: stepRecorder.toJson() as Prisma.InputJsonValue,
-            },
-          });
-          return;
-        }
-        initInlineSseResponse(res);
-        const allowedToolIds =
-          await this.triggerPermission.resolveUserAllowedToolIdsForApp({
-            userId,
-            appClientId,
-          });
-        const permission = this.triggerPermission.evaluateForNodes({
-          nodes: loadResult.nodes,
-          allowedToolIds,
-        });
-        if (permission.allowed === false) {
-          const errorCode = 'WORKFLOW_TRIGGER_PERMISSION_DENIED';
-          const errorMessage = `Missing write tool permission: ${permission.missingToolIds.join(',')}`;
-          writePageActionLifecycle(
-            res,
-            {
-              phase: 'failed',
-              actionRunId: run.id,
-              actionKey: pageAction.actionKey,
-              delivery: PageActionDelivery.inline_stream,
-              generation,
-              clientActionId: dto.clientActionId?.trim() || null,
-              errorCode,
-              errorMessage,
-            },
-            stepRecorder,
-          );
-          endInlineSseResponse(res);
-          await this.prisma.pageActionRun.update({
-            where: { id: run.id },
-            data: {
-              status: PageActionRunStatus.failed,
-              workflowId: loadResult.workflowId,
-              errorCode,
-              errorMessage,
-              durationMs: Date.now() - startedAt,
-              finishedAt: new Date(),
-              steps: stepRecorder.toJson() as Prisma.InputJsonValue,
-            },
-          });
-          return;
-        }
-
-        const result = await orchestratePageWorkflow({
-          workflowId: loadResult.workflowId,
-          version: loadResult.version,
-          nodes: loadResult.nodes,
-          systemPrompt: pageAction.systemPrompt,
-          objectivePrefix: instruction,
-          messages,
-          pageContext,
-          hostTool: hostToolResolved,
-          llmService: this.llmService,
-          prisma: this.prisma,
-          toolEngine: this.toolEngine,
-          userId,
-          appClientId,
-          actionRunId: run.id,
-          actionKey: pageAction.actionKey,
-          generation,
-          clientActionId: dto.clientActionId?.trim() || null,
-          res,
-          stepRecorder,
-          allowedToolIds,
-          approvalGate: this.approvalGate,
-          approvalTriggerBinding: parseApprovalTriggerBinding(pageAction.config),
-        });
-        if (result.suspended) {
-          writePageActionLifecycle(
-            res,
-            {
-              phase: 'awaiting_approval',
-              actionRunId: run.id,
-              actionKey: pageAction.actionKey,
-              delivery: PageActionDelivery.inline_stream,
-              generation,
-              clientActionId: dto.clientActionId?.trim() || null,
-            },
-            stepRecorder,
-          );
-          endInlineSseResponse(res);
-          await this.prisma.pageActionRun.update({
-            where: { id: run.id },
-            data: {
-              workflowId: loadResult.workflowId,
-              workflowVersion: loadResult.version,
-              workflowRun: result.workflowRun as Prisma.InputJsonValue,
-              status: PageActionRunStatus.awaiting_approval,
-              fillText: result.fillText || null,
-              dslOutcome: result.dslOutcome,
-              model: result.model,
-              promptTokens: result.promptTokens,
-              completionTokens: result.completionTokens,
-              durationMs: Date.now() - startedAt,
-              steps: result.steps as Prisma.InputJsonValue,
-            },
-          });
-          return;
-        }
-        await this.prisma.pageActionRun.update({
-          where: { id: run.id },
-          data: {
-            workflowId: loadResult.workflowId,
-            workflowVersion: loadResult.version,
-            workflowRun: result.workflowRun as Prisma.InputJsonValue,
-            status:
-              result.errorCode != null
-                ? PageActionRunStatus.failed
-                : result.fillText.trim().length > 0
-                  ? PageActionRunStatus.completed
-                  : PageActionRunStatus.failed,
-            fillText: result.fillText || null,
-            dslOutcome: result.dslOutcome,
-            model: result.model,
-            promptTokens: result.promptTokens,
-            completionTokens: result.completionTokens,
-            durationMs: Date.now() - startedAt,
-            finishedAt: new Date(),
-            steps: result.steps as Prisma.InputJsonValue,
-            ...(result.errorCode
-              ? {
-                  errorCode: result.errorCode,
-                  errorMessage: result.errorMessage ?? result.errorCode,
-                }
-              : result.fillText.trim().length === 0
-                ? {
-                    errorCode: 'STREAM_EMPTY',
-                    errorMessage: 'LLM produced empty fill text',
-                  }
-                : {}),
-          },
-        });
-        return;
-      }
-
-      initInlineSseResponse(res);
-      if (!hostToolResolved) {
-        throw new BadRequestException({
-          code: 'PAGE_ACTION_HOST_TOOL_MISSING',
-          message:
-            'Legacy PageAction invoke requires hostToolId when no Workflow is bound',
-        });
-      }
-      const result = await executePageActionHostFill(this.llmService, {
-        actionRunId: run.id,
-        actionKey: pageAction.actionKey,
-        generation,
-        clientActionId: dto.clientActionId?.trim() || null,
-        systemPrompt: pageAction.systemPrompt,
-        messages,
-        pageContext,
-        hostTool: hostToolResolved,
-        res,
-        stepRecorder,
-      });
-      await this.prisma.pageActionRun.update({
-        where: { id: run.id },
-        data: {
-          status:
-            result.fillText.trim().length > 0
-              ? PageActionRunStatus.completed
-              : PageActionRunStatus.failed,
-          fillText: result.fillText || null,
-          dslOutcome: result.dslOutcome,
-          streamId: result.streamId,
-          model: result.model,
-          promptTokens: result.promptTokens,
-          completionTokens: result.completionTokens,
-          durationMs: Date.now() - startedAt,
-          finishedAt: new Date(),
-          steps: result.steps as Prisma.InputJsonValue,
-          ...(result.fillText.trim().length === 0
-            ? {
-                errorCode: 'STREAM_EMPTY',
-                errorMessage: 'LLM produced empty fill text',
-              }
-            : {}),
-        },
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await this.prisma.pageActionRun.update({
-        where: { id: run.id },
-        data: {
-          status: PageActionRunStatus.failed,
-          errorCode: 'LLM_FAILED',
-          errorMessage: message,
-          durationMs: Date.now() - startedAt,
-          finishedAt: new Date(),
-          steps: stepRecorder.toJson() as Prisma.InputJsonValue,
-        },
-      });
-      throw error;
-    }
-  }
-
-  private resolvePageContext(
-    dto: InvokePageActionDto,
-  ): AgentChatPageContext | null {
-    return coalescePageContext(
-      parsePageContextFromMessageFields({
-        pageContext: dto.pageContext,
-        page: dto.pageContext?.page,
-        routePath: dto.pageContext?.routePath,
-        routeParams: dto.pageContext?.routeParams,
-        flowId: dto.pageContext?.flowId,
-        programName: dto.pageContext?.programName,
-        entity: dto.pageContext?.entity,
-        metadata: dto.pageContext?.metadata,
-      }),
-    );
-  }
-
   private assertInlineStreamOnly(delivery?: PageActionDelivery): void {
     if (delivery != null && delivery !== PageActionDelivery.inline_stream) {
       throw new BadRequestException({
         code: 'DELIVERY_NOT_SUPPORTED',
         message: 'only inline_stream is supported; sync has been removed',
       });
-    }
-  }
-
-  private assertPromptLimits(
-    systemPrompt: string,
-    instruction: string | null,
-    context?: Record<string, unknown> | null,
-  ): void {
-    if (systemPrompt.length > PAGE_ACTION_PROMPT_LIMITS.systemPromptMax) {
-      throw new BadRequestException({
-        code: 'PROMPT_TOO_LARGE',
-        message: 'systemPrompt exceeds limit',
-      });
-    }
-    if (
-      instruction &&
-      instruction.length > PAGE_ACTION_PROMPT_LIMITS.instructionMax
-    ) {
-      throw new BadRequestException({
-        code: 'PROMPT_TOO_LARGE',
-        message: 'instruction exceeds limit',
-      });
-    }
-    if (context) {
-      const serialized = JSON.stringify(context);
-      if (serialized.length > PAGE_ACTION_PROMPT_LIMITS.contextJsonMax) {
-        throw new BadRequestException({
-          code: 'PROMPT_TOO_LARGE',
-          message: 'context exceeds limit',
-        });
-      }
     }
   }
 

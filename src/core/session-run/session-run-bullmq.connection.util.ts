@@ -1,4 +1,5 @@
 import type { ConnectionOptions } from 'bullmq';
+import { readRedisConnectTimeoutMs } from '../memory/redis/redis-client-options.util';
 
 /** BullMQ 需要 `maxRetriesPerRequest: null`（与通用 Redis 客户端不同）。 */
 export function buildSessionRunBullMqConnection(): ConnectionOptions | null {
@@ -8,8 +9,9 @@ export function buildSessionRunBullMqConnection(): ConnectionOptions | null {
     return null;
   }
   const password = process.env.REDIS_PASSWORD?.trim() || undefined;
+  const connectTimeout = readRedisConnectTimeoutMs();
   if (url) {
-    return { url, password, maxRetriesPerRequest: null };
+    return { url, password, maxRetriesPerRequest: null, connectTimeout };
   }
   return {
     host,
@@ -19,6 +21,7 @@ export function buildSessionRunBullMqConnection(): ConnectionOptions | null {
       ? Number.parseInt(process.env.REDIS_DB, 10)
       : undefined,
     maxRetriesPerRequest: null,
+    connectTimeout,
   };
 }
 

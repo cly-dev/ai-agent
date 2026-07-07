@@ -1,5 +1,5 @@
 import type { AIMessage } from '@langchain/core/messages';
-import type { Response } from 'express';
+import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
 import { extractAiMessageText } from '../agent-engine/engine/main/agent-graph/runtime/decision.util';
 import { extractLlmUserFacingText } from '../agent-engine/engine/llm-output-sanitize.util';
 import {
@@ -51,7 +51,7 @@ export async function executePageWorkflowSummarize(input: {
   llmService: LlmService;
   messages: LlmChatMessage[];
   nodeInput: SummarizeNodeInput;
-  res: Response;
+  sseSink: PageActionSseSink;
   actionRunId: number;
   actionKey: string;
   generation: number;
@@ -123,17 +123,17 @@ export async function executePageWorkflowSummarize(input: {
       mode,
       existingFillText: input.existingFillText,
       summaryText,
-      responseWritable: !input.res.writableEnded,
+      responseWritable: !input.sseSink.writableEnded,
     });
 
   if (shouldEmitTerminal) {
     writePageActionLifecycle(
-      input.res,
+      input.sseSink,
       { phase: 'started', ...lifecycleBase },
       recorder,
     );
     writePageActionLifecycle(
-      input.res,
+      input.sseSink,
       {
         phase: 'completed',
         ...lifecycleBase,
@@ -142,7 +142,7 @@ export async function executePageWorkflowSummarize(input: {
       },
       recorder,
     );
-    endInlineSseResponse(input.res);
+    endInlineSseResponse(input.sseSink);
   }
 
   logWorkflowDebug('page_summarize', {

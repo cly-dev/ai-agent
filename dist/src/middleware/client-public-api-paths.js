@@ -14,6 +14,10 @@ exports.CLIENT_PUBLIC_API_EXCLUDES = [
     { path: 'host-tool/client/catalog', method: common_1.RequestMethod.GET },
     { path: 'host-tool/client/register', method: common_1.RequestMethod.POST },
     { path: 'page-action/invoke', method: common_1.RequestMethod.POST },
+    { path: 'page-action/runs', method: common_1.RequestMethod.ALL },
+    { path: 'page-action/runs/(.*)', method: common_1.RequestMethod.ALL },
+    { path: 'automation', method: common_1.RequestMethod.ALL },
+    { path: 'automation/(.*)', method: common_1.RequestMethod.ALL },
     {
         path: 'page-agent/compatible-mode/v1/chat/completions',
         method: common_1.RequestMethod.POST,

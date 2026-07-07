@@ -13,6 +13,8 @@ var __rest = (this && this.__rest) || function (s, e) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.listRequiredParamNames = exports.buildCompactToolInput = exports.applyParamFormatHintsToCompactInput = exports.normalizeAgentMetadataForPersist = exports.syncAgentMetadataParamFormatHints = exports.resolveParamFormatHints = exports.listToolInputCompactParams = exports.compactParamToFormatHint = exports.describeJsonSchemaType = void 0;
 const tool_agent_metadata_util_1 = require("./tool-agent-metadata.util");
+const tool_agent_metadata_types_1 = require("./tool-agent-metadata.types");
+const draft_review_policy_normalize_util_1 = require("./draft-review-policy-normalize.util");
 function normalizeDescription(value) {
     if (!value) {
         return undefined;
@@ -247,6 +249,22 @@ function extractParametersFromOpenApiDocument(source) {
     }
     return rows;
 }
+function readRequestBodyJsonSchema(document) {
+    const requestBody = document.requestBody;
+    if (!isRecord(requestBody)) {
+        return null;
+    }
+    const content = requestBody.content;
+    if (!isRecord(content)) {
+        return null;
+    }
+    const appJson = content['application/json'];
+    if (!isRecord(appJson)) {
+        return null;
+    }
+    const schema = appJson.schema;
+    return isRecord(schema) ? schema : null;
+}
 function extractRequestBodyFromOpenApiDocument(source) {
     if (!isRecord(source)) {
         return undefined;
@@ -420,12 +438,22 @@ function listAllCompactParamsFromInputDocument(inputSchema, fallbackSchema) {
         }
     }
     const bodyProps = (_b = (_a = extractRequestBodyFromOpenApiDocument(document)) === null || _a === void 0 ? void 0 : _a.properties) !== null && _b !== void 0 ? _b : [];
+    const requestBodySchema = readRequestBodyJsonSchema(document);
+    const requestBodyProperties = requestBodySchema && isRecord(requestBodySchema.properties)
+        ? requestBodySchema.properties
+        : null;
     for (const row of bodyProps) {
         if (seen.has(row.name)) {
             continue;
         }
         seen.add(row.name);
         merged.push(row);
+        if (requestBodyProperties) {
+            const raw = requestBodyProperties[row.name];
+            if (isRecord(raw)) {
+                appendNestedHintParams(merged, seen, row.name, raw, 'body');
+            }
+        }
     }
     return merged;
 }
@@ -471,7 +499,14 @@ function normalizeAgentMetadataForPersist(raw, inputSchema, fallbackSchema) {
         return null;
     }
     const { paramFormatHints: _removed } = normalized, base = __rest(normalized, ["paramFormatHints"]);
-    return syncAgentMetadataParamFormatHints(base, inputSchema, fallbackSchema);
+    const synced = syncAgentMetadataParamFormatHints(base, inputSchema, fallbackSchema);
+    if (synced.businessFields.length > 0) {
+        synced.businessFields = (0, draft_review_policy_normalize_util_1.normalizeBusinessFieldsForPersist)(synced.businessFields, inputSchema, fallbackSchema);
+    }
+    if (synced.mode === tool_agent_metadata_types_1.ToolMode.WRITE && synced.draftReview) {
+        synced.draftReview = (0, draft_review_policy_normalize_util_1.normalizeDraftReviewPolicyForPersist)(synced.draftReview, inputSchema, fallbackSchema);
+    }
+    return synced;
 }
 exports.normalizeAgentMetadataForPersist = normalizeAgentMetadataForPersist;
 function enrichParamWithFormatHint(row, hintByParam) {

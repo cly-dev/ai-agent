@@ -67,6 +67,53 @@ export type AgentMetadata = {
   isMutation: boolean;
   /** 参数格式/命名约束；param 必须为 OpenAPI 真实参数名 */
   paramFormatHints?: ParamFormatHint[];
+  /** 审批 / 写确认时用户可如何编辑草稿 */
+  draftReview?: DraftReviewPolicy;
+};
+
+export const DRAFT_REVIEW_EDIT_MODES = [
+  'preview_only',
+  'allowlisted_fields',
+  'full',
+] as const;
+export type DraftReviewEditMode = (typeof DRAFT_REVIEW_EDIT_MODES)[number];
+
+export const DRAFT_REVIEW_FIELD_ROLES = [
+  'content',
+  'identifier',
+  'scenario',
+  'enum',
+  'system',
+] as const;
+export type DraftReviewFieldRole = (typeof DRAFT_REVIEW_FIELD_ROLES)[number];
+
+export const DRAFT_REVIEW_FIELD_WIDGETS = [
+  'text',
+  'textarea',
+  'select',
+  'readonly',
+  'hidden',
+] as const;
+export type DraftReviewFieldWidget =
+  (typeof DRAFT_REVIEW_FIELD_WIDGETS)[number];
+
+export type DraftReviewFieldOverride = {
+  /** OpenAPI 展开路径，如 content、body.reply */
+  path: string;
+  role?: DraftReviewFieldRole;
+  label?: string;
+  reason?: string;
+  widget?: Exclude<DraftReviewFieldWidget, 'readonly'>;
+};
+
+export type DraftReviewPolicy = {
+  editMode?: DraftReviewEditMode;
+  /** preview_only 时正文注入路径；缺省按 schema 推断 */
+  submitPath?: string;
+  editablePaths?: string[];
+  lockedPaths?: string[];
+  fieldOverrides?: DraftReviewFieldOverride[];
+  allowArgumentsPatch?: boolean;
 };
 
 export type ParsedUserToolIntent = {

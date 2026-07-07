@@ -26,7 +26,7 @@ async function executePageWorkflowNode(input) {
         };
     }
     const harness = (0, harness_runner_1.createPageHarnessRunner)((0, sensors_1.harnessSensorsForWorkflowAction)(input.def.action));
-    (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.res, {
+    (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, {
         phase: 'start',
         actionRunId: input.runtime.actionRunId,
         actionKey: input.runtime.actionKey,
@@ -38,7 +38,7 @@ async function executePageWorkflowNode(input) {
         currentNodeId: input.workflowRun.currentNodeId,
     });
     const emitWorkflowNodeFailed = (errorCode, errorMessage, workflowRun = input.workflowRun) => {
-        (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.res, {
+        (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, {
             phase: 'failed',
             actionRunId: input.runtime.actionRunId,
             actionKey: input.runtime.actionKey,
@@ -98,7 +98,7 @@ async function executePageWorkflowNode(input) {
         };
     }
     if (dispatch.action === 'suspend') {
-        (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.res, {
+        (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, {
             phase: 'awaiting_approval',
             actionRunId: input.runtime.actionRunId,
             actionKey: input.runtime.actionKey,
@@ -166,7 +166,7 @@ async function executePageWorkflowNode(input) {
         name: `${input.nodeId}:complete`,
         detail: Object.assign({ outputRef: outcome.outputRef, action: input.def.action }, (0, page_action_run_audit_util_1.buildWorkflowNodeCompleteAudit)(input.def.action, outcome.nodeOutput)),
     });
-    (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.res, {
+    (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, {
         phase: 'complete',
         actionRunId: input.runtime.actionRunId,
         actionKey: input.runtime.actionKey,

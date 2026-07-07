@@ -24,9 +24,15 @@ describe('matchesClientPublicApiPath', () => {
     expect(matchesClientPublicApiPath('/admin/agent/client/list')).toBe(true);
   });
 
-  it('matches page-action invoke only', () => {
+  it('matches page-action C-end routes', () => {
     expect(matchesClientPublicApiPath('/page-action/invoke')).toBe(true);
     expect(matchesClientPublicApiPath('/admin/page-action/invoke')).toBe(true);
+    expect(matchesClientPublicApiPath('/page-action/runs')).toBe(true);
+    expect(matchesClientPublicApiPath('/page-action/runs/42/stream')).toBe(true);
+    expect(matchesClientPublicApiPath('/automation/tasks')).toBe(true);
+    expect(matchesClientPublicApiPath('/automation/tasks/page_action_run/42')).toBe(
+      true,
+    );
     expect(matchesClientPublicApiPath('/page-action/run/42')).toBe(false);
     expect(matchesClientPublicApiPath('/page-action/client/catalog')).toBe(false);
   });

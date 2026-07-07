@@ -1,6 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
-  AgentRunRole,
   AgentRunStatus,
 } from '../../../../generated/prisma/client';
 import { LlmService } from '../../llm/llm.service';
@@ -49,6 +48,7 @@ import {
   buildEngineToolsFromAllowed,
 } from './main/runtime/agent-tool-runtime.util';
 import { maxRunStepNumber } from './main/run/agent-run-steps.util';
+import { createPrimaryAgentRunTurn } from './main/run/create-primary-agent-run.util';
 import { buildCompletionHostToolRunStep, buildHostToolRunStep } from './main/host-tool/host-tool-run-step.util';
 import {
   AgentRunAbortedError,
@@ -441,10 +441,18 @@ export class AgentEngineService {
       throw new NotFoundException(`agent ${session.agentId} not found`);
     }
 
-    const pageContext = await this.goaService.syncHostPageContext(
-      input.sessionId,
-      input.pageContext ?? null,
-    );
+    const [pageContext, allowedTools] = await Promise.all([
+      this.goaService.syncHostPageContext(
+        input.sessionId,
+        input.pageContext ?? null,
+      ),
+      this.sessionScope.getSessionAllowedTools(
+        input.sessionId,
+        agent.id,
+        input.userId,
+        session.appClientId,
+      ),
+    ]);
     scope.assertActive();
 
     const prompt = await this.promptComposer.compose({
@@ -460,28 +468,6 @@ export class AgentEngineService {
     });
     scope.assertActive();
 
-    const [allowedTools, turn] = await Promise.all([
-      this.sessionScope.getSessionAllowedTools(
-        input.sessionId,
-        agent.id,
-        input.userId,
-        session.appClientId,
-      ),
-      this.prisma.messageTurn.create({
-        data: {
-          messageId: input.userMessageId,
-          sessionId: session.id,
-          userId: input.userId,
-          appClientId: session.appClientId,
-          userInput: input.input,
-          primaryAgentId: agent.id,
-          agentRunCount: 1,
-          status: AgentRunStatus.running,
-          startedAt,
-        },
-      }),
-    ]);
-
     const {
       tools,
       toolProfilesByName,
@@ -495,22 +481,15 @@ export class AgentEngineService {
     );
 
     scope.assertActive();
-    const run = await this.prisma.agentRun.create({
-      data: {
-        turnId: turn.id,
-        agentId: agent.id,
-        appClientId: session.appClientId,
-        sessionId: session.id,
-        userId: input.userId,
-        role: AgentRunRole.primary,
-        sequence: 1,
-        input: input.input,
-        status: AgentRunStatus.running,
-        steps: [],
-        currentStep: 0,
-        maxSteps: agent.maxSteps,
-        startedAt,
-      },
+    const { turn, run } = await createPrimaryAgentRunTurn(this.prisma, {
+      messageId: input.userMessageId,
+      sessionId: session.id,
+      userId: input.userId,
+      appClientId: session.appClientId,
+      userInput: input.input,
+      agentId: agent.id,
+      maxSteps: agent.maxSteps,
+      startedAt,
     });
 
     const runMetrics = createRunMetricsAccumulator();

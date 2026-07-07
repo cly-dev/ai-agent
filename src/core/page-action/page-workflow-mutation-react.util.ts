@@ -1,7 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import type { ToolLevel } from '../../../generated/prisma/client';
-import type { PrismaService } from '../../prisma/prisma.service';
-import type { ToolEngineService } from '../tool-engine/tool-engine.service';
+import { toToolExecutionDefinition } from './page-workflow-tool-bundle.util';
 import {
   completeWorkflowNode,
   failWorkflowNode,
@@ -41,12 +40,15 @@ export type PageWorkflowReactResult =
     };
 
 async function resolveWriteTool(
-  prisma: PrismaService,
-  appClientId: number,
+  runtime: PageWorkflowExecutorRuntime,
   toolId: number,
 ) {
-  const tool = await prisma.tool.findFirst({
-    where: { id: toolId, appClientId, isActive: true },
+  const cached = runtime.toolBundle?.toolById.get(toolId);
+  if (cached) {
+    return cached;
+  }
+  const tool = await runtime.prisma.tool.findFirst({
+    where: { id: toolId, appClientId: runtime.appClientId, isActive: true },
   });
   if (!tool) {
     throw new NotFoundException({
@@ -100,11 +102,7 @@ export async function runPageWorkflowMutationReact(input: {
     }
 
     try {
-      const tool = await resolveWriteTool(
-        runtime.prisma,
-        runtime.appClientId,
-        toolId,
-      );
+      const tool = await resolveWriteTool(runtime, toolId);
       const recomposedFromPendingWrite = input.pendingWrite != null;
       const composedArgs =
         input.pendingWrite?.arguments ??
@@ -206,11 +204,21 @@ export async function runPageWorkflowMutationReact(input: {
           arguments: pending.arguments,
         }),
       });
+      const preloadedTool = runtime.toolBundle?.prismaTools.find(
+        (row) => row.name === pending.name,
+      );
       const result = await runtime.toolEngine.executeByName(
         pending.name,
         pending.arguments,
         input.allowedToolIds,
         runtime.userId,
+        {
+          integrationCredentialCache:
+            runtime.toolBundle?.toolBuildCtx.integrationCredentialCache,
+          preloadedDefinition: preloadedTool
+            ? toToolExecutionDefinition(preloadedTool)
+            : undefined,
+        },
       );
       runtime.stepRecorder.record({
         type: 'workflow',

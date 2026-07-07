@@ -19,6 +19,7 @@ exports.pageFetchDataExecutor = {
             pageContext: runtime.pageContext,
             stepRecorder: runtime.stepRecorder,
             nodeId: ctx.nodeId,
+            toolBundle: runtime.toolBundle,
         });
         const outputRef = (0, workflow_node_output_util_1.buildWorkflowNodeOutputRef)(ctx.def.action, ctx.nodeId);
         const nodeOutput = {

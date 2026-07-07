@@ -1105,6 +1105,13 @@ function buildHostToolWritePlanResult(input) {
         deliverable: 'answer',
         steps: [
             Object.assign(Object.assign({ id: 'host_operation', phase: 'mutate', kind: 'host_tool' }, (hostToolNames.length > 0 ? { hostToolNames } : {})), { objective: 'Use a browser-side host tool to perform the requested page task without server-side HTTP tools.', stopWhen: 'always' }),
+            {
+                id: 'answer',
+                phase: 'answer',
+                kind: 'summarize',
+                objective: 'Summarize the page automation outcome for the user.',
+                stopWhen: 'always',
+            },
         ],
         constraints: ['host_write_channel'],
     });

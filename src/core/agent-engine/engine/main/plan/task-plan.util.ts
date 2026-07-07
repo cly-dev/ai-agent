@@ -1616,6 +1616,13 @@ export function buildHostToolWritePlanResult(input: {
           'Use a browser-side host tool to perform the requested page task without server-side HTTP tools.',
         stopWhen: 'always',
       },
+      {
+        id: 'answer',
+        phase: 'answer',
+        kind: 'summarize',
+        objective: 'Summarize the page automation outcome for the user.',
+        stopWhen: 'always',
+      },
     ],
     constraints: ['host_write_channel'],
   });

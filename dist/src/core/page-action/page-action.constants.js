@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildPageActionStreamId = exports.PAGE_ACTION_PROMPT_LIMITS = exports.PAGE_ACTION_STREAM_REASON = void 0;
+exports.buildPageActionRunStreamPath = exports.buildPageActionStreamId = exports.PAGE_ACTION_PROMPT_LIMITS = exports.PAGE_ACTION_STREAM_REASON = void 0;
 exports.PAGE_ACTION_STREAM_REASON = 'page_action_host_fill';
 exports.PAGE_ACTION_PROMPT_LIMITS = {
     systemPromptMax: 8192,
@@ -12,4 +12,8 @@ function buildPageActionStreamId(input) {
     return `pa-${input.actionRunId}-${slug}`;
 }
 exports.buildPageActionStreamId = buildPageActionStreamId;
+function buildPageActionRunStreamPath(runId) {
+    return `/page-action/runs/${runId}/stream`;
+}
+exports.buildPageActionRunStreamPath = buildPageActionRunStreamPath;
 //# sourceMappingURL=page-action.constants.js.map

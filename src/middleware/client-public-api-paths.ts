@@ -18,6 +18,10 @@ export const CLIENT_PUBLIC_API_EXCLUDES: ClientPublicApiRoute[] = [
   { path: 'host-tool/client/catalog', method: RequestMethod.GET },
   { path: 'host-tool/client/register', method: RequestMethod.POST },
   { path: 'page-action/invoke', method: RequestMethod.POST },
+  { path: 'page-action/runs', method: RequestMethod.ALL },
+  { path: 'page-action/runs/(.*)', method: RequestMethod.ALL },
+  { path: 'automation', method: RequestMethod.ALL },
+  { path: 'automation/(.*)', method: RequestMethod.ALL },
   {
     path: 'page-agent/compatible-mode/v1/chat/completions',
     method: RequestMethod.POST,

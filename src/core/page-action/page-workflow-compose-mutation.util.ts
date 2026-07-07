@@ -6,7 +6,6 @@ import {
 import {
   prepareComposeWriteToolCall,
 } from '../agent-engine/engine/main/plan-present/plan-compose-write.util';
-import { buildEngineToolsFromAllowed } from '../agent-engine/engine/main/runtime/agent-tool-runtime.util';
 import type { ToolObservation } from '../agent-engine/engine/main/types/agent-engine.types';
 import { findMissingRequiredWriteToolArgPath } from '../tool-engine/write-tool-draft-injection.util';
 import type { PageWorkflowExecutorRuntime } from '../workflow/page/page-workflow-runtime.types';
@@ -71,20 +70,13 @@ export async function executePageWorkflowComposeMutation(input: {
 }): Promise<PageWorkflowComposeMutationResult> {
   const { runtime } = input;
   const recorder = input.stepRecorder ?? runtime.stepRecorder;
+  const toolBundle = runtime.toolBundle;
+  if (!toolBundle) {
+    throw new Error('Page workflow tool bundle is not initialized');
+  }
 
-  const allowedTools = await runtime.prisma.tool.findMany({
-    where: {
-      id: { in: input.allowedToolIds },
-      appClientId: runtime.appClientId,
-      isActive: true,
-    },
-    include: { integration: true },
-  });
-  const { tools: scopedTools, toolBuildCtx } = buildEngineToolsFromAllowed(
-    allowedTools,
-    runtime.userId,
-    runtime.toolEngine,
-  );
+  const scopedTools = toolBundle.engineTools;
+  const toolBuildCtx = toolBundle.toolBuildCtx;
   const writeTool = scopedTools.find((row) => row.id === input.writeToolId);
   if (!writeTool) {
     throw new Error(`Write tool id=${input.writeToolId} not in allowed tools`);

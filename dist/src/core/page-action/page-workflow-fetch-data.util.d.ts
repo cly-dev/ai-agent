@@ -1,3 +1,4 @@
+import type { PageWorkflowToolBundle } from './page-workflow-tool-bundle.util';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 import type { ToolEngineService } from '../tool-engine/tool-engine.service';
@@ -20,4 +21,5 @@ export declare function executePageWorkflowFetchData(input: {
     pageContext: AgentChatPageContext | null;
     stepRecorder?: PageActionRunStepRecorder;
     nodeId?: string;
+    toolBundle?: PageWorkflowToolBundle | null;
 }): Promise<PageWorkflowFetchObservation>;

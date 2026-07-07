@@ -24,6 +24,7 @@ import { resolveApprovalSnapshotForDecision } from './validate-approval-edited-p
 import { resolveWriteDraftFromApprovalSnapshot } from '../draft-review/write-draft.util';
 import { LlmService } from '../llm/llm.service';
 import { ToolEngineService } from '../tool-engine/tool-engine.service';
+import { PageActionRunStreamHub } from '../page-action/stream/page-action-run-stream.hub';
 import { normalizeDraftReviewDecision, resolveDraftRetryBudget } from '../draft-review';
 
 @Injectable()
@@ -35,6 +36,7 @@ export class ApprovalResumeService {
     private readonly triggerPermission: ApprovalTriggerPermissionService,
     private readonly llmService: LlmService,
     private readonly toolEngine: ToolEngineService,
+    private readonly runStreamHub: PageActionRunStreamHub,
   ) {}
 
   async decide(input: ApprovalDecisionInput): Promise<{
@@ -128,6 +130,7 @@ export class ApprovalResumeService {
         llmService: this.llmService,
         toolEngine: this.toolEngine,
         approvalGate: this.approvalGate,
+        runEventBus: this.runStreamHub,
       });
     }
 
@@ -239,6 +242,7 @@ export class ApprovalResumeService {
       llmService: this.llmService,
       toolEngine: this.toolEngine,
       approvalGate: this.approvalGate,
+      runEventBus: this.runStreamHub,
     });
     return { resumed: true, suspended };
   }

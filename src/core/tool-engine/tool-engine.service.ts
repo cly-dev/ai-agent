@@ -76,7 +76,9 @@ export class ToolEngineService {
       const parameters = resolveToolZodSchema(def.inputSchema, def.schema);
       const lcTool = tool(
         async (input: Record<string, unknown>) =>
-          this.executeFromDefinition(def, input, ctx.userId),
+          this.executeFromDefinition(def, input, ctx.userId, {
+            integrationCredentialCache: ctx.integrationCredentialCache,
+          }),
         {
           name: def.name,
           description: def.description,
@@ -224,7 +226,34 @@ export class ToolEngineService {
     input: Record<string, unknown>,
     allowedToolIds: number[],
     userId: number,
+    options?: {
+      integrationCredentialCache?: ReadonlyMap<string, string>;
+      preloadedDefinition?: ToolExecutionDefinition;
+    },
   ): Promise<ToolExecutionResult> {
+    const def =
+      options?.preloadedDefinition ??
+      (await this.loadToolDefinitionByName(toolName, allowedToolIds));
+    if (!def) {
+      this.writeToolDebugSnapshot({
+        phase: 'tool_not_found',
+        at: new Date().toISOString(),
+        toolNameRequested: toolName,
+        allowedToolIds,
+        input,
+      });
+      throw new NotFoundException(`tool ${toolName} not found or not allowed`);
+    }
+
+    return this.executeFromDefinition(def, input, userId, {
+      integrationCredentialCache: options?.integrationCredentialCache,
+    });
+  }
+
+  private async loadToolDefinitionByName(
+    toolName: string,
+    allowedToolIds: number[],
+  ): Promise<ToolExecutionDefinition | null> {
     const tool = await this.prisma.tool.findFirst({
       where: {
         name: toolName,
@@ -236,39 +265,27 @@ export class ToolEngineService {
       },
     });
     if (!tool) {
-      this.writeToolDebugSnapshot({
-        phase: 'tool_not_found',
-        at: new Date().toISOString(),
-        toolNameRequested: toolName,
-        allowedToolIds,
-        input,
-      });
-      throw new NotFoundException(`tool ${toolName} not found or not allowed`);
+      return null;
     }
-
-    return this.executeFromDefinition(
-      {
-        id: tool.id,
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-        schema: tool.schema,
-        method: tool.method,
-        path: tool.path,
-        timeout: tool.timeout,
-        integration: {
-          id: tool.integration.id,
-          name: tool.integration.name,
-          baseUrl: tool.integration.baseUrl,
-          authMode: tool.integration.authMode,
-          apiKey: tool.integration.apiKey,
-        },
-        agentMetadata: tool.agentMetadata,
-        responseProfile: tool.responseProfile,
+    return {
+      id: tool.id,
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      schema: tool.schema,
+      method: tool.method,
+      path: tool.path,
+      timeout: tool.timeout,
+      integration: {
+        id: tool.integration.id,
+        name: tool.integration.name,
+        baseUrl: tool.integration.baseUrl,
+        authMode: tool.integration.authMode,
+        apiKey: tool.integration.apiKey,
       },
-      input,
-      userId,
-    );
+      agentMetadata: tool.agentMetadata,
+      responseProfile: tool.responseProfile,
+    };
   }
 
   /** 使用运行期已加载的 tool 定义执行 HTTP，不再查 Tool 表。 */
@@ -276,6 +293,7 @@ export class ToolEngineService {
     def: ToolExecutionDefinition,
     input: Record<string, unknown>,
     userId: number,
+    options?: Pick<ToolBuildContext, 'integrationCredentialCache'>,
   ): Promise<ToolExecutionResult> {
     const startedAt = Date.now();
     const controller = new AbortController();
@@ -289,23 +307,31 @@ export class ToolEngineService {
       });
       input = sanitizeToolInvokeInput(input, specs);
 
-      const userIntegration = await this.prisma.userIntegration.findUnique({
-        where: {
-          userId_integrationId: {
-            userId,
-            integrationId: def.integration.id,
+      const credentialCacheKey = `${userId}:${def.integration.id}`;
+      const cachedUserApiKey =
+        options?.integrationCredentialCache?.get(credentialCacheKey);
+      let userApiKey = '';
+      if (cachedUserApiKey !== undefined) {
+        userApiKey = cachedUserApiKey;
+      } else {
+        const userIntegration = await this.prisma.userIntegration.findUnique({
+          where: {
+            userId_integrationId: {
+              userId,
+              integrationId: def.integration.id,
+            },
           },
-        },
-        select: {
-          userApiKey: true,
-          isActive: true,
-        },
-      });
+          select: {
+            userApiKey: true,
+            isActive: true,
+          },
+        });
+        userApiKey =
+          userIntegration?.isActive === true
+            ? userIntegration.userApiKey?.trim() ?? ''
+            : '';
+      }
       const authMode = def.integration.authMode;
-      const userApiKey =
-        userIntegration?.isActive === true
-          ? userIntegration.userApiKey?.trim() ?? ''
-          : '';
       const systemApiKey =
         authMode === IntegrationAuthMode.SYSTEM_ONLY ||
         authMode === IntegrationAuthMode.USER_PREFERRED

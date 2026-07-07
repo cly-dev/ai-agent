@@ -15,30 +15,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PageActionController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
-const app_client_dsn_guard_1 = require("../../auth/app-client-dsn.guard");
-const app_client_dsn_constants_1 = require("../../auth/app-client-dsn.constants");
-const user_jwt_auth_guard_1 = require("../../auth/user-jwt-auth.guard");
 const page_action_dto_1 = require("./dto/page-action.dto");
 const page_action_service_1 = require("./page-action.service");
 let PageActionController = class PageActionController {
     constructor(service) {
         this.service = service;
-    }
-    appClientId(req) {
-        var _a;
-        const id = (_a = req.appClient) === null || _a === void 0 ? void 0 : _a.id;
-        if (id === undefined) {
-            throw new common_1.UnauthorizedException('missing app client context');
-        }
-        return id;
-    }
-    userId(req) {
-        var _a;
-        const id = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-        if (id === undefined) {
-            throw new common_1.UnauthorizedException('invalid user token');
-        }
-        return id;
     }
     create(body) {
         return this.service.create(body);
@@ -63,9 +44,6 @@ let PageActionController = class PageActionController {
     }
     findRunAdmin(id) {
         return this.service.findRunAdmin(id);
-    }
-    async invoke(req, body, res) {
-        await this.service.invoke(this.userId(req), this.appClientId(req), body, res);
     }
 };
 __decorate([
@@ -155,31 +133,8 @@ __decorate([
     __metadata("design:paramtypes", [Number]),
     __metadata("design:returntype", void 0)
 ], PageActionController.prototype, "findRunAdmin", null);
-__decorate([
-    (0, common_1.Post)('page-action/invoke'),
-    (0, common_1.UseGuards)(user_jwt_auth_guard_1.UserJwtAuthGuard, app_client_dsn_guard_1.AppClientDsnGuard),
-    (0, swagger_1.ApiSecurity)('app-dsn'),
-    (0, swagger_1.ApiHeader)({
-        name: app_client_dsn_constants_1.APP_CLIENT_DSN_HEADER,
-        description: '业务方 DSN',
-        required: true,
-    }),
-    (0, swagger_1.ApiOperation)({
-        summary: 'C 端：one-shot 执行 PageAction',
-        description: '响应为 text/event-stream（host_action DSL 真流式 + page_action 生命周期）。无需 Chat session。',
-    }),
-    (0, swagger_1.ApiProduces)('text/event-stream'),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'inline_stream SSE' }),
-    __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Body)()),
-    __param(2, (0, common_1.Res)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, page_action_dto_1.InvokePageActionDto, Object]),
-    __metadata("design:returntype", Promise)
-], PageActionController.prototype, "invoke", null);
 PageActionController = __decorate([
     (0, swagger_1.ApiTags)('page-action'),
-    (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.Controller)(),
     __metadata("design:paramtypes", [page_action_service_1.PageActionService])
 ], PageActionController);

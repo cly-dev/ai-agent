@@ -16,12 +16,14 @@ import type {
   MessageBlock,
   MessageBlockPatch,
 } from '../../core/agent-engine/engine/message/message-blocks.types';
-import type { WriteDraftPublic } from '../../core/draft-review/write-draft.types';
+import type { WriteDraftEditPolicy, WriteDraftPublic } from '../../core/draft-review/write-draft.types';
 import { buildWriteConfirmationUserMessage } from '../../core/agent-engine/engine/write-confirmation-gate.util';
+import { loadWriteToolsForPolicy } from '../../core/draft-review/load-write-tools-for-policy.util';
 import { buildPendingWriteGatePublicState } from './chat-pending-write-gate.mapper';
 import { PendingWriteConfirmationStore } from './pending-write-confirmation.store';
 import type { PendingWriteConfirmationSnapshot } from './pending-write-confirmation.types';
 import type { ChatSseRelayMessage } from './chat-sse-relay.types';
+import { PrismaService } from '../../prisma/prisma.service';
 
 type EmitOptions = {
   /** 来自 Redis 中继，不再二次 publish。 */
@@ -72,6 +74,8 @@ export type ChatSseEvent =
             canRetry?: boolean;
             writeDraft?: WriteDraftPublic;
             writeDrafts?: WriteDraftPublic[];
+            editPolicy?: WriteDraftEditPolicy | null;
+            editPolicies?: WriteDraftEditPolicy[];
           }
         | {
             source: 'agent-run';
@@ -110,6 +114,7 @@ export class ChatEventsService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly pendingWriteConfirmationStore: PendingWriteConfirmationStore,
     private readonly redis: RedisConnectionService,
+    private readonly prisma: PrismaService,
   ) {}
 
   onModuleInit(): void {
@@ -165,9 +170,11 @@ export class ChatEventsService implements OnModuleInit, OnModuleDestroy {
       }
       void this.pendingWriteConfirmationStore
         .get(normalized, userId)
-        .then((pending) => {
+        .then(async (pending) => {
           if (pending) {
-            subscriber.next(this.buildPendingWriteConfirmationEvent(pending));
+            subscriber.next(
+              await this.buildPendingWriteConfirmationEvent(pending),
+            );
           }
           inner = subject.subscribe({
             next: (evt) => subscriber.next(evt),
@@ -324,10 +331,14 @@ export class ChatEventsService implements OnModuleInit, OnModuleDestroy {
     return evt.payload.runId === runId;
   }
 
-  private buildPendingWriteConfirmationEvent(
+  private async buildPendingWriteConfirmationEvent(
     pending: PendingWriteConfirmationSnapshot,
-  ): ChatSseEvent {
-    const gate = buildPendingWriteGatePublicState(pending);
+  ): Promise<ChatSseEvent> {
+    const writeToolsById = await loadWriteToolsForPolicy(
+      this.prisma,
+      pending.resumeContext.scopedToolIds,
+    );
+    const gate = buildPendingWriteGatePublicState(pending, writeToolsById);
     return {
       event: 'message',
       payload: {

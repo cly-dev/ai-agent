@@ -1,6 +1,6 @@
 import type { HostActionSsePayload } from '../host-bridge/host-action.types';
 
-import type { WriteDraftPublic } from '../draft-review/write-draft.types';
+import type { WriteDraftPublic, WriteDraftEditPolicy } from '../draft-review/write-draft.types';
 
 /** Session Run 相关 SSE 推送抽象，避免 core 直接依赖 modules/chat。 */
 export abstract class RunEventPublisher {
@@ -50,6 +50,8 @@ export abstract class RunEventPublisher {
       canRetry?: boolean;
       writeDraft?: WriteDraftPublic;
       writeDrafts?: WriteDraftPublic[];
+      editPolicy?: WriteDraftEditPolicy | null;
+      editPolicies?: WriteDraftEditPolicy[];
     },
   ): void;
 

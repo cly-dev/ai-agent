@@ -19,7 +19,7 @@ exports.pagePresentMutationExecutor = {
             llmService: runtime.llmService,
             messages,
             nodeInput: { mode },
-            res: runtime.res,
+            sseSink: runtime.sseSink,
             actionRunId: runtime.actionRunId,
             actionKey: runtime.actionKey,
             generation: runtime.generation,

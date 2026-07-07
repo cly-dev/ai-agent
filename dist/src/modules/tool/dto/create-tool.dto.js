@@ -95,16 +95,29 @@ __decorate([
 ], CreateToolDto.prototype, "responseProfile", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        description: 'Agent 选工具元数据：mode / resource / operation / businessFields / aliases / examples / priority。paramFormatHints 无需填写，保存时从 inputSchema.parameters（及 requestBody）的 description/format/enum 自动推导。',
+        description: 'Agent 选工具元数据。WRITE Tool 草稿评审：businessFields（业务标识参数名）+ draftReview（用户可编辑策略）。详见 docs/draft-review-b-end-integration.md §2 配置说明。',
         example: {
-            mode: 'READ',
-            resource: 'PRODUCT',
-            operation: 'DETAIL',
-            businessFields: ['productId'],
-            aliases: ['商品详情'],
+            mode: 'WRITE',
+            resource: 'ORDER',
+            operation: 'UPDATE',
+            businessFields: ['entityId'],
+            aliases: ['提交变更草稿'],
             examples: [],
-            priority: 100,
-            isMutation: false,
+            priority: 200,
+            isMutation: true,
+            draftReview: {
+                editMode: 'preview_only',
+                submitPath: 'items.content',
+                lockedPaths: ['status'],
+                fieldOverrides: [
+                    {
+                        path: 'entityId',
+                        label: '业务单号',
+                        reason: '来自当前页面，不可修改',
+                    },
+                    { path: 'items.content', label: '正文内容' },
+                ],
+            },
         },
     }),
     (0, class_validator_1.IsOptional)(),

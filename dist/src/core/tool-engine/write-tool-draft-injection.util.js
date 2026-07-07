@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.findMissingRequiredWriteToolArgPath = exports.normalizeWriteToolArguments = exports.enrichWriteArgumentsFromPageContext = exports.enrichWriteArgumentsFromSelf = exports.enrichWriteToolArgumentsFromReadObservations = exports.satisfiesRequiredWriteToolArgs = exports.injectDraftIntoWriteToolArguments = exports.writeToolArgsContainSubmitText = exports.formatWriteToolArgumentsForUserPreview = exports.writeToolHasSubmitBodyPath = exports.extractSubmitTextFromWriteArguments = exports.extractSubmitTextFromDraftReply = exports.isUsablePlanDraftSubmitText = void 0;
+exports.resolvePrimaryWriteToolSubmitPath = exports.readValueAtWriteToolParamPath = exports.findMissingRequiredWriteToolArgPath = exports.normalizeWriteToolArguments = exports.enrichWriteArgumentsFromPageContext = exports.enrichWriteArgumentsFromSelf = exports.enrichWriteToolArgumentsFromReadObservations = exports.mergeWriteToolArgumentsByParamPaths = exports.assignWriteToolArgumentAtParamPath = exports.satisfiesRequiredWriteToolArgs = exports.injectDraftIntoWriteToolArguments = exports.resolveEffectiveWriteToolSubmitPath = exports.writeToolArgsContainSubmitText = exports.formatWriteToolArgumentsForUserPreview = exports.writeToolHasSubmitBodyPath = exports.extractSubmitTextFromWriteArguments = exports.extractSubmitTextFromDraftReply = exports.resolveWriteToolSubmitPaths = exports.isUsablePlanDraftSubmitText = void 0;
 const tool_decision_input_util_1 = require("./tool-decision-input.util");
 const tool_agent_metadata_util_1 = require("./tool-agent-metadata.util");
+const tool_param_path_alias_util_1 = require("./tool-param-path-alias.util");
 const tool_input_sanitize_util_1 = require("./tool-input-sanitize.util");
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -100,6 +101,7 @@ function resolveWriteToolSubmitPaths(writeTool) {
         identifierLeaves,
     };
 }
+exports.resolveWriteToolSubmitPaths = resolveWriteToolSubmitPaths;
 function pickPrimaryWriteToolSubmitPath(paths, compactParams) {
     var _a, _b;
     const candidates = [
@@ -185,15 +187,49 @@ function pickIdentifierFields(source, paths) {
     return out;
 }
 function readValueAtParamPath(args, path) {
-    const segments = path.replace(/\[\]/g, '').split('.').filter(Boolean);
-    let cursor = args;
+    if (!path.includes('[]')) {
+        const segments = path.split('.').filter(Boolean);
+        let cursor = args;
+        for (const segment of segments) {
+            if (!isRecord(cursor) || !(segment in cursor)) {
+                return undefined;
+            }
+            cursor = cursor[segment];
+        }
+        return cursor;
+    }
+    const segments = path.split('.').filter(Boolean);
+    let values = [args];
     for (const segment of segments) {
-        if (!isRecord(cursor) || !(segment in cursor)) {
+        const throughArrayItems = segment.endsWith('[]');
+        const key = throughArrayItems ? segment.slice(0, -2) : segment;
+        const next = [];
+        for (const value of values) {
+            if (!isRecord(value) || !(key in value)) {
+                continue;
+            }
+            const child = value[key];
+            if (throughArrayItems) {
+                if (!Array.isArray(child)) {
+                    continue;
+                }
+                for (const item of child) {
+                    next.push(item);
+                }
+            }
+            else {
+                next.push(child);
+            }
+        }
+        values = next;
+        if (values.length === 0) {
             return undefined;
         }
-        cursor = cursor[segment];
     }
-    return cursor;
+    if (values.length === 1) {
+        return values[0];
+    }
+    return values;
 }
 function extractSubmitTextFromDraftReply(draft) {
     const trimmed = draft.trim();
@@ -219,20 +255,14 @@ function extractSubmitTextFromWriteArguments(args, writeTool) {
         return null;
     }
     if (primaryPath.includes('[]')) {
-        const match = /^(.+)\[\]\.(.+)$/.exec(primaryPath);
-        if (!match) {
-            return null;
+        const value = readValueAtParamPath(args, primaryPath);
+        if (typeof value === 'string' && value.trim()) {
+            return value.trim();
         }
-        const arrayValue = readValueAtParamPath(args, match[1]);
-        if (!Array.isArray(arrayValue)) {
-            return null;
-        }
-        for (const item of arrayValue) {
-            if (isRecord(item)) {
-                const field = match[2];
-                const text = item[field];
-                if (typeof text === 'string' && text.trim()) {
-                    return text.trim();
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                if (typeof item === 'string' && item.trim()) {
+                    return item.trim();
                 }
             }
         }
@@ -391,6 +421,20 @@ function writeToolArgsContainSubmitText(args, writeTool) {
     return extractSubmitTextFromWriteArguments(args, writeTool) != null;
 }
 exports.writeToolArgsContainSubmitText = writeToolArgsContainSubmitText;
+function resolveEffectiveWriteToolSubmitPath(writeTool) {
+    var _a, _b, _c;
+    const compactParams = (0, tool_decision_input_util_1.listToolInputCompactParams)(writeTool.inputSchema, writeTool.schema);
+    const configured = (_c = (_b = (_a = (0, tool_agent_metadata_util_1.parseAgentMetadata)(writeTool.agentMetadata)) === null || _a === void 0 ? void 0 : _a.draftReview) === null || _b === void 0 ? void 0 : _b.submitPath) === null || _c === void 0 ? void 0 : _c.trim();
+    if (configured) {
+        const paramPaths = new Set(compactParams.map((row) => row.name));
+        const resolved = (0, tool_param_path_alias_util_1.resolveArrayItemParamPathAlias)(configured, paramPaths);
+        if (paramPaths.has(resolved)) {
+            return resolved;
+        }
+    }
+    return pickPrimaryWriteToolSubmitPath(resolveWriteToolSubmitPaths(writeTool), compactParams);
+}
+exports.resolveEffectiveWriteToolSubmitPath = resolveEffectiveWriteToolSubmitPath;
 function injectDraftIntoWriteToolArguments(args, submitText, writeTool) {
     const trimmed = submitText.trim();
     if (!trimmed) {
@@ -398,7 +442,7 @@ function injectDraftIntoWriteToolArguments(args, submitText, writeTool) {
     }
     const paths = resolveWriteToolSubmitPaths(writeTool);
     const compactParams = (0, tool_decision_input_util_1.listToolInputCompactParams)(writeTool.inputSchema, writeTool.schema);
-    const primaryPath = pickPrimaryWriteToolSubmitPath(paths, compactParams);
+    const primaryPath = resolveEffectiveWriteToolSubmitPath(writeTool);
     const next = JSON.parse(JSON.stringify(args));
     if (!primaryPath) {
         return next;
@@ -417,19 +461,11 @@ function injectDraftIntoWriteToolArguments(args, submitText, writeTool) {
 }
 exports.injectDraftIntoWriteToolArguments = injectDraftIntoWriteToolArguments;
 function isPresentAtWriteToolParamPath(args, path) {
-    if (!path.includes('[]')) {
-        return isPresent(readValueAtParamPath(args, path));
+    const value = readValueAtParamPath(args, path);
+    if (Array.isArray(value)) {
+        return value.some((item) => isPresent(item));
     }
-    const match = /^(.+)\[\]\.(.+)$/.exec(path);
-    if (!match) {
-        return isPresent(readValueAtParamPath(args, path.replace(/\[\]/g, '')));
-    }
-    const arrayValue = readValueAtParamPath(args, match[1]);
-    if (!Array.isArray(arrayValue) || arrayValue.length === 0) {
-        return false;
-    }
-    const itemField = match[2];
-    return arrayValue.some((item) => isRecord(item) && isPresent(item[itemField]));
+    return isPresent(value);
 }
 function satisfiesRequiredWriteToolArgs(args, writeTool) {
     const compactParams = (0, tool_decision_input_util_1.listToolInputCompactParams)(writeTool.inputSchema, writeTool.schema);
@@ -494,6 +530,39 @@ function setValueAtParamPath(root, path, value, bodyRoot) {
     }
     root[path] = value;
 }
+function assignWriteToolArgumentAtParamPath(root, path, value, bodyRoot) {
+    var _a;
+    if (path.includes('[]')) {
+        const match = /^(.+)\[\]\.(.+)$/.exec(path);
+        if (!match) {
+            return;
+        }
+        const arrayPath = match[1];
+        const itemField = match[2];
+        const parts = arrayPath.split('.');
+        const arrayKey = (_a = parts[parts.length - 1]) !== null && _a !== void 0 ? _a : arrayPath;
+        const parentParts = parts.slice(0, -1);
+        const parent = parentParts.length > 0 ? ensureRecordAtPath(root, parentParts) : root;
+        const existing = parent[arrayKey];
+        if (Array.isArray(existing) && existing.length > 0) {
+            parent[arrayKey] = existing.map((item) => isRecord(item) ? Object.assign(Object.assign({}, item), { [itemField]: value }) : item);
+            return;
+        }
+        parent[arrayKey] = [{ [itemField]: value }];
+        return;
+    }
+    setValueAtParamPath(root, path, value, bodyRoot);
+}
+exports.assignWriteToolArgumentAtParamPath = assignWriteToolArgumentAtParamPath;
+function mergeWriteToolArgumentsByParamPaths(base, patch, writeTool) {
+    const next = JSON.parse(JSON.stringify(base));
+    const bodyRoot = resolveWriteToolSubmitPaths(writeTool).bodyRoot;
+    for (const [path, value] of Object.entries(patch)) {
+        assignWriteToolArgumentAtParamPath(next, path, value, bodyRoot);
+    }
+    return next;
+}
+exports.mergeWriteToolArgumentsByParamPaths = mergeWriteToolArgumentsByParamPaths;
 function collectReadObservationRecords(observations, isReadToolObservation) {
     const out = [];
     for (const obs of observations) {
@@ -793,4 +862,13 @@ function findMissingRequiredWriteToolArgPath(args, writeTool) {
     return null;
 }
 exports.findMissingRequiredWriteToolArgPath = findMissingRequiredWriteToolArgPath;
+function readValueAtWriteToolParamPath(args, path) {
+    return readValueAtParamPath(args, path);
+}
+exports.readValueAtWriteToolParamPath = readValueAtWriteToolParamPath;
+function resolvePrimaryWriteToolSubmitPath(writeTool) {
+    const compactParams = (0, tool_decision_input_util_1.listToolInputCompactParams)(writeTool.inputSchema, writeTool.schema);
+    return pickPrimaryWriteToolSubmitPath(resolveWriteToolSubmitPaths(writeTool), compactParams);
+}
+exports.resolvePrimaryWriteToolSubmitPath = resolvePrimaryWriteToolSubmitPath;
 //# sourceMappingURL=write-tool-draft-injection.util.js.map

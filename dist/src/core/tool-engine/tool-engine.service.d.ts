@@ -10,8 +10,12 @@ export declare class ToolEngineService {
     buildLangChainTools(definitions: ToolExecutionDefinition[], ctx: ToolBuildContext): BuiltLangChainTools;
     invokeLangChainTool(bundle: BuiltLangChainTools, toolName: string, input: Record<string, unknown>): Promise<ToolExecutionResult>;
     debugExecute(toolId: number, options?: ToolDebugOptions): Promise<ToolDebugResult>;
-    executeByName(toolName: string, input: Record<string, unknown>, allowedToolIds: number[], userId: number): Promise<ToolExecutionResult>;
-    executeFromDefinition(def: ToolExecutionDefinition, input: Record<string, unknown>, userId: number): Promise<ToolExecutionResult>;
+    executeByName(toolName: string, input: Record<string, unknown>, allowedToolIds: number[], userId: number, options?: {
+        integrationCredentialCache?: ReadonlyMap<string, string>;
+        preloadedDefinition?: ToolExecutionDefinition;
+    }): Promise<ToolExecutionResult>;
+    private loadToolDefinitionByName;
+    executeFromDefinition(def: ToolExecutionDefinition, input: Record<string, unknown>, userId: number, options?: Pick<ToolBuildContext, 'integrationCredentialCache'>): Promise<ToolExecutionResult>;
     private buildBaseHeaders;
     private resolveAuthCredential;
     private applyHeaderParameters;

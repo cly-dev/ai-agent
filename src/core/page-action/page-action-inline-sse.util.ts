@@ -1,8 +1,14 @@
-import type { Response } from 'express';
 import type { HostActionSsePayload } from '../host-bridge/host-action.types';
 import type { HostActionEventPublisher } from '../host-bridge/host-action-dispatch.util';
 import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
 import type { WorkflowActionKind } from '../workflow/workflow.types';
+import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
+
+export type PageActionSseTarget = PageActionSseSink;
+
+function resolveSseTarget(target: PageActionSseTarget): PageActionSseSink {
+  return target;
+}
 
 export type PageActionSsePhase =
   | 'started'
@@ -47,39 +53,31 @@ export type PageActionLifecyclePayload = {
 };
 
 export function writeSseEvent(
-  res: Response,
+  target: PageActionSseTarget,
   event: string,
   data: unknown,
 ): void {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
-}
-
-export function initInlineSseResponse(res: Response): void {
-  res.status(200);
-  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  if (typeof res.flushHeaders === 'function') {
-    res.flushHeaders();
+  const sink = resolveSseTarget(target);
+  if (sink.writableEnded) {
+    return;
   }
+  sink.emit(event, data);
 }
 
 export function createInlineHostActionPublisher(
-  res: Response,
+  target: PageActionSseTarget,
   options?: {
     onPayload?: (payload: HostActionSsePayload) => void;
   },
 ): HostActionEventPublisher {
   return (_sessionId, envelope) => {
     options?.onPayload?.(envelope.payload);
-    writeSseEvent(res, 'host_action', envelope.payload);
+    writeSseEvent(target, 'host_action', envelope.payload);
   };
 }
 
 export function writePageActionLifecycle(
-  res: Response,
+  target: PageActionSseTarget,
   payload: PageActionLifecyclePayload,
   recorder?: PageActionRunStepRecorder,
 ): void {
@@ -95,21 +93,20 @@ export function writePageActionLifecycle(
     errorMessage: payload.errorMessage ?? null,
     textLength: payload.text?.length ?? null,
   }, payload.phase === 'failed' ? 'failed' : payload.phase === 'completed' ? 'ok' : undefined);
-  writeSseEvent(res, 'page_action', payload);
+  writeSseEvent(target, 'page_action', payload);
 }
 
 export function writePageWorkflowNodeSse(
-  res: Response | Pick<Response, 'writableEnded' | 'write'>,
+  target: PageActionSseTarget,
   payload: PageWorkflowNodeSsePayload,
 ): void {
-  if (res.writableEnded || typeof res.write !== 'function') {
+  const sink = resolveSseTarget(target);
+  if (sink.writableEnded) {
     return;
   }
-  writeSseEvent(res as Response, 'page_workflow', payload);
+  writeSseEvent(sink, 'page_workflow', payload);
 }
 
-export function endInlineSseResponse(res: Response): void {
-  if (!res.writableEnded) {
-    res.end();
-  }
+export function endInlineSseResponse(target: PageActionSseTarget): void {
+  resolveSseTarget(target).end();
 }

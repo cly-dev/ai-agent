@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.WriteDraftPublicDto = exports.WriteDraftProvenancePublicDto = exports.WriteDraftPresentationPublicDto = exports.WriteDraftToolPublicDto = exports.MessageBlockDto = void 0;
+exports.WriteDraftEditPolicyDto = exports.WriteDraftFieldPolicyDto = exports.WriteDraftPublicDto = exports.WriteDraftProvenancePublicDto = exports.WriteDraftPresentationPublicDto = exports.WriteDraftToolPublicDto = exports.MessageBlockDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class MessageBlockDto {
 }
@@ -118,4 +118,65 @@ __decorate([
     __metadata("design:type", WriteDraftProvenancePublicDto)
 ], WriteDraftPublicDto.prototype, "provenance", void 0);
 exports.WriteDraftPublicDto = WriteDraftPublicDto;
+class WriteDraftFieldPolicyDto {
+}
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'content' }),
+    __metadata("design:type", String)
+], WriteDraftFieldPolicyDto.prototype, "path", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '回复内容' }),
+    __metadata("design:type", String)
+], WriteDraftFieldPolicyDto.prototype, "label", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: ['content', 'identifier', 'scenario', 'enum', 'system'],
+    }),
+    __metadata("design:type", String)
+], WriteDraftFieldPolicyDto.prototype, "role", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: ['text', 'textarea', 'select', 'readonly', 'hidden'],
+    }),
+    __metadata("design:type", String)
+], WriteDraftFieldPolicyDto.prototype, "widget", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Boolean)
+], WriteDraftFieldPolicyDto.prototype, "editable", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Boolean)
+], WriteDraftFieldPolicyDto.prototype, "required", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    __metadata("design:type", Object)
+], WriteDraftFieldPolicyDto.prototype, "value", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    __metadata("design:type", String)
+], WriteDraftFieldPolicyDto.prototype, "reason", void 0);
+exports.WriteDraftFieldPolicyDto = WriteDraftFieldPolicyDto;
+class WriteDraftEditPolicyDto {
+}
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: ['preview_only', 'allowlisted_fields', 'full'],
+        example: 'preview_only',
+    }),
+    __metadata("design:type", String)
+], WriteDraftEditPolicyDto.prototype, "editMode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'content' }),
+    __metadata("design:type", String)
+], WriteDraftEditPolicyDto.prototype, "submitPath", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Boolean)
+], WriteDraftEditPolicyDto.prototype, "allowArgumentsPatch", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: [WriteDraftFieldPolicyDto] }),
+    __metadata("design:type", Array)
+], WriteDraftEditPolicyDto.prototype, "fields", void 0);
+exports.WriteDraftEditPolicyDto = WriteDraftEditPolicyDto;
 //# sourceMappingURL=write-draft-public.dto.js.map
