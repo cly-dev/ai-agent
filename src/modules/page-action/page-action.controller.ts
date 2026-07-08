@@ -31,7 +31,7 @@ export class PageActionController {
   @ApiOperation({
     summary: 'B 端：创建 PageAction',
     description:
-      '须绑定已存在的 HostTool（hostToolId）。未绑 workflowId 时 hostToolId 必填；纯分析类 Workflow 可不绑。',
+      'hostToolId 始终可选。分析类可不绑；填入类绑 HostTool；绑 Workflow 时 push 节点优先用 nodes[].input.hostToolId。',
   })
   create(@Body() body: CreatePageActionDto) {
     return this.service.create(body);

@@ -53,7 +53,6 @@ export class PageActionService {
     if (dto.hostToolId != null) {
       await this.assertHostToolForApp(dto.appClientId, dto.hostToolId);
     }
-    this.assertPageActionHostToolBinding(dto.workflowId, dto.hostToolId);
     const hostToolId = dto.hostToolId ?? null;
 
     if (dto.workflowId != null && dto.workflowId > 0) {
@@ -137,8 +136,8 @@ export class PageActionService {
       dto.workflowVersion !== undefined
         ? dto.workflowVersion
         : existing.workflowVersion;
-    const nextHostToolId = dto.hostToolId ?? existing.hostToolId;
-    this.assertPageActionHostToolBinding(nextWorkflowId, nextHostToolId);
+    const nextHostToolId =
+      dto.hostToolId !== undefined ? dto.hostToolId : existing.hostToolId;
     if (nextWorkflowId != null && nextWorkflowId > 0) {
       await this.workflowService.assertPageActionWorkflowBindingsCompatible({
         workflowId: nextWorkflowId,
@@ -154,7 +153,7 @@ export class PageActionService {
         ...(dto.description !== undefined
           ? { description: dto.description?.trim() || null }
           : {}),
-        ...(dto.hostToolId != null ? { hostToolId: dto.hostToolId } : {}),
+        ...(dto.hostToolId !== undefined ? { hostToolId: dto.hostToolId } : {}),
         ...(dto.pageScope !== undefined
           ? { pageScope: dto.pageScope?.trim() || null }
           : {}),
@@ -360,21 +359,6 @@ export class PageActionService {
     });
     if (!row) {
       throw new NotFoundException(`AppClient ${appClientId} not found`);
-    }
-  }
-
-  private assertPageActionHostToolBinding(
-    workflowId: number | null | undefined,
-    hostToolId: number | null | undefined,
-  ): void {
-    const workflowBound =
-      workflowId != null && Number.isInteger(workflowId) && workflowId > 0;
-    if (!workflowBound && hostToolId == null) {
-      throw new BadRequestException({
-        code: 'PAGE_ACTION_HOST_TOOL_REQUIRED',
-        message:
-          'hostToolId is required when workflowId is not set; create HostTool first, then bind by id',
-      });
     }
   }
 

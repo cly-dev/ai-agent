@@ -29,7 +29,7 @@ import { applyPageWorkflowNodeOutput } from './page-workflow-node.util';
 import { buildPageWriteDraft } from '../draft-review';
 import type { ApprovalTriggerBinding } from '../approval/resolve-approval-parties.util';
 import { resolveApprovalParties } from '../approval/resolve-approval-parties.util';
-import type { WorkflowRunState } from '../workflow/workflow.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
 
 export type PageWorkflowOrchestratorInput = PageWorkflowRunnerInput & {
   allowedToolIds: number[];
@@ -100,6 +100,7 @@ export async function orchestratePageWorkflow(
     const def = input.nodes.find((row) => row.id === nodeId);
     if (!def) {
       return buildSuspendedOrFinal({
+        workflowNodes: input.nodes,
         workflowRun: {
           ...workflowRun,
           status: 'failed',
@@ -131,6 +132,7 @@ export async function orchestratePageWorkflow(
 
     if (nodeResult.kind === 'failed') {
       return buildSuspendedOrFinal({
+        workflowNodes: input.nodes,
         workflowRun,
         runtime,
         recorder,
@@ -151,6 +153,7 @@ export async function orchestratePageWorkflow(
       workflowRun = reactResult.workflowRun;
       if (reactResult.ok === false) {
         return buildSuspendedOrFinal({
+          workflowNodes: input.nodes,
           workflowRun,
           runtime,
           recorder,
@@ -160,12 +163,18 @@ export async function orchestratePageWorkflow(
       }
       runtime.nodeOutputs[nodeId] = reactResult.nodeOutput;
       workflowRun = advanceWorkflowRun(workflowRun);
+      // react 路径（compose_mutation / write_data）与 completed 路径一样：
+      // 无下一节点时必须 finalize，否则 status 停留在 running → WORKFLOW_INCOMPLETE。
+      if (!workflowRun.currentNodeId && workflowRun.status === 'running') {
+        workflowRun = finalizeWorkflowRun(workflowRun, 'completed');
+      }
       continue;
     }
 
     if (nodeResult.kind === 'suspend') {
       if (!input.approvalGate) {
         return buildSuspendedOrFinal({
+          workflowNodes: input.nodes,
           workflowRun,
           runtime,
           recorder,
@@ -180,6 +189,7 @@ export async function orchestratePageWorkflow(
       });
       if (!pendingWrite) {
         return buildSuspendedOrFinal({
+          workflowNodes: input.nodes,
           workflowRun,
           runtime,
           recorder,
@@ -196,6 +206,7 @@ export async function orchestratePageWorkflow(
       });
       if (parties.ok === false) {
         return buildSuspendedOrFinal({
+          workflowNodes: input.nodes,
           workflowRun,
           runtime,
           recorder,
@@ -256,9 +267,12 @@ export async function orchestratePageWorkflow(
 
       return {
         ...buildPageWorkflowRunnerResult({
+          workflowNodes: input.nodes,
           workflowRun,
           runtime,
           recorder,
+          suspended: true,
+          approvalRequestId: approval.id,
         }),
         suspended: true,
         approvalRequestId: approval.id,
@@ -288,10 +302,16 @@ export async function orchestratePageWorkflow(
     dslOutcome: runtime.dslOutcome,
   });
 
-  return buildSuspendedOrFinal({ workflowRun, runtime, recorder });
+  return buildSuspendedOrFinal({
+    workflowNodes: input.nodes,
+    workflowRun,
+    runtime,
+    recorder,
+  });
 }
 
 function buildSuspendedOrFinal(input: {
+  workflowNodes: WorkflowNodeDef[];
   workflowRun: WorkflowRunState;
   runtime: ReturnType<typeof createPageWorkflowExecutorRuntime>;
   recorder: PageActionRunStepRecorder;
@@ -300,6 +320,7 @@ function buildSuspendedOrFinal(input: {
 }): PageWorkflowOrchestratorResult {
   return {
     ...buildPageWorkflowRunnerResult({
+      workflowNodes: input.workflowNodes,
       workflowRun: input.workflowRun,
       runtime: input.runtime,
       recorder: input.recorder,

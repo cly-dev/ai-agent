@@ -19,6 +19,7 @@ import { ToolEngineService } from '../../tool-engine/tool-engine.service';
 import { LlmService } from '../../llm/llm.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { executePageActionHostFill } from '../page-action-host-fill.executor';
+import { executePageWorkflowSummarize } from '../page-workflow-summarize.util';
 import { orchestratePageWorkflow } from '../page-workflow-orchestrator';
 import {
   pageActionWorkflowLoadErrorCode,
@@ -26,12 +27,17 @@ import {
 } from '../page-action-workflow-load.util';
 import { writePageActionLifecycle } from '../page-action-inline-sse.util';
 import {
+  completionFromHostFill,
+  completionFromSummarizeText,
+} from '../page-action-run-completion.util';
+import {
   emitPageActionRunTerminalSse,
   mapTerminalPhaseToRunStatus,
   resolvePageActionRunTerminalOutcome,
 } from '../page-action-run-terminal-sse.util';
 import { PageActionRunStepRecorder } from '../page-action-run-steps.util';
 import { buildPageActionLlmMessages } from '../page-action-prompt.util';
+import { buildPageActionStreamId } from '../page-action.constants';
 import { loadPageWorkflowToolBundle } from '../page-workflow-tool-bundle.util';
 import { PageActionRunStreamHub } from '../stream/page-action-run-stream.hub';
 import type { PageActionRunExecutionInput } from './page-action-invoke.types';
@@ -97,49 +103,97 @@ export class PageActionRunExecutor {
         return;
       }
 
-      if (!input.hostToolResolved) {
-        throw new BadRequestException({
-          code: 'PAGE_ACTION_HOST_TOOL_MISSING',
-          message:
-            'Legacy PageAction invoke requires hostToolId when no Workflow is bound',
+      if (input.hostToolResolved) {
+        const result = await executePageActionHostFill(this.llmService, {
+          actionRunId: input.runId,
+          actionKey: input.actionKey,
+          generation: input.generation,
+          clientActionId: input.clientActionId,
+          systemPrompt: input.systemPrompt,
+          messages,
+          pageContext: input.pageContext,
+          hostTool: input.hostToolResolved,
+          sseSink,
+          stepRecorder,
         });
+
+        const completion = completionFromHostFill({
+          fillText: result.fillText,
+          dslOutcome: result.dslOutcome,
+        });
+        const terminal = resolvePageActionRunTerminalOutcome(completion);
+
+        await this.prisma.pageActionRun.update({
+          where: { id: input.runId },
+          data: {
+            status: mapTerminalPhaseToRunStatus(terminal.phase),
+            fillText: terminal.fillText,
+            dslOutcome: result.dslOutcome,
+            streamId: result.streamId,
+            model: result.model,
+            promptTokens: result.promptTokens,
+            completionTokens: result.completionTokens,
+            durationMs: Date.now() - startedAt,
+            finishedAt: new Date(),
+            steps: result.steps as Prisma.InputJsonValue,
+            errorCode: terminal.errorCode,
+            errorMessage: terminal.errorMessage,
+          },
+        });
+        return;
       }
 
-      const result = await executePageActionHostFill(this.llmService, {
+      const streamId = buildPageActionStreamId({
+        actionRunId: input.runId,
+        actionKey: input.actionKey,
+      });
+
+      const summary = await executePageWorkflowSummarize({
+        llmService: this.llmService,
+        messages,
+        nodeInput: { mode: 'final' },
+        sseSink,
         actionRunId: input.runId,
         actionKey: input.actionKey,
         generation: input.generation,
         clientActionId: input.clientActionId,
-        systemPrompt: input.systemPrompt,
-        messages,
-        pageContext: input.pageContext,
-        hostTool: input.hostToolResolved,
-        sseSink,
+        existingFillText: '',
         stepRecorder,
+        systemPrompt: input.systemPrompt,
+        objectivePrefix: input.instruction,
+        streamLifecycle: 'none',
+      });
+
+      const completion = completionFromSummarizeText(summary.summaryText);
+      const terminal = resolvePageActionRunTerminalOutcome(completion);
+
+      emitPageActionRunTerminalSse({
+        sseSink,
+        recorder: stepRecorder,
+        actionRunId: input.runId,
+        actionKey: input.actionKey,
+        generation: input.generation,
+        clientActionId: input.clientActionId,
+        streamId,
+        outcome: terminal,
+        dslOutcome: null,
       });
 
       await this.prisma.pageActionRun.update({
         where: { id: input.runId },
         data: {
-          status:
-            result.fillText.trim().length > 0
-              ? PageActionRunStatus.completed
-              : PageActionRunStatus.failed,
-          fillText: result.fillText || null,
-          dslOutcome: result.dslOutcome,
-          streamId: result.streamId,
-          model: result.model,
-          promptTokens: result.promptTokens,
-          completionTokens: result.completionTokens,
+          status: mapTerminalPhaseToRunStatus(terminal.phase),
+          fillText: terminal.fillText,
+          dslOutcome: null,
+          streamId,
+          model: summary.model,
+          promptTokens: summary.promptTokens,
+          completionTokens: summary.completionTokens,
           durationMs: Date.now() - startedAt,
           finishedAt: new Date(),
-          steps: result.steps as Prisma.InputJsonValue,
-          ...(result.fillText.trim().length === 0
-            ? {
-                errorCode: 'STREAM_EMPTY',
-                errorMessage: 'LLM produced empty fill text',
-              }
-            : {}),
+          steps: stepRecorder.toJson() as Prisma.InputJsonValue,
+          errorCode: terminal.errorCode,
+          errorMessage: terminal.errorMessage,
         },
       });
     } catch (error) {
@@ -301,12 +355,7 @@ export class PageActionRunExecutor {
       pageActionKey: run.pageActionKey,
     });
 
-    const terminal = resolvePageActionRunTerminalOutcome({
-      suspended: result.suspended === true,
-      errorCode: result.errorCode,
-      errorMessage: result.errorMessage,
-      fillText: result.fillText,
-    });
+    const terminal = resolvePageActionRunTerminalOutcome(result.completion);
 
     emitPageActionRunTerminalSse({
       sseSink,

@@ -149,12 +149,7 @@ export async function resumePageActionFromApprovalSnapshot(input: {
     },
   });
 
-  const terminal = resolvePageActionRunTerminalOutcome({
-    suspended: result.suspended === true,
-    errorCode: result.errorCode,
-    errorMessage: result.errorMessage,
-    fillText: result.fillText,
-  });
+  const terminal = resolvePageActionRunTerminalOutcome(result.completion);
 
   emitPageActionRunTerminalSse({
     sseSink,
@@ -313,12 +308,7 @@ export async function retryPageActionFromApprovalSnapshot(input: {
     },
   });
 
-  const terminal = resolvePageActionRunTerminalOutcome({
-    suspended: result.suspended === true,
-    errorCode: result.errorCode,
-    errorMessage: result.errorMessage,
-    fillText: result.fillText,
-  });
+  const terminal = resolvePageActionRunTerminalOutcome(result.completion);
 
   emitPageActionRunTerminalSse({
     sseSink,

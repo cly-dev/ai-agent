@@ -31,8 +31,8 @@ async function loadHostToolRow(
 }
 
 /**
- * PageAction 上的 hostToolId；无 Workflow 时必填。
- * 绑 Workflow 时可为空（推送由 generate_and_push 节点在执行期解析 hostToolId）。
+ * PageAction 上的 hostToolId 始终可选。
+ * 有值时作为 Legacy 填入或 Workflow push 节点兜底；分析类可不绑。
  */
 export async function resolvePageActionHostToolRow(
   prisma: PrismaService,
@@ -41,14 +41,7 @@ export async function resolvePageActionHostToolRow(
   if (pageAction.hostTool) {
     return pageAction.hostTool;
   }
-  if (pageAction.workflowId != null && pageAction.workflowId > 0) {
-    return null;
-  }
-  throw new BadRequestException({
-    code: 'PAGE_ACTION_HOST_TOOL_MISSING',
-    message:
-      'PageAction has no hostToolId; provide hostToolId or bind a Workflow',
-  });
+  return null;
 }
 
 export async function resolvePageActionHostToolResolved(

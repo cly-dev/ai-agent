@@ -7,6 +7,7 @@ import {
   endInlineSseResponse,
   writePageActionLifecycle,
 } from './page-action-inline-sse.util';
+import type { PageActionRunCompletion } from './page-action-run-completion.util';
 import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
 import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
 
@@ -22,50 +23,42 @@ export type PageActionRunTerminalOutcome = {
   errorMessage: string | null;
 };
 
-/** 与 executor / 审批续跑共用的终态判定（含空 fillText → STREAM_EMPTY）。 */
-export function resolvePageActionRunTerminalOutcome(input: {
-  suspended?: boolean;
-  errorCode?: string | null;
-  errorMessage?: string | null;
-  fillText?: string | null;
-}): PageActionRunTerminalOutcome {
-  const errorFillText =
-    input.fillText?.trim() || input.errorMessage?.trim() || null;
-
-  if (input.suspended) {
-    return {
-      phase: 'awaiting_approval',
-      fillText: input.fillText?.trim() || null,
-      errorCode: null,
-      errorMessage: null,
-    };
+/** 将编排层 completion 映射为 DB / SSE 终态。 */
+export function resolvePageActionRunTerminalOutcome(
+  completion: PageActionRunCompletion,
+): PageActionRunTerminalOutcome {
+  switch (completion.kind) {
+    case 'suspended':
+      return {
+        phase: 'awaiting_approval',
+        fillText: null,
+        errorCode: null,
+        errorMessage: null,
+      };
+    case 'failed':
+      return {
+        phase: 'failed',
+        fillText: null,
+        errorCode: completion.errorCode,
+        errorMessage: completion.errorMessage,
+      };
+    case 'text':
+      return {
+        phase: 'completed',
+        fillText: completion.fillText,
+        errorCode: null,
+        errorMessage: null,
+      };
+    case 'http_write':
+    case 'http_read':
+    case 'workflow_done':
+      return {
+        phase: 'completed',
+        fillText: null,
+        errorCode: null,
+        errorMessage: null,
+      };
   }
-
-  if (input.errorCode) {
-    return {
-      phase: 'failed',
-      fillText: errorFillText,
-      errorCode: input.errorCode,
-      errorMessage: input.errorMessage ?? input.errorCode,
-    };
-  }
-
-  const trimmedFill = input.fillText?.trim() ?? '';
-  if (trimmedFill.length === 0) {
-    return {
-      phase: 'failed',
-      fillText: null,
-      errorCode: 'STREAM_EMPTY',
-      errorMessage: 'LLM produced empty fill text',
-    };
-  }
-
-  return {
-    phase: 'completed',
-    fillText: trimmedFill,
-    errorCode: null,
-    errorMessage: null,
-  };
 }
 
 export function mapTerminalPhaseToRunStatus(

@@ -11,6 +11,7 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PageActionDelivery } from '../../../../generated/prisma/client';
@@ -79,13 +80,15 @@ export class CreatePageActionDto {
 
   @ApiPropertyOptional({
     description:
-      '已存在的 HostTool ID；未绑 workflowId 时必填。须先在 B 端创建 HostTool 再绑定。',
+      '已存在的 HostTool ID，可选。填入类 PageAction 建议绑定；分析类可不绑。',
+    nullable: true,
   })
   @IsOptional()
+  @ValidateIf((_, value) => value != null)
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  hostToolId?: number;
+  hostToolId?: number | null;
 
   @ApiPropertyOptional({
     description: '与 pageContext.page 对齐',
@@ -169,12 +172,17 @@ export class UpdatePageActionDto {
   @MaxLength(2000)
   description?: string | null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      '已存在的 HostTool ID，可选。填入类 PageAction 建议绑定；分析类可不绑。传 null 可清空。',
+    nullable: true,
+  })
   @IsOptional()
+  @ValidateIf((_, value) => value != null)
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  hostToolId?: number;
+  hostToolId?: number | null;
 
   @ApiPropertyOptional()
   @IsOptional()

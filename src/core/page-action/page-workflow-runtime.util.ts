@@ -12,6 +12,10 @@ import {
 import type { PageWorkflowToolBundle } from './page-workflow-tool-bundle.util';
 import type { PageWorkflowExecutorRuntime } from '../workflow/page/page-workflow-runtime.types';
 import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
+import {
+  resolvePageWorkflowCompletion,
+  type PageActionRunCompletion,
+} from './page-action-run-completion.util';
 
 export type PageWorkflowRunnerInput = {
   workflowId: number;
@@ -78,17 +82,31 @@ export type PageWorkflowRunnerResult = {
   model: string | null;
   promptTokens: number | null;
   completionTokens: number | null;
+  completion: PageActionRunCompletion;
   errorCode?: string;
   errorMessage?: string;
 };
 
 export function buildPageWorkflowRunnerResult(input: {
+  workflowNodes: WorkflowNodeDef[];
   workflowRun: WorkflowRunState;
   runtime: PageWorkflowExecutorRuntime;
   recorder: PageActionRunStepRecorder;
   errorCode?: string;
   errorMessage?: string;
+  suspended?: boolean;
+  approvalRequestId?: number | null;
 }): PageWorkflowRunnerResult {
+  const completion = resolvePageWorkflowCompletion({
+    workflowNodes: input.workflowNodes,
+    workflowRun: input.workflowRun,
+    runtime: input.runtime,
+    errorCode: input.errorCode,
+    errorMessage: input.errorMessage,
+    suspended: input.suspended,
+    approvalRequestId: input.approvalRequestId,
+  });
+
   return {
     workflowRun: input.workflowRun,
     steps: input.recorder.toJson(),
@@ -97,6 +115,7 @@ export function buildPageWorkflowRunnerResult(input: {
     model: input.runtime.metrics.model,
     promptTokens: input.runtime.metrics.promptTokens,
     completionTokens: input.runtime.metrics.completionTokens,
+    completion,
     errorCode: input.errorCode,
     errorMessage: input.errorMessage,
   };

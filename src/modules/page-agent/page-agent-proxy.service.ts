@@ -105,6 +105,8 @@ export class PageAgentProxyService {
           timeoutMs,
           signal: abortController.signal,
           label: 'page_agent_proxy',
+          // 上游来自 LlmModelConfig（B 端配置），允许内网 / 本机地址。
+          ssrf: false,
         },
       );
       await this.writeUpstreamResponse(input.res, upstream, audit.id, startedAt);
