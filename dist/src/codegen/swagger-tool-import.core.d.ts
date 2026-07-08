@@ -1,0 +1,124 @@
+import { HttpMethod, IntegrationAuthMode, type PrismaClient, ToolLevel } from '../../generated/prisma/client';
+import type { Prisma } from '../../generated/prisma/client';
+import type { PathFilterConfig } from './tool-path-filter.util';
+export type SwaggerOperationSelectionMode = 'interactive' | 'api-default-all';
+export type SwaggerToolImportInput = {
+    specUrl: string;
+    specPath?: string;
+    insecure?: boolean;
+    integrationId?: number;
+    appClientId?: number;
+    agentId?: number | null;
+    autoIntegration?: boolean;
+    integrationName?: string;
+    integrationBaseUrl?: string;
+    integrationApiKey?: string;
+    integrationAuthMode?: IntegrationAuthMode;
+    dryRun?: boolean;
+    tags?: string[];
+    ops?: string[];
+    pathInclude?: string[];
+    pathExclude?: string[];
+    noDefaultPathExclude?: boolean;
+};
+export type SwaggerToolImportResult = {
+    integrationId: number;
+    appClientId: number;
+    agentId: number | null;
+    operationCount: number;
+    total: number;
+    created: number;
+    updated: number;
+    dryRun: boolean;
+    pathFilter: PathFilterConfig;
+    toolIds: number[];
+};
+export type SwaggerToolApplyResult = {
+    created: number;
+    updated: number;
+    toolIds: number[];
+};
+type HttpVerb = 'get' | 'post' | 'put' | 'patch' | 'delete';
+type OpenApiOperation = {
+    operationId?: string;
+    summary?: string;
+    description?: string;
+    tags?: string[];
+    parameters?: unknown[];
+    requestBody?: unknown;
+    responses?: Record<string, unknown>;
+};
+type OpenApiPathItem = Partial<Record<HttpVerb, OpenApiOperation>>;
+type OpenApiTagObject = {
+    name?: string;
+    description?: string;
+};
+type OpenApiDocument = {
+    paths?: Record<string, OpenApiPathItem>;
+    tags?: OpenApiTagObject[];
+    info?: {
+        title?: string;
+    };
+    servers?: Array<{
+        url?: string;
+    }>;
+};
+type ToolDraft = {
+    definitionKey: string;
+    name: string;
+    description: string;
+    method: HttpMethod;
+    path: string;
+    riskLevel: ToolLevel;
+    schema: Prisma.InputJsonValue;
+    inputSchema: Prisma.InputJsonValue;
+    outputSchema: Prisma.InputJsonValue | null;
+    agentMetadata: Prisma.InputJsonValue;
+    responseProfile: Prisma.InputJsonValue;
+    integrationId: number;
+    isActive: boolean;
+    categoryLabel: string;
+    categoryDescription: string | null;
+};
+type OperationMeta = {
+    key: string;
+    method: HttpVerb;
+    urlPath: string;
+    tag: string;
+    operation: OpenApiOperation;
+};
+export type SwaggerImportContext = {
+    specPath?: string;
+    specUrl: string;
+    outputPath?: string;
+    integrationId: number | null;
+    appClientId: number | null;
+    agentId: number | null;
+    autoIntegration: boolean;
+    integrationName?: string;
+    integrationBaseUrl?: string;
+    integrationApiKey: string;
+    integrationAuthMode: IntegrationAuthMode;
+    dryRun: boolean;
+    apply: boolean;
+    insecure: boolean;
+    tags: Set<string>;
+    ops: Set<string>;
+    pathInclude: Set<string>;
+    pathExclude: Set<string>;
+    noDefaultPathExclude: boolean;
+};
+export declare const DEFAULT_SWAGGER_SPEC_URL = "https://api.ads.a-premium-test.com/v3/api-docs";
+export declare function resolveRiskLevelByHttpVerb(method: HttpVerb): ToolLevel;
+export declare function toSwaggerImportContext(input: SwaggerToolImportInput): SwaggerImportContext;
+export declare function resolveIntegrationAuthMode(raw: string | undefined): IntegrationAuthMode;
+export declare function loadOpenApiSpec(options: SwaggerImportContext): Promise<OpenApiDocument>;
+declare function listOperations(spec: OpenApiDocument, pathFilter: PathFilterConfig): OperationMeta[];
+export declare function resolveSelectedOperationKeys(options: SwaggerImportContext, operations: OperationMeta[], selectionMode: SwaggerOperationSelectionMode): Promise<Set<string>>;
+export declare function promptSwaggerSpecUrl(defaultUrl: string): Promise<string>;
+declare function buildToolDrafts(spec: OpenApiDocument, pathFilter: PathFilterConfig, selectedKeys: Set<string>, integrationId: number): ToolDraft[];
+export declare function resolveIntegrationId(prisma: PrismaClient, options: SwaggerImportContext, spec: OpenApiDocument): Promise<number>;
+export declare function resolveTargetAgentId(prisma: PrismaClient, options: SwaggerImportContext, appClientId: number, selectionMode: SwaggerOperationSelectionMode): Promise<number | null>;
+export declare function applyTools(prisma: PrismaClient, drafts: ToolDraft[], targetAgentId: number | null): Promise<SwaggerToolApplyResult>;
+export { listOperations, buildToolDrafts };
+export declare function importSwaggerTools(prisma: PrismaClient, input: SwaggerToolImportInput, selectionMode: SwaggerOperationSelectionMode): Promise<SwaggerToolImportResult>;

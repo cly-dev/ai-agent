@@ -1,0 +1,30 @@
+import type { WorkflowRunState } from '../../../workflow/workflow.types';
+import type { ToolObservation } from '../main/types/agent-engine.types';
+import { type PlanScopedTool } from '../main/plan/task-plan.util';
+import { type PlanObservationBuckets } from '../main/plan/plan-observation-scope.util';
+import type { TaskPlanSnapshot } from '../main/plan/task-plan.types';
+import type { LlmService } from '../../../llm/llm.service';
+import type { PromptRegistryService } from '../../../prompt/prompt-registry.service';
+import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
+import type { PageContextUsage } from '../../../host-bridge/page-context-usage.types';
+import type { TurnReadinessResult } from './turn-respond.types';
+export type EvaluateExecutionReadinessInput = {
+    userMessage: string;
+    taskPlan?: TaskPlanSnapshot | null;
+    scopedTools: PlanScopedTool[];
+    skillConfig?: unknown;
+    resumeFromWriteConfirm?: boolean;
+    llmService?: LlmService;
+    promptRegistry?: PromptRegistryService;
+    scope?: {
+        appClientId: number;
+        agentId: number;
+    };
+    sessionObservationSummary?: string | null;
+    pageContext?: AgentChatPageContext | null;
+    pageContextUsage?: Pick<PageContextUsage, 'applies' | 'entityId'> | null;
+    observationBuckets: PlanObservationBuckets;
+    workflowRun?: WorkflowRunState | null;
+};
+export declare function evaluateExecutionReadiness(input: EvaluateExecutionReadinessInput): Promise<TurnReadinessResult>;
+export declare function summarizeSessionObservationsForReadiness(observations: ToolObservation[], maxItems?: number): string | null;
