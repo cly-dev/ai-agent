@@ -25,6 +25,11 @@ import {
   pageActionWorkflowLoadFailureMessage,
 } from '../page-action-workflow-load.util';
 import { writePageActionLifecycle } from '../page-action-inline-sse.util';
+import {
+  emitPageActionRunTerminalSse,
+  mapTerminalPhaseToRunStatus,
+  resolvePageActionRunTerminalOutcome,
+} from '../page-action-run-terminal-sse.util';
 import { PageActionRunStepRecorder } from '../page-action-run-steps.util';
 import { buildPageActionLlmMessages } from '../page-action-prompt.util';
 import { loadPageWorkflowToolBundle } from '../page-workflow-tool-bundle.util';
@@ -296,62 +301,24 @@ export class PageActionRunExecutor {
       pageActionKey: run.pageActionKey,
     });
 
-    if (result.suspended) {
-      writePageActionLifecycle(
-        sseSink,
-        {
-          phase: 'awaiting_approval',
-          ...lifecycleBase,
-        },
-        stepRecorder,
-      );
-      await this.prisma.pageActionRun.update({
-        where: { id: run.runId },
-        data: {
-          workflowId: loadResult.workflowId,
-          workflowVersion: loadResult.version,
-          workflowRun: result.workflowRun as Prisma.InputJsonValue,
-          status: PageActionRunStatus.awaiting_approval,
-          fillText: result.fillText || null,
-          dslOutcome: result.dslOutcome,
-          model: result.model,
-          promptTokens: result.promptTokens,
-          completionTokens: result.completionTokens,
-          durationMs: Date.now() - startedAt,
-          steps: result.steps as Prisma.InputJsonValue,
-        },
-      });
-      return;
-    }
+    const terminal = resolvePageActionRunTerminalOutcome({
+      suspended: result.suspended === true,
+      errorCode: result.errorCode,
+      errorMessage: result.errorMessage,
+      fillText: result.fillText,
+    });
 
-    const failed = result.errorCode != null;
-    const empty = !failed && result.fillText.trim().length === 0;
-    if (!failed && !empty) {
-      writePageActionLifecycle(
-        sseSink,
-        {
-          phase: 'completed',
-          ...lifecycleBase,
-          text: result.fillText,
-          dslOutcome: result.dslOutcome,
-        },
-        stepRecorder,
-      );
-    } else if (failed || empty) {
-      writePageActionLifecycle(
-        sseSink,
-        {
-          phase: 'failed',
-          ...lifecycleBase,
-          errorCode: result.errorCode ?? 'STREAM_EMPTY',
-          errorMessage:
-            result.errorMessage ??
-            result.errorCode ??
-            'LLM produced empty fill text',
-        },
-        stepRecorder,
-      );
-    }
+    emitPageActionRunTerminalSse({
+      sseSink,
+      recorder: stepRecorder,
+      actionRunId: run.runId,
+      actionKey: run.actionKey,
+      generation: run.generation,
+      clientActionId: run.clientActionId,
+      streamId: null,
+      outcome: terminal,
+      dslOutcome: result.dslOutcome,
+    });
 
     await this.prisma.pageActionRun.update({
       where: { id: run.runId },
@@ -359,26 +326,17 @@ export class PageActionRunExecutor {
         workflowId: loadResult.workflowId,
         workflowVersion: loadResult.version,
         workflowRun: result.workflowRun as Prisma.InputJsonValue,
-        status: failed || empty ? PageActionRunStatus.failed : PageActionRunStatus.completed,
-        fillText: result.fillText || null,
+        status: mapTerminalPhaseToRunStatus(terminal.phase),
+        fillText: terminal.fillText,
         dslOutcome: result.dslOutcome,
         model: result.model,
         promptTokens: result.promptTokens,
         completionTokens: result.completionTokens,
         durationMs: Date.now() - startedAt,
-        finishedAt: new Date(),
+        finishedAt: terminal.phase === 'awaiting_approval' ? null : new Date(),
         steps: result.steps as Prisma.InputJsonValue,
-        ...(failed
-          ? {
-              errorCode: result.errorCode,
-              errorMessage: result.errorMessage ?? result.errorCode,
-            }
-          : empty
-            ? {
-                errorCode: 'STREAM_EMPTY',
-                errorMessage: 'LLM produced empty fill text',
-              }
-            : {}),
+        errorCode: terminal.errorCode,
+        errorMessage: terminal.errorMessage,
       },
     });
   }

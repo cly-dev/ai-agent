@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.retryPageActionFromApprovalSnapshot = exports.resumePageActionFromApprovalSnapshot = void 0;
 const common_1 = require("@nestjs/common");
-const client_1 = require("../../../generated/prisma/client");
 const page_workflow_orchestrator_1 = require("../page-action/page-workflow-orchestrator");
 const page_workflow_tool_bundle_util_1 = require("../page-action/page-workflow-tool-bundle.util");
 const page_action_run_steps_util_1 = require("../page-action/page-action-run-steps.util");
@@ -14,8 +13,9 @@ const page_action_sse_sink_util_1 = require("../page-action/stream/page-action-s
 const draft_review_1 = require("../draft-review");
 const page_action_run_audit_util_1 = require("../page-action/page-action-run-audit.util");
 const validate_approval_edited_pending_write_util_1 = require("./validate-approval-edited-pending-write.util");
+const page_action_run_terminal_sse_util_1 = require("../page-action/page-action-run-terminal-sse.util");
 async function resumePageActionFromApprovalSnapshot(input) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const { snapshot } = input;
     if (snapshot.channel.kind !== 'page_action') {
         return;
@@ -109,28 +109,44 @@ async function resumePageActionFromApprovalSnapshot(input) {
             advancePastAwait: true,
         },
     });
+    const terminal = (0, page_action_run_terminal_sse_util_1.resolvePageActionRunTerminalOutcome)({
+        suspended: result.suspended === true,
+        errorCode: result.errorCode,
+        errorMessage: result.errorMessage,
+        fillText: result.fillText,
+    });
+    (0, page_action_run_terminal_sse_util_1.emitPageActionRunTerminalSse)({
+        sseSink,
+        recorder,
+        actionRunId: run.id,
+        actionKey: run.pageAction.actionKey,
+        generation: run.generation,
+        clientActionId: run.clientActionId,
+        streamId: run.streamId,
+        outcome: terminal,
+        dslOutcome: result.dslOutcome,
+    });
     (_h = input.runEventBus) === null || _h === void 0 ? void 0 : _h.closeSession(run.id);
-    recorder.recordLifecycle(result.errorCode ? 'failed' : 'completed', {
-        approvalRequestId: input.approvalRequestId,
-        errorCode: (_j = result.errorCode) !== null && _j !== void 0 ? _j : null,
-    }, result.errorCode ? 'failed' : 'ok');
     await input.prisma.pageActionRun.update({
         where: { id: run.id },
-        data: Object.assign({ status: result.suspended
-                ? client_1.PageActionRunStatus.awaiting_approval
-                : result.errorCode
-                    ? client_1.PageActionRunStatus.failed
-                    : client_1.PageActionRunStatus.completed, workflowRun: result.workflowRun, fillText: result.fillText || null, dslOutcome: result.dslOutcome, model: result.model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, finishedAt: result.suspended ? null : new Date(), steps: recorder.toJson() }, (result.errorCode
-            ? {
-                errorCode: result.errorCode,
-                errorMessage: (_k = result.errorMessage) !== null && _k !== void 0 ? _k : result.errorCode,
-            }
-            : {})),
+        data: {
+            status: (0, page_action_run_terminal_sse_util_1.mapTerminalPhaseToRunStatus)(terminal.phase),
+            workflowRun: result.workflowRun,
+            fillText: terminal.fillText,
+            dslOutcome: result.dslOutcome,
+            model: result.model,
+            promptTokens: result.promptTokens,
+            completionTokens: result.completionTokens,
+            finishedAt: terminal.phase === 'awaiting_approval' ? null : new Date(),
+            steps: recorder.toJson(),
+            errorCode: terminal.errorCode,
+            errorMessage: terminal.errorMessage,
+        },
     });
 }
 exports.resumePageActionFromApprovalSnapshot = resumePageActionFromApprovalSnapshot;
 async function retryPageActionFromApprovalSnapshot(input) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g;
     const { snapshot } = input;
     if (snapshot.channel.kind !== 'page_action') {
         return false;
@@ -228,19 +244,39 @@ async function retryPageActionFromApprovalSnapshot(input) {
             advancePastAwait: false,
         },
     });
+    const terminal = (0, page_action_run_terminal_sse_util_1.resolvePageActionRunTerminalOutcome)({
+        suspended: result.suspended === true,
+        errorCode: result.errorCode,
+        errorMessage: result.errorMessage,
+        fillText: result.fillText,
+    });
+    (0, page_action_run_terminal_sse_util_1.emitPageActionRunTerminalSse)({
+        sseSink,
+        recorder,
+        actionRunId: run.id,
+        actionKey: run.pageAction.actionKey,
+        generation: run.generation,
+        clientActionId: run.clientActionId,
+        streamId: run.streamId,
+        outcome: terminal,
+        dslOutcome: result.dslOutcome,
+    });
     (_g = input.runEventBus) === null || _g === void 0 ? void 0 : _g.closeSession(run.id);
     await input.prisma.pageActionRun.update({
         where: { id: run.id },
-        data: Object.assign({ status: result.suspended
-                ? client_1.PageActionRunStatus.awaiting_approval
-                : result.errorCode
-                    ? client_1.PageActionRunStatus.failed
-                    : client_1.PageActionRunStatus.completed, workflowRun: result.workflowRun, fillText: result.fillText || null, dslOutcome: result.dslOutcome, model: result.model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, finishedAt: result.suspended || result.errorCode ? null : new Date(), steps: recorder.toJson() }, (result.errorCode
-            ? {
-                errorCode: result.errorCode,
-                errorMessage: (_h = result.errorMessage) !== null && _h !== void 0 ? _h : result.errorCode,
-            }
-            : {})),
+        data: {
+            status: (0, page_action_run_terminal_sse_util_1.mapTerminalPhaseToRunStatus)(terminal.phase),
+            workflowRun: result.workflowRun,
+            fillText: terminal.fillText,
+            dslOutcome: result.dslOutcome,
+            model: result.model,
+            promptTokens: result.promptTokens,
+            completionTokens: result.completionTokens,
+            finishedAt: terminal.phase === 'awaiting_approval' ? null : new Date(),
+            steps: recorder.toJson(),
+            errorCode: terminal.errorCode,
+            errorMessage: terminal.errorMessage,
+        },
     });
     return result.suspended === true;
 }

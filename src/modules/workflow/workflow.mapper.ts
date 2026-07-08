@@ -5,6 +5,7 @@ import type {
   WorkflowListItem,
   WorkflowResponse,
   WorkflowRevisionResponse,
+  WorkflowRevisionSummaryResponse,
 } from './workflow.types';
 
 function mapToolBindings(row: WorkflowDetailRow) {
@@ -65,16 +66,19 @@ export function toWorkflowListItem(row: WorkflowListRow): WorkflowListItem {
   };
 }
 
-export function toWorkflowRevisionResponse(row: {
-  id: number;
-  workflowId: number;
-  version: number;
-  deliverable: string;
-  nodes: unknown;
-  constraints: unknown;
-  changeNote: string | null;
-  createdAt: Date;
-}): WorkflowRevisionResponse {
+export function toWorkflowRevisionResponse(
+  row: {
+    id: number;
+    workflowId: number;
+    version: number;
+    deliverable: string;
+    nodes: unknown;
+    constraints: unknown;
+    changeNote: string | null;
+    createdAt: Date;
+  },
+  currentVersion: number,
+): WorkflowRevisionResponse {
   return {
     id: row.id,
     workflowId: row.workflowId,
@@ -84,5 +88,28 @@ export function toWorkflowRevisionResponse(row: {
     constraints: row.constraints,
     changeNote: row.changeNote,
     createdAt: row.createdAt,
+    isCurrent: row.version === currentVersion,
+  };
+}
+
+export function toWorkflowRevisionSummaryResponse(
+  row: {
+    id: number;
+    workflowId: number;
+    version: number;
+    deliverable: string;
+    changeNote: string | null;
+    createdAt: Date;
+  },
+  currentVersion: number,
+): WorkflowRevisionSummaryResponse {
+  return {
+    id: row.id,
+    workflowId: row.workflowId,
+    version: row.version,
+    deliverable: row.deliverable,
+    changeNote: row.changeNote,
+    createdAt: row.createdAt,
+    isCurrent: row.version === currentVersion,
   };
 }

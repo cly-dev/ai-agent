@@ -24,6 +24,7 @@ import {
   buildToolCallResultAudit,
   summarizeRecordForAudit,
 } from './page-action-run-audit.util';
+import { assessWriteToolBusinessFailure } from './write-tool-outcome.util';
 
 export type PageWorkflowReactResult =
   | {
@@ -220,6 +221,25 @@ export async function runPageWorkflowMutationReact(input: {
             : undefined,
         },
       );
+      const businessFailure = assessWriteToolBusinessFailure(result.output);
+      if (businessFailure) {
+        runtime.stepRecorder.record({
+          type: 'workflow',
+          name: `${nodeId}:write:complete`,
+          detail: buildToolCallResultAudit(result),
+          status: 'failed',
+        });
+        const failed = failWorkflowNode(input.workflowRun, nodeId, {
+          code: businessFailure.code,
+          message: businessFailure.message,
+        });
+        return {
+          ok: false,
+          workflowRun: failed,
+          errorCode: businessFailure.code,
+          errorMessage: businessFailure.message,
+        };
+      }
       runtime.stepRecorder.record({
         type: 'workflow',
         name: `${nodeId}:write:complete`,

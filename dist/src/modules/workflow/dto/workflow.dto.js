@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.WorkflowOverridesDto = exports.QueryWorkflowDto = exports.UpdateWorkflowDto = exports.CreateWorkflowDto = exports.WorkflowHostToolBindingDto = exports.WorkflowToolBindingDto = exports.WORKFLOW_PRESET_KIND_VALUES = void 0;
+exports.WorkflowOverridesDto = exports.QueryWorkflowDto = exports.QueryWorkflowRevisionsDto = exports.UpdateWorkflowDto = exports.CreateWorkflowDto = exports.WorkflowHostToolBindingDto = exports.WorkflowToolBindingDto = exports.WORKFLOW_PRESET_KIND_VALUES = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -279,6 +279,29 @@ __decorate([
     __metadata("design:type", String)
 ], UpdateWorkflowDto.prototype, "changeNote", void 0);
 exports.UpdateWorkflowDto = UpdateWorkflowDto;
+class QueryWorkflowRevisionsDto {
+}
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 20,
+        description: '返回条数上限，最大 100',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    __metadata("design:type", Number)
+], QueryWorkflowRevisionsDto.prototype, "limit", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'true 时仅返回版本元数据（version / changeNote / isCurrent），不含 nodes 快照',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Boolean),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], QueryWorkflowRevisionsDto.prototype, "summary", void 0);
+exports.QueryWorkflowRevisionsDto = QueryWorkflowRevisionsDto;
 class QueryWorkflowDto extends pagination_1.PaginationQueryDto {
 }
 __decorate([

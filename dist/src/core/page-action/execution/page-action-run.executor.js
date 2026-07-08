@@ -24,6 +24,7 @@ const page_action_host_fill_executor_1 = require("../page-action-host-fill.execu
 const page_workflow_orchestrator_1 = require("../page-workflow-orchestrator");
 const page_action_workflow_load_util_1 = require("../page-action-workflow-load.util");
 const page_action_inline_sse_util_1 = require("../page-action-inline-sse.util");
+const page_action_run_terminal_sse_util_1 = require("../page-action-run-terminal-sse.util");
 const page_action_run_steps_util_1 = require("../page-action-run-steps.util");
 const page_action_prompt_util_1 = require("../page-action-prompt.util");
 const page_workflow_tool_bundle_util_1 = require("../page-workflow-tool-bundle.util");
@@ -131,7 +132,6 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
         }
     }
     async executeWorkflow(input) {
-        var _a, _b, _c, _d;
         const { input: run, messages, sseSink, stepRecorder, startedAt, lifecycleBase } = input;
         const [loadResult, allowedToolIds] = await Promise.all([
             (0, load_workflow_definition_util_1.loadWorkflowForRunDetailed)(this.prisma, {
@@ -220,47 +220,41 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
             approvalTriggerBinding: (0, resolve_approval_parties_util_1.parseApprovalTriggerBinding)(run.pageActionConfig),
             pageActionKey: run.pageActionKey,
         });
-        if (result.suspended) {
-            (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sseSink, Object.assign({ phase: 'awaiting_approval' }, lifecycleBase), stepRecorder);
-            await this.prisma.pageActionRun.update({
-                where: { id: run.runId },
-                data: {
-                    workflowId: loadResult.workflowId,
-                    workflowVersion: loadResult.version,
-                    workflowRun: result.workflowRun,
-                    status: client_1.PageActionRunStatus.awaiting_approval,
-                    fillText: result.fillText || null,
-                    dslOutcome: result.dslOutcome,
-                    model: result.model,
-                    promptTokens: result.promptTokens,
-                    completionTokens: result.completionTokens,
-                    durationMs: Date.now() - startedAt,
-                    steps: result.steps,
-                },
-            });
-            return;
-        }
-        const failed = result.errorCode != null;
-        const empty = !failed && result.fillText.trim().length === 0;
-        if (!failed && !empty) {
-            (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sseSink, Object.assign(Object.assign({ phase: 'completed' }, lifecycleBase), { text: result.fillText, dslOutcome: result.dslOutcome }), stepRecorder);
-        }
-        else if (failed || empty) {
-            (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sseSink, Object.assign(Object.assign({ phase: 'failed' }, lifecycleBase), { errorCode: (_a = result.errorCode) !== null && _a !== void 0 ? _a : 'STREAM_EMPTY', errorMessage: (_c = (_b = result.errorMessage) !== null && _b !== void 0 ? _b : result.errorCode) !== null && _c !== void 0 ? _c : 'LLM produced empty fill text' }), stepRecorder);
-        }
+        const terminal = (0, page_action_run_terminal_sse_util_1.resolvePageActionRunTerminalOutcome)({
+            suspended: result.suspended === true,
+            errorCode: result.errorCode,
+            errorMessage: result.errorMessage,
+            fillText: result.fillText,
+        });
+        (0, page_action_run_terminal_sse_util_1.emitPageActionRunTerminalSse)({
+            sseSink,
+            recorder: stepRecorder,
+            actionRunId: run.runId,
+            actionKey: run.actionKey,
+            generation: run.generation,
+            clientActionId: run.clientActionId,
+            streamId: null,
+            outcome: terminal,
+            dslOutcome: result.dslOutcome,
+        });
         await this.prisma.pageActionRun.update({
             where: { id: run.runId },
-            data: Object.assign({ workflowId: loadResult.workflowId, workflowVersion: loadResult.version, workflowRun: result.workflowRun, status: failed || empty ? client_1.PageActionRunStatus.failed : client_1.PageActionRunStatus.completed, fillText: result.fillText || null, dslOutcome: result.dslOutcome, model: result.model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, durationMs: Date.now() - startedAt, finishedAt: new Date(), steps: result.steps }, (failed
-                ? {
-                    errorCode: result.errorCode,
-                    errorMessage: (_d = result.errorMessage) !== null && _d !== void 0 ? _d : result.errorCode,
-                }
-                : empty
-                    ? {
-                        errorCode: 'STREAM_EMPTY',
-                        errorMessage: 'LLM produced empty fill text',
-                    }
-                    : {})),
+            data: {
+                workflowId: loadResult.workflowId,
+                workflowVersion: loadResult.version,
+                workflowRun: result.workflowRun,
+                status: (0, page_action_run_terminal_sse_util_1.mapTerminalPhaseToRunStatus)(terminal.phase),
+                fillText: terminal.fillText,
+                dslOutcome: result.dslOutcome,
+                model: result.model,
+                promptTokens: result.promptTokens,
+                completionTokens: result.completionTokens,
+                durationMs: Date.now() - startedAt,
+                finishedAt: terminal.phase === 'awaiting_approval' ? null : new Date(),
+                steps: result.steps,
+                errorCode: terminal.errorCode,
+                errorMessage: terminal.errorMessage,
+            },
         });
     }
 };

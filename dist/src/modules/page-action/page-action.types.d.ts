@@ -1,4 +1,5 @@
 import type { Prisma } from '../../../generated/prisma/client';
+import type { PageActionTaskStatus } from '../../core/page-action/page-action-task-status.util';
 import type { PageActionRunStep } from '../../core/page-action/page-action-run-steps.util';
 export declare const PAGE_ACTION_DETAIL_INCLUDE: {
     appClient: {
@@ -82,6 +83,8 @@ export type PageActionRunAdminListItem = {
     username: string | null;
     userEmail: string | null;
     status: string;
+    taskStatus: PageActionTaskStatus;
+    succeeded: boolean;
     generation: number;
     dslOutcome: string | null;
     errorCode: string | null;

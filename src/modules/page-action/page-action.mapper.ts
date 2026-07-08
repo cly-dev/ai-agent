@@ -1,5 +1,6 @@
 import type { PageActionRunStep } from '../../core/page-action/page-action-run-steps.util';
 import { parsePageActionRunSteps } from '../../core/page-action/page-action-run-steps.util';
+import { resolvePageActionRunOutcome } from '../../core/page-action/page-action-task-status.util';
 import type {
   PageActionDetailRow,
   PageActionRunAdminDetail,
@@ -45,6 +46,10 @@ function stepCount(value: unknown): number {
 export function toPageActionRunAdminListItem(
   row: PageActionRunAdminRow,
 ): PageActionRunAdminListItem {
+  const outcome = resolvePageActionRunOutcome({
+    status: row.status,
+    errorCode: row.errorCode,
+  });
   return {
     id: row.id,
     pageActionId: row.pageActionId,
@@ -54,6 +59,8 @@ export function toPageActionRunAdminListItem(
     username: row.user?.username ?? null,
     userEmail: row.user?.email ?? null,
     status: row.status,
+    taskStatus: outcome.taskStatus,
+    succeeded: outcome.succeeded,
     generation: row.generation,
     dslOutcome: row.dslOutcome,
     errorCode: row.errorCode,

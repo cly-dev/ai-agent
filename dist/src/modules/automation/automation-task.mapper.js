@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolvePageActionRunStatusWhere = exports.toAutomationTaskDetailFromPageActionRun = exports.toAutomationTaskFromPageActionRun = exports.buildAutomationTaskSubtitle = exports.AUTOMATION_PAGE_ACTION_RUN_INCLUDE = void 0;
 const page_action_constants_1 = require("../../core/page-action/page-action.constants");
 const page_action_run_steps_util_1 = require("../../core/page-action/page-action-run-steps.util");
+const page_action_task_status_util_1 = require("../../core/page-action/page-action-task-status.util");
 const page_context_usage_util_1 = require("../../core/host-bridge/page-context-usage.util");
 exports.AUTOMATION_PAGE_ACTION_RUN_INCLUDE = {
     pageAction: {
@@ -21,22 +22,6 @@ function previewText(value, max = 120) {
         return null;
     }
     return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
-}
-function mapRunStatus(status) {
-    switch (status) {
-        case 'running':
-            return 'running';
-        case 'awaiting_approval':
-            return 'awaiting_approval';
-        case 'completed':
-            return 'completed';
-        case 'failed':
-            return 'failed';
-        case 'cancelled':
-            return 'cancelled';
-        default:
-            return 'failed';
-    }
 }
 function buildAutomationTaskSubtitle(pageContext) {
     const assessment = (0, page_context_usage_util_1.assessPageContextData)((pageContext !== null && pageContext !== void 0 ? pageContext : null));
@@ -57,12 +42,17 @@ function toTimeline(steps) {
     return (0, page_action_run_steps_util_1.toPublicPageActionRunTimeline)(steps);
 }
 function toAutomationTaskFromPageActionRun(row) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g;
     const workflow = row.pageAction.workflow;
+    const outcome = (0, page_action_task_status_util_1.resolvePageActionRunOutcome)({
+        status: row.status,
+        errorCode: row.errorCode,
+    });
     return {
         ref: { kind: 'page_action_run', id: row.id },
         triggerSource: 'page_action',
-        taskStatus: mapRunStatus(row.status),
+        taskStatus: outcome.taskStatus,
+        succeeded: outcome.succeeded,
         title: row.pageAction.name,
         subtitle: buildAutomationTaskSubtitle(row.pageContext),
         pageActionKey: row.pageActionKey,
@@ -71,20 +61,22 @@ function toAutomationTaskFromPageActionRun(row) {
         createdAt: row.createdAt.toISOString(),
         finishedAt: (_d = (_c = row.finishedAt) === null || _c === void 0 ? void 0 : _c.toISOString()) !== null && _d !== void 0 ? _d : null,
         durationMs: row.durationMs,
+        errorCode: row.errorCode,
+        errorMessage: row.errorMessage,
         approval: row.approvalRequest
             ? { id: row.approvalRequest.id, status: row.approvalRequest.status }
             : null,
         outputs: {
-            preview: previewText(row.fillText),
-            hasFillText: Boolean((_e = row.fillText) === null || _e === void 0 ? void 0 : _e.trim()),
+            preview: previewText((_e = row.fillText) !== null && _e !== void 0 ? _e : row.errorMessage),
+            hasFillText: Boolean(((_f = row.fillText) === null || _f === void 0 ? void 0 : _f.trim()) || ((_g = row.errorMessage) === null || _g === void 0 ? void 0 : _g.trim())),
         },
     };
 }
 exports.toAutomationTaskFromPageActionRun = toAutomationTaskFromPageActionRun;
 function toAutomationTaskDetailFromPageActionRun(row) {
-    var _a;
+    var _a, _b;
     const listItem = toAutomationTaskFromPageActionRun(row);
-    const fillText = ((_a = row.fillText) === null || _a === void 0 ? void 0 : _a.trim()) || null;
+    const fillText = ((_a = row.fillText) === null || _a === void 0 ? void 0 : _a.trim()) || ((_b = row.errorMessage) === null || _b === void 0 ? void 0 : _b.trim()) || null;
     return Object.assign(Object.assign({}, listItem), { outputs: Object.assign(Object.assign({}, listItem.outputs), { fillText }), actionKey: row.pageAction.actionKey, instruction: row.instruction, errorCode: row.errorCode, errorMessage: row.errorMessage, streamUrl: (0, page_action_constants_1.buildPageActionRunStreamPath)(row.id), timeline: toTimeline(row.steps), workflowRun: row.workflowRun });
 }
 exports.toAutomationTaskDetailFromPageActionRun = toAutomationTaskDetailFromPageActionRun;

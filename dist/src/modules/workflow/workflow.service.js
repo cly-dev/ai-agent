@@ -294,14 +294,50 @@ let WorkflowService = class WorkflowService {
         ]);
         return (0, pagination_1.toPaginatedResult)(rows.map(workflow_mapper_1.toWorkflowListItem), total, page, pageSize);
     }
-    async listRevisions(workflowId, limit = 20) {
-        await this.findEntityOrThrow(workflowId);
+    async listRevisions(workflowId, query = {}) {
+        var _a;
+        const workflow = await this.findEntityOrThrow(workflowId);
+        const limit = Math.min(Math.max((_a = query.limit) !== null && _a !== void 0 ? _a : 20, 1), 100);
+        if (query.summary) {
+            const rows = await this.prisma.workflowRevision.findMany({
+                where: { workflowId },
+                orderBy: { version: 'desc' },
+                take: limit,
+                select: {
+                    id: true,
+                    workflowId: true,
+                    version: true,
+                    deliverable: true,
+                    changeNote: true,
+                    createdAt: true,
+                },
+            });
+            return rows.map((row) => (0, workflow_mapper_1.toWorkflowRevisionSummaryResponse)(row, workflow.version));
+        }
         const rows = await this.prisma.workflowRevision.findMany({
             where: { workflowId },
             orderBy: { version: 'desc' },
-            take: Math.min(Math.max(limit, 1), 100),
+            take: limit,
         });
-        return rows.map(workflow_mapper_1.toWorkflowRevisionResponse);
+        return rows.map((row) => (0, workflow_mapper_1.toWorkflowRevisionResponse)(row, workflow.version));
+    }
+    async findRevision(workflowId, version) {
+        const workflow = await this.findEntityOrThrow(workflowId);
+        const row = await this.prisma.workflowRevision.findUnique({
+            where: {
+                workflowId_version: {
+                    workflowId,
+                    version,
+                },
+            },
+        });
+        if (!row) {
+            throw new common_1.NotFoundException({
+                code: 'WORKFLOW_REVISION_NOT_FOUND',
+                message: `Workflow ${workflowId} revision version=${version} not found`,
+            });
+        }
+        return (0, workflow_mapper_1.toWorkflowRevisionResponse)(row, workflow.version);
     }
     async assertWorkflowReferenceCompatible(input) {
         const workflow = await this.prisma.workflow.findFirst({

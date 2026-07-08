@@ -7,7 +7,8 @@ export type AutomationTaskRef = {
     kind: 'webhook_approval';
     id: number;
 };
-export type AutomationTaskStatus = 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
+import type { PageActionTaskStatus } from '../../core/page-action/page-action-task-status.util';
+export type AutomationTaskStatus = PageActionTaskStatus;
 export declare const AUTOMATION_TASK_STATUSES: readonly ["running", "awaiting_approval", "completed", "failed", "cancelled", "active", "all"];
 export type AutomationTaskStatusFilter = (typeof AUTOMATION_TASK_STATUSES)[number];
 export declare const AUTOMATION_TRIGGER_SOURCES: readonly ["page_action", "webhook", "all"];
@@ -16,6 +17,7 @@ export type AutomationTaskListItem = {
     ref: AutomationTaskRef;
     triggerSource: AutomationTriggerSource;
     taskStatus: AutomationTaskStatus;
+    succeeded: boolean;
     title: string;
     subtitle: string | null;
     pageActionKey: string | null;
@@ -24,6 +26,8 @@ export type AutomationTaskListItem = {
     createdAt: string;
     finishedAt: string | null;
     durationMs: number | null;
+    errorCode: string | null;
+    errorMessage: string | null;
     approval: {
         id: number;
         status: string;

@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { PageActionRunStatus, Prisma } from '../../../generated/prisma/client';
+import { Prisma } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { orchestratePageWorkflow } from '../page-action/page-workflow-orchestrator';
 import { loadPageWorkflowToolBundle } from '../page-action/page-workflow-tool-bundle.util';
@@ -27,6 +27,11 @@ import {
 import { buildWriteDraftStepDetail } from '../page-action/page-action-run-audit.util';
 import type { DraftReviewDecision } from '../draft-review';
 import { resolveApprovalSnapshotForDecision } from './validate-approval-edited-pending-write.util';
+import {
+  emitPageActionRunTerminalSse,
+  mapTerminalPhaseToRunStatus,
+  resolvePageActionRunTerminalOutcome,
+} from '../page-action/page-action-run-terminal-sse.util';
 
 export async function resumePageActionFromApprovalSnapshot(input: {
   snapshot: ApprovalResumeSnapshot;
@@ -144,40 +149,40 @@ export async function resumePageActionFromApprovalSnapshot(input: {
     },
   });
 
-  input.runEventBus?.closeSession(run.id);
+  const terminal = resolvePageActionRunTerminalOutcome({
+    suspended: result.suspended === true,
+    errorCode: result.errorCode,
+    errorMessage: result.errorMessage,
+    fillText: result.fillText,
+  });
 
-  recorder.recordLifecycle(
-    result.errorCode ? 'failed' : 'completed',
-    {
-      approvalRequestId: input.approvalRequestId,
-      errorCode: result.errorCode ?? null,
-    },
-    result.errorCode ? 'failed' : 'ok',
-  );
+  emitPageActionRunTerminalSse({
+    sseSink,
+    recorder,
+    actionRunId: run.id,
+    actionKey: run.pageAction.actionKey,
+    generation: run.generation,
+    clientActionId: run.clientActionId,
+    streamId: run.streamId,
+    outcome: terminal,
+    dslOutcome: result.dslOutcome,
+  });
+  input.runEventBus?.closeSession(run.id);
 
   await input.prisma.pageActionRun.update({
     where: { id: run.id },
     data: {
-      status:
-        result.suspended
-          ? PageActionRunStatus.awaiting_approval
-          : result.errorCode
-            ? PageActionRunStatus.failed
-            : PageActionRunStatus.completed,
+      status: mapTerminalPhaseToRunStatus(terminal.phase),
       workflowRun: result.workflowRun as object,
-      fillText: result.fillText || null,
+      fillText: terminal.fillText,
       dslOutcome: result.dslOutcome,
       model: result.model,
       promptTokens: result.promptTokens,
       completionTokens: result.completionTokens,
-      finishedAt: result.suspended ? null : new Date(),
+      finishedAt: terminal.phase === 'awaiting_approval' ? null : new Date(),
       steps: recorder.toJson() as Prisma.InputJsonValue,
-      ...(result.errorCode
-        ? {
-            errorCode: result.errorCode,
-            errorMessage: result.errorMessage ?? result.errorCode,
-          }
-        : {}),
+      errorCode: terminal.errorCode,
+      errorMessage: terminal.errorMessage,
     },
   });
 }
@@ -308,30 +313,40 @@ export async function retryPageActionFromApprovalSnapshot(input: {
     },
   });
 
+  const terminal = resolvePageActionRunTerminalOutcome({
+    suspended: result.suspended === true,
+    errorCode: result.errorCode,
+    errorMessage: result.errorMessage,
+    fillText: result.fillText,
+  });
+
+  emitPageActionRunTerminalSse({
+    sseSink,
+    recorder,
+    actionRunId: run.id,
+    actionKey: run.pageAction.actionKey,
+    generation: run.generation,
+    clientActionId: run.clientActionId,
+    streamId: run.streamId,
+    outcome: terminal,
+    dslOutcome: result.dslOutcome,
+  });
   input.runEventBus?.closeSession(run.id);
 
   await input.prisma.pageActionRun.update({
     where: { id: run.id },
     data: {
-      status: result.suspended
-        ? PageActionRunStatus.awaiting_approval
-        : result.errorCode
-          ? PageActionRunStatus.failed
-          : PageActionRunStatus.completed,
+      status: mapTerminalPhaseToRunStatus(terminal.phase),
       workflowRun: result.workflowRun as object,
-      fillText: result.fillText || null,
+      fillText: terminal.fillText,
       dslOutcome: result.dslOutcome,
       model: result.model,
       promptTokens: result.promptTokens,
       completionTokens: result.completionTokens,
-      finishedAt: result.suspended || result.errorCode ? null : new Date(),
+      finishedAt: terminal.phase === 'awaiting_approval' ? null : new Date(),
       steps: recorder.toJson() as Prisma.InputJsonValue,
-      ...(result.errorCode
-        ? {
-            errorCode: result.errorCode,
-            errorMessage: result.errorMessage ?? result.errorCode,
-          }
-        : {}),
+      errorCode: terminal.errorCode,
+      errorMessage: terminal.errorMessage,
     },
   });
 

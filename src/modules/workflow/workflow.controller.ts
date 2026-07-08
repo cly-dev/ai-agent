@@ -17,6 +17,7 @@ import {
 import {
   CreateWorkflowDto,
   QueryWorkflowDto,
+  QueryWorkflowRevisionsDto,
   UpdateWorkflowDto,
 } from './dto/workflow.dto';
 import { WorkflowService } from './workflow.service';
@@ -52,15 +53,29 @@ export class WorkflowController {
     return this.service.findPage({ ...query, appClientId });
   }
 
+  @Get(':id/revisions/:version')
+  @ApiParam({ name: 'id', type: Number })
+  @ApiParam({ name: 'version', type: Number, description: 'revision 版本号' })
+  @ApiOperation({ summary: 'B 端：查看 Workflow 指定版本快照' })
+  findRevision(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('version', ParseIntPipe) version: number,
+  ) {
+    return this.service.findRevision(id, version);
+  }
+
   @Get(':id/revisions')
   @ApiParam({ name: 'id', type: Number })
-  @ApiOperation({ summary: 'B 端：Workflow revision 历史' })
+  @ApiOperation({
+    summary: 'B 端：Workflow revision 历史',
+    description:
+      '默认返回完整快照；summary=true 时仅返回版本元数据，适合版本下拉。',
+  })
   listRevisions(
     @Param('id', ParseIntPipe) id: number,
-    @Query('limit') limit?: string,
+    @Query() query: QueryWorkflowRevisionsDto,
   ) {
-    const parsed = limit ? Number.parseInt(limit, 10) : 20;
-    return this.service.listRevisions(id, Number.isFinite(parsed) ? parsed : 20);
+    return this.service.listRevisions(id, query);
   }
 
   @Patch(':id')

@@ -1,4 +1,5 @@
 import type { Prisma } from '../../../generated/prisma/client';
+import type { PageActionTaskStatus } from '../../core/page-action/page-action-task-status.util';
 import type { PageActionRunStep } from '../../core/page-action/page-action-run-steps.util';
 import { HOST_TOOL_DETAIL_INCLUDE } from '../host-tool/host-tool.types';
 
@@ -53,6 +54,10 @@ export type PageActionRunAdminListItem = {
   username: string | null;
   userEmail: string | null;
   status: string;
+  /** 与 C 端 taskStatus 对齐的对外状态。 */
+  taskStatus: PageActionTaskStatus;
+  /** 仅 completed 且无 errorCode 时为 true。 */
+  succeeded: boolean;
   generation: number;
   dslOutcome: string | null;
   errorCode: string | null;

@@ -8,6 +8,7 @@ const workflow_node_output_util_1 = require("../workflow/workflow-node-output.ut
 const page_workflow_pending_write_util_1 = require("./page-workflow-pending-write.util");
 const page_workflow_compose_mutation_util_1 = require("./page-workflow-compose-mutation.util");
 const page_action_run_audit_util_1 = require("./page-action-run-audit.util");
+const write_tool_outcome_util_1 = require("./write-tool-outcome.util");
 async function resolveWriteTool(runtime, toolId) {
     var _a;
     const cached = (_a = runtime.toolBundle) === null || _a === void 0 ? void 0 : _a.toolById.get(toolId);
@@ -155,6 +156,25 @@ async function runPageWorkflowMutationReact(input) {
                     ? (0, page_workflow_tool_bundle_util_1.toToolExecutionDefinition)(preloadedTool)
                     : undefined,
             });
+            const businessFailure = (0, write_tool_outcome_util_1.assessWriteToolBusinessFailure)(result.output);
+            if (businessFailure) {
+                runtime.stepRecorder.record({
+                    type: 'workflow',
+                    name: `${nodeId}:write:complete`,
+                    detail: (0, page_action_run_audit_util_1.buildToolCallResultAudit)(result),
+                    status: 'failed',
+                });
+                const failed = (0, workflow_run_util_1.failWorkflowNode)(input.workflowRun, nodeId, {
+                    code: businessFailure.code,
+                    message: businessFailure.message,
+                });
+                return {
+                    ok: false,
+                    workflowRun: failed,
+                    errorCode: businessFailure.code,
+                    errorMessage: businessFailure.message,
+                };
+            }
             runtime.stepRecorder.record({
                 type: 'workflow',
                 name: `${nodeId}:write:complete`,

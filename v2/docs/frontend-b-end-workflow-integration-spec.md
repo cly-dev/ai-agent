@@ -609,9 +609,11 @@ export function parseApiError(envelope: ApiEnvelope<unknown>): ApiBusinessError 
 | GET | `/admin/workflow/presets/catalog?profile=` | Preset 目录 |
 | POST | `/admin/workflow` | 创建（preset 或 nodes） |
 | PATCH | `/admin/workflow/:id` | 更新 |
-| GET | `/admin/workflow/:id` | 详情 |
+| GET | `/admin/workflow/:id` | 详情（含当前 `version`） |
 | GET | `/admin/workflow/by-app-client/:appClientId` | 列表 |
-| GET | `/admin/workflow/:id/revisions` | 版本历史 |
+| GET | `/admin/workflow/:id/revisions?summary=true` | 版本号列表（轻量，适合下拉） |
+| GET | `/admin/workflow/:id/revisions/:version` | 指定版本快照（含 `nodes`） |
+| GET | `/admin/workflow/:id/revisions` | 完整历史（含 nodes，默认 limit=20） |
 | GET | `/admin/tool/by-app-client/:appClientId` | Tool 下拉 |
 | GET | `/admin/host-tool/by-app-client/:appClientId` | HostTool 下拉 |
 | POST | `/admin/app-client/:appClientId/skills` | 创建 Skill |

@@ -38,11 +38,13 @@ import {
   toWorkflowListItem,
   toWorkflowResponse,
   toWorkflowRevisionResponse,
+  toWorkflowRevisionSummaryResponse,
 } from './workflow.mapper';
 import type {
   WorkflowListItem,
   WorkflowResponse,
   WorkflowRevisionResponse,
+  WorkflowRevisionSummaryResponse,
 } from './workflow.types';
 import {
   WORKFLOW_DETAIL_INCLUDE,
@@ -378,15 +380,56 @@ export class WorkflowService {
 
   async listRevisions(
     workflowId: number,
-    limit = 20,
-  ): Promise<WorkflowRevisionResponse[]> {
-    await this.findEntityOrThrow(workflowId);
+    query: { limit?: number; summary?: boolean } = {},
+  ): Promise<WorkflowRevisionResponse[] | WorkflowRevisionSummaryResponse[]> {
+    const workflow = await this.findEntityOrThrow(workflowId);
+    const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
+    if (query.summary) {
+      const rows = await this.prisma.workflowRevision.findMany({
+        where: { workflowId },
+        orderBy: { version: 'desc' },
+        take: limit,
+        select: {
+          id: true,
+          workflowId: true,
+          version: true,
+          deliverable: true,
+          changeNote: true,
+          createdAt: true,
+        },
+      });
+      return rows.map((row) =>
+        toWorkflowRevisionSummaryResponse(row, workflow.version),
+      );
+    }
     const rows = await this.prisma.workflowRevision.findMany({
       where: { workflowId },
       orderBy: { version: 'desc' },
-      take: Math.min(Math.max(limit, 1), 100),
+      take: limit,
     });
-    return rows.map(toWorkflowRevisionResponse);
+    return rows.map((row) => toWorkflowRevisionResponse(row, workflow.version));
+  }
+
+  async findRevision(
+    workflowId: number,
+    version: number,
+  ): Promise<WorkflowRevisionResponse> {
+    const workflow = await this.findEntityOrThrow(workflowId);
+    const row = await this.prisma.workflowRevision.findUnique({
+      where: {
+        workflowId_version: {
+          workflowId,
+          version,
+        },
+      },
+    });
+    if (!row) {
+      throw new NotFoundException({
+        code: 'WORKFLOW_REVISION_NOT_FOUND',
+        message: `Workflow ${workflowId} revision version=${version} not found`,
+      });
+    }
+    return toWorkflowRevisionResponse(row, workflow.version);
   }
 
   async assertWorkflowReferenceCompatible(input: {

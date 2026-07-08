@@ -30,9 +30,11 @@ let WorkflowController = class WorkflowController {
     findPage(appClientId, query) {
         return this.service.findPage(Object.assign(Object.assign({}, query), { appClientId }));
     }
-    listRevisions(id, limit) {
-        const parsed = limit ? Number.parseInt(limit, 10) : 20;
-        return this.service.listRevisions(id, Number.isFinite(parsed) ? parsed : 20);
+    findRevision(id, version) {
+        return this.service.findRevision(id, version);
+    }
+    listRevisions(id, query) {
+        return this.service.listRevisions(id, query);
     }
     update(id, body) {
         return this.service.update(id, body);
@@ -70,13 +72,27 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], WorkflowController.prototype, "findPage", null);
 __decorate([
+    (0, common_1.Get)(':id/revisions/:version'),
+    (0, swagger_1.ApiParam)({ name: 'id', type: Number }),
+    (0, swagger_1.ApiParam)({ name: 'version', type: Number, description: 'revision 版本号' }),
+    (0, swagger_1.ApiOperation)({ summary: 'B 端：查看 Workflow 指定版本快照' }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Param)('version', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Number]),
+    __metadata("design:returntype", void 0)
+], WorkflowController.prototype, "findRevision", null);
+__decorate([
     (0, common_1.Get)(':id/revisions'),
     (0, swagger_1.ApiParam)({ name: 'id', type: Number }),
-    (0, swagger_1.ApiOperation)({ summary: 'B 端：Workflow revision 历史' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'B 端：Workflow revision 历史',
+        description: '默认返回完整快照；summary=true 时仅返回版本元数据，适合版本下拉。',
+    }),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Query)('limit')),
+    __param(1, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, String]),
+    __metadata("design:paramtypes", [Number, workflow_dto_1.QueryWorkflowRevisionsDto]),
     __metadata("design:returntype", void 0)
 ], WorkflowController.prototype, "listRevisions", null);
 __decorate([

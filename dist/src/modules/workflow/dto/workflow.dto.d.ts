@@ -43,6 +43,10 @@ export declare class UpdateWorkflowDto {
     hostTools?: WorkflowHostToolBindingDto[];
     changeNote?: string;
 }
+export declare class QueryWorkflowRevisionsDto {
+    limit?: number;
+    summary?: boolean;
+}
 export declare class QueryWorkflowDto extends PaginationQueryDto {
     appClientId?: number;
     profile?: WorkflowProfile;

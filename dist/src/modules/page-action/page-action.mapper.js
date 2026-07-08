@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.toPageActionRunAdminDetail = exports.toPageActionRunAdminListItem = exports.toPageActionResponse = void 0;
 const page_action_run_steps_util_1 = require("../../core/page-action/page-action-run-steps.util");
+const page_action_task_status_util_1 = require("../../core/page-action/page-action-task-status.util");
 function toPageActionResponse(row) {
     var _a, _b, _c;
     return {
@@ -37,6 +38,10 @@ function stepCount(value) {
 }
 function toPageActionRunAdminListItem(row) {
     var _a, _b, _c, _d;
+    const outcome = (0, page_action_task_status_util_1.resolvePageActionRunOutcome)({
+        status: row.status,
+        errorCode: row.errorCode,
+    });
     return {
         id: row.id,
         pageActionId: row.pageActionId,
@@ -46,6 +51,8 @@ function toPageActionRunAdminListItem(row) {
         username: (_b = (_a = row.user) === null || _a === void 0 ? void 0 : _a.username) !== null && _b !== void 0 ? _b : null,
         userEmail: (_d = (_c = row.user) === null || _c === void 0 ? void 0 : _c.email) !== null && _d !== void 0 ? _d : null,
         status: row.status,
+        taskStatus: outcome.taskStatus,
+        succeeded: outcome.succeeded,
         generation: row.generation,
         dslOutcome: row.dslOutcome,
         errorCode: row.errorCode,

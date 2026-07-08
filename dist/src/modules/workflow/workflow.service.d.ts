@@ -2,7 +2,7 @@ import { type PaginatedResult } from '../../common/pagination';
 import type { WorkflowProfile } from '../../core/workflow/workflow.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { CreateWorkflowDto, QueryWorkflowDto, UpdateWorkflowDto } from './dto/workflow.dto';
-import type { WorkflowListItem, WorkflowResponse, WorkflowRevisionResponse } from './workflow.types';
+import type { WorkflowListItem, WorkflowResponse, WorkflowRevisionResponse, WorkflowRevisionSummaryResponse } from './workflow.types';
 import type { WorkflowEntryKind } from './workflow-profile.util';
 export declare class WorkflowService {
     private readonly prisma;
@@ -12,7 +12,11 @@ export declare class WorkflowService {
     listPresets(profile?: WorkflowProfile): Promise<import("../../core/workflow/workflow-preset.types").WorkflowPresetCatalogEntry[]>;
     findOne(id: number): Promise<WorkflowResponse>;
     findPage(query: QueryWorkflowDto): Promise<PaginatedResult<WorkflowListItem>>;
-    listRevisions(workflowId: number, limit?: number): Promise<WorkflowRevisionResponse[]>;
+    listRevisions(workflowId: number, query?: {
+        limit?: number;
+        summary?: boolean;
+    }): Promise<WorkflowRevisionResponse[] | WorkflowRevisionSummaryResponse[]>;
+    findRevision(workflowId: number, version: number): Promise<WorkflowRevisionResponse>;
     assertWorkflowReferenceCompatible(input: {
         workflowId: number;
         appClientId: number;

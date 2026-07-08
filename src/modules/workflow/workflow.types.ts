@@ -100,4 +100,10 @@ export type WorkflowRevisionResponse = {
   constraints: unknown;
   changeNote: string | null;
   createdAt: Date;
+  isCurrent: boolean;
 };
+
+export type WorkflowRevisionSummaryResponse = Omit<
+  WorkflowRevisionResponse,
+  'nodes' | 'constraints'
+>;

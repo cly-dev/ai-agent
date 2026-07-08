@@ -1,12 +1,12 @@
 import type { PageActionRunStatus, Prisma } from '../../../generated/prisma/client';
 import { buildPageActionRunStreamPath } from '../../core/page-action/page-action.constants';
 import { toPublicPageActionRunTimeline } from '../../core/page-action/page-action-run-steps.util';
+import { resolvePageActionRunOutcome } from '../../core/page-action/page-action-task-status.util';
 import type { AgentChatPageContext } from '../../core/host-bridge/page-context.types';
 import { assessPageContextData } from '../../core/host-bridge/page-context-usage.util';
 import type {
   AutomationTaskDetail,
   AutomationTaskListItem,
-  AutomationTaskStatus,
   AutomationTaskTimelineEntry,
 } from './automation.types';
 
@@ -32,23 +32,6 @@ function previewText(value: string | null | undefined, max = 120): string | null
     return null;
   }
   return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
-}
-
-function mapRunStatus(status: PageActionRunStatus): AutomationTaskStatus {
-  switch (status) {
-    case 'running':
-      return 'running';
-    case 'awaiting_approval':
-      return 'awaiting_approval';
-    case 'completed':
-      return 'completed';
-    case 'failed':
-      return 'failed';
-    case 'cancelled':
-      return 'cancelled';
-    default:
-      return 'failed';
-  }
 }
 
 export function buildAutomationTaskSubtitle(
@@ -77,10 +60,15 @@ export function toAutomationTaskFromPageActionRun(
   row: AutomationPageActionRunRow,
 ): AutomationTaskListItem {
   const workflow = row.pageAction.workflow;
+  const outcome = resolvePageActionRunOutcome({
+    status: row.status,
+    errorCode: row.errorCode,
+  });
   return {
     ref: { kind: 'page_action_run', id: row.id },
     triggerSource: 'page_action',
-    taskStatus: mapRunStatus(row.status),
+    taskStatus: outcome.taskStatus,
+    succeeded: outcome.succeeded,
     title: row.pageAction.name,
     subtitle: buildAutomationTaskSubtitle(row.pageContext),
     pageActionKey: row.pageActionKey,
@@ -89,12 +77,14 @@ export function toAutomationTaskFromPageActionRun(
     createdAt: row.createdAt.toISOString(),
     finishedAt: row.finishedAt?.toISOString() ?? null,
     durationMs: row.durationMs,
+    errorCode: row.errorCode,
+    errorMessage: row.errorMessage,
     approval: row.approvalRequest
       ? { id: row.approvalRequest.id, status: row.approvalRequest.status }
       : null,
     outputs: {
-      preview: previewText(row.fillText),
-      hasFillText: Boolean(row.fillText?.trim()),
+      preview: previewText(row.fillText ?? row.errorMessage),
+      hasFillText: Boolean(row.fillText?.trim() || row.errorMessage?.trim()),
     },
   };
 }
@@ -103,7 +93,8 @@ export function toAutomationTaskDetailFromPageActionRun(
   row: AutomationPageActionRunRow,
 ): AutomationTaskDetail {
   const listItem = toAutomationTaskFromPageActionRun(row);
-  const fillText = row.fillText?.trim() || null;
+  const fillText =
+    row.fillText?.trim() || row.errorMessage?.trim() || null;
   return {
     ...listItem,
     outputs: {

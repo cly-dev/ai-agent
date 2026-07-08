@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.toWorkflowRevisionResponse = exports.toWorkflowListItem = exports.toWorkflowResponse = void 0;
+exports.toWorkflowRevisionSummaryResponse = exports.toWorkflowRevisionResponse = exports.toWorkflowListItem = exports.toWorkflowResponse = void 0;
 const host_tool_mapper_1 = require("../host-tool/host-tool.mapper");
 function mapToolBindings(row) {
     return row.workflowTools.map((binding) => ({
@@ -46,7 +46,7 @@ function toWorkflowListItem(row) {
     return Object.assign(Object.assign({}, mapWorkflowCore(row)), { nodeCount: nodes.length });
 }
 exports.toWorkflowListItem = toWorkflowListItem;
-function toWorkflowRevisionResponse(row) {
+function toWorkflowRevisionResponse(row, currentVersion) {
     return {
         id: row.id,
         workflowId: row.workflowId,
@@ -56,7 +56,20 @@ function toWorkflowRevisionResponse(row) {
         constraints: row.constraints,
         changeNote: row.changeNote,
         createdAt: row.createdAt,
+        isCurrent: row.version === currentVersion,
     };
 }
 exports.toWorkflowRevisionResponse = toWorkflowRevisionResponse;
+function toWorkflowRevisionSummaryResponse(row, currentVersion) {
+    return {
+        id: row.id,
+        workflowId: row.workflowId,
+        version: row.version,
+        deliverable: row.deliverable,
+        changeNote: row.changeNote,
+        createdAt: row.createdAt,
+        isCurrent: row.version === currentVersion,
+    };
+}
+exports.toWorkflowRevisionSummaryResponse = toWorkflowRevisionSummaryResponse;
 //# sourceMappingURL=workflow.mapper.js.map

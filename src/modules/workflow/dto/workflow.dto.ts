@@ -257,6 +257,27 @@ export class UpdateWorkflowDto {
   changeNote?: string;
 }
 
+export class QueryWorkflowRevisionsDto {
+  @ApiPropertyOptional({
+    default: 20,
+    description: '返回条数上限，最大 100',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'true 时仅返回版本元数据（version / changeNote / isCurrent），不含 nodes 快照',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  summary?: boolean;
+}
+
 export class QueryWorkflowDto extends PaginationQueryDto {
   @ApiPropertyOptional()
   @IsOptional()

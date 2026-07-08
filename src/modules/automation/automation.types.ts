@@ -6,12 +6,9 @@ export type AutomationTaskRef =
   | { kind: 'page_action_run'; id: number }
   | { kind: 'webhook_approval'; id: number };
 
-export type AutomationTaskStatus =
-  | 'running'
-  | 'awaiting_approval'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
+import type { PageActionTaskStatus } from '../../core/page-action/page-action-task-status.util';
+
+export type AutomationTaskStatus = PageActionTaskStatus;
 
 export const AUTOMATION_TASK_STATUSES = [
   'running',
@@ -38,6 +35,8 @@ export type AutomationTaskListItem = {
   ref: AutomationTaskRef;
   triggerSource: AutomationTriggerSource;
   taskStatus: AutomationTaskStatus;
+  /** 与 taskStatus 对齐：仅 completed 且无 errorCode 时为 true；审批通过不等于成功。 */
+  succeeded: boolean;
   title: string;
   subtitle: string | null;
   pageActionKey: string | null;
@@ -46,6 +45,8 @@ export type AutomationTaskListItem = {
   createdAt: string;
   finishedAt: string | null;
   durationMs: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
   approval: { id: number; status: string } | null;
   outputs: { preview: string | null; hasFillText: boolean };
 };
