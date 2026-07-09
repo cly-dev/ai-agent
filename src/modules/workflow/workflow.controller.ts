@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -22,6 +23,8 @@ import {
 } from './dto/workflow.dto';
 import { WorkflowService } from './workflow.service';
 import type { WorkflowProfile } from '../../core/workflow/workflow.types';
+import { AdminRoles } from '../../auth/admin-roles.decorator';
+import { AdminRole } from '../../../generated/prisma/client';
 
 @ApiTags('workflow')
 @ApiBearerAuth()
@@ -86,6 +89,14 @@ export class WorkflowController {
     @Body() body: UpdateWorkflowDto,
   ) {
     return this.service.update(id, body);
+  }
+
+  @Delete(':id')
+  @AdminRoles(AdminRole.OPERATOR)
+  @ApiParam({ name: 'id', type: Number })
+  @ApiOperation({ summary: 'B 端：删除 Workflow（需 OPERATOR / SUPER_ADMIN）' })
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.service.remove(id);
   }
 
   @Get(':id')

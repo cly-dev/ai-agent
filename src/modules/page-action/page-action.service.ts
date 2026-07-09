@@ -194,6 +194,12 @@ export class PageActionService {
     return toPageActionResponse(row);
   }
 
+  async remove(id: number): Promise<{ ok: true; id: number }> {
+    await this.findEntityOrThrow(id);
+    await this.prisma.pageAction.delete({ where: { id } });
+    return { ok: true, id };
+  }
+
   async listPageScopes(
     appClientId: number,
     query: QueryPageScopeOptionsDto = {},
@@ -377,4 +383,5 @@ export class PageActionService {
       });
     }
   }
+
 }

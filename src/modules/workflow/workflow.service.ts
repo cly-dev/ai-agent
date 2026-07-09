@@ -340,6 +340,12 @@ export class WorkflowService {
     return toWorkflowResponse(row);
   }
 
+  async remove(id: number): Promise<{ ok: true; id: number }> {
+    await this.findEntityOrThrow(id);
+    await this.prisma.workflow.delete({ where: { id } });
+    return { ok: true, id };
+  }
+
   async findPage(
     query: QueryWorkflowDto,
   ): Promise<PaginatedResult<WorkflowListItem>> {
@@ -730,4 +736,5 @@ export class WorkflowService {
       });
     }
   }
+
 }

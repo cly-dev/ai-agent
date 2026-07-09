@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -9,10 +10,13 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiOperation,
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
+import { AdminRoles } from '../../auth/admin-roles.decorator';
+import { AdminRole } from '../../../generated/prisma/client';
 import {
   CreatePageActionDto,
   QueryPageActionDto,
@@ -23,6 +27,7 @@ import {
 import { PageActionService } from './page-action.service';
 
 @ApiTags('page-action')
+@ApiBearerAuth()
 @Controller()
 export class PageActionController {
   constructor(private readonly service: PageActionService) {}
@@ -45,6 +50,16 @@ export class PageActionController {
     @Body() body: UpdatePageActionDto,
   ) {
     return this.service.update(id, body);
+  }
+
+  @Delete('page-action/:id')
+  @AdminRoles(AdminRole.OPERATOR)
+  @ApiParam({ name: 'id', type: Number })
+  @ApiOperation({
+    summary: 'B 端：删除 PageAction（需 OPERATOR / SUPER_ADMIN）',
+  })
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.service.remove(id);
   }
 
   @Get('page-action/:id')
