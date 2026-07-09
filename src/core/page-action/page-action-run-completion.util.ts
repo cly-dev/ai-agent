@@ -20,9 +20,22 @@ const TEXT_TERMINAL_ACTIONS = new Set<WorkflowActionKind>([
   'generate_and_push',
 ]);
 
-export function completionFromHostFill(input: {
+function dslDispatchFailedCompletion(
+  fillText: string,
+): PageActionRunCompletion {
+  return {
+    kind: 'failed',
+    errorCode: 'DSL_DISPATCH_FAILED',
+    errorMessage:
+      fillText.trim().length > 0
+        ? 'LLM produced text but host_action DSL finalize failed'
+        : 'Host action DSL stream did not finalize',
+  };
+}
+
+function completionFromTextWithDsl(input: {
   fillText: string;
-  dslOutcome: string | null;
+  dslOutcome?: string | null;
 }): PageActionRunCompletion {
   const fillText = input.fillText.trim();
   if (!fillText) {
@@ -32,11 +45,25 @@ export function completionFromHostFill(input: {
       errorMessage: 'LLM produced empty fill text',
     };
   }
-  return { kind: 'text', fillText, dslOutcome: input.dslOutcome };
+  if (input.dslOutcome === 'failed') {
+    return dslDispatchFailedCompletion(fillText);
+  }
+  return { kind: 'text', fillText, dslOutcome: input.dslOutcome ?? null };
+}
+
+export function completionFromHostFill(input: {
+  fillText: string;
+  dslOutcome: string | null;
+}): PageActionRunCompletion {
+  return completionFromTextWithDsl({
+    fillText: input.fillText,
+    dslOutcome: input.dslOutcome,
+  });
 }
 
 export function completionFromSummarizeText(
   summaryText: string,
+  dslOutcome?: string | null,
 ): PageActionRunCompletion {
   const fillText = summaryText.trim();
   if (!fillText) {
@@ -46,7 +73,10 @@ export function completionFromSummarizeText(
       errorMessage: 'LLM produced empty summary text',
     };
   }
-  return { kind: 'text', fillText, dslOutcome: null };
+  if (dslOutcome === 'failed') {
+    return dslDispatchFailedCompletion(fillText);
+  }
+  return { kind: 'text', fillText, dslOutcome: dslOutcome ?? null };
 }
 
 function readToolNameFromNodeOutput(
@@ -160,6 +190,9 @@ export function resolvePageWorkflowCompletion(input: {
 
   const fillText = input.runtime.fillText.trim();
   if (fillText.length > 0) {
+    if (input.runtime.dslOutcome === 'failed') {
+      return dslDispatchFailedCompletion(fillText);
+    }
     return {
       kind: 'text',
       fillText,

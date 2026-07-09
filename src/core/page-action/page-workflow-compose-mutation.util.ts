@@ -1,6 +1,5 @@
 import type { AIMessage } from '@langchain/core/messages';
 import {
-  extractAiMessageText,
   extractToolCalls,
 } from '../agent-engine/engine/main/agent-graph/runtime/decision.util';
 import {
@@ -21,7 +20,10 @@ import {
   buildLlmStepAudit,
   summarizeRecordForAudit,
 } from './page-action-run-audit.util';
-import { extractLlmUserFacingText } from '../agent-engine/engine/llm-output-sanitize.util';
+import {
+  extractAiMessageContentChannel,
+  resolveLlmUserFacingTextFromAiMessage,
+} from '../llm/llm-user-facing-text.util';
 import {
   extractLlmTokenUsageFromResponseMeta,
   resolveLlmModelNameFromResponseMeta,
@@ -123,7 +125,7 @@ export async function executePageWorkflowComposeMutation(input: {
     | undefined;
   const usage = extractLlmTokenUsageFromResponseMeta(responseMeta);
   const resolvedModel = resolveLlmModelNameFromResponseMeta(responseMeta);
-  const assistantText = extractAiMessageText(aiMessage);
+  const assistantText = extractAiMessageContentChannel(aiMessage);
 
   const toolCalls = extractToolCalls(aiMessage);
   const rawCall = toolCalls.find((call) => call.name === writeTool.name);
@@ -171,7 +173,7 @@ export async function executePageWorkflowComposeMutation(input: {
     fittedMessageCount: fittedMessages.length,
     ...buildLlmOutputStepAudit({
       assistantText,
-      userFacingText: extractLlmUserFacingText(assistantText),
+      userFacingText: resolveLlmUserFacingTextFromAiMessage(aiMessage),
       toolCall: {
         name: rawCall.name,
         arguments: rawCall.arguments,

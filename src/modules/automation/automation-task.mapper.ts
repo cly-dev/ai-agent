@@ -1,5 +1,6 @@
 import type { PageActionRunStatus, Prisma } from '../../../generated/prisma/client';
 import { buildPageActionRunStreamPath } from '../../core/page-action/page-action.constants';
+import { resolvePageActionRunOutputText } from '../../core/page-action/resolve-page-action-run-output-text.util';
 import { toPublicPageActionRunTimeline } from '../../core/page-action/page-action-run-steps.util';
 import { resolvePageActionRunOutcome } from '../../core/page-action/page-action-task-status.util';
 import type { AgentChatPageContext } from '../../core/host-bridge/page-context.types';
@@ -32,6 +33,35 @@ function previewText(value: string | null | undefined, max = 120): string | null
     return null;
   }
   return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
+}
+
+function isTerminalRunStatus(status: PageActionRunStatus): boolean {
+  return (
+    status === 'completed' || status === 'failed' || status === 'cancelled'
+  );
+}
+
+function resolveTaskOutputText(row: AutomationPageActionRunRow): string | null {
+  return resolvePageActionRunOutputText({
+    fillText: row.fillText,
+    errorMessage: row.errorMessage,
+    steps: row.steps,
+  });
+}
+
+function buildTaskOutputs(
+  row: AutomationPageActionRunRow,
+  options?: { includeFullText: boolean },
+): AutomationTaskListItem['outputs'] {
+  const outputText = resolveTaskOutputText(row);
+  const includeFullText = options?.includeFullText === true;
+  return {
+    preview: includeFullText
+      ? outputText
+      : previewText(outputText),
+    fillText: includeFullText ? outputText : null,
+    hasFillText: Boolean(outputText),
+  };
 }
 
 export function buildAutomationTaskSubtitle(
@@ -82,10 +112,9 @@ export function toAutomationTaskFromPageActionRun(
     approval: row.approvalRequest
       ? { id: row.approvalRequest.id, status: row.approvalRequest.status }
       : null,
-    outputs: {
-      preview: previewText(row.fillText ?? row.errorMessage),
-      hasFillText: Boolean(row.fillText?.trim() || row.errorMessage?.trim()),
-    },
+    outputs: buildTaskOutputs(row, {
+      includeFullText: isTerminalRunStatus(row.status),
+    }),
   };
 }
 
@@ -93,13 +122,14 @@ export function toAutomationTaskDetailFromPageActionRun(
   row: AutomationPageActionRunRow,
 ): AutomationTaskDetail {
   const listItem = toAutomationTaskFromPageActionRun(row);
-  const fillText =
-    row.fillText?.trim() || row.errorMessage?.trim() || null;
+  const fillText = resolveTaskOutputText(row);
   return {
     ...listItem,
     outputs: {
       ...listItem.outputs,
+      preview: fillText,
       fillText,
+      hasFillText: Boolean(fillText),
     },
     actionKey: row.pageAction.actionKey,
     instruction: row.instruction,

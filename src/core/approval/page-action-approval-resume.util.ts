@@ -32,6 +32,7 @@ import {
   mapTerminalPhaseToRunStatus,
   resolvePageActionRunTerminalOutcome,
 } from '../page-action/page-action-run-terminal-sse.util';
+import { resolvePageActionRunOutputText } from '../page-action/resolve-page-action-run-output-text.util';
 
 export async function resumePageActionFromApprovalSnapshot(input: {
   snapshot: ApprovalResumeSnapshot;
@@ -150,6 +151,15 @@ export async function resumePageActionFromApprovalSnapshot(input: {
   });
 
   const terminal = resolvePageActionRunTerminalOutcome(result.completion);
+  const persistedFillText = resolvePageActionRunOutputText({
+    fillText: terminal.fillText,
+    errorMessage: terminal.errorMessage,
+    steps: recorder.toJson(),
+  });
+  const terminalOutcome = {
+    ...terminal,
+    fillText: persistedFillText,
+  };
 
   emitPageActionRunTerminalSse({
     sseSink,
@@ -159,7 +169,7 @@ export async function resumePageActionFromApprovalSnapshot(input: {
     generation: run.generation,
     clientActionId: run.clientActionId,
     streamId: run.streamId,
-    outcome: terminal,
+    outcome: terminalOutcome,
     dslOutcome: result.dslOutcome,
   });
   input.runEventBus?.closeSession(run.id);
@@ -167,17 +177,17 @@ export async function resumePageActionFromApprovalSnapshot(input: {
   await input.prisma.pageActionRun.update({
     where: { id: run.id },
     data: {
-      status: mapTerminalPhaseToRunStatus(terminal.phase),
+      status: mapTerminalPhaseToRunStatus(terminalOutcome.phase),
       workflowRun: result.workflowRun as object,
-      fillText: terminal.fillText,
+      fillText: persistedFillText,
       dslOutcome: result.dslOutcome,
       model: result.model,
       promptTokens: result.promptTokens,
       completionTokens: result.completionTokens,
-      finishedAt: terminal.phase === 'awaiting_approval' ? null : new Date(),
+      finishedAt: terminalOutcome.phase === 'awaiting_approval' ? null : new Date(),
       steps: recorder.toJson() as Prisma.InputJsonValue,
-      errorCode: terminal.errorCode,
-      errorMessage: terminal.errorMessage,
+      errorCode: terminalOutcome.errorCode,
+      errorMessage: terminalOutcome.errorMessage,
     },
   });
 }
@@ -309,6 +319,15 @@ export async function retryPageActionFromApprovalSnapshot(input: {
   });
 
   const terminal = resolvePageActionRunTerminalOutcome(result.completion);
+  const persistedFillText = resolvePageActionRunOutputText({
+    fillText: terminal.fillText,
+    errorMessage: terminal.errorMessage,
+    steps: recorder.toJson(),
+  });
+  const terminalOutcome = {
+    ...terminal,
+    fillText: persistedFillText,
+  };
 
   emitPageActionRunTerminalSse({
     sseSink,
@@ -318,7 +337,7 @@ export async function retryPageActionFromApprovalSnapshot(input: {
     generation: run.generation,
     clientActionId: run.clientActionId,
     streamId: run.streamId,
-    outcome: terminal,
+    outcome: terminalOutcome,
     dslOutcome: result.dslOutcome,
   });
   input.runEventBus?.closeSession(run.id);
@@ -326,17 +345,17 @@ export async function retryPageActionFromApprovalSnapshot(input: {
   await input.prisma.pageActionRun.update({
     where: { id: run.id },
     data: {
-      status: mapTerminalPhaseToRunStatus(terminal.phase),
+      status: mapTerminalPhaseToRunStatus(terminalOutcome.phase),
       workflowRun: result.workflowRun as object,
-      fillText: terminal.fillText,
+      fillText: persistedFillText,
       dslOutcome: result.dslOutcome,
       model: result.model,
       promptTokens: result.promptTokens,
       completionTokens: result.completionTokens,
-      finishedAt: terminal.phase === 'awaiting_approval' ? null : new Date(),
+      finishedAt: terminalOutcome.phase === 'awaiting_approval' ? null : new Date(),
       steps: recorder.toJson() as Prisma.InputJsonValue,
-      errorCode: terminal.errorCode,
-      errorMessage: terminal.errorMessage,
+      errorCode: terminalOutcome.errorCode,
+      errorMessage: terminalOutcome.errorMessage,
     },
   });
 

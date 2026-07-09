@@ -1,4 +1,5 @@
 import { executePageWorkflowSummarize } from '../../../page-action/page-workflow-summarize.util';
+import { resolvePageActionSummarizeHostTool } from '../../../page-action/page-action-summarize-host-tool.util';
 import {
   appendWorkflowNodeOutputsToMessages,
   injectWorkflowNodeObjective,
@@ -25,6 +26,14 @@ export const pagePresentMutationExecutor: WorkflowExecutor = {
       ctx.def.objective,
       runtime.objectivePrefix,
     );
+    const summarizeHostTool = await resolvePageActionSummarizeHostTool(
+      runtime.prisma,
+      {
+        appClientId: runtime.appClientId,
+        pageContext: runtime.pageContext,
+        fallbackHostTool: runtime.hostTool,
+      },
+    );
     const summarizeResult = await executePageWorkflowSummarize({
       llmService: runtime.llmService,
       messages,
@@ -35,6 +44,8 @@ export const pagePresentMutationExecutor: WorkflowExecutor = {
       generation: runtime.generation,
       clientActionId: runtime.clientActionId ?? null,
       existingFillText: runtime.fillText,
+      pageContext: runtime.pageContext,
+      summarizeHostTool,
       stepRecorder: runtime.stepRecorder,
       streamLifecycle: 'none',
       systemPrompt: runtime.systemPrompt,

@@ -47,10 +47,11 @@ describe('page-workflow.runner', () => {
   it('runs load_page_context then summarize and sets fillText from summary', async () => {
     jest.mocked(executePageWorkflowSummarize).mockResolvedValue({
       summaryText: 'Page summary',
+      dslOutcome: 'dispatched',
       model: 'm1',
       promptTokens: 8,
       completionTokens: 2,
-      emittedLifecycle: true,
+      emittedLifecycle: false,
     });
 
     const result = await runPageWorkflow({
@@ -84,6 +85,7 @@ describe('page-workflow.runner', () => {
   it('fail-fast when summarize sensor returns SUMMARY_EMPTY', async () => {
     jest.mocked(executePageWorkflowSummarize).mockResolvedValue({
       summaryText: '',
+      dslOutcome: null,
       model: null,
       promptTokens: null,
       completionTokens: null,

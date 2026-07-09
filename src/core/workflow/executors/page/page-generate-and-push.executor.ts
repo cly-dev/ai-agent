@@ -45,6 +45,8 @@ export const pageGenerateAndPushExecutor: WorkflowExecutor = {
       hostTool,
       sseSink: runtime.sseSink,
       stepRecorder: runtime.stepRecorder,
+      terminalLifecycle: 'delegated',
+      streamIdSegment: ctx.nodeId,
     });
 
     runtime.fillText = fillResult.fillText;

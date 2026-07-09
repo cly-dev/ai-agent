@@ -1,10 +1,4 @@
-import {
-  buildPlanHostFillsFromMachineText,
-  createPlanReasonHostFillStreamTextSession,
-  runHostFillLlmStream,
-} from '../agent-engine/engine/main/plan-present/plan-reason-host-machine-layer.util';
 import type { HostActionHostToolInvocation } from '../host-bridge/host-action.types';
-import { HostToolStreamSession } from '../host-bridge/host-tool-stream-session.util';
 import { resolvePlanReasonHostFillTools } from '../host-bridge/host-tool-stream-target.util';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 import type { LlmService } from '../llm/llm.service';
@@ -14,7 +8,6 @@ import {
   buildPageActionStreamId,
 } from './page-action.constants';
 import {
-  createInlineHostActionPublisher,
   endInlineSseResponse,
   writePageActionLifecycle,
 } from './page-action-inline-sse.util';
@@ -28,13 +21,16 @@ import {
   logPageActionFillDispatched,
   logPageActionFillEmpty,
   logPageActionFillError,
-  logPageActionFillFallback,
   logPageActionFillStart,
   logPageActionFillStreamEnd,
   recordPageActionFillStreamDelta,
   truncateForPageActionLog,
 } from './page-action-fill-debug.util';
 import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
+import { executePageActionLlmDslStream } from './page-action-llm-dsl-stream.util';
+import { HostToolStreamSession } from '../host-bridge/host-tool-stream-session.util';
+import { buildPlanHostFillsFromMachineText } from '../agent-engine/engine/main/plan-present/plan-reason-host-machine-layer.util';
+import { createInlineHostActionPublisher } from './page-action-inline-sse.util';
 
 export type PageActionHostFillExecuteInput = {
   actionRunId: number;
@@ -48,6 +44,10 @@ export type PageActionHostFillExecuteInput = {
   sseSink: PageActionSseSink;
   signal?: AbortSignal;
   stepRecorder?: PageActionRunStepRecorder;
+  /** self：本函数发 lifecycle 并 end SSE；delegated：由 workflow executor 统一终态。 */
+  terminalLifecycle?: 'self' | 'delegated';
+  /** host_action DSL streamId 分段（如 workflow nodeId） */
+  streamIdSegment?: string | null;
 };
 
 export type PageActionHostFillExecuteResult = {
@@ -87,6 +87,7 @@ export async function executePageActionHostFill(
   input: PageActionHostFillExecuteInput,
 ): Promise<PageActionHostFillExecuteResult> {
   const recorder = input.stepRecorder ?? new PageActionRunStepRecorder();
+  const terminalLifecycle = input.terminalLifecycle ?? 'self';
   const fillTools = resolvePlanReasonHostFillTools({
     hostTools: [input.hostTool.definition],
     allowedToolNames: new Set([input.hostTool.definition.name]),
@@ -94,6 +95,7 @@ export async function executePageActionHostFill(
   const streamId = buildPageActionStreamId({
     actionRunId: input.actionRunId,
     actionKey: input.actionKey,
+    segment: input.streamIdSegment,
   });
   const probe = createPageActionFillStreamProbe({
     actionRunId: input.actionRunId,
@@ -108,69 +110,36 @@ export async function executePageActionHostFill(
   let appendCount = 0;
 
   const sink = input.sseSink;
-  writePageActionLifecycle(
-    sink,
-    { phase: 'started', ...lifecycleBase(input, streamId) },
-    recorder,
-  );
+  const emitOwnLifecycle = terminalLifecycle === 'self';
+  if (emitOwnLifecycle) {
+    writePageActionLifecycle(
+      sink,
+      { phase: 'started', ...lifecycleBase(input, streamId) },
+      recorder,
+    );
+  }
 
   let dslOutcome: 'dispatched' | 'failed' | 'skipped' = 'skipped';
   let fillText = '';
   const canDispatchDsl = fillTools.length > 0;
-  let streamSession: HostToolStreamSession | null = null;
 
   try {
-    const pageContext = input.pageContext ?? {};
-    const publish = createInlineHostActionPublisher(sink, {
-      onPayload: (payload) => {
-        recorder.recordHostActionPayload(payload);
-      },
-    });
-    streamSession = new HostToolStreamSession({
-      publish,
-      sessionId: `page-action:${input.actionRunId}`,
-      pageContext,
-      runId: input.actionRunId,
-      turnId: input.actionRunId,
-      reason: PAGE_ACTION_STREAM_REASON,
-      generation: input.generation,
-    });
-
-    if (canDispatchDsl) {
-      streamSession.begin({
-        streamId,
-        tools: fillTools,
-        reason: PAGE_ACTION_STREAM_REASON,
-      });
-    } else {
-      recorder.record({
-        type: 'dsl',
-        name: 'stream.skipped',
-        status: 'skipped',
-        detail: { reason: 'no_streamable_string_field' },
-      });
-    }
-
-    const textSession = createPlanReasonHostFillStreamTextSession({
-      onSanitizedDelta: canDispatchDsl
-        ? (delta) => {
-            streamSession!.appendFillChunk(delta);
-          }
-        : undefined,
-    });
-
     llmCallCount += 1;
-    recorder.recordLlm('streamChat.start', {
-      messageCount: input.messages.length,
-      streamableTools: fillTools.map((tool) => tool.name),
-    });
     logPageActionFillStart(probe);
 
-    const llmFill = await runHostFillLlmStream({
+    const streamResult = await executePageActionLlmDslStream({
       llmService,
       messages: input.messages,
-      textSession,
+      sseSink: sink,
+      pageContext: input.pageContext,
+      actionRunId: input.actionRunId,
+      generation: input.generation,
+      streamId,
+      hostTool: input.hostTool,
+      reason: PAGE_ACTION_STREAM_REASON,
+      stepRecorder: recorder,
       signal: input.signal,
+      budgetHints: { callKind: 'summarize' },
       onLlmDelta: (delta) => {
         recordPageActionFillStreamDelta(
           probe,
@@ -180,99 +149,24 @@ export async function executePageActionHostFill(
       },
     });
 
-    model = llmFill.model;
-    fillText = llmFill.fillText;
-    appendCount = llmFill.appendCount;
-    const rawAccumulatedText = textSession.getRawAccumulatedText();
-    const streamResultContentLen = llmFill.streamResult.content?.length ?? 0;
-
-    if (llmFill.reconciledFromStreamResult) {
-      logPageActionFillFallback({
-        probe,
-        source: 'streamResult.content',
-        beforeLen: 0,
-        afterLen: fillText.length,
-        preview: truncateForPageActionLog(fillText, 500),
-      });
-    }
-
-    probe.routedMessageChars = llmFill.routedMessageChars;
+    model = streamResult.model;
+    fillText = streamResult.fillText;
+    appendCount = streamResult.appendCount;
+    promptTokens = streamResult.promptTokens;
+    completionTokens = streamResult.completionTokens;
+    dslOutcome = streamResult.dslOutcome;
 
     logPageActionFillStreamEnd({
       probe,
       model,
       sessionFillTextLen: fillText.length,
-      streamResultContentLen,
+      streamResultContentLen: fillText.length,
       appendCount,
-      rawAccumulatedLen: llmFill.rawAccumulatedLen,
-      rawPreview: truncateForPageActionLog(rawAccumulatedText, 2000),
-      streamResultPreview: truncateForPageActionLog(
-        llmFill.streamResult.content ?? '',
-        2000,
-      ),
-      streamMeta: llmFill.streamResult.streamMeta,
+      rawAccumulatedLen: fillText.length,
+      rawPreview: truncateForPageActionLog(fillText, 2000),
+      streamResultPreview: truncateForPageActionLog(fillText, 2000),
+      streamMeta: undefined,
     });
-
-    recorder.recordLlm('streamChat.end', {
-      model,
-      appendCount,
-      deltaEvents: probe.deltaEvents,
-      emptyDeltaEvents: probe.emptyDeltaEvents,
-      deltaChars: probe.deltaChars,
-      routedMessageChars: llmFill.routedMessageChars,
-      sessionFillTextLen: fillText.length,
-      streamResultContentLen,
-      rawAccumulatedLen: llmFill.rawAccumulatedLen,
-      reconciledFromStreamResult: llmFill.reconciledFromStreamResult,
-      fellBackToInvoke: llmFill.streamResult.streamMeta?.fellBackToInvoke ?? false,
-      llmEmittedDeltaCount:
-        llmFill.streamResult.streamMeta?.emittedDeltaCount ?? null,
-    });
-
-    if (canDispatchDsl) {
-      const fills = buildPlanHostFillsFromMachineText({
-        text: fillText,
-        fillTools,
-        allowedToolNames: new Set([input.hostTool.definition.name]),
-      });
-      if (fills.length > 0) {
-        streamSession.finalize({
-          hostTools: toHostToolInvocations(fills),
-          reason: PAGE_ACTION_STREAM_REASON,
-        });
-        dslOutcome = 'dispatched';
-      } else {
-        streamSession.abort({ emitSessionEnd: streamSession.hasBegun });
-        dslOutcome = 'failed';
-        logPageActionFillEmpty({
-          probe,
-          model,
-          rawAccumulatedLen: llmFill.rawAccumulatedLen,
-          rawPreview: truncateForPageActionLog(rawAccumulatedText, 2000),
-          sanitizedFillLen: fillText.length,
-          streamResultContentLen,
-          streamResultPreview: truncateForPageActionLog(
-            llmFill.streamResult.content ?? '',
-            2000,
-          ),
-          appendCount,
-        });
-        recorder.record({
-          type: 'dsl',
-          name: 'stream.failed',
-          status: 'failed',
-          detail: {
-            reason: 'empty_fill_after_llm',
-            rawAccumulatedLen: llmFill.rawAccumulatedLen,
-            streamResultContentLen,
-            deltaEvents: probe.deltaEvents,
-            emptyDeltaEvents: probe.emptyDeltaEvents,
-          },
-        });
-      }
-    } else {
-      dslOutcome = fillText.trim().length > 0 ? 'skipped' : 'failed';
-    }
 
     if (dslOutcome === 'dispatched') {
       logPageActionFillDispatched({
@@ -281,40 +175,54 @@ export async function executePageActionHostFill(
         appendCount,
         fillTextPreview: truncateForPageActionLog(fillText, 500),
       });
+    } else if (canDispatchDsl && fillText.trim().length === 0) {
+      logPageActionFillEmpty({
+        probe,
+        model,
+        rawAccumulatedLen: 0,
+        rawPreview: '',
+        sanitizedFillLen: 0,
+        streamResultContentLen: 0,
+        streamResultPreview: '',
+        appendCount,
+      });
     }
 
-    writePageActionLifecycle(
-      sink,
-      {
-        phase: 'completed',
-        ...lifecycleBase(input, streamId),
-        text: fillText,
-        dslOutcome,
-      },
-      recorder,
-    );
-  } catch (error) {
-    if (streamSession?.hasBegun && !streamSession.isClosed) {
-      streamSession.abort({ emitSessionEnd: true });
+    if (emitOwnLifecycle) {
+      writePageActionLifecycle(
+        sink,
+        {
+          phase: 'completed',
+          ...lifecycleBase(input, streamId),
+          text: fillText,
+          dslOutcome,
+        },
+        recorder,
+      );
     }
+  } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logPageActionFillError(probe, error);
     recorder.recordLlm('streamChat.error', { message }, 'failed');
-    writePageActionLifecycle(
-      sink,
-      {
-        phase: 'failed',
-        ...lifecycleBase(input, streamId),
-        errorCode: 'LLM_FAILED',
-        errorMessage: message,
-      },
-      recorder,
-    );
-    endInlineSseResponse(sink);
+    if (emitOwnLifecycle) {
+      writePageActionLifecycle(
+        sink,
+        {
+          phase: 'failed',
+          ...lifecycleBase(input, streamId),
+          errorCode: 'LLM_FAILED',
+          errorMessage: message,
+        },
+        recorder,
+      );
+      endInlineSseResponse(sink);
+    }
     throw error;
   }
 
-  endInlineSseResponse(sink);
+  if (emitOwnLifecycle) {
+    endInlineSseResponse(sink);
+  }
   return {
     fillText,
     dslOutcome,

@@ -542,6 +542,9 @@ export async function runPlanReasonHostMachineLayer(
     );
   }
 
+  deps.logger.warn(
+    `plan reason host fill using observation-only (no DSL stream) runId=${context.runId} hostStepId=${context.hostStepId} fillTools=${fillTools.map((tool) => tool.name).join(',')}`,
+  );
   return runPlanReasonHostMachineLayerObservation(deps, context, fillTools);
 }
 

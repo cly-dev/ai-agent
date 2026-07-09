@@ -48,13 +48,15 @@ export type AutomationTaskListItem = {
   errorCode: string | null;
   errorMessage: string | null;
   approval: { id: number; status: string } | null;
-  outputs: { preview: string | null; hasFillText: boolean };
+  outputs: {
+    preview: string | null;
+    /** 终态任务列表返回完整正文；详情始终返回完整正文。 */
+    fillText: string | null;
+    hasFillText: boolean;
+  };
 };
 
-export type AutomationTaskDetailOutputs = AutomationTaskListItem['outputs'] & {
-  /** 完整 fill 正文；仅详情返回，列表仍用 preview 截断。 */
-  fillText: string | null;
-};
+export type AutomationTaskDetailOutputs = AutomationTaskListItem['outputs'];
 
 export type AutomationTaskTimelineEntry = {
   step: number;

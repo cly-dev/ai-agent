@@ -25,7 +25,10 @@ import {
   pageActionWorkflowLoadErrorCode,
   pageActionWorkflowLoadFailureMessage,
 } from '../page-action-workflow-load.util';
-import { writePageActionLifecycle } from '../page-action-inline-sse.util';
+import {
+  endInlineSseResponse,
+  writePageActionLifecycle,
+} from '../page-action-inline-sse.util';
 import {
   completionFromHostFill,
   completionFromSummarizeText,
@@ -39,6 +42,8 @@ import { PageActionRunStepRecorder } from '../page-action-run-steps.util';
 import { buildPageActionLlmMessages } from '../page-action-prompt.util';
 import { buildPageActionStreamId } from '../page-action.constants';
 import { loadPageWorkflowToolBundle } from '../page-workflow-tool-bundle.util';
+import { resolvePageActionSummarizeHostTool } from '../page-action-summarize-host-tool.util';
+import { resolvePageActionRunOutputText } from '../resolve-page-action-run-output-text.util';
 import { PageActionRunStreamHub } from '../stream/page-action-run-stream.hub';
 import type { PageActionRunExecutionInput } from './page-action-invoke.types';
 
@@ -69,19 +74,28 @@ export class PageActionRunExecutor {
     const sseSink = this.runStreamHub.openWriter(input.runId);
     const startedAt = Date.now();
     const stepRecorder = new PageActionRunStepRecorder();
+    const streamId = buildPageActionStreamId({
+      actionRunId: input.runId,
+      actionKey: input.actionKey,
+    });
     const lifecycleBase = {
       actionRunId: input.runId,
       actionKey: input.actionKey,
       delivery: PageActionDelivery.inline_stream,
       generation: input.generation,
       clientActionId: input.clientActionId,
+      streamId,
     };
 
-    writePageActionLifecycle(
-      sseSink,
-      { phase: 'started', ...lifecycleBase },
-      stepRecorder,
-    );
+    const emitInitialStarted =
+      Boolean(input.workflowId) || !input.hostToolResolved;
+    if (emitInitialStarted) {
+      writePageActionLifecycle(
+        sseSink,
+        { phase: 'started', ...lifecycleBase },
+        stepRecorder,
+      );
+    }
 
     const messages = buildPageActionLlmMessages({
       systemPrompt: input.systemPrompt,
@@ -143,10 +157,14 @@ export class PageActionRunExecutor {
         return;
       }
 
-      const streamId = buildPageActionStreamId({
-        actionRunId: input.runId,
-        actionKey: input.actionKey,
-      });
+      const summarizeHostTool = await resolvePageActionSummarizeHostTool(
+        this.prisma,
+        {
+          appClientId: input.appClientId,
+          pageContext: input.pageContext,
+          fallbackHostTool: input.hostToolResolved,
+        },
+      );
 
       const summary = await executePageWorkflowSummarize({
         llmService: this.llmService,
@@ -158,13 +176,17 @@ export class PageActionRunExecutor {
         generation: input.generation,
         clientActionId: input.clientActionId,
         existingFillText: '',
+        pageContext: input.pageContext,
+        summarizeHostTool,
         stepRecorder,
         systemPrompt: input.systemPrompt,
         objectivePrefix: input.instruction,
-        streamLifecycle: 'none',
       });
 
-      const completion = completionFromSummarizeText(summary.summaryText);
+      const completion = completionFromSummarizeText(
+        summary.summaryText,
+        summary.dslOutcome,
+      );
       const terminal = resolvePageActionRunTerminalOutcome(completion);
 
       emitPageActionRunTerminalSse({
@@ -176,7 +198,7 @@ export class PageActionRunExecutor {
         clientActionId: input.clientActionId,
         streamId,
         outcome: terminal,
-        dslOutcome: null,
+        dslOutcome: summary.dslOutcome,
       });
 
       await this.prisma.pageActionRun.update({
@@ -184,7 +206,7 @@ export class PageActionRunExecutor {
         data: {
           status: mapTerminalPhaseToRunStatus(terminal.phase),
           fillText: terminal.fillText,
-          dslOutcome: null,
+          dslOutcome: summary.dslOutcome,
           streamId,
           model: summary.model,
           promptTokens: summary.promptTokens,
@@ -227,6 +249,9 @@ export class PageActionRunExecutor {
         },
       });
     } finally {
+      if (!sseSink.writableEnded) {
+        endInlineSseResponse(sseSink);
+      }
       this.runStreamHub.closeSession(input.runId);
     }
   }
@@ -243,6 +268,7 @@ export class PageActionRunExecutor {
       delivery: PageActionDelivery;
       generation: number;
       clientActionId: string | null;
+      streamId: string;
     };
   }): Promise<void> {
     const { input: run, messages, sseSink, stepRecorder, startedAt, lifecycleBase } =
@@ -356,6 +382,15 @@ export class PageActionRunExecutor {
     });
 
     const terminal = resolvePageActionRunTerminalOutcome(result.completion);
+    const persistedFillText = resolvePageActionRunOutputText({
+      fillText: terminal.fillText,
+      errorMessage: terminal.errorMessage,
+      steps: result.steps,
+    });
+    const terminalOutcome = {
+      ...terminal,
+      fillText: persistedFillText,
+    };
 
     emitPageActionRunTerminalSse({
       sseSink,
@@ -364,8 +399,8 @@ export class PageActionRunExecutor {
       actionKey: run.actionKey,
       generation: run.generation,
       clientActionId: run.clientActionId,
-      streamId: null,
-      outcome: terminal,
+      streamId: input.lifecycleBase.streamId,
+      outcome: terminalOutcome,
       dslOutcome: result.dslOutcome,
     });
 
@@ -375,17 +410,17 @@ export class PageActionRunExecutor {
         workflowId: loadResult.workflowId,
         workflowVersion: loadResult.version,
         workflowRun: result.workflowRun as Prisma.InputJsonValue,
-        status: mapTerminalPhaseToRunStatus(terminal.phase),
-        fillText: terminal.fillText,
+        status: mapTerminalPhaseToRunStatus(terminalOutcome.phase),
+        fillText: persistedFillText,
         dslOutcome: result.dslOutcome,
         model: result.model,
         promptTokens: result.promptTokens,
         completionTokens: result.completionTokens,
         durationMs: Date.now() - startedAt,
-        finishedAt: terminal.phase === 'awaiting_approval' ? null : new Date(),
+        finishedAt: terminalOutcome.phase === 'awaiting_approval' ? null : new Date(),
         steps: result.steps as Prisma.InputJsonValue,
-        errorCode: terminal.errorCode,
-        errorMessage: terminal.errorMessage,
+        errorCode: terminalOutcome.errorCode,
+        errorMessage: terminalOutcome.errorMessage,
       },
     });
   }
