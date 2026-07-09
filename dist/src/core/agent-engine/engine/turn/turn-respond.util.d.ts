@@ -1,0 +1,10 @@
+import type { ToolObservation } from '../main/types/agent-engine.types';
+import type { PendingRespond, TurnRespondKind, TurnRespondRequest } from './turn-respond.types';
+export declare const CLARIFICATION_REQUEST_OBSERVATION_NAME = "clarification_request";
+export declare function pendingRespondFromObservation(observation: ToolObservation): PendingRespond;
+export declare function pendingRespondFromTurn(request: TurnRespondRequest): PendingRespond;
+export declare function hasPendingRespond(pending: PendingRespond | null | undefined): boolean;
+export declare function isTerminalTurnRespondPending(pending: PendingRespond | null | undefined): boolean;
+export declare function guidanceHintForTurnKind(kind: TurnRespondKind): string | undefined;
+export declare function turnRespondRequestToObservation(request: TurnRespondRequest): ToolObservation;
+export declare function resolveObservationForSummarize(pending: PendingRespond | null | undefined): ToolObservation | null;
