@@ -1,0 +1,78 @@
+import { AgentRunStatus } from '../../../../../../generated/prisma/client';
+import { PrismaService } from '../../../../../prisma/prisma.service';
+import { SessionGoaService } from '../../../../memory/goa/session-goa.service';
+import { SessionHistoryCompressionService } from '../../../../memory/context/session-history-compression.service';
+import type { SessionMemoryUpdateContext } from '../../../../memory/goa/session-goa.types';
+import { type RunMetricsAccumulator } from '../../run-metrics.util';
+import type { AgentService } from '../../../../../modules/agent/agent.service';
+import { AgentRunSseEmitter } from './agent-run-sse.emitter';
+import { RunAssistantArtifactStore } from './run-assistant-artifact.store';
+import { RunAssistantMessagePersistService } from './run-assistant-message-persist.service';
+import { RuntimeCacheInvalidator } from '../../../../runtime-cache/runtime-cache-invalidator.service';
+import type { AgentGraphState, AgentRunResult, AgentRunStep } from '../types/agent-engine.types';
+import type { AgentRunGoaSnapshot } from '../../../../memory/goa/session-goa.types';
+export declare class AgentRunLifecycleService {
+    private readonly prisma;
+    private readonly goaService;
+    private readonly sessionHistoryCompression;
+    private readonly sse;
+    private readonly assistantArtifact;
+    private readonly messagePersist;
+    private readonly runtimeCacheInvalidator;
+    constructor(prisma: PrismaService, goaService: SessionGoaService, sessionHistoryCompression: SessionHistoryCompressionService, sse: AgentRunSseEmitter, assistantArtifact: RunAssistantArtifactStore, messagePersist: RunAssistantMessagePersistService, runtimeCacheInvalidator: RuntimeCacheInvalidator);
+    parseStepsFromRun(steps: unknown): AgentRunStep[];
+    updateRun(runId: number, steps: AgentRunStep[], status: AgentRunStatus): Promise<void>;
+    private buildRunFinishMetricsData;
+    private finalizeRunAndTurnInTx;
+    finalizeRunAndTurn(input: {
+        turnId: number;
+        runId: number;
+        runMetrics: RunMetricsAccumulator;
+        finalOutput: string;
+        status: AgentRunStatus;
+        finishReason: string;
+        scopedToolCount?: number;
+        error?: string;
+        steps?: AgentRunStep[];
+        currentStep?: number;
+        goaSnapshot?: AgentRunGoaSnapshot | null;
+        persistTurnAssistant?: boolean;
+    }): Promise<void>;
+    sanitizeFinalOutput(finalOutput: string): string;
+    resolveFinalOutputFromArtifact(sessionId: string, runId: number): string;
+    finalOutputPlainText(finalOutput: string): string;
+    awaitPostRunMemoryTasks(sessionId: string, ctx: SessionMemoryUpdateContext): Promise<void>;
+    schedulePostRunMemoryTasks(sessionId: string, ctx: SessionMemoryUpdateContext): void;
+    buildFailureMemoryContext(input: {
+        turnId: number;
+        runId: number;
+        userInput: string;
+        finalOutput: string;
+        steps: AgentRunStep[];
+    }): SessionMemoryUpdateContext;
+    resolveFallbackReply(config: unknown): string | null;
+    finishAgentRun(input: {
+        userId: number;
+        sessionId: string;
+        turnId: number;
+        runId: number;
+        status: AgentRunStatus;
+        steps: AgentRunStep[];
+        scopedToolCount: number;
+        runMetrics: RunMetricsAccumulator;
+        finishedEarly?: boolean;
+        goaSnapshot?: AgentRunGoaSnapshot | null;
+        error?: string;
+        memoryContext?: SessionMemoryUpdateContext;
+    }): Promise<AgentRunResult>;
+    completeAgentRunFromGraph(input: {
+        userId: number;
+        sessionId: string;
+        turnId: number;
+        runId: number;
+        agent: NonNullable<Awaited<ReturnType<AgentService['getRuntimeAgent']>>>;
+        latestUserMessage: string;
+        graphState: AgentGraphState;
+        runMetrics: RunMetricsAccumulator;
+    }): Promise<AgentRunResult>;
+}

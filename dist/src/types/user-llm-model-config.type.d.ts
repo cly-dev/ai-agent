@@ -1,0 +1,15 @@
+import type { RelationRef } from '../shared/relation-ref';
+export interface UserLlmModelConfigType {
+    id?: number;
+    userId: number;
+    provider: string;
+    model: string;
+    apiKey: string;
+    baseUrl?: string | null;
+    temperature?: number | null;
+    maxTokens?: number | null;
+    enabled?: boolean;
+    createdAt?: Date;
+    updatedAt?: Date;
+    user: RelationRef;
+}
