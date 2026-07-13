@@ -6,6 +6,7 @@ import type { ToolObservation } from './main/types/agent-engine.types';
 import { PLAN_DRAFT_REPLY_OBSERVATION_NAME } from './main/plan-present/plan-draft-reply.util';
 import { PLAN_COMPOSE_WRITE_OBSERVATION_NAME } from './main/plan-present/plan-compose-write.util';
 import { isEmptyListToolObservation } from './tool/tool-observation.util';
+import { isInfraParamName } from '../../tool-engine/tool-user-facing-params.util';
 import { resolveDefaultListArrayLimit } from '../../tool-engine/tool-pagination-params.util';
 import {
   collectNotableExamplesFromPageSummaries,
@@ -50,7 +51,6 @@ export type SplitToolObservationsOutput = {
 
 export const SPLIT_TOOL_OBSERVATIONS_NAME = 'split_tool_observations';
 
-const OBSERVATION_ARG_SKIP = new Set(['vo', 'X-SHOP-ID', 'page', 'size', 'sort']);
 const OBSERVATION_REUSE_NOTE_SUCCESS =
   'This tool already succeeded with the args shown. Do not call it again with the same arguments; answer from this observation.';
 const OBSERVATION_REUSE_NOTE_ERROR =
@@ -66,7 +66,7 @@ export function compactArgsForObservation(
   }
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(args)) {
-    if (OBSERVATION_ARG_SKIP.has(key)) {
+    if (isInfraParamName(key)) {
       continue;
     }
     if (value === undefined || value === null || value === '') {

@@ -1,34 +1,22 @@
+import type { PageContextTaskKind } from '../../../host-bridge/page-context-usage.types';
 import type { TurnRouteKind } from './turn-routing.types';
 import type { TurnWriteChannel } from './turn-write-channel.types';
 
-export type TurnRouteLlmWriteChannelRaw = {
-  route: TurnRouteKind;
-  writeChannel?: TurnWriteChannel | string;
-  hostMutationIntent?: boolean;
-  pageContextTaskKind?: string;
-};
-
 /**
- * 将 route LLM 输出解析为 writeChannel。
- * 优先使用 writeChannel；兼容 legacy hostMutationIntent / pageContextTaskKind=mutation。
+ * 从 Route LLM 结构化输出推导写通道草稿。
+ * - mutation → http
+ * - on_page_task → host
+ * - 其余 → none
  */
-export function resolveLlmWriteChannelFromRaw(
-  raw: TurnRouteLlmWriteChannelRaw,
-): TurnWriteChannel {
-  if (raw.writeChannel === 'http' || raw.writeChannel === 'host') {
-    return raw.writeChannel;
-  }
-  if (raw.writeChannel === 'none') {
-    if (raw.route === 'on_page_task') {
-      return 'host';
-    }
-    return 'none';
-  }
-  if (raw.route === 'on_page_task') {
-    return 'host';
-  }
-  if (raw.hostMutationIntent || raw.pageContextTaskKind === 'mutation') {
+export function resolveDraftWriteChannelFromRouteLlm(input: {
+  route: TurnRouteKind;
+  pageContextTaskKind: PageContextTaskKind | string;
+}): TurnWriteChannel {
+  if (input.pageContextTaskKind === 'mutation') {
     return 'http';
+  }
+  if (input.route === 'on_page_task') {
+    return 'host';
   }
   return 'none';
 }

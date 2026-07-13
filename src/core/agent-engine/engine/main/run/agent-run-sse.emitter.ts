@@ -5,6 +5,7 @@ import type { AgentMachineCode } from '../../agent-run-user-messages.util';
 import type { MessageBlock, MessageBlockPatch } from '../../message/message-blocks.types';
 import {
   extractStreamableProseFromBlocks,
+  extractProseFromSummarizeLlmRaw,
   filterLlmBlocksAvoidDuplicatingRule,
   looksLikeBlocksJsonOutput,
   mergeSummarizeBlocksForStorage,
@@ -25,6 +26,7 @@ import { sanitizeLlmFinalOutput } from '../../llm-output-sanitize.util';
 import {
   createSummarizeProseStreamSession,
   finalizeSummarizeProseStreamAfterLlm,
+  resolveSummarizeLlmProseForStorage,
   type SummarizeProseStreamSession,
 } from '../../summarize-prose-stream.util';
 import type { SummarizeLlmDelivery } from '../summarize/summarize-llm-delivery.util';
@@ -659,35 +661,32 @@ export class AgentRunSseEmitter {
         );
       } else {
         this.logger.warn(
-          `summarize prose_stream: unparseable blocks JSON discarded runId=${runId}`,
+          `summarize prose_stream: unparseable blocks JSON runId=${runId}`,
         );
-        const coerced = messageBlocksToPlainText(
-          mergeSummarizeBlocksForStorage(ruleBlocks, [], fallbackPlainText),
-        );
-        if (coerced.trim()) {
+        const recovered = extractProseFromSummarizeLlmRaw(rawSource);
+        if (recovered) {
           llmBlocksForStorage = filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
-            textBlock(coerced, 'markdown'),
+            textBlock(recovered, 'markdown'),
           ]);
+        } else {
+          const coerced = messageBlocksToPlainText(
+            mergeSummarizeBlocksForStorage(ruleBlocks, [], fallbackPlainText),
+          );
+          if (coerced.trim()) {
+            llmBlocksForStorage = filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
+              textBlock(coerced, 'markdown'),
+            ]);
+          }
         }
       }
     } else {
-      let proseForStorage = '';
-      if (
-        proseSession.messageDeltaEmitted &&
-        proseSession.sanitizedEmitted.trim()
-      ) {
-        // 与 SSE delta 同源：避免终稿二次 sanitize 与用户已看到的流式正文不一致。
-        proseForStorage = sanitizeSummarizeUserFacingProse(
-          proseSession.sanitizedEmitted,
-        ).trim();
-      }
-      if (!proseForStorage) {
-        proseForStorage = sanitizeSummarizeUserFacingProse(
-          sanitizeLlmFinalOutput(
-            userMarkdown || routedMessage || rawLlmSource || fallbackPlainText,
-          ),
-        ).trim();
-      }
+      const proseForStorage = resolveSummarizeLlmProseForStorage({
+        proseSession,
+        rawSource,
+        userMarkdown,
+        routedMessage,
+        fallbackPlainText,
+      });
       if (proseForStorage) {
         llmBlocksForStorage = filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
           textBlock(proseForStorage, 'markdown'),
@@ -697,6 +696,20 @@ export class AgentRunSseEmitter {
         this.logger.warn(
           `summarize prose stream superseded by blocks JSON runId=${runId}`,
         );
+      }
+    }
+
+    const recoveredProse = extractProseFromSummarizeLlmRaw(rawSource);
+    if (recoveredProse) {
+      const currentText =
+        llmBlocksForStorage.find(
+          (block): block is Extract<MessageBlock, { type: 'text' }> =>
+            block.type === 'text',
+        )?.content.trim() ?? '';
+      if (recoveredProse.length > currentText.length) {
+        llmBlocksForStorage = filterLlmBlocksAvoidDuplicatingRule(ruleBlocks, [
+          textBlock(recoveredProse, 'markdown'),
+        ]);
       }
     }
 

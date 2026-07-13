@@ -8,8 +8,11 @@ import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import { resolveAutoOuterPlanSkill } from '../../plan/outer-plan-skill-resolve.util';
 import { resolveTurnRoute } from '../../../turn/turn-routing-llm.util';
 import type { TurnRouteLlmInput } from '../../../turn/turn-routing.types';
-import { finalizeTurnWriteChannel } from '../../../turn/finalize-turn-write-channel.util';
 import { buildTurnExecutionContract } from '../../../turn/turn-execution-contract.util';
+import {
+  routeFromTaskKind,
+  writeChannelFromTaskKind,
+} from '../../../turn/resolve-turn-task-kind.util';
 import type { BuildTurnExecutionContractRequestedSkill } from '../../../turn/turn-execution-contract.types';
 import {
   deriveSkillExecutionChannels,
@@ -22,23 +25,23 @@ import {
   emptyScopedToolsBundle,
   spreadScopedToolsBundle,
 } from '../../../turn/turn-scoped-tools.util';
-import {
-  buildChitchatRoutingDecision,
-  finalizeTurnRoutingDecision,
-} from '../../../turn/turn-routing.util';
-import {
-  mergePageContextPreloadedObservations,
-} from '../../../../../host-bridge/page-context-usage.util';
+import { buildChitchatRouteDraft } from '../../../turn/turn-routing.util';
+import { guardTaskRouteDraftForIntent } from '../../../turn/turn-route-guard.util';
+import { mergePageContextPreloadedObservations } from '../../../../../host-bridge/page-context-usage.util';
 import { shouldMaterializePageContextFromUsage } from '../../../../../host-bridge/page-context-execution-policy.util';
 import {
   deriveSkillRunnableKind,
   normalizeSkillRunnableCapabilities,
 } from '../../../../../skill/skill-runnable.util';
 import type { AvailableSkillRow } from '../../../../../skill/skill.types';
-import type { AgentRunStep, AgentGraphState } from '../../types/agent-engine.types';
+import type {
+  AgentRunStep,
+  AgentGraphState,
+} from '../../types/agent-engine.types';
 import { detectIntentKind as classifyIntentKind } from '../../../../intent-kind.util';
 import { loadSmallTalkHints } from '../../../../../intent/smalltalk-hints.util';
 
+/** 从 outerPlan 可用 Skill 列表查找 UI 显式点选的 requestedSkill；未命中时由 resolveRequestedSkillForContract 走 ctx 兜底。 */
 function resolveRequestedSkillRowForTurnRoute(input: {
   requestedSkillId: number | null;
   availableSkills: AvailableSkillRow[];
@@ -47,15 +50,21 @@ function resolveRequestedSkillRowForTurnRoute(input: {
     return null;
   }
   return (
-    input.availableSkills.find((skill) => skill.id === input.requestedSkillId) ??
-    null
+    input.availableSkills.find(
+      (skill) => skill.id === input.requestedSkillId,
+    ) ?? null
   );
 }
 
+/**
+ * 组装契约所需的 Skill 快照：优先 DB 行，其次 run 上下文（会话续跑时 skill 可能未出现在 outerPlan 列表）。
+ */
 function resolveRequestedSkillForContract(input: {
   requestedSkillId: number | null;
   requestedSkillRow: AvailableSkillRow | null;
-  requestedSkillCtx: import('../../skill/requested-skill-run.service').RequestedSkillRunContext | null;
+  requestedSkillCtx:
+    | import('../../skill/requested-skill-run.service').RequestedSkillRunContext
+    | null;
 }): Omit<BuildTurnExecutionContractRequestedSkill, 'executionChannels'> | null {
   if (input.requestedSkillId == null) {
     return null;
@@ -77,7 +86,9 @@ function resolveRequestedSkillForContract(input: {
     input.requestedSkillCtx &&
     input.requestedSkillCtx.skillId === input.requestedSkillId
   ) {
-    const caps = normalizeSkillRunnableCapabilities(input.requestedSkillCtx.skill);
+    const caps = normalizeSkillRunnableCapabilities(
+      input.requestedSkillCtx.skill,
+    );
     return {
       id: input.requestedSkillCtx.skillId,
       name: input.requestedSkillCtx.skill.name,
@@ -89,10 +100,16 @@ function resolveRequestedSkillForContract(input: {
   return null;
 }
 
+/** 供 Route LLM 判断 analyze vs mutation；显式 Skill 的 workflow 通道也是 reconcile 锚定依据。 */
 async function resolveRequestedSkillExecutionChannels(
   prisma: AgentGraphNodeBundle['deps']['prisma'],
-  requestedSkill: Omit<BuildTurnExecutionContractRequestedSkill, 'executionChannels'> | null,
-): Promise<import('../../../../../workflow/derive-skill-execution-channels.util').SkillExecutionChannels> {
+  requestedSkill: Omit<
+    BuildTurnExecutionContractRequestedSkill,
+    'executionChannels'
+  > | null,
+): Promise<
+  import('../../../../../workflow/derive-skill-execution-channels.util').SkillExecutionChannels
+> {
   if (!requestedSkill) {
     return EMPTY_SKILL_EXECUTION_CHANNELS;
   }
@@ -161,11 +178,18 @@ function intentRecallMatchesFromStep(
         score: typeof score === 'number' ? score : 0,
       };
     })
-    .filter((row): row is TurnRouteLlmInput['intentRecallMatches'][number] =>
-      row != null,
+    .filter(
+      (row): row is TurnRouteLlmInput['intentRecallMatches'][number] =>
+        row != null,
     );
 }
 
+/**
+ * turn_route 节点：产出本轮 TurnExecutionContract（图状态唯一路由真源）。
+ *
+ * 流水线：smalltalk 短路 | Route LLM → routeDraft → buildTurnExecutionContract
+ * → 由 taskKind 派生 route/writeChannel → 写 route_plan step 供观测与下游 plan/tools。
+ */
 export function createTurnRouteNode(
   bundle: AgentGraphNodeBundle,
 ): AgentGraphNodeFn {
@@ -182,6 +206,7 @@ export function createTurnRouteNode(
         ? 'smalltalk'
         : classifyIntentKind(ctx.input.latestUserMessage, loadSmallTalkHints());
 
+    // 寒暄不走 Route LLM（省一次调用）；仍走同一 contract 构建，保证下游只读 taskKind。
     if (intentKind === 'smalltalk') {
       deps.sse.emitThink(
         ctx.input.sessionId,
@@ -189,33 +214,34 @@ export function createTurnRouteNode(
         '正在回复…\n',
         'replace',
       );
-      const turnRoutingDecision = finalizeTurnRoutingDecision({
-        decision: buildChitchatRoutingDecision({ reason: 'smalltalk_intent' }),
-        pageContext: pageContextForRoute,
+      const routeDraft = buildChitchatRouteDraft({
+        reason: 'smalltalk_intent',
       });
       const turnExecutionContract = buildTurnExecutionContract({
-        routing: turnRoutingDecision,
+        routeDraft,
         userMessage: ctx.input.latestUserMessage,
         toolsEnabled: true,
         requestedSkillId: null,
         requestedSkill: null,
-        effectiveWriteChannel: 'none',
         pageHostCandidateId: null,
         pageContext: pageContextForRoute,
       });
+      const contract = turnExecutionContract;
+      const route = routeFromTaskKind(contract.taskKind);
       const routeStep: AgentRunStep = {
         step: stepNum,
         type: 'route_plan',
         output: runHelpers.normalizeJsonLike({
-          route: turnRoutingDecision.route,
-          method: turnRoutingDecision.method,
-          reason: turnRoutingDecision.reason,
+          route,
+          method: contract.routeMeta.method,
+          reason: contract.routeMeta.reason,
           routeFallback: true,
           smalltalkIntent: true,
-          skillSelect: turnExecutionContract.plan.skillSelect,
-          scopedToolsSource: turnExecutionContract.plan.scopedToolsSource,
-          pageContextPlan: turnExecutionContract.plan.pageContextPlan,
-          skillAlignment: turnExecutionContract.skillAlignment,
+          taskKind: contract.taskKind,
+          skillSelect: contract.plan.skillSelect,
+          scopedToolsSource: contract.plan.scopedToolsSource,
+          pageContextPlan: contract.plan.pageContextPlan,
+          skillAlignment: contract.skillAlignment,
         }),
       };
       const stepsWithRoute = [...state.steps, routeStep];
@@ -227,10 +253,9 @@ export function createTurnRouteNode(
       return {
         ...state,
         steps: stepsWithRoute,
-        turnRoutingDecision,
         turnExecutionContract,
         pageContext: pageContextForRoute,
-          intentKind: 'smalltalk',
+        intentKind: 'smalltalk',
         preloadedToolObservations: state.preloadedToolObservations ?? [],
         scopedHostTools: [],
         scopedHostLangChainTools: [],
@@ -261,6 +286,7 @@ export function createTurnRouteNode(
       requestedSkillId,
     });
 
+    // 当前页 scoped host 工具能唯一对应一个 Skill 时，作为 Route LLM 的 on_page 候选。
     const autoSkillCandidate =
       scopedHostToolIds.length > 0
         ? resolveAutoOuterPlanSkill({
@@ -283,6 +309,7 @@ export function createTurnRouteNode(
       deps.prisma,
       requestedSkillBase,
     );
+    // Route LLM 输入（prompt: agent.turn_route）；只产出 draft，不做最终契约。
     const routeInput: TurnRouteLlmInput = {
       userMessage: ctx.input.latestUserMessage,
       pageContext: pageContextForRoute as Record<string, unknown> | null,
@@ -312,52 +339,46 @@ export function createTurnRouteNode(
       requestedSkillExecutionChannels: executionChannels,
     };
 
-    const llmRoutingDecision = await resolveTurnRoute({
-      llmService: deps.llmService,
-      promptRegistry: deps.promptRegistry,
-      scope: ctx.promptScope,
-      routeInput,
-    });
-    const turnRoutingDecisionRaw = finalizeTurnRoutingDecision({
-      decision: llmRoutingDecision,
-      pageContext: pageContextForRoute,
+    const routeDraft = guardTaskRouteDraftForIntent({
+      intentKind,
+      routeDraft: await resolveTurnRoute({
+        llmService: deps.llmService,
+        promptRegistry: deps.promptRegistry,
+        scope: ctx.promptScope,
+        routeInput,
+      }),
     });
     const requestedSkillForContract = requestedSkillBase
       ? { ...requestedSkillBase, executionChannels }
       : null;
-    const {
-      writeChannel: effectiveWriteChannel,
-      routing: turnRoutingDecision,
-      skillChannelAnchored,
-    } = finalizeTurnWriteChannel({
-      routing: turnRoutingDecisionRaw,
-      skillChannels: requestedSkillForContract?.executionChannels ?? null,
-    });
-    const pageContextAppliesBoosted =
-      turnRoutingDecision.pageContextApplies &&
-      !llmRoutingDecision.pageContextApplies;
-    const pageContextRouteCorrected =
-      llmRoutingDecision.route !== turnRoutingDecision.route;
-    const pageContextTaskKindBoosted =
-      turnRoutingDecision.pageContextTaskKind !==
-      llmRoutingDecision.pageContextTaskKind;
-    const hostMutationIntentBoosted =
-      turnRoutingDecision.hostMutationIntent &&
-      !llmRoutingDecision.hostMutationIntent;
-    const llmWriteChannelCorrected =
-      llmRoutingDecision.llmWriteChannel !== effectiveWriteChannel;
 
+    // reconcileTurnIntent 在 buildTurnExecutionContract 内：pageContext 纠偏 + 显式 Skill 通道锚定 → taskKind。
     const turnExecutionContract = buildTurnExecutionContract({
-      routing: turnRoutingDecision,
+      routeDraft,
       userMessage: ctx.input.latestUserMessage,
       toolsEnabled: true,
       requestedSkillId,
       requestedSkill: requestedSkillForContract,
-      effectiveWriteChannel,
       pageHostCandidateId: autoSkillCandidate?.skill.id ?? null,
       pageContext: pageContextForRoute,
     });
+    const contract = turnExecutionContract;
+    const routeMeta = contract.routeMeta;
+    // route / writeChannel 不由 LLM 直出，均由 reconcile 后的 taskKind 派生（避免双真源）。
+    const route = routeFromTaskKind(contract.taskKind);
+    const writeChannel = writeChannelFromTaskKind(contract.taskKind);
 
+    // 以下 *Boosted / *Corrected 仅用于 route_plan 观测，对照 LLM draft 与 reconcile 后契约。
+    const skillChannelAnchored = contract.skillChannelAnchored;
+    const pageContextAppliesBoosted =
+      routeMeta.pageContextApplies && !routeDraft.pageContextApplies;
+    const pageContextRouteCorrected = routeDraft.route !== route;
+    const pageContextTaskKindBoosted =
+      routeMeta.pageContextTaskKind !== 'none' &&
+      routeDraft.llmPageContextTaskKind === 'none';
+    const writeChannelCorrected = routeDraft.draftWriteChannel !== writeChannel;
+
+    // 内联 pageContext 将作为 observation 预加载，供 plan/summarize 免再调 HTTP 读接口。
     const shouldMaterializePageContext = shouldMaterializePageContextFromUsage(
       turnExecutionContract.plan.pageContextUsage,
     );
@@ -371,33 +392,33 @@ export function createTurnRouteNode(
     logHostToolResolve('turn_route_decision', {
       runId: ctx.input.runId,
       sessionId: ctx.input.sessionId,
-      route: turnRoutingDecision.route,
-      method: turnRoutingDecision.method,
-      reason: turnRoutingDecision.reason,
-      suggestedSkillId: turnRoutingDecision.suggestedSkillId,
+      route,
+      method: routeMeta.method,
+      reason: routeMeta.reason,
+      suggestedSkillId: routeMeta.suggestedSkillId,
       pageHostSkillCandidateId: autoSkillCandidate?.skill.id ?? null,
       hostToolNames: hostBundle.scopedHostTools.map((tool) => tool.name),
       pageContextUsage: turnExecutionContract.plan.pageContextUsage,
       pageContextPlan: turnExecutionContract.plan.pageContextPlan,
       pageContextAppliesBoosted,
       pageContextTaskKindBoosted,
-      hostMutationIntent: turnRoutingDecision.hostMutationIntent,
-      llmHostMutationIntent: llmRoutingDecision.hostMutationIntent,
-      hostMutationIntentBoosted,
       pageContextRouteCorrected,
-      llmRoute: llmRoutingDecision.route,
+      llmRoute: routeDraft.route,
+      taskKind: contract.taskKind,
+      writeChannel,
       skillAlignment: turnExecutionContract.skillAlignment,
     });
 
     const routeStep: AgentRunStep = {
       step: stepNum,
       type: 'route_plan',
+      // 同时保留 llm* 与最终字段，便于 run 排查 reconcile 是否生效。
       output: runHelpers.normalizeJsonLike({
-        route: turnRoutingDecision.route,
-        method: turnRoutingDecision.method,
-        reason: turnRoutingDecision.reason,
-        routeFallback: turnRoutingDecision.method !== 'llm',
-        suggestedSkillId: turnRoutingDecision.suggestedSkillId,
+        route,
+        method: routeMeta.method,
+        reason: routeMeta.reason,
+        routeFallback: routeMeta.method !== 'llm',
+        suggestedSkillId: routeMeta.suggestedSkillId,
         pageHostSkillCandidateId: autoSkillCandidate?.skill.id ?? null,
         requestedSkillId,
         skillSelect: turnExecutionContract.plan.skillSelect,
@@ -409,27 +430,27 @@ export function createTurnRouteNode(
         ),
         pageContextUsage: turnExecutionContract.plan.pageContextUsage,
         pageContextPlan: turnExecutionContract.plan.pageContextPlan,
-        pageContextTaskKind: turnRoutingDecision.pageContextTaskKind,
-        hostMutationIntent: turnRoutingDecision.hostMutationIntent,
-        llmWriteChannel: llmRoutingDecision.llmWriteChannel,
-        llmWriteChannelDraft: llmRoutingDecision.llmWriteChannel,
-        llmWriteChannelCorrected,
-        llmPageContextApplies: llmRoutingDecision.pageContextApplies,
-        llmPageContextTaskKind: llmRoutingDecision.llmPageContextTaskKind,
-        llmHostMutationIntent: llmRoutingDecision.hostMutationIntent,
+        pageContextTaskKind: routeMeta.pageContextTaskKind,
+        routeDraftWriteChannel: routeDraft.draftWriteChannel,
+        writeChannelCorrected,
+        llmPageContextApplies: routeDraft.pageContextApplies,
+        llmPageContextTaskKind: routeDraft.llmPageContextTaskKind,
+        llmReadDeliverable: routeDraft.readDeliverable,
+        readDeliverable: routeMeta.readDeliverable,
         pageContextAppliesBoosted,
         pageContextTaskKindBoosted,
-        hostMutationIntentBoosted,
         pageContextRouteCorrected,
         skillChannelAnchored,
-        effectiveWriteChannel,
+        writeChannel,
+        taskKind: turnExecutionContract.taskKind,
         skillExecutionChannels: executionChannels,
-        llmRoute: llmRoutingDecision.route,
+        llmRoute: routeDraft.route,
         skillAlignment: turnExecutionContract.skillAlignment,
       }),
     };
     const stepsWithRoute = [...state.steps, routeStep];
 
+    // direct_answer 等终端路径：放弃进行中的 GOA 任务后直接 respond，不再进入 plan。
     if (turnExecutionContract.terminalRespond) {
       const sessionGoa = ctx.getSessionGoa();
       if (
@@ -437,7 +458,9 @@ export function createTurnRouteNode(
         sessionGoa?.activeTask?.status === 'awaiting_confirmation'
       ) {
         await deps.goaService.abandonActiveTask(ctx.input.sessionId);
-        ctx.setSessionGoa(await deps.goaService.getPayload(ctx.input.sessionId));
+        ctx.setSessionGoa(
+          await deps.goaService.getPayload(ctx.input.sessionId),
+        );
       }
       await runHelpers.updateRun(
         ctx.input.runId,
@@ -447,7 +470,6 @@ export function createTurnRouteNode(
       return runHelpers.buildTurnRespondState(
         {
           ...state,
-          turnRoutingDecision,
           turnExecutionContract,
         },
         stepsWithRoute,
@@ -472,9 +494,11 @@ export function createTurnRouteNode(
         allowedToolIds: ctx.input.allowedToolIds,
       });
     const activeScopedTools =
-      turnRoutingDecision.route === 'direct_answer'
-        ? emptyScopedToolsBundle()
+      route === 'direct_answer'
+        ? // direct_answer 清空 HTTP/host 工具面，避免闲聊误调工具。
+          emptyScopedToolsBundle()
         : applyTurnScopedToolsFromContract({
+            // 按 contract.plan（skillSelect / scopedToolsSource）收窄 intent 阶段工具面。
             contract: turnExecutionContract,
             intentScopedTools,
             requestedSkillCtx: ctx.requestedSkillCtx,
@@ -483,18 +507,13 @@ export function createTurnRouteNode(
     const nextState: AgentGraphState = {
       ...state,
       steps: stepsWithRoute,
-      turnRoutingDecision,
       turnExecutionContract,
       pageContext: pageContextForRoute,
       preloadedToolObservations: preloadedFromPageContext,
       scopedHostTools:
-        turnRoutingDecision.route === 'direct_answer'
-          ? []
-          : hostBundle.scopedHostTools,
+        route === 'direct_answer' ? [] : hostBundle.scopedHostTools,
       scopedHostLangChainTools:
-        turnRoutingDecision.route === 'direct_answer'
-          ? []
-          : hostBundle.scopedHostLangChainTools,
+        route === 'direct_answer' ? [] : hostBundle.scopedHostLangChainTools,
       ...spreadScopedToolsBundle(activeScopedTools),
     };
     return nextState;

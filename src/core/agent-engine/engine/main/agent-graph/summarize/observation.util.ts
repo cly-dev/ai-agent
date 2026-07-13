@@ -42,6 +42,7 @@ import {
   applySummarizeMemoryScope,
   resolveSummarizeMemoryScope,
 } from '../../summarize/summarize-memory-scope.util';
+import { planRunContextFromState } from '../../plan/plan-observation-scope.util';
 import type {
   AgentEngineTool,
   AgentGraphState,
@@ -206,7 +207,10 @@ export function filterUsableToolObservations(
 export function buildSummarizeObservationFromState(
     state: Pick<
       AgentGraphState,
-      'preloadedToolObservations' | 'toolObservations' | 'workflowRun'
+      | 'preloadedToolObservations'
+      | 'toolObservations'
+      | 'workflowRun'
+      | 'planRunContext'
     >,
     planContext?: {
       taskPlan?: TaskPlanSnapshot | null;
@@ -225,6 +229,7 @@ export function buildSummarizeObservationFromState(
       scopedTools: planContext?.scopedTools,
       workflowRun: state.workflowRun,
       workflowNodeDefs: planContext?.workflowNodeDefs,
+      planRunContext: planRunContextFromState(state),
     });
     const split = applySummarizeMemoryScope(usableSplit, memoryScope);
     if (split.workingMemory.length === 0 && split.currentRun.length === 0) {

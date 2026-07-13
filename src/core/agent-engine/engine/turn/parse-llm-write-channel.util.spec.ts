@@ -1,38 +1,38 @@
-import { resolveLlmWriteChannelFromRaw } from './parse-llm-write-channel.util';
+import { resolveDraftWriteChannelFromRouteLlm } from './parse-llm-write-channel.util';
 
-describe('resolveLlmWriteChannelFromRaw', () => {
-  it('uses explicit writeChannel when provided', () => {
+describe('resolveDraftWriteChannelFromRouteLlm', () => {
+  it('maps mutation task kind to http draft', () => {
     expect(
-      resolveLlmWriteChannelFromRaw({
+      resolveDraftWriteChannelFromRouteLlm({
         route: 'orchestrated_task',
-        writeChannel: 'http',
+        pageContextTaskKind: 'mutation',
       }),
     ).toBe('http');
   });
 
-  it('maps legacy hostMutationIntent on orchestrated to http', () => {
+  it('maps on_page_task to host draft', () => {
     expect(
-      resolveLlmWriteChannelFromRaw({
-        route: 'orchestrated_task',
-        hostMutationIntent: true,
-      }),
-    ).toBe('http');
-  });
-
-  it('maps on_page_task without writeChannel to host', () => {
-    expect(
-      resolveLlmWriteChannelFromRaw({
+      resolveDraftWriteChannelFromRouteLlm({
         route: 'on_page_task',
-        writeChannel: 'none',
+        pageContextTaskKind: 'none',
       }),
     ).toBe('host');
   });
 
-  it('returns none for read-only orchestrated', () => {
+  it('returns none for analyze on orchestrated route', () => {
     expect(
-      resolveLlmWriteChannelFromRaw({
+      resolveDraftWriteChannelFromRouteLlm({
         route: 'orchestrated_task',
-        writeChannel: 'none',
+        pageContextTaskKind: 'analyze',
+      }),
+    ).toBe('none');
+  });
+
+  it('returns none for answer on orchestrated route', () => {
+    expect(
+      resolveDraftWriteChannelFromRouteLlm({
+        route: 'orchestrated_task',
+        pageContextTaskKind: 'answer',
       }),
     ).toBe('none');
   });

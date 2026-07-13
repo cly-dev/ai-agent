@@ -1,20 +1,15 @@
 import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
-import { resolveCanonicalTurnRoute } from '../../../host-bridge/page-context-execution-policy.util';
 import type { PageContextTaskKind } from '../../../host-bridge/page-context-usage.types';
 import {
   assessPageContextData,
   resolveEffectivePageContextApplies,
 } from '../../../host-bridge/page-context-usage.util';
+import { resolveCanonicalTurnRoute } from '../../../host-bridge/page-context-execution-policy.util';
 import type { TurnPageReadIntent, TurnPageReadKind } from './turn-user-intent.types';
 import type {
   TurnRouteKind,
-  TurnRoutingDecision,
   TurnRoutingMethod,
 } from './turn-routing.types';
-import {
-  hostMutationIntentFromWriteChannel,
-  type TurnWriteChannel,
-} from './turn-write-channel.types';
 
 function defaultPageReadKindOnFallback(input: {
   method: TurnRoutingMethod;
@@ -55,17 +50,7 @@ function normalizePageReadKindWhenApplies(input: {
   return 'none';
 }
 
-function resolveDraftWriteChannelOnPageRoute(input: {
-  route: TurnRouteKind;
-  llmWriteChannel: TurnWriteChannel;
-}): TurnWriteChannel {
-  if (input.route === 'on_page_task' && input.llmWriteChannel === 'none') {
-    return 'host';
-  }
-  return input.llmWriteChannel;
-}
-
-/** 读路径：页上内联/实体数据消费意图。 */
+/** 读路径：用户是否消费页上内联/实体数据，以及如何消费。 */
 export function resolveTurnPageReadIntent(input: {
   route: TurnRouteKind;
   method: TurnRoutingMethod;
@@ -100,57 +85,4 @@ export function resolveTurnPageReadIntent(input: {
   });
 
   return { applies, kind };
-}
-
-/** 写路径优先：读 plan kind 置 none，保留 applies 供 prompt / 物化 enrichment。 */
-function suppressReadKindForWriteIntent(
-  pageRead: TurnPageReadIntent,
-): TurnPageReadIntent {
-  return { applies: pageRead.applies, kind: 'none' };
-}
-
-/**
- * 合并 route LLM 草稿 → 结构化读/写意图 → 最终 TurnRoutingDecision。
- * 不变式：llmWriteChannel !== none 时，读 plan 不激活（pageContextTaskKind=none）。
- */
-export function finalizeTurnRoutingDecision(input: {
-  decision: TurnRoutingDecision;
-  pageContext: AgentChatPageContext | null | undefined;
-}): TurnRoutingDecision {
-  const pageReadDraft = resolveTurnPageReadIntent({
-    route: input.decision.route,
-    method: input.decision.method,
-    llmPageContextApplies: input.decision.pageContextApplies,
-    llmPageContextTaskKind: input.decision.llmPageContextTaskKind,
-    pageContext: input.pageContext,
-  });
-
-  const draftWriteChannel = resolveDraftWriteChannelOnPageRoute({
-    route: input.decision.route,
-    llmWriteChannel: input.decision.llmWriteChannel,
-  });
-
-  const pageRead =
-    draftWriteChannel !== 'none'
-      ? suppressReadKindForWriteIntent(pageReadDraft)
-      : pageReadDraft;
-
-  const route = resolveCanonicalTurnRoute({
-    llmRoute: input.decision.route,
-    pageContextTaskKind: pageRead.kind,
-  });
-
-  const llmWriteChannel = resolveDraftWriteChannelOnPageRoute({
-    route,
-    llmWriteChannel: draftWriteChannel,
-  });
-
-  return {
-    ...input.decision,
-    route,
-    pageContextApplies: pageRead.applies,
-    pageContextTaskKind: pageRead.kind,
-    llmWriteChannel,
-    hostMutationIntent: hostMutationIntentFromWriteChannel(llmWriteChannel),
-  };
 }

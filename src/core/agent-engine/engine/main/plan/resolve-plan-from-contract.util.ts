@@ -1,6 +1,9 @@
 import type { LlmService } from '../../../../llm/llm.service';
 import type { PromptRegistryService } from '../../../../prompt/prompt-registry.service';
 import type { TurnExecutionContract } from '../../turn/turn-execution-contract.types';
+import {
+  turnWriteChannelFromContract,
+} from '../../turn/turn-execution-contract.util';
 import type { AutoOuterPlanSkillSelection } from './outer-plan-skill-resolve.util';
 import { resolveOuterPlan, resolveRequestedSkillOuterPlan } from './task-plan-llm.util';
 import type {
@@ -10,10 +13,20 @@ import type {
 import {
   buildChitchatPlanResult,
   buildHostToolWritePlanResult,
+  buildOrchestratedTemplatePlanResult,
   buildPageContextEntityReadPlanResult,
   buildPageContextInlinePlanResult,
   buildRequestedSkillOuterPlanResult,
 } from './task-plan.util';
+import { resolveOrchestratedReadPlanResult } from './resolve-orchestrated-read-plan.util';
+import type { PlanTurnAxes } from './plan-turn-context.util';
+import type { TaskDeliverable } from './task-plan.types';
+
+function resolveOrchestratedTemplateDeliverable(
+  contract: TurnExecutionContract,
+): TaskDeliverable {
+  return contract.routeMeta.readDeliverable;
+}
 
 /**
  * Plan 唯一入口：只读 TurnExecutionContract，不再分散 gate。
@@ -25,17 +38,20 @@ export async function resolvePlanFromContract(input: {
   promptRegistry: PromptRegistryService;
   scope: { appClientId: number; agentId: number };
   planInput: ResolveOuterPlanInput;
+  planTurnAxes: PlanTurnAxes;
 }): Promise<ResolveTaskPlanResult> {
   const { contract, planInput } = input;
   if (!contract.plan.enabled) {
     throw new Error('resolvePlanFromContract called while contract.plan.enabled is false');
   }
 
-  if (contract.routing.route === 'direct_answer') {
+  if (contract.taskKind === 'direct_answer') {
     return buildChitchatPlanResult({ userMessage: planInput.userMessage });
   }
 
-  if (contract.routing.llmWriteChannel === 'none') {
+  const writeChannel = turnWriteChannelFromContract(contract);
+
+  if (writeChannel === 'none') {
     if (contract.plan.pageContextPlan === 'inline_answer') {
       return buildPageContextInlinePlanResult({
         userMessage: planInput.userMessage,
@@ -90,14 +106,14 @@ export async function resolvePlanFromContract(input: {
     case 'llm':
     default:
       if (
-        contract.routing.llmWriteChannel === 'host' &&
+        writeChannel === 'host' &&
         contract.plan.allowHostToolSteps &&
         (planInput.availableHostTools?.length ?? 0) > 0
       ) {
         const suggestedSkill =
-          contract.routing.suggestedSkillId != null
+          contract.routeMeta.suggestedSkillId != null
             ? planInput.availableSkills.find(
-                (skill) => skill.id === contract.routing.suggestedSkillId,
+                (skill) => skill.id === contract.routeMeta.suggestedSkillId,
               )
             : null;
         const suggestedHostToolIds = new Set(suggestedSkill?.hostToolIds ?? []);
@@ -115,6 +131,23 @@ export async function resolvePlanFromContract(input: {
               ? suggestedHostTools
               : (planInput.availableHostTools ?? []),
         });
+      }
+      if (writeChannel === 'none') {
+        if (contract.taskKind === 'orchestrated_read') {
+          return resolveOrchestratedReadPlanResult({
+            planInput,
+            deliverable: resolveOrchestratedTemplateDeliverable(contract),
+            planAxes: input.planTurnAxes,
+          });
+        }
+        const templatePlan = buildOrchestratedTemplatePlanResult({
+          userMessage: planInput.userMessage,
+          scopedToolSummaries: planInput.scopedToolSummaries,
+          deliverable: resolveOrchestratedTemplateDeliverable(contract),
+        });
+        if (templatePlan) {
+          return templatePlan;
+        }
       }
       return resolveOuterPlan({
         llmService: input.llmService,

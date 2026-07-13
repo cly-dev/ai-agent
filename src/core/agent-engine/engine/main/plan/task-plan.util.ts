@@ -29,6 +29,11 @@ import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/wor
 import { getWorkflowNodeDef } from '../../../../workflow/workflow-graph-routing.util';
 import type { PageContextUsage } from '../../../../host-bridge/page-context-usage.types';
 import { planInitialSummarizeReadyOnFresh } from '../../../../host-bridge/page-context-execution-policy.util';
+import type { PlanObservationBuckets } from './plan-observation-scope.util';
+import {
+  planSummarizeHasToolEvidence,
+  planSummarizeRequiresToolEvidence,
+} from './plan-summarize-gate.util';
 import {
   isPageContextSourcedObservation,
   pageContextObservationMatchesEntity,
@@ -39,6 +44,7 @@ import {
   resolveSkillCapabilityConstraints,
   formatPlanConstraintsForPrompt,
 } from './plan-goal.util';
+import { compilePlanToolSteps } from './plan-step-bind.util';
 import {
   applyActiveFrameStepComplete,
   syncPlanFromActiveFrame,
@@ -52,6 +58,13 @@ export type PlanScopedTool = {
   agentMetadata: unknown;
   responseProfile: unknown;
   method?: string;
+  inputSchema?: unknown;
+  schema?: unknown;
+};
+
+export type ReadinessFieldGroup = {
+  toolNames: string[];
+  fields: string[];
 };
 
 const VALID_DELIVERABLES: TaskDeliverable[] = [
@@ -131,6 +144,7 @@ function parseWorkflowSteps(raw: unknown): TaskPlanStep[] | null {
       return null;
     }
     const toolRole = readString(item.toolRole);
+    const pinnedToolNames = readStringArray(item.pinnedToolNames);
     const hostToolNames = readStringArray(item.hostToolNames);
     const hostToolIds = readPositiveIntArray(item.hostToolIds);
     const stopWhen = readString(item.stopWhen);
@@ -139,6 +153,7 @@ function parseWorkflowSteps(raw: unknown): TaskPlanStep[] | null {
       phase: phase as TaskStepPhase,
       kind: kind as TaskPlanStep['kind'],
       ...(toolRole ? { toolRole: toolRole as ToolDecisionRole } : {}),
+      ...(pinnedToolNames ? { pinnedToolNames } : {}),
       ...(hostToolNames ? { hostToolNames } : {}),
       ...(hostToolIds ? { hostToolIds } : {}),
       objective,
@@ -526,8 +541,14 @@ export function buildPlanSnapshot(input: {
   deliverable: TaskDeliverable;
   steps: TaskPlanStep[];
   constraints?: string[];
+  scopedToolSummaries?: BuildTaskPlanInput['scopedToolSummaries'];
 }): TaskPlanSnapshot {
-  return wrapSnapshotWithPlanStack(finalizePlanSnapshot(input));
+  const compiledSteps = input.scopedToolSummaries
+    ? compilePlanToolSteps(input.steps, input.scopedToolSummaries)
+    : input.steps;
+  return wrapSnapshotWithPlanStack(
+    finalizePlanSnapshot({ ...input, steps: compiledSteps }),
+  );
 }
 
 /**
@@ -785,7 +806,41 @@ export function buildTaskPlan(input: BuildTaskPlanInput): TaskPlanSnapshot {
     deliverable,
     steps: templateSteps,
     constraints: skillConstraints,
+    scopedToolSummaries,
   });
+}
+
+/**
+ * 无 Skill 的 orchestrated 读路径：用领域模板 plan 替代 plan_llm 即兴拆分。
+ */
+export function buildOrchestratedTemplatePlanResult(input: {
+  userMessage: string;
+  scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'];
+  deliverable: TaskDeliverable;
+}): ResolveTaskPlanResult | null {
+  const { hasReadList } = summarizeScopedRoles(input.scopedToolSummaries);
+  if (!hasReadList) {
+    return null;
+  }
+  const deliverable = alignDeliverableWithScopedTools(
+    input.deliverable,
+    input.scopedToolSummaries,
+  );
+  const templateSteps = buildTemplateSteps(deliverable, input.scopedToolSummaries);
+  if (templateSteps.length <= 1) {
+    return null;
+  }
+  const userMessage = input.userMessage.trim();
+  const plan = buildPlanSnapshot({
+    source: 'template',
+    userMessage,
+    goal: userMessage,
+    deliverable,
+    steps: templateSteps,
+    constraints: [],
+    scopedToolSummaries: input.scopedToolSummaries,
+  });
+  return { plan, method: 'template' };
 }
 
 export function summarizeScopedToolsForPlan(
@@ -996,6 +1051,15 @@ export function getPendingPlanToolStep(
   return step?.kind === 'tool' ? step : null;
 }
 
+/** Gather tool step requires engine-driven pagination before plan advance. */
+export function planGatherRequiresFullFetch(
+  step: TaskPlanStep | null | undefined,
+): boolean {
+  return (
+    step?.kind === 'tool' && step.stopWhen === 'observation_fetch_complete'
+  );
+}
+
 /** summarize / reason 步不应再 bind 工具，仅文本决策或走 summarize 节点。 */
 export function isPendingPlanAnswerStep(
   plan: TaskPlanSnapshot | null | undefined,
@@ -1014,6 +1078,18 @@ function matchingToolNamesForPlanStep(
   step: TaskPlanStep,
   scopedTools?: PlanScopedTool[],
 ): Set<string> | null {
+  if (step.pinnedToolNames?.length) {
+    const pinned = new Set(step.pinnedToolNames);
+    if (scopedTools?.length) {
+      const valid = scopedTools
+        .filter((tool) => pinned.has(tool.name))
+        .map((tool) => tool.name);
+      if (valid.length > 0) {
+        return new Set(valid);
+      }
+    }
+    return pinned;
+  }
   if (!step.toolRole || !scopedTools?.length) {
     return null;
   }
@@ -1021,30 +1097,6 @@ function matchingToolNamesForPlanStep(
     .filter((tool) => resolveScopedToolRoleForPlan(tool) === step.toolRole)
     .map((tool) => tool.name);
   return names.length > 0 ? new Set(names) : null;
-}
-
-/** 当前 gather 步关联工具的 businessFields（去重）。 */
-export function listBusinessFieldsForPlanGatherStep(
-  step: TaskPlanStep,
-  scopedTools: PlanScopedTool[],
-): string[] {
-  const matchingToolNames = matchingToolNamesForPlanStep(step, scopedTools);
-  if (!matchingToolNames) {
-    return [];
-  }
-  const fields = new Set<string>();
-  for (const tool of scopedTools) {
-    if (!matchingToolNames.has(tool.name)) {
-      continue;
-    }
-    const meta = parseAgentMetadata(tool.agentMetadata);
-    for (const field of meta?.businessFields ?? []) {
-      if (field.trim()) {
-        fields.add(field.trim());
-      }
-    }
-  }
-  return [...fields];
 }
 
 /** 仅保留与 plan 当前 tool 步 toolRole 匹配的 observations（避免 step1 数据误判 step2 完成）。 */
@@ -1164,6 +1216,16 @@ export function isPlanToolStepSatisfiedByObservations(input: {
   });
 }
 
+/** workflow_react 内环诊断步：不计入连续无 tool_calls 的 LLM 轮次。 */
+const REACT_LOOP_SKIP_STEP_TYPES = new Set([
+  'result_check',
+  'tool',
+  'readiness',
+  'tool_resolve',
+  'param_gate',
+  'intent',
+]);
+
 /** 连续多少次 decision LLM 未产出 tool_calls（用于 plan tool 步脱困）。 */
 export function countConsecutiveLlmRoundsWithoutToolCalls(
   steps: Array<{ type: string; output?: unknown }>,
@@ -1171,7 +1233,7 @@ export function countConsecutiveLlmRoundsWithoutToolCalls(
   let count = 0;
   for (let index = steps.length - 1; index >= 0; index -= 1) {
     const row = steps[index];
-    if (row?.type === 'result_check' || row?.type === 'tool') {
+    if (row?.type && REACT_LOOP_SKIP_STEP_TYPES.has(row.type)) {
       continue;
     }
     if (row?.type !== 'llm') {
@@ -1676,7 +1738,13 @@ export function toolCallMatchesPendingPlanToolRole(
   scopedTools: PlanScopedTool[],
 ): boolean {
   const step = getPendingPlanToolStep(taskPlan);
-  if (!step || step.kind !== 'tool' || !step.toolRole) {
+  if (!step || step.kind !== 'tool') {
+    return true;
+  }
+  if (step.pinnedToolNames?.length) {
+    return step.pinnedToolNames.includes(call.name);
+  }
+  if (!step.toolRole) {
     return true;
   }
   const tool = scopedTools.find((row) => row.name === call.name);
@@ -1985,13 +2053,31 @@ export function shouldContinuePlanAfterSummarize(
 }
 
 /** Plan 首步即为 summarize/reason 时，跳过 ReAct tool 环。 */
+function observationBucketsForPlanInitialAdvance(input: {
+  allObservations: ToolObservation[];
+  runOwnedObservations: ToolObservation[];
+  observationBuckets?: PlanObservationBuckets;
+}): PlanObservationBuckets {
+  if (input.observationBuckets) {
+    return input.observationBuckets;
+  }
+  const runOwnedSet = new Set(input.runOwnedObservations);
+  return {
+    preloaded: input.allObservations.filter((row) => !runOwnedSet.has(row)),
+    runOwned: input.runOwnedObservations,
+  };
+}
+
 export function resolveTaskPlanInitialAdvance(input: {
   plan: TaskPlanSnapshot;
   allObservations: ToolObservation[];
   runOwnedObservations: ToolObservation[];
+  observationBuckets?: PlanObservationBuckets;
+  scopedTools?: PlanScopedTool[];
+  workflowRun?: WorkflowRunState | null;
   userMessage: string;
   /** resume 续跑允许仅凭 GOA 预载进入 summarize；fresh 允许 page_context 物化观测。 */
-  planRunContext?: 'fresh' | 'resume';
+  planRunContext?: 'fresh' | 'resume' | 'fresh_same_goal';
   buildMergedObservation: (
     observations: ToolObservation[],
   ) => ToolObservation | null;
@@ -2007,16 +2093,29 @@ export function resolveTaskPlanInitialAdvance(input: {
   }
 
   const planRunContext = input.planRunContext ?? 'fresh';
-  if (
-    planRunContext !== 'resume' &&
-    !planInitialSummarizeReadyOnFresh({
-      planSource: input.plan.source,
-      planConstraints: input.plan.constraints,
-      runOwnedObservations: input.runOwnedObservations,
-      allObservations: input.allObservations,
-    })
-  ) {
-    return null;
+  const observationBuckets = observationBucketsForPlanInitialAdvance(input);
+
+  if (planSummarizeRequiresToolEvidence(input.plan)) {
+    if (
+      !planSummarizeHasToolEvidence({
+        plan: input.plan,
+        observationBuckets,
+        scopedTools: input.scopedTools,
+        workflowRun: input.workflowRun,
+      })
+    ) {
+      return null;
+    }
+  } else if (planRunContext !== 'resume') {
+    if (
+      !planInitialSummarizeReadyOnFresh({
+        planSource: input.plan.source,
+        planConstraints: input.plan.constraints,
+        allObservations: input.allObservations,
+      })
+    ) {
+      return null;
+    }
   }
 
   const merged = input.buildMergedObservation(input.allObservations);

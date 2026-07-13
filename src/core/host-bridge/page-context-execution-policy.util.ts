@@ -126,16 +126,12 @@ export function hasPageContextMaterializedObservations(
   return observations.some((row) => isPageContextSourcedObservation(row));
 }
 
-/** fresh run：pageContext inline plan 是否可跳过 ReAct 直接 summarize。 */
+/** fresh run：pageContext inline plan 是否可跳过 ReAct 直接 summarize（不含 gather 模板）。 */
 export function planInitialSummarizeReadyOnFresh(input: {
   planSource: string;
   planConstraints: string[];
-  runOwnedObservations: unknown[];
   allObservations: Array<{ name: string; output?: unknown }>;
 }): boolean {
-  if (input.runOwnedObservations.length > 0) {
-    return true;
-  }
   if (
     input.planSource === 'page_context' ||
     input.planConstraints.includes('page_context_inline')

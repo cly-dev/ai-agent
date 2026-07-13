@@ -1,5 +1,6 @@
 import {
   createSummarizeMessageStreamState,
+  extractProseFromSummarizeLlmRaw,
   looksLikeBlocksJsonOutput,
   nextSanitizedSummarizeStreamDelta,
   processSummarizeMessageStreamChunk,
@@ -30,17 +31,31 @@ export type SummarizeProseStreamSession = {
   }) => string;
   readonly sanitizedEmitted: string;
   readonly messageDeltaEmitted: boolean;
-  /** 检测到 blocks JSON 协议后不再推 prose delta，定稿由 authoritative full 覆盖。 */
+  /**
+   * 确认无法增量流式的 blocks 协议后停 prose delta，定稿由 authoritative full 覆盖。
+   * json_text 仍可推 content 字段 delta，不会因此 superseded。
+   */
   readonly proseStreamSuperseded: boolean;
 };
 
+/**
+ * 仅在确认无法增量流式的 blocks 协议时停 prose delta。
+ * json_text 可从 content 继续推 delta；buffer 仅在已出现协议键时 superseded。
+ */
 function shouldStopProseStreamForBlocksProtocol(
   state: SummarizeMessageStreamState,
 ): boolean {
-  if (state.mode === 'buffer' || state.mode === 'json_text') {
-    return true;
+  if (state.mode === 'json_text') {
+    return false;
   }
-  return looksLikeBlocksJsonOutput(state.messageText);
+  if (state.mode === 'buffer') {
+    const remainder = state.messageText.slice(state.emittedProseLength);
+    return (
+      looksLikeBlocksJsonOutput(remainder) ||
+      looksLikeBlocksJsonOutput(state.messageText)
+    );
+  }
+  return false;
 }
 
 export function createSummarizeProseStreamSession(
@@ -183,4 +198,38 @@ export function finalizeSummarizeProseStreamAfterLlm(input: {
     routedMessage,
   });
   return { userMarkdown, routedMessage, rawLlmSource };
+}
+
+/** 定稿时合并流式正文与 raw 提取，取更长且更完整的用户可见 prose。 */
+export function resolveSummarizeLlmProseForStorage(input: {
+  proseSession: SummarizeProseStreamSession;
+  rawSource: string;
+  userMarkdown: string;
+  routedMessage: string;
+  fallbackPlainText: string;
+}): string {
+  let prose = '';
+  if (
+    input.proseSession.messageDeltaEmitted &&
+    input.proseSession.sanitizedEmitted.trim()
+  ) {
+    prose = sanitizeSummarizeUserFacingProse(
+      input.proseSession.sanitizedEmitted,
+    ).trim();
+  }
+  if (!prose) {
+    prose = sanitizeSummarizeUserFacingProse(
+      sanitizeLlmFinalOutput(
+        input.userMarkdown ||
+          input.routedMessage ||
+          input.rawSource ||
+          input.fallbackPlainText,
+      ),
+    ).trim();
+  }
+  const extracted = extractProseFromSummarizeLlmRaw(input.rawSource);
+  if (extracted && extracted.length > prose.length) {
+    return extracted;
+  }
+  return prose;
 }

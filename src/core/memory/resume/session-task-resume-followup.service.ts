@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { z } from 'zod';
 import { LlmService } from '../../llm/llm.service';
 import type { LlmChatMessage } from '../../llm/llm.types';
 import { PROMPT_KEYS } from '../../prompt/prompt-template.keys';
@@ -10,13 +9,18 @@ import {
   isActiveTaskChatResumable,
   type SessionGoaPayload,
 } from '../goa/session-goa.types';
+import {
+  fallbackTaskResumeFollowUpDecision,
+  parseTaskResumeFollowUpDecision,
+  taskResumeFollowUpSchema,
+  type TaskResumeFollowUpDecision,
+} from './session-resume-followup.util';
 
-export const taskResumeFollowUpSchema = z.object({
-  continueActiveTask: z.boolean(),
-  reason: z.string().optional().nullable(),
-});
-
-export type TaskResumeFollowUpDecision = z.infer<typeof taskResumeFollowUpSchema>;
+export type { TaskResumeFollowUpDecision } from './session-resume-followup.util';
+export {
+  taskResumeFollowUpSchema,
+  taskResumeFollowUpDecisionSchema,
+} from './session-resume-followup.util';
 
 @Injectable()
 export class SessionTaskResumeFollowUpService {
@@ -85,24 +89,18 @@ export class SessionTaskResumeFollowUpService {
       const structured = await model
         .withStructuredOutput(taskResumeFollowUpSchema)
         .invoke(fittedMessages);
-      return taskResumeFollowUpSchema.parse(structured);
+      return parseTaskResumeFollowUpDecision(structured);
     } catch (error) {
       this.logger.warn(
         `task resume follow-up classify failed sessionId=${input.sessionId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      if (
-        task.stepProgress.some(
+      return fallbackTaskResumeFollowUpDecision({
+        hasPendingOrRunningSteps: task.stepProgress.some(
           (step) => step.status === 'pending' || step.status === 'running',
-        )
-      ) {
-        return {
-          continueActiveTask: true,
-          reason: 'llm_failed_fallback',
-        };
-      }
-      return null;
+        ),
+      });
     }
   }
 }

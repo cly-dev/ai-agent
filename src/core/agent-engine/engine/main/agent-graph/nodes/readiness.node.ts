@@ -3,10 +3,8 @@ import type {
   AgentGraphNodeFn,
 } from '../types/graph.types';
 import { AgentRunStatus } from '../../../../../../../generated/prisma/client';
-import { allToolObservations } from '../../../graph-tool-observations.util';
 import {
   evaluateExecutionReadiness,
-  summarizeSessionObservationsForReadiness,
 } from '../../../turn/turn-readiness.util';
 import {
   hasPendingRespond,
@@ -27,10 +25,15 @@ import {
   resolvePlanExecutionStep,
 } from '../../plan/task-plan.util';
 import {
+  applyPlanSummarizeRewind,
+  assessPlanSummarizeGate,
+} from '../../plan/plan-summarize-gate.util';
+import {
   formatComposedWriteGateDiagnosticForLog,
   resolvePendingWriteForPlanWriteStepResult,
 } from '../../plan-present/plan-draft-summarize.util';
 import type { AgentRunStep } from '../../types/agent-engine.types';
+import { allToolObservations } from '../../../graph-tool-observations.util';
 import { maybeTagWorkflowReactInternalStep } from '../../run/agent-run-audit.util';
 
 export function createReadinessNode(
@@ -43,10 +46,11 @@ export function createReadinessNode(
     if (hasPendingRespond(stateAfterSkill.pendingRespond)) {
       return stateAfterSkill;
     }
+    let stateForReadiness = stateAfterSkill;
     const pendingPlanStep = resolvePlanExecutionStep({
-      taskPlan: stateAfterSkill.taskPlan,
-      workflowRun: stateAfterSkill.workflowRun,
-      workflowNodeDefs: stateAfterSkill.workflowNodeDefs,
+      taskPlan: stateForReadiness.taskPlan,
+      workflowRun: stateForReadiness.workflowRun,
+      workflowNodeDefs: stateForReadiness.workflowNodeDefs,
     });
     if (
       isPlanTextGenerationStep(
@@ -54,48 +58,56 @@ export function createReadinessNode(
         pendingPlanStep.workflowNodeAction,
       )
     ) {
-      deps.sse.emitThink(
-        ctx.input.sessionId,
-        ctx.input.runId,
-        '正在按任务计划生成结果…\n',
-        'delta',
-      );
-      return {
-        ...stateAfterSkill,
-        pendingRespond: pendingRespondFromObservation(
-          buildPlanSummarizeObservation({
-            userMessage: ctx.input.latestUserMessage,
-            summarizeObservation: summarize.buildSummarizeObservationFromState(
-              stateAfterSkill,
-              {
-                taskPlan: stateAfterSkill.taskPlan,
-                scopedTools: stateAfterSkill.scopedTools,
-              },
-            ),
-          }),
-        ),
-      };
+      const summarizeGate = assessPlanSummarizeGate({
+        plan: stateForReadiness.taskPlan,
+        observationBuckets: planObservationBucketsFromState(stateForReadiness),
+        scopedTools: stateForReadiness.scopedTools,
+        workflowRun: stateForReadiness.workflowRun,
+        workflowNodeDefs: stateForReadiness.workflowNodeDefs,
+      });
+      if (summarizeGate.status === 'rewind_gather') {
+        stateForReadiness = applyPlanSummarizeRewind(
+          stateForReadiness,
+          summarizeGate,
+        );
+      } else if (summarizeGate.status === 'allowed') {
+        deps.sse.emitThink(
+          ctx.input.sessionId,
+          ctx.input.runId,
+          '正在按任务计划生成结果…\n',
+          'delta',
+        );
+        return {
+          ...stateForReadiness,
+          pendingRespond: pendingRespondFromObservation(
+            buildPlanSummarizeObservation({
+              userMessage: ctx.input.latestUserMessage,
+              summarizeObservation: summarize.buildSummarizeObservationFromState(
+                stateForReadiness,
+                {
+                  taskPlan: stateForReadiness.taskPlan,
+                  scopedTools: stateForReadiness.scopedTools,
+                },
+              ),
+            }),
+          ),
+        };
+      }
     }
-    const stepNum = nextRunStepNumber(stateAfterSkill.steps);
+    const stepNum = nextRunStepNumber(stateForReadiness.steps);
     const pageContext =
-      stateAfterSkill.pageContext ?? ctx.input.pageContext ?? null;
+      stateForReadiness.pageContext ?? ctx.input.pageContext ?? null;
     const readinessResult = await evaluateExecutionReadiness({
       userMessage: ctx.input.latestUserMessage,
-      taskPlan: stateAfterSkill.taskPlan,
-      scopedTools: stateAfterSkill.scopedTools,
-      observationBuckets: planObservationBucketsFromState(stateAfterSkill),
-      skillConfig: stateAfterSkill.activeSkillConfig,
+      taskPlan: stateForReadiness.taskPlan,
+      scopedTools: stateForReadiness.scopedTools,
+      observationBuckets: planObservationBucketsFromState(stateForReadiness),
+      skillConfig: stateForReadiness.activeSkillConfig,
       resumeFromWriteConfirm: ctx.input.resumeFromWriteConfirm,
-      llmService: deps.llmService,
-      promptRegistry: deps.promptRegistry,
-      scope: ctx.promptScope,
-      sessionObservationSummary: summarizeSessionObservationsForReadiness(
-        allToolObservations(stateAfterSkill),
-      ),
       pageContext,
       pageContextUsage:
-        stateAfterSkill.turnExecutionContract?.plan.pageContextUsage ?? null,
-      workflowRun: stateAfterSkill.workflowRun,
+        stateForReadiness.turnExecutionContract?.plan.pageContextUsage ?? null,
+      workflowRun: stateForReadiness.workflowRun,
     });
     const readinessStep = maybeTagWorkflowReactInternalStep(
       {
@@ -132,21 +144,21 @@ export function createReadinessNode(
           })()
         : null;
     const steps = [
-      ...stateAfterSkill.steps,
+      ...stateForReadiness.steps,
       readinessStep,
       ...(frameSyncStep ? [frameSyncStep] : []),
     ];
     await runHelpers.updateRun(ctx.input.runId, steps, AgentRunStatus.running);
     const pendingToolStep = getPendingPlanToolStep(
-      stateAfterSkill.taskPlan,
-      stateAfterSkill.workflowRun,
+      stateForReadiness.taskPlan,
+      stateForReadiness.workflowRun,
     );
     if (isPlanWriteExecutionStepInMutationFlow(pendingToolStep)) {
       const reuse = resolvePendingWriteForPlanWriteStepResult({
-        observations: allToolObservations(stateAfterSkill),
-        taskPlan: stateAfterSkill.taskPlan,
-        scopedTools: stateAfterSkill.scopedTools,
-        pageContext: stateAfterSkill.pageContext ?? null,
+        observations: allToolObservations(stateForReadiness),
+        taskPlan: stateForReadiness.taskPlan,
+        scopedTools: stateForReadiness.scopedTools,
+        pageContext: stateForReadiness.pageContext ?? null,
       });
       const diagnosticDetail = reuse.gateDiagnostic
         ? formatComposedWriteGateDiagnosticForLog({
@@ -161,11 +173,11 @@ export function createReadinessNode(
     }
     if (readinessResult.status === 'respond') {
       return {
-        ...stateAfterSkill,
+        ...stateForReadiness,
         steps,
         pendingRespond: pendingRespondFromTurn(readinessResult.request),
       };
     }
-    return { ...stateAfterSkill, steps };
+    return { ...stateForReadiness, steps };
   };
 }

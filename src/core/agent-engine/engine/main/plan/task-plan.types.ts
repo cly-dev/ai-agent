@@ -49,6 +49,8 @@ export type TaskPlanStep = {
   /** kind=skill 时必填：进入该 skill 并展开内层 steps。 */
   skillId?: number;
   toolRole?: ToolDecisionRole;
+  /** kind=tool 时可选：plan 显式绑定的 HTTP 工具名（tool_resolve SSOT）。 */
+  pinnedToolNames?: string[];
   /** kind=host_tool 时可选：限定可绑定的 Host Tool 名；空则使用当前 scope 下全部 LLM 暴露工具。 */
   hostToolNames?: string[];
   /** kind=host_tool 时可选：Workflow 节点声明的 HostTool ID 约束。 */

@@ -1,6 +1,5 @@
 import type { PageContextPlanKind } from '../../../host-bridge/page-context-usage.types';
-import type { TurnWriteChannel } from './turn-write-channel.types';
-import type { TurnRoutingDecision } from './turn-routing.types';
+import type { TurnRouteMeta } from './turn-routing.types';
 import type { TurnRespondRequest } from './turn-respond.types';
 import type {
   SkillCapabilityProfile,
@@ -11,6 +10,13 @@ import type {
   TurnUserIntent,
 } from './skill-intent-alignment.types';
 import type { TurnScopedToolsSource } from './turn-scoped-tools.util';
+import type { TurnTaskKind } from './turn-task-kind.types';
+import {
+  mismatchCodeForUnsupportedTaskKind,
+  routeFromTaskKind,
+  skillSupportsTaskKind,
+  writeChannelFromTaskKind,
+} from './resolve-turn-task-kind.util';
 import { parseSkillIntentMismatchPolicyOverrides } from './skill-config-intent-alignment.util';
 
 const DEFAULT_MISMATCH_POLICY: Record<
@@ -39,35 +45,33 @@ export function emptySkillIntentAlignment(): SkillIntentAlignmentSnapshot {
 }
 
 export function deriveTurnUserIntent(input: {
-  routing: TurnRoutingDecision;
+  taskKind: TurnTaskKind;
   pageContextPlan: PageContextPlanKind;
-  writeChannel?: TurnWriteChannel;
 }): TurnUserIntent {
   const readPlanActive = input.pageContextPlan !== 'none';
-  const writeChannel =
-    input.writeChannel ??
-    input.routing.llmWriteChannel;
+  const writeChannel = writeChannelFromTaskKind(input.taskKind);
+  const route = routeFromTaskKind(input.taskKind);
   return {
-    route: input.routing.route,
+    taskKind: input.taskKind,
+    route,
     readPlanActive,
     pageContextPlan: input.pageContextPlan,
     writeChannel,
     hostMutation: writeChannel === 'host',
     httpOrchestrated:
-      input.routing.route === 'orchestrated_task' &&
-      !readPlanActive &&
-      writeChannel === 'none',
+      input.taskKind === 'orchestrated_read' ||
+      (route === 'orchestrated_task' && !readPlanActive && writeChannel === 'none'),
   };
 }
 
 function detectSkillIntentMismatchCode(input: {
-  intent: TurnUserIntent;
+  taskKind: TurnTaskKind;
   profile: SkillCapabilityProfile;
 }): SkillIntentMismatchCode | null {
-  if (input.intent.route === 'direct_answer') {
+  if (input.taskKind === 'direct_answer') {
     return 'direct_answer_vs_any_skill';
   }
-  if (input.intent.readPlanActive) {
+  if (input.taskKind === 'page_read') {
     if (input.profile.isHostOnly) {
       return 'read_intent_vs_host_only_skill';
     }
@@ -76,31 +80,13 @@ function detectSkillIntentMismatchCode(input: {
     }
     return null;
   }
-  if (input.intent.writeChannel === 'http') {
-    if (input.profile.channels.httpMutation) {
-      return null;
-    }
-    if (input.profile.channels.hostPush && !input.profile.channels.httpRead) {
-      return 'write_intent_vs_no_host_skill';
-    }
-    if (input.profile.isHttpOnly || input.profile.channels.httpRead) {
-      return 'write_intent_vs_http_only_skill';
-    }
-    return 'write_intent_vs_no_host_skill';
+  if (skillSupportsTaskKind(input.profile.channels, input.taskKind)) {
+    return null;
   }
-  if (input.intent.writeChannel === 'host') {
-    if (input.profile.channels.hostPush) {
-      return null;
-    }
-    if (input.profile.channels.httpMutation && !input.profile.channels.hostPush) {
-      return 'write_intent_vs_http_only_skill';
-    }
-    return 'write_intent_vs_no_host_skill';
-  }
-  if (input.intent.httpOrchestrated && input.profile.isHostOnly) {
-    return 'orchestrated_http_vs_host_only_skill';
-  }
-  return null;
+  return mismatchCodeForUnsupportedTaskKind({
+    taskKind: input.taskKind,
+    profile: input.profile,
+  });
 }
 
 export function buildSkillMismatchRespond(input: {
@@ -135,8 +121,9 @@ function applyIntentFirstSkillSelect(): {
 }
 
 export function resolveSkillIntentAlignment(input: {
+  taskKind: TurnTaskKind;
   intent: TurnUserIntent;
-  routing: TurnRoutingDecision;
+  routeMeta: TurnRouteMeta;
   userMessage: string;
   requestedSkillId: number | null;
   skillProfile: SkillCapabilityProfile | null;
@@ -151,7 +138,7 @@ export function resolveSkillIntentAlignment(input: {
   );
 
   const code = detectSkillIntentMismatchCode({
-    intent: input.intent,
+    taskKind: input.taskKind,
     profile: input.skillProfile,
   });
   if (code == null) {
@@ -169,7 +156,7 @@ export function resolveSkillIntentAlignment(input: {
         userMessage: input.userMessage,
         requestedSkillId: input.requestedSkillId,
         requestedSkillName: input.skillProfile.skillName,
-        routingReason: input.routing.reason,
+        routingReason: input.routeMeta.reason,
       }),
     };
   }

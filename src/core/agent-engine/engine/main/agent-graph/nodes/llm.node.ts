@@ -26,7 +26,9 @@ import {
 import {
   hasPendingRespond,
   pendingRespondFromObservation,
+  pendingRespondFromTurn,
 } from '../../../turn/turn-respond.util';
+import { resolvePlanStepToolCandidatesFromState } from '../../plan/plan-tool-candidates.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import { maybeTagWorkflowReactInternalStep } from '../../run/agent-run-audit.util';
 import { failWorkflowNode } from '../../../../../workflow/workflow-run.util';
@@ -53,8 +55,11 @@ import {
   selectObservationsForPlanToolSatisfaction,
 } from '../../plan/plan-observation-scope.util';
 import {
+  applyPlanSummarizeRewind,
+  assessPlanSummarizeGate,
+} from '../../plan/plan-summarize-gate.util';
+import {
   buildPlanSummarizeObservation,
-  filterScopedToolsForPlanStep,
   getPendingPlanHostToolStep,
   getPendingPlanToolStep,
   isComposeMutationParameterStep,
@@ -123,27 +128,39 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
       graphStateForLlm.workflowNodeDefs,
     );
     if (planAnswerStep) {
-      deps.sse.emitThink(
-        ctx.input.sessionId,
-        ctx.input.runId,
-        '正在按任务计划生成结果…\n',
-        'delta',
-      );
-      return {
-        ...graphStateForLlm,
-        pendingRespond: pendingRespondFromObservation(
-          buildPlanSummarizeObservation({
-            userMessage: ctx.input.latestUserMessage,
-            summarizeObservation: summarize.buildSummarizeObservationFromState(
-              graphStateForLlm,
-              {
-                taskPlan: graphStateForLlm.taskPlan,
-                scopedTools: graphStateForLlm.scopedTools,
-              },
-            ),
-          }),
-        ),
-      };
+      const summarizeGate = assessPlanSummarizeGate({
+        plan: graphStateForLlm.taskPlan,
+        observationBuckets: observationBuckets,
+        scopedTools: graphStateForLlm.scopedTools,
+        workflowRun: graphStateForLlm.workflowRun,
+        workflowNodeDefs: graphStateForLlm.workflowNodeDefs,
+      });
+      if (summarizeGate.status === 'rewind_gather') {
+        return applyPlanSummarizeRewind(graphStateForLlm, summarizeGate);
+      }
+      if (summarizeGate.status === 'allowed') {
+        deps.sse.emitThink(
+          ctx.input.sessionId,
+          ctx.input.runId,
+          '正在按任务计划生成结果…\n',
+          'delta',
+        );
+        return {
+          ...graphStateForLlm,
+          pendingRespond: pendingRespondFromObservation(
+            buildPlanSummarizeObservation({
+              userMessage: ctx.input.latestUserMessage,
+              summarizeObservation: summarize.buildSummarizeObservationFromState(
+                graphStateForLlm,
+                {
+                  taskPlan: graphStateForLlm.taskPlan,
+                  scopedTools: graphStateForLlm.scopedTools,
+                },
+              ),
+            }),
+          ),
+        };
+      }
     }
     const llmStepNumber = nextRunStepNumber(graphStateForLlm.steps);
     const nextIteration = graphStateForLlm.iteration + 1;
@@ -196,47 +213,44 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
       );
       const decisionEnableToolCall =
         ctx.input.enableToolCall && !planAnswerStep;
-      let toolsForPrompt = filterScopedToolsForPlanStep(
-        graphStateForLlm.scopedTools,
-        graphStateForLlm.taskPlan,
-        graphStateForLlm.workflowRun,
-        graphStateForLlm.workflowNodeDefs,
+      const candidateResolve = resolvePlanStepToolCandidatesFromState(
+        graphStateForLlm,
       );
+      let toolsForPrompt = candidateResolve.candidates;
       const hostToolsForPrompt = filterHostToolsForPlanStep(
         graphStateForLlm.scopedHostTools ?? [],
         graphStateForLlm.taskPlan,
       );
       let candidateRecallLangChainTools: DynamicStructuredTool[] | null = null;
       let candidateRecallStep: AgentRunStep | null = null;
-      if (pendingToolStep?.kind === 'tool' && toolsForPrompt.length > 0) {
+      const beforeStructuralResolve = toolsForPrompt.length;
+      if (pendingToolStep?.kind === 'tool' && beforeStructuralResolve > 1) {
         const scoped = await deps.sessionScope.scopeToolsForMainLoop(
           toolsForPrompt,
           ctx.input.latestUserMessage,
           ctx.input.toolBuildCtx,
         );
-        if (scoped.bindCap || scoped.fallbackReason) {
+        if (scoped.scopedTools.length > 0) {
           toolsForPrompt = scoped.scopedTools;
-          candidateRecallLangChainTools = scoped.scopedLangChainTools;
-          candidateRecallStep = {
-            step: llmStepNumber,
-            type: 'intent',
-            output: runHelpers.normalizeJsonLike({
-              stage: 'candidate_recall',
-              domain: 'tool',
-              before: graphStateForLlm.scopedTools.length,
-              afterRoleFilter: filterScopedToolsForPlanStep(
-                graphStateForLlm.scopedTools,
-                graphStateForLlm.taskPlan,
-                graphStateForLlm.workflowRun,
-                graphStateForLlm.workflowNodeDefs,
-              ).length,
-              after: toolsForPrompt.length,
-              bindToolsCap: scoped.bindCap,
-              fallbackReason: scoped.fallbackReason,
-              planStepId: graphStateForLlm.taskPlan?.currentStepId ?? null,
-            }),
-          };
         }
+        if (scoped.scopedLangChainTools.length > 0) {
+          candidateRecallLangChainTools = scoped.scopedLangChainTools;
+        }
+        candidateRecallStep = {
+          step: llmStepNumber,
+          type: 'intent',
+          output: runHelpers.normalizeJsonLike({
+            stage: 'candidate_recall',
+            domain: 'tool',
+            strategy: candidateResolve.strategy,
+            beforeStructuralResolve,
+            afterStructuralResolve: beforeStructuralResolve,
+            afterRecall: toolsForPrompt.length,
+            bindToolsCap: scoped.bindCap,
+            fallbackReason: scoped.fallbackReason,
+            planStepId: graphStateForLlm.taskPlan?.currentStepId ?? null,
+          }),
+        };
       }
       const allowedDecisionToolNames = new Set(
         toolsForPrompt.map((tool) => tool.name),
@@ -301,8 +315,13 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
             graphStateForLlm.scopedLangChainTools.filter((tool) =>
               allowedDecisionToolNames.has(tool.name),
             );
-          if (langChainToolsForDecision.length === 0) {
-            langChainToolsForDecision = graphStateForLlm.scopedLangChainTools;
+          if (
+            langChainToolsForDecision.length === 0 &&
+            toolsForPrompt.length > 0
+          ) {
+            deps.logger.warn(
+              `llm tool decision bind mismatch runId=${ctx.input.runId} candidates=${toolsForPrompt.length} bound=0 planStep=${pendingToolStep?.id ?? 'none'}`,
+            );
           }
         }
       }

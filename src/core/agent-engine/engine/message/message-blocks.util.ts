@@ -64,24 +64,19 @@ export function shouldBufferSummarizeLlmStream(ruleBlocks: MessageBlock[]): bool
 }
 
 /** 流式累积内容是否像 blocks JSON / 代码围栏（勿当正文 token 推送）。 */
+/** 已确认的 message-blocks / pendingWrite 协议（非任意 ``` 或普通 JSON 样例）。 */
 export function looksLikeBlocksJsonOutput(text: string): boolean {
   const trimmed = text.trimStart();
   if (!trimmed) {
     return false;
   }
-  if (trimmed.startsWith('```')) {
-    return true;
-  }
-  if (
-    trimmed.startsWith('{') &&
-    (trimmed.includes('"blocks"') ||
-      trimmed.includes("'blocks'") ||
-      trimmed.includes('"pendingWriteToolCall"') ||
-      trimmed.includes("'pendingWriteToolCall'"))
-  ) {
-    return true;
-  }
-  return false;
+  const body = trimmed.startsWith('```')
+    ? trimmed.replace(/^```(?:json)?\s*/i, '')
+    : trimmed;
+  return (
+    /["']blocks["']\s*:/.test(body) ||
+    /["']pendingWriteToolCall["']\s*:/.test(body)
+  );
 }
 
 /** prose 后拼接的 blocks JSON 收尾（模型先流 Markdown 再补 JSON 包装）。 */
@@ -197,20 +192,69 @@ function isSummarizeStreamFencePrefix(text: string): boolean {
   return /^`{1,2}$/.test(trimmed);
 }
 
-/** message 通道累积文本是否将进入 / 已是 blocks JSON（勿推 delta）。 */
+/**
+ * detect 阶段：message 是否像 blocks JSON 开头。
+ * 仅认协议键或 ```json + {；普通 `[` / 裸 `{` 样例不在此拦截（由后续确认逻辑处理）。
+ */
 export function isLikelySummarizeBlocksJsonStart(text: string): boolean {
   const trimmed = text.trimStart();
   if (!trimmed) {
     return false;
   }
-  if (
-    trimmed.startsWith('```') ||
-    trimmed.startsWith('[') ||
-    trimmed.startsWith('{')
-  ) {
+  if (/["'](?:blocks|pendingWriteToolCall)["']\s*:/.test(trimmed)) {
     return true;
   }
-  return /["'](?:blocks|pendingWriteToolCall)["']\s*:/.test(trimmed);
+  if (/^```(?:json)?\s*\{/i.test(trimmed)) {
+    return true;
+  }
+  if (trimmed.startsWith('{')) {
+    // 短前缀尚不足以否定协议，先进入 buffer 等待确认 / 恢复。
+    return true;
+  }
+  return false;
+}
+
+/** buffer 中的后缀是否仍像未完成的 blocks 协议（否则应恢复 prose）。 */
+export function isPossibleIncompleteBlocksJsonRemainder(
+  remainder: string,
+): boolean {
+  const trimmed = remainder.trimStart();
+  if (!trimmed) {
+    return true;
+  }
+  if (looksLikeBlocksJsonOutput(trimmed)) {
+    return true;
+  }
+  if (/^```(?:json)?\s*$/i.test(trimmed) || /^```(?:json)?\s*\{/i.test(trimmed)) {
+    return true;
+  }
+  // 仅 `{` / `{"` / `{"b` 等协议前缀；`{中文` / `{ "foo"` 等非协议样例立即恢复。
+  if (/^\{\s*$/.test(trimmed) || /^\{\s*["']$/.test(trimmed)) {
+    return true;
+  }
+  if (
+    /^\{\s*["'](?:blocks|pendingWriteToolCall|type|format|content)/i.test(
+      trimmed,
+    )
+  ) {
+    // type/format/content  alone 不够；需继续看到 blocks 键或单 text block 前缀。
+    if (/["'](?:blocks|pendingWriteToolCall)["']/i.test(trimmed)) {
+      return true;
+    }
+    if (findSingleTextBlockContentValueStart(trimmed) != null) {
+      return true;
+    }
+    // `{"type":"text"` 路径上的未完成单 text block
+    if (
+      /^\{\s*["']blocks["']/i.test(trimmed) ||
+      /^\{\s*["']type["']\s*:\s*["']text["']/i.test(trimmed)
+    ) {
+      return true;
+    }
+    // 普通 {"type":"IMAGE"} 等业务 JSON 样例 → 不当作协议
+    return false;
+  }
+  return false;
 }
 
 /** 正文中内联出现的 blocks JSON 起始位置（prose 后拼接 JSON 等）。 */
@@ -223,8 +267,9 @@ export function findInlineSummarizeBlocksJsonStart(
     return tailStart;
   }
   const rest = messageText.slice(emittedProseLength);
+  // 只认协议键；勿把正文里的 {"type":...} / {"content":...} 业务样例切进 buffer。
   const inline = rest.search(
-    /\{\s*["']?(?:blocks|pendingWriteToolCall|type|content)["']?\s*:/,
+    /\{\s*["'](?:blocks|pendingWriteToolCall)["']\s*:/,
   );
   if (inline >= 0) {
     return emittedProseLength + inline;
@@ -232,13 +277,6 @@ export function findInlineSummarizeBlocksJsonStart(
   const incompleteBlocks = rest.search(INCOMPLETE_BLOCKS_JSON_TAIL_RE);
   if (incompleteBlocks >= 0) {
     return emittedProseLength + incompleteBlocks;
-  }
-  const loneBrace = /\{\s*$/.exec(messageText);
-  if (
-    loneBrace?.index != null &&
-    loneBrace.index >= emittedProseLength
-  ) {
-    return loneBrace.index;
   }
   return -1;
 }
@@ -501,6 +539,15 @@ export function processSummarizeMessageStreamChunk(
     if (jsonText) {
       return jsonText;
     }
+    const remainder = messageText.slice(state.emittedProseLength);
+    // 误判进 buffer（正文里的 `{` / 业务 JSON 样例）时恢复 prose，避免 SSE delta 永久停摆。
+    if (!isPossibleIncompleteBlocksJsonRemainder(remainder)) {
+      return emitSummarizeProseDelta({
+        mode: 'prose',
+        messageText,
+        emittedProseLength: state.emittedProseLength,
+      });
+    }
     return {
       state: { ...state, mode: 'buffer', messageText },
       delta: '',
@@ -616,17 +663,13 @@ function emitSummarizeProseDelta(
   const tailInSuffix = findSummarizeBlocksJsonTailStart(
     messageText.slice(emittedProseLength),
   );
-  const newlineJsonOpen = messageText
-    .slice(emittedProseLength)
-    .search(/\n\s*\{\s*$/);
+  // 不再用裸 `\n{` 切入 buffer：分片边界常落在 `{`，会误停 SSE。
   const cutAt =
     inlineJsonStart >= 0
       ? inlineJsonStart
       : tailInSuffix >= 0
         ? emittedProseLength + tailInSuffix
-        : newlineJsonOpen >= 0
-          ? emittedProseLength + newlineJsonOpen
-          : -1;
+        : -1;
 
   if (cutAt >= 0) {
     const delta = messageText.slice(emittedProseLength, cutAt);
@@ -979,6 +1022,57 @@ export function tryParseLlmBlocksFromSummarizeOutput(
       return parsed;
     }
   }
+  return null;
+}
+
+/**
+ * 从 summarize LLM 原始输出尽力提取用户可见 Markdown 正文。
+ * 覆盖：未闭合的单 text-block JSON、正文后拼接 blocks JSON、可解析的 blocks。
+ */
+export function extractProseFromSummarizeLlmRaw(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const quoteStart = findSingleTextBlockContentValueStart(trimmed);
+  if (quoteStart != null) {
+    const { decoded } = decodePartialJsonStringAt(trimmed, quoteStart);
+    const prose = sanitizeSummarizeUserFacingProse(decoded).trim();
+    if (prose) {
+      return prose;
+    }
+  }
+
+  const markdownBeforeJson = stripBlocksJsonTailFromStreamedProse(trimmed).trim();
+  if (
+    markdownBeforeJson &&
+    !looksLikeBlocksJsonOutput(markdownBeforeJson) &&
+    markdownBeforeJson.length < trimmed.length
+  ) {
+    const prose = sanitizeSummarizeUserFacingProse(markdownBeforeJson).trim();
+    if (prose) {
+      return prose;
+    }
+  }
+
+  const parsed = tryParseLlmBlocksFromSummarizeOutput(trimmed);
+  if (parsed?.length) {
+    const textContents = parsed
+      .filter((block): block is Extract<MessageBlock, { type: 'text' }> => block.type === 'text')
+      .map((block) => sanitizeSummarizeUserFacingProse(block.content).trim())
+      .filter((content) => content.length > 0);
+    const longest = textContents.sort((left, right) => right.length - left.length)[0];
+    if (longest) {
+      return longest;
+    }
+  }
+
+  if (!looksLikeBlocksJsonOutput(trimmed)) {
+    const prose = sanitizeSummarizeUserFacingProse(trimmed).trim();
+    return prose || null;
+  }
+
   return null;
 }
 

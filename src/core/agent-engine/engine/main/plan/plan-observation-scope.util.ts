@@ -3,12 +3,32 @@ import {
   runOwnedToolObservations,
 } from '../../graph-tool-observations.util';
 import { isPageContextSourcedObservation } from '../../../../host-bridge/page-context-usage.util';
+import type { SessionResumeDecision } from '../../../../memory/resume/session-resume-decision.types';
 import type { AgentGraphState, ToolObservation } from '../types/agent-engine.types';
 
 /**
- * 本 turn 运行上下文：telemetry、plan 首步 summarize 是否可凭 GOA 放行。
+ * 本 turn 运行上下文：telemetry、plan 首步 summarize、memory scope 策略。
  */
-export type PlanRunContext = 'fresh' | 'resume';
+export type PlanRunContext = 'fresh' | 'resume' | 'fresh_same_goal';
+
+export function planRunContextFromResumeDecision(
+  decision: SessionResumeDecision,
+): PlanRunContext {
+  if (decision.action === 'resume') {
+    return 'resume';
+  }
+  if (decision.action === 'fresh_same_goal') {
+    return 'fresh_same_goal';
+  }
+  return 'fresh';
+}
+
+/** resume 续作才允许 summarize 使用 session working_memory；replan 必须重新 gather。 */
+export function allowsWorkingMemoryForPlanAnswer(
+  planRunContext: PlanRunContext,
+): boolean {
+  return planRunContext === 'resume';
+}
 
 /** 图内两桶观测（不含运行上下文）。 */
 export type PlanObservationBuckets = {

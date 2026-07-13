@@ -2,48 +2,42 @@ import { observationNeedsPagedFetch } from '../../../mcp-utils/pagination';
 import type { TaskPlanSnapshot } from '../main/plan/task-plan.types';
 import {
   getPendingPlanToolStep,
+  planGatherRequiresFullFetch,
   resolveScopedToolRoleForPlan,
   type PlanScopedTool,
 } from '../main/plan/task-plan.util';
 
-/** Plan still has an analyze step ahead of the current gather. */
-export function planHasPendingAnalyzeStep(
-  taskPlan?: TaskPlanSnapshot | null,
-): boolean {
-  if (!taskPlan) {
-    return false;
-  }
-  const pending = new Set(taskPlan.pendingStepIds);
-  return taskPlan.steps.some(
-    (step) => pending.has(step.id) && step.phase === 'analyze',
-  );
-}
-
-/** Objective for page-summary LLM: prefer the pending analyze step. */
-export function resolvePagedGatherAnalyzeObjective(
+/** Objective for page-summary LLM: pending analyze/answer summarize step. */
+export function resolvePagedGatherSummarizeObjective(
   taskPlan?: TaskPlanSnapshot | null,
 ): string | undefined {
   if (!taskPlan) {
     return undefined;
   }
   const pending = new Set(taskPlan.pendingStepIds);
-  const analyzeStep = taskPlan.steps.find(
-    (step) => pending.has(step.id) && step.phase === 'analyze',
+  const summarizeStep = taskPlan.steps.find(
+    (step) =>
+      pending.has(step.id) &&
+      step.kind === 'summarize' &&
+      (step.phase === 'analyze' || step.phase === 'answer'),
   );
-  return analyzeStep?.objective;
+  return summarizeStep?.objective;
 }
 
-/** Current plan step is gather + read-list tool. */
+/** Pending gather is read-list and stopWhen requires full fetch. */
 export function isReadListGatherToolStep(input: {
   taskPlan?: TaskPlanSnapshot | null;
   toolName: string;
   scopedTools: PlanScopedTool[];
 }): boolean {
-  if (!planHasPendingAnalyzeStep(input.taskPlan) || !input.taskPlan) {
+  if (!input.taskPlan) {
     return false;
   }
   const pendingStep = getPendingPlanToolStep(input.taskPlan);
-  if (pendingStep?.phase !== 'gather' || pendingStep.kind !== 'tool') {
+  if (!planGatherRequiresFullFetch(pendingStep)) {
+    return false;
+  }
+  if (pendingStep?.phase !== 'gather') {
     return false;
   }
   if (pendingStep.toolRole && pendingStep.toolRole !== 'read-list') {
@@ -64,8 +58,8 @@ export function isReadListGatherToolStep(input: {
 }
 
 /**
- * Plan-driven gate: analyze ahead + gather read-list + observation needs more pages.
- * Small single-page datasets skip expand and advance the plan on raw observation.
+ * Plan-driven gate: gather stopWhen=observation_fetch_complete + read-list + more pages.
+ * Single-page datasets skip expand and advance on raw observation.
  */
 export function shouldExpandPlanPagedGather(input: {
   taskPlan?: TaskPlanSnapshot | null;
@@ -91,13 +85,16 @@ export function shouldExpandPlanPagedGather(input: {
   });
 }
 
-/** Gather step should finish paged fetch/summary before honoring new tool_calls. */
+/** Gather step must finish paged fetch/summary before honoring new tool_calls. */
 export function planAwaitingPagedGatherCompletion(
   taskPlan?: TaskPlanSnapshot | null,
 ): boolean {
-  if (!planHasPendingAnalyzeStep(taskPlan) || !taskPlan) {
+  if (!taskPlan) {
     return false;
   }
   const pendingStep = getPendingPlanToolStep(taskPlan);
-  return pendingStep?.phase === 'gather' && pendingStep.kind === 'tool';
+  return (
+    pendingStep?.phase === 'gather' &&
+    planGatherRequiresFullFetch(pendingStep)
+  );
 }

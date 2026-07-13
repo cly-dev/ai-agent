@@ -61,6 +61,15 @@ import {
   resolveSummarizeUserMessageForPlan,
   shouldContinuePlanAfterSummarize,
 } from '../../plan/task-plan.util';
+import {
+  applyPlanSummarizeRewind,
+  assessPlanSummarizeGate,
+  planSummarizeHasToolEvidence,
+  planSummarizeRequiresToolEvidence,
+  resolvePlanGatherRewindWhenToolsMissing,
+} from '../../plan/plan-summarize-gate.util';
+import { isPrematureGatherClarification } from '../../plan/plan-gather-clarification-gate.util';
+import { planObservationBucketsFromState } from '../../plan/plan-observation-scope.util';
 import type { AgentRunStep } from '../../types/agent-engine.types';
 
 export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
@@ -84,6 +93,45 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
           );
           if (!pendingObservation) {
             return state;
+          }
+          if (
+            isPrematureGatherClarification({
+              taskPlan: state.taskPlan,
+              workflowRun: state.workflowRun,
+              observationBuckets: planObservationBucketsFromState(state),
+              pendingRespond: state.pendingRespond,
+            })
+          ) {
+            deps.logger.warn(
+              `summarize suppressed premature gather clarification runId=${ctx.input.runId}`,
+            );
+            const summarizeGate = assessPlanSummarizeGate({
+              plan: state.taskPlan,
+              observationBuckets: planObservationBucketsFromState(state),
+              scopedTools: state.scopedTools,
+              workflowRun: state.workflowRun,
+              workflowNodeDefs: state.workflowNodeDefs,
+            });
+            if (summarizeGate.status === 'rewind_gather') {
+              return applyPlanSummarizeRewind(
+                { ...state, pendingRespond: null },
+                summarizeGate,
+              );
+            }
+            const gatherRewind = resolvePlanGatherRewindWhenToolsMissing({
+              plan: state.taskPlan,
+              observationBuckets: planObservationBucketsFromState(state),
+              scopedTools: state.scopedTools,
+              workflowRun: state.workflowRun,
+              workflowNodeDefs: state.workflowNodeDefs,
+            });
+            if (gatherRewind) {
+              return applyPlanSummarizeRewind(
+                { ...state, pendingRespond: null },
+                gatherRewind,
+              );
+            }
+            return { ...state, pendingRespond: null };
           }
           if (isWriteConfirmResumeSummaryObservation(pendingObservation)) {
             const payload = pendingObservation.output as WriteConfirmResumeSummaryPayload;
@@ -352,8 +400,29 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
             pendingObservation.name === 'direct_user' ||
             pendingObservation.name === 'off_domain'
           ) {
-            summarized = mergedPlanObservation
-              ? await summarize.summarizeToolOutputForUser(
+            const observationBuckets = planObservationBucketsFromState(state);
+            const hasGatherEvidence =
+              mergedPlanObservation != null ||
+              planSummarizeHasToolEvidence({
+                plan: taskPlanForSummarize,
+                observationBuckets,
+                scopedTools: state.scopedTools,
+                workflowRun: state.workflowRun,
+              });
+            if (
+              planSummarizeRequiresToolEvidence(taskPlanForSummarize) &&
+              !hasGatherEvidence
+            ) {
+              deps.logger.warn(
+                `summarize blocked without gather evidence runId=${ctx.input.runId}`,
+              );
+              summarized = serializeMessageBlocksForStorage([
+                textBlock(
+                  '尚未拉取到可分析的真实数据。系统将先调用数据接口获取结果，再为您生成分析。',
+                ),
+              ]);
+            } else if (mergedPlanObservation) {
+              summarized = await summarize.summarizeToolOutputForUser(
                   mergedPlanObservation.name,
                   state.scopedTools.find(
                     (tool) => tool.name === mergedPlanObservation.name,
@@ -374,8 +443,9 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
                   undefined,
                   state.workflowRun,
                   state.workflowNodeDefs,
-                )
-              : await summarize.summarizeDirectUserMessage(
+                );
+            } else {
+              summarized = await summarize.summarizeDirectUserMessage(
                   planSummarizeUserMessage,
                   pendingObservation.output,
                   ctx.input.promptMessages,
@@ -387,6 +457,7 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
                   state.workflowRun,
                   state.workflowNodeDefs,
                 );
+            }
           } else if (pendingObservation.name === 'direct_reply') {
             summarized = await summarize.summarizeDirectLlmReply(
               ctx.input.latestUserMessage,

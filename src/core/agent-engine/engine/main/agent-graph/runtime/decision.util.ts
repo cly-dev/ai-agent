@@ -217,6 +217,20 @@ HOST_TOOL step: emit tool_calls ONLY for browser host tools (${names}) listed in
 Do NOT call HTTP tools from <tool_schema>. Args are executed in the user's browser, not on the server.
 </plan_step_override>`;
     }
+    if (
+      step?.kind === 'tool' &&
+      step.phase === 'gather' &&
+      step.toolRole === 'read-list'
+    ) {
+      const pinned = step.pinnedToolNames?.length
+        ? step.pinnedToolNames.join(', ')
+        : 'a read-list tool from <tool_schema>';
+      return `${toolDecisionPrompt}\n\n<plan_step_override>
+GATHER read-list step: emit exactly ONE HTTP tool_call for ${pinned} from <tool_schema>.
+Derive filters from <current_objective>, <user_intent>, and observations; omit optional query params when unspecified.
+Do NOT return empty tool_calls while this gather step is pending unless schema-required parameters cannot be inferred (param_gate runs after tool_calls).
+</plan_step_override>`;
+    }
     return toolDecisionPrompt;
   }
 

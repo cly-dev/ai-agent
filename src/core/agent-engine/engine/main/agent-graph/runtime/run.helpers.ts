@@ -13,6 +13,7 @@ import { textBlock, sanitizeStoredFinalOutput } from '../../../message/message-b
 import { allToolObservations } from '../../../graph-tool-observations.util';
 import { pendingRespondFromTurn } from '../../../turn/turn-respond.util';
 import { shouldEnforceRequestedSkillFromContract } from '../../../turn/skill-intent-alignment.util';
+import { turnRouteFromContract } from '../../../turn/turn-execution-contract.util';
 import type { TurnRespondRequest } from '../../../turn/turn-respond.types';
 import type {
   AgentGraphState,
@@ -98,7 +99,7 @@ export function createIsIntentMatched(
       }
       if (
         contract.plan.enabled &&
-        contract.routing.route !== 'direct_answer'
+        turnRouteFromContract(contract) !== 'direct_answer'
       ) {
         return true;
       }

@@ -14,6 +14,11 @@ import {
   resolveSkillIntentAlignment,
   toSkillIntentAlignmentSnapshot,
 } from './skill-intent-alignment.util';
+import {
+  reconcileTurnIntent,
+  routeFromTaskKind,
+  writeChannelFromTaskKind,
+} from './resolve-turn-task-kind.util';
 import type { PageContextUsage } from '../../../host-bridge/page-context-usage.types';
 import type { AgentGraphState } from '../main/types/agent-engine.types';
 import type {
@@ -23,9 +28,26 @@ import type {
   TurnPlanSkillSelect,
 } from './turn-execution-contract.types';
 import type { TurnWriteChannel } from './turn-write-channel.types';
-import type { TurnRoutingDecision } from './turn-routing.types';
+import {
+  DEFAULT_TURN_READ_DELIVERABLE,
+  type TurnRouteDraft,
+  type TurnRouteMeta,
+} from './turn-routing.types';
 import type { TurnScopedToolsSource } from './turn-scoped-tools.util';
 import type { SkillIntentAlignmentSnapshot } from './skill-intent-alignment.types';
+import type { TurnTaskKind } from './turn-task-kind.types';
+
+export function turnRouteFromContract(
+  contract: Pick<TurnExecutionContract, 'taskKind'>,
+) {
+  return routeFromTaskKind(contract.taskKind);
+}
+
+export function turnWriteChannelFromContract(
+  contract: Pick<TurnExecutionContract, 'taskKind'>,
+): TurnWriteChannel {
+  return writeChannelFromTaskKind(contract.taskKind);
+}
 
 function resolveScopedToolsSource(input: {
   skillSelect: TurnPlanSkillSelect;
@@ -37,14 +59,14 @@ function resolveScopedToolsSource(input: {
     : 'intent';
 }
 
-function pageHostMatchesRouting(
-  routing: TurnRoutingDecision,
+function pageHostMatchesRouteMeta(
+  routeMeta: TurnRouteMeta,
   pageHostCandidateId: number | null,
 ): boolean {
   if (!pageHostCandidateId) {
     return false;
   }
-  const suggested = routing.suggestedSkillId;
+  const suggested = routeMeta.suggestedSkillId;
   if (suggested != null && suggested !== pageHostCandidateId) {
     return false;
   }
@@ -74,7 +96,24 @@ function basePlanPolicy(
   };
 }
 
-function resolvePlanSkillSelect(input: BuildTurnExecutionContractInput): {
+function buildDirectAnswerRouteMeta(draft: TurnRouteDraft): TurnRouteMeta {
+  return {
+    method: draft.method,
+    reason: draft.reason,
+    suggestedSkillId: draft.suggestedSkillId,
+    pageContextApplies: false,
+    pageContextTaskKind: 'none',
+    llmPageContextTaskKind: draft.llmPageContextTaskKind,
+    readDeliverable: draft.readDeliverable,
+  };
+}
+
+function resolvePlanSkillSelect(input: {
+  taskKind: TurnTaskKind;
+  routeMeta: TurnRouteMeta;
+  requestedSkillId: number | null;
+  pageHostCandidateId: number | null;
+}): {
   skillSelect: TurnPlanSkillSelect;
   explicitSkillId: number | null;
   pageHostSkillId: number | null;
@@ -86,10 +125,10 @@ function resolvePlanSkillSelect(input: BuildTurnExecutionContractInput): {
       pageHostSkillId: null,
     };
   }
-  const onPage = input.routing.route === 'on_page_task';
+  const onPage = routeFromTaskKind(input.taskKind) === 'on_page_task';
   if (
     onPage &&
-    pageHostMatchesRouting(input.routing, input.pageHostCandidateId)
+    pageHostMatchesRouteMeta(input.routeMeta, input.pageHostCandidateId)
   ) {
     return {
       skillSelect: 'page_host',
@@ -113,7 +152,7 @@ export function pageContextEntityIdFromGraphState(
 export function buildTurnExecutionContract(
   input: BuildTurnExecutionContractInput,
 ): TurnExecutionContract {
-  const { routing } = input;
+  const { routeDraft } = input;
   const skillProfile =
     input.requestedSkill != null
       ? buildSkillCapabilityProfile({
@@ -128,7 +167,9 @@ export function buildTurnExecutionContract(
 
   if (!input.toolsEnabled) {
     return {
-      routing,
+      taskKind: 'direct_answer',
+      routeMeta: buildDirectAnswerRouteMeta(routeDraft),
+      skillChannelAnchored: false,
       terminalRespond: null,
       skillAlignment: emptySkillIntentAlignment(),
       plan: basePlanPolicy({
@@ -139,9 +180,11 @@ export function buildTurnExecutionContract(
     };
   }
 
-  if (routing.route === 'direct_answer') {
+  if (routeDraft.route === 'direct_answer') {
     return {
-      routing,
+      taskKind: 'direct_answer',
+      routeMeta: buildDirectAnswerRouteMeta(routeDraft),
+      skillChannelAnchored: false,
       terminalRespond: null,
       skillAlignment: emptySkillIntentAlignment(),
       plan: basePlanPolicy({
@@ -158,23 +201,37 @@ export function buildTurnExecutionContract(
     };
   }
 
-  const draftSkillSelect = resolvePlanSkillSelect(input);
-  const pageContextPolicy = resolvePageContextExecutionPolicy({
-    route: routing.route,
-    pageContextApplies: routing.pageContextApplies,
-    pageContextTaskKind: routing.pageContextTaskKind,
+  const { taskKind, routeMeta, skillChannelAnchored } = reconcileTurnIntent({
+    routeDraft,
     pageContext: input.pageContext,
-    writeChannel: input.effectiveWriteChannel,
+    skillChannels: input.requestedSkill?.executionChannels ?? null,
+    explicitSkill: input.requestedSkillId != null,
+  });
+  const writeChannel = writeChannelFromTaskKind(taskKind);
+  const route = routeFromTaskKind(taskKind);
+
+  const draftSkillSelect = resolvePlanSkillSelect({
+    taskKind,
+    routeMeta,
+    requestedSkillId: input.requestedSkillId,
+    pageHostCandidateId: input.pageHostCandidateId,
+  });
+  const pageContextPolicy = resolvePageContextExecutionPolicy({
+    route,
+    pageContextApplies: routeMeta.pageContextApplies,
+    pageContextTaskKind: routeMeta.pageContextTaskKind,
+    pageContext: input.pageContext,
+    writeChannel,
   });
   const pageContextPlan = pageContextPolicy.plan;
   const turnIntent = deriveTurnUserIntent({
-    routing,
+    taskKind,
     pageContextPlan,
-    writeChannel: input.effectiveWriteChannel,
   });
   const alignment = resolveSkillIntentAlignment({
+    taskKind,
     intent: turnIntent,
-    routing,
+    routeMeta,
     userMessage: input.userMessage,
     requestedSkillId: input.requestedSkillId,
     skillProfile,
@@ -187,7 +244,9 @@ export function buildTurnExecutionContract(
 
   if (alignment.status === 'clarify') {
     return {
-      routing,
+      taskKind,
+      routeMeta,
+      skillChannelAnchored,
       terminalRespond: alignment.respond,
       skillAlignment,
       plan: basePlanPolicy({
@@ -208,9 +267,9 @@ export function buildTurnExecutionContract(
       : draftSkillSelect;
 
   const hostToolPolicy = resolveHostToolTurnPolicy({
-    route: routing.route,
+    route,
     pageContextPlan,
-    writeChannel: input.effectiveWriteChannel,
+    writeChannel,
   });
 
   const scopedToolsSource = resolveScopedToolsSource({
@@ -219,7 +278,9 @@ export function buildTurnExecutionContract(
   });
 
   return {
-    routing,
+    taskKind,
+    routeMeta,
+    skillChannelAnchored,
     terminalRespond: null,
     skillAlignment,
     plan: basePlanPolicy({
@@ -242,19 +303,21 @@ export function buildWriteConfirmResumeContract(
   reason: string,
   writeChannel: TurnWriteChannel = 'http',
 ): TurnExecutionContract {
-  const hostWrite = writeChannel === 'host';
+  const taskKind: TurnTaskKind =
+    writeChannel === 'host' ? 'host_push' : 'http_mutation';
+  const hostWrite = taskKind === 'host_push';
   return {
-    routing: {
-      route: 'orchestrated_task',
+    taskKind,
+    routeMeta: {
       method: 'fallback_orchestrated',
       reason,
       suggestedSkillId: null,
       pageContextApplies: false,
       pageContextTaskKind: 'none',
       llmPageContextTaskKind: 'none',
-      llmWriteChannel: writeChannel,
-      hostMutationIntent: hostWrite,
+      readDeliverable: DEFAULT_TURN_READ_DELIVERABLE,
     },
+    skillChannelAnchored: false,
     terminalRespond: null,
     skillAlignment: emptySkillIntentAlignment(),
     plan: basePlanPolicy({
@@ -273,17 +336,17 @@ export function buildRestrictiveTurnExecutionContract(
   reason: string,
 ): TurnExecutionContract {
   return {
-    routing: {
-      route: 'orchestrated_task',
+    taskKind: 'orchestrated_read',
+    routeMeta: {
       method: 'fallback_orchestrated',
       reason,
       suggestedSkillId: null,
       pageContextApplies: false,
       pageContextTaskKind: 'none',
       llmPageContextTaskKind: 'none',
-      llmWriteChannel: 'none',
-      hostMutationIntent: false,
+      readDeliverable: DEFAULT_TURN_READ_DELIVERABLE,
     },
+    skillChannelAnchored: false,
     terminalRespond: null,
     skillAlignment: emptySkillIntentAlignment(),
     plan: basePlanPolicy({
@@ -318,6 +381,8 @@ export function resolveTurnExecutionContract(
     }
     return {
       ...contract,
+      taskKind: contract.taskKind ?? 'orchestrated_read',
+      skillChannelAnchored: contract.skillChannelAnchored ?? false,
       skillAlignment,
       plan: {
         ...contract.plan,

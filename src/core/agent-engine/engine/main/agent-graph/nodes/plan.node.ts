@@ -13,10 +13,16 @@ import {
 } from '../../../turn/turn-respond.util';
 import {
   resolveTurnExecutionContract,
+  turnRouteFromContract,
+  turnWriteChannelFromContract,
 } from '../../../turn/turn-execution-contract.util';
 import { shouldEnforceRequestedSkillFromContract } from '../../../turn/skill-intent-alignment.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
-import { planRunContextFromState } from '../../plan/plan-observation-scope.util';
+import {
+  planObservationBucketsFromState,
+  planRunContextFromResumeDecision,
+  selectObservationsForPlanToolSatisfaction,
+} from '../../plan/plan-observation-scope.util';
 import { buildPlanRunStepOutput } from '../../plan/plan-sync.util';
 import { fromStoredTaskPlan } from '../../session/session-graph-resume.util';
 import { buildPlanSessionWorkingMemory } from '../../session/session-goa-plan-projection.util';
@@ -31,9 +37,20 @@ import {
 import { resolvePlanFromContract } from '../../plan/resolve-plan-from-contract.util';
 import {
   applyOuterPlanSelectMetadata,
+  resolveTaskPlanAdvanceWhenStepSatisfied,
   resolveTaskPlanInitialAdvance,
   summarizeScopedToolsForPlan,
 } from '../../plan/task-plan.util';
+import {
+  resolvePlanTurnAxes,
+  shouldAbandonActiveTaskForFreshPlan,
+} from '../../plan/plan-turn-context.util';
+import {
+  defaultFreshResumeDecision,
+  goalStrategyFromResumeDecision,
+  type SessionResumeDecision,
+} from '../../../../../memory/resume/session-resume-decision.types';
+import { pageContextEntityIdFromGraphState } from '../../../turn/turn-execution-contract.util';
 import type {
   AgentGraphState,
   AgentRunStep,
@@ -75,14 +92,15 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
         userMessage: ctx.input.latestUserMessage,
         payload: {
           routingReason:
-            contract.routing.reason ?? 'plan_disabled_by_contract',
+            contract.routeMeta.reason ?? 'plan_disabled_by_contract',
         },
       });
     }
 
     const sessionGoa = ctx.getSessionGoa();
+    let sessionResumeDecision: SessionResumeDecision = defaultFreshResumeDecision();
     if (sessionGoa && !ctx.requestedSkillCtx) {
-      const resumeDecision = await deps.resumeGate.evaluate({
+      sessionResumeDecision = await deps.resumeGate.evaluate({
         sessionId: ctx.input.sessionId,
         appClientId: ctx.input.appClientId,
         agentId: ctx.input.agentId,
@@ -90,12 +108,13 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
         goa: sessionGoa,
         contract,
       });
-      if (resumeDecision.action === 'abandon_and_fresh') {
+      if (sessionResumeDecision.action === 'abandon_and_fresh') {
         ctx.setSessionGoa(
           await deps.goaService.getPayload(ctx.input.sessionId),
         );
       }
-      if (resumeDecision.action === 'resume') {
+      if (sessionResumeDecision.action === 'resume') {
+        const resumeDecision = sessionResumeDecision;
         const taskPlan = fromStoredTaskPlan(resumeDecision.plan);
         const planStep: AgentRunStep = {
           step: stepNum,
@@ -120,6 +139,9 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
           plan: taskPlan,
           allObservations: allToolObservations(state),
           runOwnedObservations: runOwnedToolObservations(state),
+          observationBuckets: planObservationBucketsFromState(state),
+          scopedTools: state.scopedTools,
+          workflowRun: resumeDecision.workflowRun,
           userMessage: ctx.input.latestUserMessage,
           planRunContext: 'resume',
           buildMergedObservation: () =>
@@ -265,7 +287,19 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
       runOwnedObservations: runOwnedToolObservations(state),
     });
 
-    if (contract.plan.abandonActiveTaskOnFreshPlan) {
+    const planTurnAxes = resolvePlanTurnAxes({
+      turnMessage: ctx.input.latestUserMessage,
+      goalStrategy: goalStrategyFromResumeDecision(sessionResumeDecision),
+      sessionWorkingMemory,
+      contract,
+    });
+
+    if (
+      shouldAbandonActiveTaskForFreshPlan({
+        contract,
+        resumeDecision: sessionResumeDecision,
+      })
+    ) {
       if (
         goaForPlan.activeTask?.status === 'in_progress' ||
         goaForPlan.activeTask?.status === 'awaiting_confirmation'
@@ -278,9 +312,11 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
     deps.sse.emitThink(
       ctx.input.sessionId,
       ctx.input.runId,
-      ctx.requestedSkillCtx
-        ? '正在按所选技能规划任务步骤…\n'
-        : '正在规划任务步骤…\n',
+      sessionResumeDecision.action === 'fresh_same_goal'
+        ? '正在按同一任务目标重新规划步骤…\n'
+        : ctx.requestedSkillCtx
+          ? '正在按所选技能规划任务步骤…\n'
+          : '正在规划任务步骤…\n',
       'replace',
     );
 
@@ -337,6 +373,7 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
         requestedSkillId: contract.plan.explicitSkillId ?? undefined,
         requestedSkillDetail,
       },
+      planTurnAxes,
     });
 
     const skillSelectMeta = resolveOuterPlanSkillSelectMethod({
@@ -355,24 +392,46 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
       autoSelectedSkillId,
     });
 
-    const outerFrameCount = taskPlan.frames.length;
+    const gatherSkipObservations =
+      sessionResumeDecision.action === 'resume'
+        ? allToolObservations(state)
+        : selectObservationsForPlanToolSatisfaction(
+            planObservationBucketsFromState(state),
+          );
+    const gatherSkipAdvance = resolveTaskPlanAdvanceWhenStepSatisfied({
+      plan: taskPlan,
+      observations: gatherSkipObservations,
+      scopedTools: state.scopedTools,
+      skillConfig: state.activeSkillConfig,
+      pageContextEntityId: pageContextEntityIdFromGraphState(state),
+    });
+    const taskPlanAfterGatherSkip =
+      gatherSkipAdvance?.updatedPlan ?? taskPlan;
+
+    const outerFrameCount = taskPlanAfterGatherSkip.frames.length;
+
+    const planRunContext = planRunContextFromResumeDecision(sessionResumeDecision);
 
     const initialAdvance = resolveTaskPlanInitialAdvance({
-      plan: taskPlan,
+      plan: taskPlanAfterGatherSkip,
       allObservations: allToolObservations(state),
       runOwnedObservations: runOwnedToolObservations(state),
+      observationBuckets: planObservationBucketsFromState(state),
+      scopedTools: state.scopedTools,
+      workflowRun: state.workflowRun,
       userMessage: ctx.input.latestUserMessage,
-      planRunContext: planRunContextFromState(state),
+      planRunContext,
       buildMergedObservation: () =>
         summarize.buildSummarizeObservationFromState(state, {
-          taskPlan,
+          taskPlan: taskPlanAfterGatherSkip,
           scopedTools: state.scopedTools,
         }),
     });
     const planState: AgentGraphState = {
       ...state,
       turnExecutionContract: contract,
-      taskPlan: initialAdvance?.updatedPlan ?? taskPlan,
+      taskPlan: initialAdvance?.updatedPlan ?? taskPlanAfterGatherSkip,
+      planRunContext,
       scopedHostTools: hostBundle.scopedHostTools,
       scopedHostLangChainTools: hostBundle.scopedHostLangChainTools,
       skillApplied: false,
@@ -389,7 +448,7 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
         : null,
     };
     const expandedState = await skillFrame.applySkillFrameContext(planState);
-    const expandedTaskPlan = expandedState.taskPlan ?? taskPlan;
+    const expandedTaskPlan = expandedState.taskPlan ?? taskPlanAfterGatherSkip;
     const skillFrameExpanded = expandedTaskPlan.frames.length > outerFrameCount;
     const prunedHostToolStepIds = collectRemovedPendingHostToolStepIds(
       planState.taskPlan,
@@ -420,11 +479,21 @@ export function createPlanNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
           outerFrameCount,
           outerSkillSelectMethod,
           autoSelectedSkillId,
-          turnRoute: contract.routing.route,
+          turnRoute: turnRouteFromContract(contract),
           turnSkillSelect: contract.plan.skillSelect,
           pageContextPlan: contract.plan.pageContextPlan,
           pageContextApplies: contract.plan.pageContextUsage.applies,
-          pageContextTaskKind: contract.routing.pageContextTaskKind,
+          pageContextTaskKind: contract.routeMeta.pageContextTaskKind,
+          planGoalInherited: planTurnAxes.inheritedFromActiveTask,
+          planGoal: planTurnAxes.goal,
+          planGoalStrategy: planTurnAxes.goalStrategy,
+          sessionResumeAction: sessionResumeDecision.action,
+          sessionResumeFollowUpReason:
+            sessionResumeDecision.action === 'resume' ||
+            sessionResumeDecision.action === 'fresh_same_goal' ||
+            sessionResumeDecision.action === 'fresh'
+              ? sessionResumeDecision.followUpReason ?? null
+              : null,
           pageContextDataSufficiency:
             contract.plan.pageContextUsage.dataSufficiency,
         }),

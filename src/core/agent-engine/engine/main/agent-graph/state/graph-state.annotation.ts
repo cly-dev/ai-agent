@@ -15,7 +15,6 @@ import type {
   ToolExecutionStatus,
 } from '../../../tool/tool-execution-status.util';
 import type { TaskPlanSnapshot } from '../../plan/task-plan.types';
-import type { TurnRoutingDecision } from '../../../turn/turn-routing.types';
 import type { TurnExecutionContract } from '../../../turn/turn-execution-contract.types';
 import type { TurnScopedToolsBundle } from '../../../turn/turn-scoped-tools.util';
 import type { WorkflowNodeDef, WorkflowRunState } from '../../../../../workflow/workflow.types';
@@ -77,6 +76,16 @@ export function createAgentGraphStateAnnotation() {
         reducer: (_state, update) => update,
       }),
       scopedToolBundle: Annotation<BuiltLangChainTools | null>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      planStepToolCandidates: Annotation<AgentEngineTool[]>({
+        default: () => [],
+        reducer: (_state, update) => update,
+      }),
+      planStepToolCandidateStrategy: Annotation<
+        AgentGraphState['planStepToolCandidateStrategy']
+      >({
         default: () => null,
         reducer: (_state, update) => update,
       }),
@@ -159,10 +168,6 @@ export function createAgentGraphStateAnnotation() {
       }),
       scopedHostLangChainTools: Annotation<DynamicStructuredTool[]>({
         default: () => [],
-        reducer: (_state, update) => update,
-      }),
-      turnRoutingDecision: Annotation<TurnRoutingDecision | null | undefined>({
-        default: () => null,
         reducer: (_state, update) => update,
       }),
       turnExecutionContract: Annotation<TurnExecutionContract | null | undefined>({

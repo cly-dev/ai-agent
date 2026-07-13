@@ -9,24 +9,25 @@ import {
   deriveTurnUserIntent,
   resolveSkillIntentAlignment,
 } from '../agent-engine/engine/turn/skill-intent-alignment.util';
+import { reconcileTurnIntent, writeChannelFromTaskKind } from '../agent-engine/engine/turn/resolve-turn-task-kind.util';
 import { buildSkillCapabilityProfile } from '../agent-engine/engine/turn/skill-capability-profile.util';
-import type { TurnRoutingDecision } from '../agent-engine/engine/turn/turn-routing.types';
+import type { TurnRouteDraft } from '../agent-engine/engine/turn/turn-routing.types';
+import { DEFAULT_TURN_READ_DELIVERABLE } from '../agent-engine/engine/turn/turn-routing.types';
 import type { AgentGraphState } from '../agent-engine/engine/main/types/agent-engine.types';
 import { fetchSummarizeTaskPlan } from './workflow-graph-fixture.util';
 
-function minimalRouting(
-  overrides: Partial<TurnRoutingDecision> = {},
-): TurnRoutingDecision {
+function minimalRouteDraft(
+  overrides: Partial<TurnRouteDraft> = {},
+): TurnRouteDraft {
   return {
     route: 'orchestrated_task',
     method: 'llm',
     reason: 'test',
     suggestedSkillId: null,
     pageContextApplies: false,
-    pageContextTaskKind: 'none',
     llmPageContextTaskKind: 'none',
-    hostMutationIntent: false,
-    llmWriteChannel: 'none',
+    readDeliverable: DEFAULT_TURN_READ_DELIVERABLE,
+    draftWriteChannel: 'none',
     ...overrides,
   };
 }
@@ -41,9 +42,20 @@ describe('§8.B plan source and intent alignment fixtures', () => {
   });
 
   it('8.B.3 write vs http-only skill → clarify, no workflow run', () => {
-    const routing = minimalRouting({
-      hostMutationIntent: true,
-      llmWriteChannel: 'host',
+    const routeDraft = minimalRouteDraft({
+      draftWriteChannel: 'host',
+    });
+    const channels = {
+      httpRead: true,
+      httpMutation: false,
+      hostPush: false,
+      primaryWriteChannel: null,
+    };
+    const reconciled = reconcileTurnIntent({
+      routeDraft,
+      pageContext: null,
+      skillChannels: channels,
+      explicitSkill: true,
     });
     const alignment = resolveSkillIntentAlignment({
       userMessage: '帮我改一下',
@@ -53,20 +65,15 @@ describe('§8.B plan source and intent alignment fixtures', () => {
         skillName: 'HTTP Read',
         skillToolIds: [1],
         hostToolIds: [],
-        channels: {
-          httpRead: true,
-          httpMutation: false,
-          hostPush: false,
-          primaryWriteChannel: null,
-        },
+        channels,
       }),
       skillConfig: null,
+      taskKind: reconciled.taskKind,
       intent: deriveTurnUserIntent({
-        routing,
+        taskKind: reconciled.taskKind,
         pageContextPlan: 'none',
-        writeChannel: 'http',
       }),
-      routing,
+      routeMeta: reconciled.routeMeta,
     });
     expect(alignment.status).toBe('clarify');
     if (alignment.status === 'clarify') {
@@ -86,11 +93,23 @@ describe('§8.B plan source and intent alignment fixtures', () => {
   });
 
   it('8.B.4 read vs host-only skill → intent_first drops explicit skill', () => {
-    const routing = minimalRouting({
-      route: 'on_page_task',
+    const routeDraft = minimalRouteDraft({
+      route: 'orchestrated_task',
       pageContextApplies: true,
-      pageContextTaskKind: 'answer',
       llmPageContextTaskKind: 'answer',
+      draftWriteChannel: 'none',
+    });
+    const channels = {
+      httpRead: false,
+      httpMutation: false,
+      hostPush: true,
+      primaryWriteChannel: 'host' as const,
+    };
+    const reconciled = reconcileTurnIntent({
+      routeDraft,
+      pageContext: null,
+      skillChannels: channels,
+      explicitSkill: true,
     });
     const alignment = resolveSkillIntentAlignment({
       userMessage: '说明页面',
@@ -100,19 +119,15 @@ describe('§8.B plan source and intent alignment fixtures', () => {
         skillName: 'Host Only',
         skillToolIds: [],
         hostToolIds: [10],
-        channels: {
-          httpRead: false,
-          httpMutation: false,
-          hostPush: true,
-          primaryWriteChannel: 'host',
-        },
+        channels,
       }),
       skillConfig: null,
+      taskKind: reconciled.taskKind,
       intent: deriveTurnUserIntent({
-        routing,
+        taskKind: reconciled.taskKind,
         pageContextPlan: 'entity_read_detail',
       }),
-      routing,
+      routeMeta: reconciled.routeMeta,
     });
     expect(alignment.status).toBe('intent_first');
     if (alignment.status === 'intent_first') {

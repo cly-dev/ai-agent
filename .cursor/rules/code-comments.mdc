@@ -1,0 +1,56 @@
+---
+description: 写代码时必须补充有意义的注释（何时写、写什么、怎么写）
+alwaysApply: true
+---
+
+# 代码注释规范
+
+新增或修改业务逻辑时，**必须**为不显而易见的部分补充注释。注释服务于后续维护者与 Code Review，不是装饰。
+
+## 写什么
+
+| 场景 | 要求 |
+|------|------|
+| 多步流水线 / 状态推导 | 用块注释说明阶段顺序与每步输入输出（如 `routeDraft → reconcileTurnIntent → contract`） |
+| 纠偏 / 覆盖 LLM 输出 | 说明**为何**要纠正（契约、显式 Skill、pageContext 协议），不只写变量名 |
+| 非显然的分支与 guard | 说明触发条件与跳过的后果 |
+| 协议字段与运行时派生 | 标明「谁产出、谁消费、谁派生」（如 `taskKind` 为真源，`writeChannel` 由代码派生） |
+| 与 prompt / DB 配置耦合 | 注明对应 `PROMPT_KEYS`、env 或配置项，避免只改代码忘改提示词 |
+
+## 不写什么
+
+- 不注释自解释代码（`// increment counter`）
+- 不逐行翻译变量名
+- 不用注释掩盖应提取函数或改命名的坏味道
+- 不写会快速过期的 TODO 式废话；临时 hack 须写清原因与移除条件
+
+## 怎么写
+
+- **模块 / 复杂函数**：文件或函数上方 2–5 行块注释，说明职责与边界
+- **单行纠偏**：行尾或上一行简短中文/英文均可，重点写 **why**
+- **观测字段**（`routeStep.output`、debug log）：在组装处注释字段含义，便于对照 run 排查
+
+## 示例
+
+```typescript
+// ❌ 无信息
+const writeChannel = writeChannelFromTaskKind(contract.taskKind);
+
+// ✅ 说明派生关系
+// writeChannel 不由 Route LLM 输出；由 reconcile 后的 taskKind 派生，避免双真源。
+const writeChannel = writeChannelFromTaskKind(contract.taskKind);
+
+// ❌ 只复述变量
+const pageContextAppliesBoosted = routeMeta.pageContextApplies && !routeDraft.pageContextApplies;
+
+// ✅ 说明纠偏原因
+// 内联 pageContext 可读且用户意图为 analyze/answer 时，强制 pageContextApplies，
+// 防止 Route LLM 误判为无关闲聊。
+const pageContextAppliesBoosted =
+  routeMeta.pageContextApplies && !routeDraft.pageContextApplies;
+```
+
+## 与本仓库其他约定
+
+- Agent / intent / skill 业务短语仍走 JSON / env / DB，**不在注释里堆词表**；注释只解释结构意图
+- 实现功能时：先让代码可读，再对仍不显然处补注释；二者缺一在 review 时应打回

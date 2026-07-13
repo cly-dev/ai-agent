@@ -13,13 +13,13 @@ import type { PlanRunContext } from '../plan/plan-observation-scope.util';
 import type { TaskPlanSnapshot } from '../plan/task-plan.types';
 import type { ToolHttpRequestLayout } from '../../../../tool-engine/tool-http-request-layout.util';
 import type { PendingRespond } from '../../turn/turn-respond.types';
-import type { TurnRoutingDecision } from '../../turn/turn-routing.types';
 import type { TurnExecutionContract } from '../../turn/turn-execution-contract.types';
 import type { TurnScopedToolsBundle } from '../../turn/turn-scoped-tools.util';
 import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-tool-decision.types';
 import type { AgentChatPageContext } from '../../../../host-bridge/page-context.types';
 import type { DraftReviewDecision } from '../../../../draft-review';
 import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
+import type { PlanToolCandidateStrategy } from '../plan/plan-tool-candidates.util';
 
 export type AgentRunInput = {
   userId: number;
@@ -52,13 +52,16 @@ export type AgentRunStepType =
   | 'route_plan'
   | 'intent'
   | 'readiness'
+  | 'tool_resolve'
+  | 'param_gate'
   | 'llm'
   | 'tool'
   | 'write_confirmation_gate'
   | 'gather'
   | 'result_check'
   | 'summarize'
-  | 'host_tool';
+  | 'host_tool'
+  | 'gather_pipeline';
 
 export type AgentRunStep = {
   step: number;
@@ -208,10 +211,12 @@ export type AgentGraphState = {
   scopedHostTools?: HostToolDecisionDefinition[];
   /** bindTools 用 Host Tool stub（执行在浏览器）。 */
   scopedHostLangChainTools?: DynamicStructuredTool[];
-  /** route_plan 节点产出：本轮任务路由（direct_answer / on_page_task / orchestrated_task）。 */
-  turnRoutingDecision?: TurnRoutingDecision | null;
-  /** 本轮唯一执行契约（plan / host_tool / resume 只读此对象）。 */
+  /** route_plan 节点产出：本轮唯一执行契约（plan / host_tool / resume 只读此对象）。 */
   turnExecutionContract?: TurnExecutionContract | null;
+  /** 当前 plan gather 步经 tool_resolve 收窄后的 HTTP 工具候选面。 */
+  planStepToolCandidates?: AgentEngineTool[];
+  /** 与 planStepToolCandidates 对应的收窄策略（tool_resolve 写入）。 */
+  planStepToolCandidateStrategy?: PlanToolCandidateStrategy | null;
   /** V2 L1：Workflow 运行态（orchestrated task 权威进度）。 */
   workflowRun?: WorkflowRunState | null;
   /** 与 workflowRun 对应的节点定义（compile / DB load）。 */

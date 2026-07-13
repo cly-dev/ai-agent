@@ -10,9 +10,12 @@ import {
 } from '../../../tool-engine/tool-agent-metadata.util';
 import {
   buildCompactToolInput,
-  listRequiredParamNames,
   resolveParamFormatHints,
 } from '../../../tool-engine/tool-decision-input.util';
+import {
+  listOptionalFilterParamNames,
+  listUserFacingRequiredParamNames,
+} from '../../../tool-engine/tool-user-facing-params.util';
 import { parseResponseProfile } from '../../../tool-engine/tool-output-projection.util';
 import type { ParamFormatHint } from '../../../tool-engine/tool-agent-metadata.types';
 import type { ToolDecisionRole } from '../../../tool-engine/tool-decision-role.enum';
@@ -33,22 +36,10 @@ export type ToolSchemaCompact = {
   paramHints?: ParamFormatHint[];
 };
 
-const SCHEMA_PARAM_SKIP = new Set([
-  'X-SHOP-ID',
-  'page',
-  'size',
-  'sort',
-  'vo',
-]);
-
 function extractFilterNames(
   input: ReturnType<typeof buildCompactToolInput>,
 ): string[] {
-  const fromParams = input.parameters
-    .filter((row) => !row.required && !SCHEMA_PARAM_SKIP.has(row.name))
-    .map((row) => row.name);
-  const optional = input.optionalParamNames ?? [];
-  return [...new Set([...fromParams, ...optional])].slice(0, 16);
+  return listOptionalFilterParamNames(input).slice(0, 16);
 }
 
 function extractReturnFields(
@@ -99,9 +90,7 @@ export function summarizeToolsForLlmSchema(
       tool.agentMetadata,
     );
     const provides = extractProvidesFromResponseProfile(tool.responseProfile);
-    const requiredParams = listRequiredParamNames(input).filter(
-      (name) => name !== 'vo',
-    );
+    const requiredParams = listUserFacingRequiredParamNames(input);
     const filters = meta?.isMutation ? undefined : extractFilterNames(input);
     const returns = extractReturnFields(tool.responseProfile, provides);
     const description = tool.description?.trim();

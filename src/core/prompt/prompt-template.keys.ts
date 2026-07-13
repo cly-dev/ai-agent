@@ -6,8 +6,6 @@ export const PROMPT_KEYS = {
   AGENT_TOOL_DECISION: 'agent.tool_decision',
   /** 未完成会话任务：判断用户是否在续接 active task（Plan 续跑门控） */
   AGENT_TASK_RESUME_FOLLOWUP: 'agent.task_resume_followup',
-  /** readiness 节点：判断业务槽位是否齐全 */
-  AGENT_READINESS_SLOT_CHECK: 'agent.readiness_slot_check',
   /** respond 节点：槽位缺失时的反问 */
   AGENT_RESPOND_CLARIFICATION: 'agent.respond_clarification',
   /** summarize：预选 Skill 与用户写意图冲突时的澄清 */

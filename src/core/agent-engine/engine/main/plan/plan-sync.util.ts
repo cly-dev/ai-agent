@@ -110,6 +110,11 @@ export function buildPlanRunStepOutput(input: {
   pageContextApplies?: boolean;
   pageContextTaskKind?: string | null;
   pageContextDataSufficiency?: string | null;
+  planGoalInherited?: boolean;
+  planGoal?: string | null;
+  planGoalStrategy?: string | null;
+  sessionResumeAction?: string | null;
+  sessionResumeFollowUpReason?: string | null;
 }): Record<string, unknown> {
   const planHostStatus = resolveHostToolPlanRunStatus({
     availableHostToolCount: input.availableHostToolCount,
@@ -148,6 +153,11 @@ export function buildPlanRunStepOutput(input: {
     pageContextApplies: input.pageContextApplies ?? false,
     pageContextTaskKind: input.pageContextTaskKind ?? null,
     pageContextDataSufficiency: input.pageContextDataSufficiency ?? null,
+    planGoalInherited: input.planGoalInherited ?? false,
+    planGoal: input.planGoal ?? input.taskPlan.goal,
+    planGoalStrategy: input.planGoalStrategy ?? null,
+    sessionResumeAction: input.sessionResumeAction ?? null,
+    sessionResumeFollowUpReason: input.sessionResumeFollowUpReason ?? null,
   };
 }
 

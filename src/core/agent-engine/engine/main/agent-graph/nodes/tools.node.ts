@@ -4,7 +4,7 @@ import { normalizeWriteToolArguments } from '../../../../../tool-engine/write-to
 import { resolveMaxListHttpPerTurn } from '../../../../../mcp-utils/pagination';
 import type { PendingWriteResumeContext } from '../../../../../../modules/chat/pending-write-confirmation.types';
 import { serializeObservationsForPending } from '../../../agent-write-confirmation.util';
-import { resolvePagedGatherAnalyzeObjective } from '../../../gather/plan-paged-gather.util';
+import { resolvePagedGatherSummarizeObjective } from '../../../gather/plan-paged-gather.util';
 import {
   expandPagedListGather,
   resumeIncompletePagedGather,
@@ -80,7 +80,7 @@ export function createToolsNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn 
               agentId: ctx.input.agentId,
             },
             currentObjective:
-              resolvePagedGatherAnalyzeObjective(state.taskPlan) ??
+              resolvePagedGatherSummarizeObjective(state.taskPlan) ??
               state.taskPlan?.currentObjective ??
               undefined,
             runMetrics: ctx.input.runMetrics,

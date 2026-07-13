@@ -40,6 +40,8 @@ export class LlmService implements OnApplicationBootstrap {
   private readonly logger = new Logger(LlmService.name);
   /** 单次回复默认输出上限（与上下文窗口无关）。 */
   private static readonly DEFAULT_OUTPUT_MAX_TOKENS = 2048;
+  /** summarize 阶段为输出正文保留的最小 token（可通过 LLM_SUMMARIZE_OUTPUT_TOKEN_RESERVE 覆盖）。 */
+  private static readonly DEFAULT_SUMMARIZE_OUTPUT_TOKEN_RESERVE = 2048;
   /** 为 tool schema / 路由预留的 token 余量。 */
   private static readonly INVOCATION_TOKEN_BUFFER = 384;
   private static readonly LOCAL_EMBED_BATCH_SIZE = 16;
@@ -130,6 +132,7 @@ export class LlmService implements OnApplicationBootstrap {
    */
   async resolveInvocationMaxTokens(
     messages: LlmChatMessage[],
+    hints?: PromptBudgetHints,
   ): Promise<number> {
     const config = await this.getCachedConfig();
     const parameters = this.normalizeParameters(config.parameters);
@@ -140,11 +143,15 @@ export class LlmService implements OnApplicationBootstrap {
         LlmService.DEFAULT_OUTPUT_MAX_TOKENS,
       contextLength,
     );
+    const targetOutput = this.resolveOutputTokenTarget(configuredOutput, hints);
     const inputTokens = estimateMessagesTokens(messages);
     return this.capOutputMaxTokens(
-      configuredOutput,
+      targetOutput,
       contextLength,
       inputTokens,
+      hints?.callKind === 'summarize'
+        ? this.readSummarizeOutputTokenReserve()
+        : undefined,
     );
   }
 
@@ -153,11 +160,16 @@ export class LlmService implements OnApplicationBootstrap {
    * Uses optional contextLength (parameters) minus output reserve (maxTokens).
    * Falls back to maxTokens when contextLength is not configured.
    */
-  async getMessageTokenBudget(): Promise<number> {
-    const outputReserve = await this.getResolvedMaxTokens();
+  async getMessageTokenBudget(hints?: PromptBudgetHints): Promise<number> {
+    const outputReserve = await this.resolveOutputTokenReserve(hints);
     const contextLength = await this.getContextLength();
     if (contextLength != null && contextLength > outputReserve) {
-      return contextLength - outputReserve;
+      return Math.max(
+        512,
+        contextLength -
+          outputReserve -
+          LlmService.INVOCATION_TOKEN_BUFFER,
+      );
     }
     return outputReserve;
   }
@@ -180,7 +192,7 @@ export class LlmService implements OnApplicationBootstrap {
     hints?: PromptBudgetHints,
     budgetOverride?: number,
   ): Promise<FitMessagesResult> {
-    const budget = budgetOverride ?? (await this.getMessageTokenBudget());
+    const budget = budgetOverride ?? (await this.getMessageTokenBudget(hints));
     return this.promptBudgetService.fitMessages(messages, budget, hints);
   }
 
@@ -513,7 +525,10 @@ export class LlmService implements OnApplicationBootstrap {
     );
     const resolvedMaxTokens =
       options?.maxTokens ??
-      (await this.resolveInvocationMaxTokens(fitted.messages));
+      (await this.resolveInvocationMaxTokens(
+        fitted.messages,
+        options?.budgetHints,
+      ));
     const model = await this.createLangChainChatModel({
       temperature: options?.temperature,
       maxTokens: resolvedMaxTokens,
@@ -528,6 +543,7 @@ export class LlmService implements OnApplicationBootstrap {
   ): Promise<LlmChatResult> {
     const invocationMaxTokens = await this.resolveInvocationMaxTokens(
       input.messages,
+      input.budgetHints,
     );
     const model = await this.createLangChainChatModel({
       streaming: forceStreaming || input.stream === true,
@@ -986,10 +1002,39 @@ export class LlmService implements OnApplicationBootstrap {
     return raw;
   }
 
+  private readSummarizeOutputTokenReserve(): number {
+    const raw = process.env.LLM_SUMMARIZE_OUTPUT_TOKEN_RESERVE?.trim();
+    if (!raw) {
+      return LlmService.DEFAULT_SUMMARIZE_OUTPUT_TOKEN_RESERVE;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed >= 512
+      ? parsed
+      : LlmService.DEFAULT_SUMMARIZE_OUTPUT_TOKEN_RESERVE;
+  }
+
+  private async resolveOutputTokenReserve(
+    hints?: PromptBudgetHints,
+  ): Promise<number> {
+    const configuredOutput = await this.getResolvedMaxTokens();
+    return this.resolveOutputTokenTarget(configuredOutput, hints);
+  }
+
+  private resolveOutputTokenTarget(
+    configuredOutput: number,
+    hints?: PromptBudgetHints,
+  ): number {
+    if (hints?.callKind === 'summarize') {
+      return Math.max(configuredOutput, this.readSummarizeOutputTokenReserve());
+    }
+    return configuredOutput;
+  }
+
   private capOutputMaxTokens(
     configuredOutput: number,
     contextLength: number | null,
     inputTokens: number,
+    minOutputFloor?: number,
   ): number {
     if (contextLength == null) {
       return configuredOutput;
@@ -999,6 +1044,11 @@ export class LlmService implements OnApplicationBootstrap {
       inputTokens -
       LlmService.INVOCATION_TOKEN_BUFFER;
     if (available < configuredOutput) {
+      if (minOutputFloor != null && available < minOutputFloor) {
+        this.logger.warn(
+          `llm summarize output squeezed: available=${available} target=${configuredOutput} reserve=${minOutputFloor} inputTokens=${inputTokens} contextLength=${contextLength}`,
+        );
+      }
       return Math.max(256, available);
     }
     return configuredOutput;

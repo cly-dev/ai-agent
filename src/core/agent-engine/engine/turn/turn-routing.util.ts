@@ -1,40 +1,40 @@
 import type { AgentChatPageContext } from '../../../host-bridge/page-context.types';
 import { buildPageContextRouteHint } from '../../../host-bridge/page-context-usage.util';
-import type { TurnRouteLlmInput, TurnRoutingDecision } from './turn-routing.types';
-
-export { finalizeTurnRoutingDecision } from './turn-user-intent.util';
+import {
+  DEFAULT_TURN_READ_DELIVERABLE,
+  type TurnRouteDraft,
+  type TurnRouteLlmInput,
+} from './turn-routing.types';
 
 /** 寒暄 / direct_answer：不经 route LLM，走 chitchat plan → workflow_react → llm。 */
-export function buildChitchatRoutingDecision(input: {
+export function buildChitchatRouteDraft(input: {
   reason: string;
-}): TurnRoutingDecision {
+}): TurnRouteDraft {
   return {
     route: 'direct_answer',
     method: 'fallback_orchestrated',
     reason: input.reason,
     suggestedSkillId: null,
     pageContextApplies: false,
-    pageContextTaskKind: 'none',
     llmPageContextTaskKind: 'none',
-    llmWriteChannel: 'none',
-    hostMutationIntent: false,
+    readDeliverable: DEFAULT_TURN_READ_DELIVERABLE,
+    draftWriteChannel: 'none',
   };
 }
 
 /** turn route LLM 失败时保守回退；执行域由后续 plan/candidate recall 决定。 */
-export function buildTurnRouteFallbackDecision(input: {
+export function buildTurnRouteFallbackDraft(input: {
   reason: string;
-}): TurnRoutingDecision {
+}): TurnRouteDraft {
   return {
     route: 'orchestrated_task',
     method: 'fallback_orchestrated',
     reason: input.reason,
     suggestedSkillId: null,
     pageContextApplies: false,
-    pageContextTaskKind: 'none',
     llmPageContextTaskKind: 'none',
-    llmWriteChannel: 'none',
-    hostMutationIntent: false,
+    readDeliverable: DEFAULT_TURN_READ_DELIVERABLE,
+    draftWriteChannel: 'none',
   };
 }
 

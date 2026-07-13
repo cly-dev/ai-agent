@@ -7,9 +7,12 @@ export type RunStepAuditTier = 'user' | 'internal';
 
 const INTERNAL_REACT_STEP_TYPES = new Set<AgentRunStep['type']>([
   'readiness',
+  'tool_resolve',
   'llm',
+  'param_gate',
   'result_check',
   'plan_sync',
+  'gather_pipeline',
 ]);
 
 export function shouldTagWorkflowReactInternalAudit(state: {

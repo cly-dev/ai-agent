@@ -3,9 +3,15 @@ import type { SplitToolObservationsInput } from '../../graph-tool-observations.u
 import type { SummarizeMemoryScopeMeta } from '../../observation-format.util';
 import type { ToolObservation } from '../types/agent-engine.types';
 import {
+  allowsWorkingMemoryForPlanAnswer,
+  type PlanRunContext,
+} from '../plan/plan-observation-scope.util';
+import { planSummarizeRequiresToolEvidence } from '../plan/plan-summarize-gate.util';
+import {
   completedGatherStepsSatisfiedInObservations,
   filterObservationsForPlanSummarize,
   isPendingPlanAnswerStep,
+  planHasChitchatConstraint,
   type PlanScopedTool,
 } from '../plan/task-plan.util';
 import type { TaskPlanSnapshot } from '../plan/task-plan.types';
@@ -20,11 +26,13 @@ export type SummarizeMemoryScopeReason =
   | 'current_run_gather_complete'
   | 'follow_up_working_memory'
   | 'fresh_topic_current_run_only'
+  | 'replan_requires_fresh_gather'
   | 'working_memory_only'
   | 'current_run_only'
   | 'both_buckets'
   | 'filter_miss'
-  | 'empty';
+  | 'empty'
+  | 'chitchat_no_tool_memory';
 
 export type SummarizeMemoryScope = {
   primarySource: SummarizeMemoryPrimarySource;
@@ -40,6 +48,7 @@ export type ResolveSummarizeMemoryScopeInput = {
   scopedTools?: PlanScopedTool[];
   workflowRun?: WorkflowRunState | null;
   workflowNodeDefs?: WorkflowNodeDef[] | null;
+  planRunContext?: PlanRunContext;
 };
 
 type PlanFilteredSplit = {
@@ -118,6 +127,17 @@ function scopeResult(
   };
 }
 
+function shouldBlockStaleSessionWorkingMemory(input: {
+  plan: TaskPlanSnapshot | null;
+  planRunContext: PlanRunContext;
+}): boolean {
+  return (
+    input.plan != null &&
+    planSummarizeRequiresToolEvidence(input.plan) &&
+    !allowsWorkingMemoryForPlanAnswer(input.planRunContext)
+  );
+}
+
 function withSelectedFilterMiss(
   scope: Omit<SummarizeMemoryScope, 'filterMiss'>,
   filterMiss: boolean,
@@ -129,6 +149,16 @@ function withSelectedFilterMiss(
   });
 }
 
+function staleSessionWorkingMemoryScope(): SummarizeMemoryScope {
+  return scopeResult({
+    primarySource: 'none',
+    workingMemory: [],
+    currentRun: [],
+    reason: 'replan_requires_fresh_gather',
+    filterMiss: true,
+  });
+}
+
 /**
  * 规则版 reflect_memory：在 summarize 前确定「本轮答案只认哪一份 obs」。
  */
@@ -136,9 +166,20 @@ export function resolveSummarizeMemoryScope(
   input: ResolveSummarizeMemoryScopeInput,
 ): SummarizeMemoryScope {
   const plan = input.plan ?? null;
+  const planRunContext = input.planRunContext ?? 'fresh';
   const filtered = planFilteredSplit(input);
   const workingMemory = filtered.workingMemory;
   const currentRun = filtered.currentRun;
+
+  // direct_answer / chitchat：不注入 session tool obs，避免续作分析规则污染闲聊
+  if (planHasChitchatConstraint(plan)) {
+    return scopeResult({
+      primarySource: 'none',
+      workingMemory: [],
+      currentRun: [],
+      reason: 'chitchat_no_tool_memory',
+    });
+  }
 
   if (workingMemory.length === 0 && currentRun.length === 0) {
     const filterMiss =
@@ -173,9 +214,16 @@ export function resolveSummarizeMemoryScope(
     );
   }
 
-  // follow-up analyze/reason：本轮无工具 → 只认 working_memory
-  if (currentRun.length === 0 && plan && isPendingPlanAnswerStep(plan, input.workflowRun, input.workflowNodeDefs)) {
+  // follow-up analyze/reason：仅 resume 续作可用 working_memory；replan 必须重新 gather
+  if (
+    currentRun.length === 0 &&
+    plan &&
+    isPendingPlanAnswerStep(plan, input.workflowRun, input.workflowNodeDefs)
+  ) {
     if (workingMemory.length > 0) {
+      if (shouldBlockStaleSessionWorkingMemory({ plan, planRunContext })) {
+        return staleSessionWorkingMemoryScope();
+      }
       return withSelectedFilterMiss(
         {
           primarySource: 'working_memory',
@@ -218,6 +266,9 @@ export function resolveSummarizeMemoryScope(
   }
 
   if (workingMemory.length > 0 && currentRun.length === 0) {
+    if (shouldBlockStaleSessionWorkingMemory({ plan, planRunContext })) {
+      return staleSessionWorkingMemoryScope();
+    }
     return withSelectedFilterMiss(
       {
         primarySource: 'working_memory',
@@ -229,7 +280,7 @@ export function resolveSummarizeMemoryScope(
     );
   }
 
-  // 两边都有：plan answer 步优先 working_memory（续分析），否则 current_run
+  // 两边都有：plan answer 步优先 working_memory（仅 resume），否则 current_run
   if (plan && isPendingPlanAnswerStep(plan, input.workflowRun, input.workflowNodeDefs)) {
     if (
       completedGatherStepsSatisfiedInObservations({
@@ -248,15 +299,26 @@ export function resolveSummarizeMemoryScope(
         filtered.currentRunFilterMiss,
       );
     }
-    return withSelectedFilterMiss(
-      {
-        primarySource: 'working_memory',
-        workingMemory,
+    if (allowsWorkingMemoryForPlanAnswer(planRunContext) && workingMemory.length > 0) {
+      return withSelectedFilterMiss(
+        {
+          primarySource: 'working_memory',
+          workingMemory,
+          currentRun: [],
+          reason: 'follow_up_working_memory',
+        },
+        filtered.workingMemoryFilterMiss,
+      );
+    }
+    if (planSummarizeRequiresToolEvidence(plan)) {
+      return scopeResult({
+        primarySource: 'none',
+        workingMemory: [],
         currentRun: [],
-        reason: 'follow_up_working_memory',
-      },
-      filtered.workingMemoryFilterMiss,
-    );
+        reason: 'replan_requires_fresh_gather',
+        filterMiss: true,
+      });
+    }
   }
 
   return scopeResult({

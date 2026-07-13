@@ -23,6 +23,7 @@ import { RequestedSkillRunError } from '../skill/requested-skill-run.error';
 import {
   alignDeliverableWithScopedTools,
   buildDeterministicMutationPlanResult,
+  buildOrchestratedTemplatePlanResult,
   buildPlanSnapshot,
   buildRequestedSkillOuterPlanResult,
   buildTaskPlan,
@@ -31,6 +32,10 @@ import {
   shouldReplacePlanWithMutationTemplate,
   shouldUseDeterministicMutationPlan,
 } from './task-plan.util';
+import {
+  resolveToolRoleForPlanStepId,
+  scopedToolSummaryByName,
+} from './plan-step-bind.util';
 import {
   resolvePlanGoal,
   resolveSkillCapabilityConstraints,
@@ -193,10 +198,12 @@ export type NormalizePlanStepsResult = {
 
 export function normalizeOuterLlmPlanSteps(
   raw: z.infer<typeof llmOuterPlanSchema>,
-  scopedRoles: Set<ToolDecisionRole>,
+  scopedToolSummaries: ResolveOuterPlanInput['scopedToolSummaries'],
   availableSkillIds: Set<number>,
   scopedHostToolNames: Set<string>,
 ): NormalizePlanStepsResult {
+  const scopedRoles = new Set(scopedToolSummaries.map((tool) => tool.role));
+  const toolByName = scopedToolSummaryByName(scopedToolSummaries);
   const steps: TaskPlanStep[] = [];
   const droppedHostToolStepIds: string[] = [];
   for (const row of raw.steps) {
@@ -239,8 +246,16 @@ export function normalizeOuterLlmPlanSteps(
       continue;
     }
     let toolRole: ToolDecisionRole | undefined;
+    let pinnedToolNames: string[] | undefined;
+    const scopedTool = toolByName.get(id);
+    if (scopedTool) {
+      pinnedToolNames = [scopedTool.name];
+    }
     if (row.kind === 'tool') {
-      const roleRaw = row.toolRole?.trim();
+      const roleRaw =
+        row.toolRole?.trim() ||
+        scopedTool?.role ||
+        resolveToolRoleForPlanStepId(id, toolByName);
       if (!roleRaw || !isConfiguredToolRole(roleRaw) || roleRaw === 'unknown') {
         return { steps: null, droppedHostToolStepIds };
       }
@@ -260,6 +275,7 @@ export function normalizeOuterLlmPlanSteps(
       kind: row.kind,
       objective,
       ...(toolRole ? { toolRole } : {}),
+      ...(pinnedToolNames ? { pinnedToolNames } : {}),
       ...(row.stopWhen ? { stopWhen: row.stopWhen } : {}),
     });
   }
@@ -271,9 +287,11 @@ export function normalizeOuterLlmPlanSteps(
 
 export function normalizeLlmPlanSteps(
   raw: LlmTaskPlanOutput,
-  scopedRoles: Set<ToolDecisionRole>,
+  scopedToolSummaries: BuildTaskPlanInput['scopedToolSummaries'],
   scopedHostToolNames: Set<string>,
 ): NormalizePlanStepsResult {
+  const scopedRoles = new Set(scopedToolSummaries.map((tool) => tool.role));
+  const toolByName = scopedToolSummaryByName(scopedToolSummaries);
   const steps: TaskPlanStep[] = [];
   const droppedHostToolStepIds: string[] = [];
   for (const row of raw.steps) {
@@ -302,8 +320,16 @@ export function normalizeLlmPlanSteps(
       continue;
     }
     let toolRole: ToolDecisionRole | undefined;
+    let pinnedToolNames: string[] | undefined;
+    const scopedTool = toolByName.get(id);
+    if (scopedTool) {
+      pinnedToolNames = [scopedTool.name];
+    }
     if (row.kind === 'tool') {
-      const roleRaw = row.toolRole?.trim();
+      const roleRaw =
+        row.toolRole?.trim() ||
+        scopedTool?.role ||
+        resolveToolRoleForPlanStepId(id, toolByName);
       if (!roleRaw || !isConfiguredToolRole(roleRaw) || roleRaw === 'unknown') {
         return { steps: null, droppedHostToolStepIds };
       }
@@ -324,6 +350,7 @@ export function normalizeLlmPlanSteps(
       kind: row.kind,
       objective,
       ...(toolRole ? { toolRole } : {}),
+      ...(pinnedToolNames ? { pinnedToolNames } : {}),
       ...(stopWhen ? { stopWhen } : {}),
     });
   }
@@ -449,9 +476,6 @@ export async function tryBuildTaskPlanViaLlm(input: {
   scope: { appClientId: number; agentId: number };
   planInput: ResolveTaskPlanInput;
 }): Promise<ResolveTaskPlanResult | null> {
-  const scopedRoles = new Set(
-    input.planInput.scopedToolSummaries.map((tool) => tool.role),
-  );
   const scopedHostToolNames = new Set(
     (input.planInput.availableHostTools ?? []).map((tool) => tool.name),
   );
@@ -460,7 +484,11 @@ export async function tryBuildTaskPlanViaLlm(input: {
     return null;
   }
 
-  const normalized = normalizeLlmPlanSteps(llmRaw, scopedRoles, scopedHostToolNames);
+  const normalized = normalizeLlmPlanSteps(
+    llmRaw,
+    input.planInput.scopedToolSummaries,
+    scopedHostToolNames,
+  );
   if (!normalized.steps) {
     return null;
   }
@@ -469,7 +497,7 @@ export async function tryBuildTaskPlanViaLlm(input: {
   const plan = buildPlanSnapshot({
     source: 'llm',
     userMessage,
-    goal: resolvePlanGoal({ userMessage }),
+    goal: llmRaw.goal.trim() || resolvePlanGoal({ userMessage }),
     deliverable: alignDeliverableWithScopedTools(
       llmRaw.deliverable as TaskDeliverable,
       input.planInput.scopedToolSummaries,
@@ -479,6 +507,7 @@ export async function tryBuildTaskPlanViaLlm(input: {
       skillDescription: input.planInput.skillDescription,
       skillName: input.planInput.skillName,
     }),
+    scopedToolSummaries: input.planInput.scopedToolSummaries,
   });
 
   return {
@@ -535,9 +564,6 @@ export async function tryBuildOuterPlanViaLlm(input: {
   scope: { appClientId: number; agentId: number };
   planInput: ResolveOuterPlanInput;
 }): Promise<ResolveTaskPlanResult | null> {
-  const scopedRoles = new Set(
-    input.planInput.scopedToolSummaries.map((tool) => tool.role),
-  );
   const availableSkillIds = new Set(
     input.planInput.availableSkills.map((skill) => skill.id),
   );
@@ -550,7 +576,7 @@ export async function tryBuildOuterPlanViaLlm(input: {
   }
   const normalized = normalizeOuterLlmPlanSteps(
     llmRaw,
-    scopedRoles,
+    input.planInput.scopedToolSummaries,
     availableSkillIds,
     scopedHostToolNames,
   );
@@ -561,13 +587,14 @@ export async function tryBuildOuterPlanViaLlm(input: {
   const plan = buildPlanSnapshot({
     source: 'llm',
     userMessage,
-    goal: resolvePlanGoal({ userMessage }),
+    goal: llmRaw.goal.trim() || resolvePlanGoal({ userMessage }),
     deliverable: alignDeliverableWithScopedTools(
       llmRaw.deliverable as TaskDeliverable,
       input.planInput.scopedToolSummaries,
     ),
     steps: normalized.steps,
     constraints: [],
+    scopedToolSummaries: input.planInput.scopedToolSummaries,
   });
   return {
     plan,
@@ -617,6 +644,21 @@ export async function resolveOuterPlan(input: {
       });
     }
     return llmResult;
+  }
+
+  const templateFallback = buildOrchestratedTemplatePlanResult({
+    userMessage,
+    scopedToolSummaries: scopedSummaries,
+    deliverable: alignDeliverableWithScopedTools(
+      'analysis',
+      scopedSummaries,
+    ),
+  });
+  if (templateFallback) {
+    return {
+      ...templateFallback,
+      llmFallbackReason: 'outer_plan_llm_failed_template',
+    };
   }
 
   const plan = buildTaskPlan(outerPlanInputAsBuildTaskPlan(input.planInput));

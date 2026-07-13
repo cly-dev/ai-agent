@@ -256,70 +256,75 @@ Output strict JSON only:
   "reason": string,
   "suggestedSkillId": number | null,
   "pageContextApplies": boolean,
-  "pageContextTaskKind": "analyze" | "answer" | "none",
-  "writeChannel": "none" | "http" | "host"
+  "pageContextTaskKind": "analyze" | "answer" | "mutation" | "none",
+  "readDeliverable": "list" | "analysis"
 }
+
+## readDeliverable
+
+Only affects orchestrated_task read-list plans (runtime picks plan template). Default "analysis" when unsure.
+
+| value | When |
+|-------|------|
+| analysis | User needs a complete or representative dataset: date ranges, filters, statistics, trends, quality review, or any answer that must not rely on a single API page. Engine may auto-fetch remaining pages. |
+| list | User only needs a quick preview / first page / sample rows (e.g. "show me a few", "latest 10"). Single read-list call; no auto-pagination. |
+
+Use "analysis" for fetch+analyze workflows, time-range queries, and when total count may exceed one page. Use "list" only when the user clearly wants a shallow table preview.
 
 ## Routes
 
 | route | When |
 |-------|------|
 | direct_answer | Chit-chat, general knowledge, or topics unrelated to current page skills/host tools. Being on a business page does NOT make every message a page task. |
-| on_page_task | User clearly wants a **host/browser action** (fill draft, sync UI) via availableHostTools or pageHostSkillCandidate. **NOT** for HTTP API submit/reply — use orchestrated_task + writeChannel=http. |
+| on_page_task | User clearly wants a **host/browser action** (fill draft, sync UI) via availableHostTools or pageHostSkillCandidate. **NOT** for HTTP API submit/reply — use orchestrated_task + pageContextTaskKind=mutation. |
 | orchestrated_task | HTTP tools, skill orchestration, **analyzing/answering inline page entity content**, API mutation (submit/reply/remark), multi-step work, or ambiguous skill choice. |
 
-## pageContextApplies (read path only)
+## pageContextApplies
 
 Set true when the user wants to **read/consume** CURRENT page entity data (analyze/summarize/answer using inline content on the page). Use pageContextHint.dataSufficiency — when inlineContentKinds is non-empty and the user wants analysis/answer about that entity, pageContextApplies should be true.
 
-Set false when the user asks for unrelated data, global search, another entity, or smalltalk even if pageContext is present.
+Set false when the user asks for unrelated data, global search, another entity, mutation/submit without inline read, or smalltalk even if pageContext is present.
 
-**pageContextApplies does NOT gate write actions.**
+## pageContextTaskKind
 
-## pageContextTaskKind (read path only)
-
-How the user wants to use **inline page data** when pageContextApplies=true. Otherwise use "none".
+Classifies user intent for routing (read vs mutation). Use "none" only when not analyze, answer, or mutation.
 
 | kind | When |
 |------|------|
-| analyze | User wants analysis/summary/commentary of inline page entity content (no write/submit). |
-| answer | User wants a direct answer using inline page data without server mutation. |
-| none | Not consuming inline page data for read. |
+| analyze | User wants analysis/summary/commentary — including fetch+analyze workflows. No submit/fill/reply. |
+| answer | User wants a direct answer using page or tool data without server mutation. |
+| mutation | User wants **API mutation**: submit reply/remark, update record via HTTP tools, confirm-and-write workflows. Use route=orchestrated_task (or on_page_task only when host fill is explicit). pageContextApplies may be false. |
+| none | Not analyze, answer, or mutation (e.g. generic orchestration, unclear). |
 
-## writeChannel (write path — primary)
-
-| channel | When |
-|---------|------|
-| none | Pure read/analysis/smalltalk; no submit/fill/reply/mutation. |
-| http | User wants **API mutation**: submit reply/remark, update record via HTTP tools, confirm-and-write workflows. Examples: 回复评论, 提交, remark, 更新订单. Use route=orchestrated_task. |
-| host | User wants **browser/host action**: fill form draft, push to page via host tool, stream into UI. Use route=on_page_task when aligned with pageHostSkillCandidate. |
-
-Rules:
-- API reply/submit/remark/edit via backend tools → writeChannel=http (NOT host).
-- Fill draft / push to page / host tool stream → writeChannel=host.
-- requestedSkillExecutionChannels.httpMutation=true and hostPush=false → prefer writeChannel=http for submit/reply intents.
-- requestedSkillExecutionChannels.hostPush=true → writeChannel=host only when user wants page fill/push.
+Write vs read signals (runtime derives execution channel from this table — do NOT output writeChannel):
+- API reply/submit/remark/edit → pageContextTaskKind=mutation + route=orchestrated_task.
+- Fill draft / push to page / host tool stream → route=on_page_task (host path).
+- Pure analysis/summarize → pageContextTaskKind=analyze, NOT mutation.
 
 ## Rules
 - Read userMessage first. intentRecallMatches only narrow HTTP tools — they do NOT prove the user wants a page workflow.
-- pageHostSkillCandidate: use on_page_task + writeChannel=host ONLY when user intent is host/browser action.
+- pageHostSkillCandidate: use on_page_task ONLY when user intent is host/browser fill/push.
 - When pageContextHint.dataSufficiency=inline and pageContextTaskKind=analyze or answer, route MUST be orchestrated_task (not on_page_task).
 - When unsure between on_page_task and orchestrated_task, prefer orchestrated_task.
 - When message is clearly off-domain (e.g. unrelated smalltalk), use direct_answer — even if requestedSkill is set.
-- requestedSkill: user explicitly chose a skill in UI. Use requestedSkillExecutionChannels as capability hint; still classify writeChannel from userMessage.
+- requestedSkill: user explicitly chose a skill in UI. Use requestedSkillExecutionChannels as capability hint; classify pageContextTaskKind from userMessage (analyze vs mutation).
 - suggestedSkillId: requestedSkill.id, pageHostSkillCandidate.id, or availableSkills[].id when route=on_page_task; otherwise null.
 - reason: short English (<=120 chars) for observability.`,
 
-  [PROMPT_KEYS.AGENT_TASK_RESUME_FOLLOWUP]: `You decide whether the user's latest message continues an in-progress agent task, or starts a new unrelated request.
+  [PROMPT_KEYS.AGENT_TASK_RESUME_FOLLOWUP]: `You decide how the user's latest message relates to an in-progress agent task.
 
-Inputs may include <active_task> (pending steps, goal), <recent_episodes>, and the latest user message.
+Inputs may include active task goal, pending steps, session memory, and the latest user message.
 
-- continueActiveTask=true: follow-up, clarification, "continue", same goal, or refining filters for the same task.
-- continueActiveTask=false: new topic, different business goal, unrelated smalltalk, or explicit task switch.
+Choose exactly one decision:
+- resume: continue the same task and same pending steps (e.g. "continue", clarification, supplying missing params for the current step).
+- replan_same_goal: same business goal, but rebuild the plan (e.g. change analysis angle, refine filters, retry with a different approach).
+- new_topic: unrelated request, different business goal, or explicit task switch.
 
 Reply with strict JSON only:
-{"continueActiveTask": boolean, "reason": string}
-reason should be short (<=40 chars).`,
+{"decision": "resume" | "replan_same_goal" | "new_topic", "reason": string}
+reason should be short (<=40 chars).
+
+Legacy field continueActiveTask is deprecated; always use decision.`,
 
   [PROMPT_KEYS.AGENT_SUMMARIZE_TOOL_FULL]: `You are a response formatter for tool results.
 The user requested FULL / detailed information.
@@ -416,17 +421,6 @@ ${AGENT_SUMMARIZE_TABLE_GUARDRAILS_ZH}`,
 - 禁止输出：pipe 表格行、JSON、observation 原文、API 字段名、操作说明、确认提示、元说明套话。
 - 实体数据已在 observations / page_context 中：禁止 echo 整行 TSV 记录。
 - 使用与用户请求相同的语言。`,
-
-  [PROMPT_KEYS.AGENT_READINESS_SLOT_CHECK]: `You are the turn readiness slot checker for a business agent.
-Given the user message, plan objective, required business field names, and optional session observation summary, decide whether the agent can proceed to tool execution WITHOUT guessing parameter values.
-
-Rules:
-- Output ONLY one JSON object: {"ready": boolean, "missingFields": [{"name": string, "hint": string}]}
-- Set ready=true if every required field can be inferred confidently from the user message OR session observation summary
-- For follow-up messages (analyze/reply above data) when session summary shows the entity was already fetched, set ready=true
-- Set ready=false only when required fields are genuinely missing; list each missing field with a short userFacing hint in the user's language
-- Do NOT invent field values; do NOT guess IDs
-- missingFields may be empty when ready=true`,
 
   [PROMPT_KEYS.AGENT_RESPOND_CLARIFICATION]: `Generate a concise clarification reply when required business parameters are missing.
 ${AGENT_SUMMARIZE_STREAMING_OUTPUT_ZH}

@@ -11,6 +11,7 @@ import Redis from 'ioredis';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { PrismaClient } from '../../generated/prisma/client';
+import { buildIoRedisClientOptions } from '../../src/core/memory/redis/redis-client-options.util';
 import {
   DEFAULT_RUNTIME_PROMPT_PUBLISH_KEYS,
   publishGlobalPromptsFromDefaults,
@@ -85,7 +86,8 @@ async function syncPublishedRowsToRedis(
   const rows = await prisma.promptTemplate.findMany({
     where: { id: { in: templateIds } },
   });
-  const redis = new Redis(redisUrl, { maxRetriesPerRequest: 1, lazyConnect: true });
+  const password = process.env.REDIS_PASSWORD?.trim() || undefined;
+  const redis = new Redis(redisUrl, buildIoRedisClientOptions({ password }));
   try {
     await redis.connect();
     for (const row of rows) {

@@ -9,6 +9,8 @@ export * from './goa/session-goa.types';
 export * from './goa/session-goa.store';
 export * from './goa/session-goa.service';
 export * from './resume/session-resume-gate.service';
+export * from './resume/session-resume-decision.types';
+export * from './resume/session-resume-followup.util';
 export * from './user/user-memory.store';
 export * from './context/session-history-compression.service';
 export * from './context/session-context-trim.util';

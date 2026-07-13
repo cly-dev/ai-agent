@@ -4,6 +4,7 @@ import type { TurnWriteChannel } from './turn-write-channel.types';
 import type { TurnExecutionRoute } from '../../../host-bridge/page-context-execution-policy.util';
 import type { TurnPlanSkillSelect } from './turn-execution-contract.types';
 import type { TurnRespondRequest } from './turn-respond.types';
+import type { TurnTaskKind } from './turn-task-kind.types';
 
 export type SkillIntentMismatchCode =
   | 'read_intent_vs_http_skill'
@@ -28,6 +29,7 @@ export type SkillCapabilityProfile = {
 
 /** 结构化用户意图（只读视图，供 Skill 对齐）。 */
 export type TurnUserIntent = {
+  taskKind: TurnTaskKind;
   route: TurnExecutionRoute;
   readPlanActive: boolean;
   pageContextPlan: PageContextPlanKind;

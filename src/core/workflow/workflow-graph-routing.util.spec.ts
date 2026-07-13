@@ -42,7 +42,6 @@ function baseState(
     pageContext: null,
     scopedHostTools: [],
     scopedHostLangChainTools: [],
-    turnRoutingDecision: null,
     turnExecutionContract: null,
     workflowAwaitingReact: false,
     ...overrides,

@@ -8,21 +8,22 @@ import { SessionTaskResumeFollowUpService } from './session-task-resume-followup
 import {
   isActiveTaskAwaitingWriteConfirmation,
   type SessionGoaPayload,
-  type StoredTaskPlan,
 } from '../goa/session-goa.types';
+import {
+  defaultFreshResumeDecision,
+  type SessionResumeDecision,
+} from './session-resume-decision.types';
 
-import type { WorkflowRunState } from '../../workflow/workflow.types';
-
-export type SessionResumeDecision =
-  | {
-      action: 'resume';
-      plan: StoredTaskPlan;
-      followUpReason: string | null;
-      resumedFromRunId: number | null;
-      workflowRun?: WorkflowRunState | null;
-    }
-  | { action: 'fresh' }
-  | { action: 'abandon_and_fresh' };
+export type {
+  PlanGoalStrategy,
+  SessionResumeDecision,
+  TaskResumeFollowUpKind,
+} from './session-resume-decision.types';
+export {
+  defaultFreshResumeDecision,
+  goalStrategyFromResumeDecision,
+  resumeDecisionKeepsActiveTask,
+} from './session-resume-decision.types';
 
 @Injectable()
 export class SessionResumeGateService {
@@ -53,12 +54,20 @@ export class SessionResumeGateService {
       return { action: 'abandon_and_fresh' };
     }
 
+    if (!activeTask) {
+      return defaultFreshResumeDecision();
+    }
+
     const resumeIntentKind = classifyIntentKind(
       input.latestUserMessage,
       loadSmallTalkHints(),
     );
     if (!this.goaService.shouldResumeTaskPlan(input.goa, resumeIntentKind)) {
-      return { action: 'fresh' };
+      return {
+        action: 'fresh',
+        goalStrategy: 'use_turn_message',
+        followUpReason: `intent_${resumeIntentKind}`,
+      };
     }
 
     const followUp = await this.taskResumeFollowUp.classify({
@@ -69,21 +78,37 @@ export class SessionResumeGateService {
       goa: input.goa,
     });
 
-    if (followUp && !followUp.continueActiveTask) {
-      await this.goaService.abandonActiveTask(input.sessionId);
-      return { action: 'abandon_and_fresh' };
-    }
     if (!followUp) {
-      return { action: 'fresh' };
+      return {
+        action: 'fresh',
+        goalStrategy: 'use_turn_message',
+        followUpReason: 'follow_up_unavailable',
+      };
     }
 
-    return {
-      action: 'resume',
-      plan: activeTask!.plan,
-      followUpReason:
-        typeof followUp.reason === 'string' ? followUp.reason : null,
-      resumedFromRunId: activeTask!.lastRunId,
-      workflowRun: activeTask!.workflowRun ?? null,
-    };
+    const reason =
+      typeof followUp.reason === 'string' ? followUp.reason : null;
+
+    switch (followUp.decision) {
+      case 'new_topic':
+        await this.goaService.abandonActiveTask(input.sessionId);
+        return { action: 'abandon_and_fresh' };
+      case 'replan_same_goal':
+        return {
+          action: 'fresh_same_goal',
+          followUpReason: reason,
+          goalStrategy: 'inherit_active_task',
+        };
+      case 'resume':
+      default:
+        return {
+          action: 'resume',
+          plan: activeTask.plan,
+          followUpReason: reason,
+          resumedFromRunId: activeTask.lastRunId,
+          workflowRun: activeTask.workflowRun ?? null,
+          goalStrategy: 'inherit_active_task',
+        };
+    }
   }
 }

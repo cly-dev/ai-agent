@@ -223,7 +223,6 @@ export function seedWorkflowGraphState(input?: {
     pageContext: input?.pageContext ?? { page: 'home' },
     scopedHostTools: [],
     scopedHostLangChainTools: [],
-    turnRoutingDecision: null,
     turnExecutionContract: null,
     workflowRun,
     workflowNodeDefs: nodes,
@@ -345,7 +344,18 @@ export function seedFetchSummarizeWorkflowState(): AgentGraphState {
     scopedAllowedToolIds: [scopedTool.id],
     toolObservations: [mockFetchToolObservation()],
     turnExecutionContract: {
-      routing: { route: 'orchestrated_task', reason: 'test' },
+      taskKind: 'orchestrated_read',
+      routeMeta: {
+        method: 'llm',
+        reason: 'test',
+        suggestedSkillId: null,
+        pageContextApplies: false,
+        pageContextTaskKind: 'none',
+        llmPageContextTaskKind: 'none',
+        readDeliverable: 'analysis',
+      },
+      skillChannelAnchored: false,
+      terminalRespond: null,
       plan: {
         enabled: true,
         scopedToolsSource: 'intent',

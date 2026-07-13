@@ -50,7 +50,7 @@ import { bundleFromAllowedRunInput } from '../../turn/turn-scoped-tools.util';
  * Chat LangGraph 主轴：
  * turnRoute → workflow_init → execute_node ↔ workflow_react → workflow_advance → summarize
  * 旁路：tools / resultCheck（写确认 resume、summarize 续跑）
- * plan / readiness / llm 不在顶层注册；plan 在 workflow_init 内，HTTP tool 候选召回在 ReAct 的具体 tool 步内。
+ * plan / readiness / tool_resolve / param_gate / llm 不在顶层注册；plan 在 workflow_init 内，HTTP 候选在 tool_resolve 收窄。
  */
 function withRunCancellation(
   deps: AgentGraphDeps,
@@ -105,12 +105,12 @@ export async function buildAndRunAgentGraph(
 
   let sessionGoa: SessionGoaPayload | null =
     input.resumeFromWriteConfirm || input.resumeFromWriteGateRetry
-    ? null
-    : await deps.goaService.ensurePayload(input.sessionId);
+      ? null
+      : await deps.goaService.ensurePayload(input.sessionId);
   const sessionPriorObservations =
     input.resumeFromWriteConfirm || input.resumeFromWriteGateRetry
-    ? []
-    : deps.goaService.buildPriorToolObservationsForGraph(sessionGoa);
+      ? []
+      : deps.goaService.buildPriorToolObservationsForGraph(sessionGoa);
 
   const ctx = {
     input,
@@ -286,8 +286,8 @@ export async function buildAndRunAgentGraph(
   const app = graph.compile();
   const skipTurnRouteContract =
     input.resumeFromWriteConfirm || input.resumeFromWriteGateRetry
-    ? buildWriteConfirmResumeContract('resume_from_write_confirm')
-    : null;
+      ? buildWriteConfirmResumeContract('resume_from_write_confirm')
+      : null;
   const allowedToolsBundle = bundleFromAllowedRunInput({
     tools: input.tools,
     langChainTools: input.langChainTools,
@@ -304,6 +304,8 @@ export async function buildAndRunAgentGraph(
     status: AgentRunStatus.running,
     finished: false,
     ...allowedToolsBundle,
+    planStepToolCandidates: [],
+    planStepToolCandidateStrategy: null,
     intentScopedToolsBundle: allowedToolsBundle,
     toolProfilesByName: input.toolProfilesByName,
     hasExpandedOnce: false,
@@ -325,7 +327,6 @@ export async function buildAndRunAgentGraph(
     pageContext: input.pageContext ?? null,
     scopedHostTools: [],
     scopedHostLangChainTools: [],
-    turnRoutingDecision: null,
     turnExecutionContract: skipTurnRouteContract,
     workflowRun: null,
     workflowNodeDefs: undefined,

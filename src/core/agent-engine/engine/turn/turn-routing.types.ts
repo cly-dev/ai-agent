@@ -1,5 +1,4 @@
 import type { SkillExecutionChannels } from '../../../workflow/derive-skill-execution-channels.util';
-import type { TurnWriteChannel } from './turn-write-channel.types';
 import type {
   PageContextTaskKind,
   TurnPageReadKind,
@@ -11,25 +10,40 @@ export type TurnRouteKind =
   | 'on_page_task'
   | 'orchestrated_task';
 
+/** orchestrated_read Plan 模板：单页列表 vs 全量拉取+分析。 */
+export type TurnReadDeliverable = 'list' | 'analysis';
+
+export const DEFAULT_TURN_READ_DELIVERABLE: TurnReadDeliverable = 'analysis';
+
 export type TurnRoutingMethod =
   | 'llm'
   | 'fallback_orchestrated';
 
-export type TurnRoutingDecision = {
+/**
+ * Route LLM 原始草稿（未经 pageContext 评估与 TaskKind 校正）。
+ */
+export type TurnRouteDraft = {
   route: TurnRouteKind;
   method: TurnRoutingMethod;
   reason: string;
   suggestedSkillId: number | null;
-  /** 用户是否在消费当前页 / 当前实体上下文（route LLM + 结构化兜底）。 */
   pageContextApplies: boolean;
-  /** 读路径最终态；写意图时由 finalizeTurnRoutingDecision 压制为 none。 */
-  pageContextTaskKind: TurnPageReadKind;
-  /** Route LLM 原始 pageContextTaskKind（可含 mutation）。 */
   llmPageContextTaskKind: PageContextTaskKind;
-  /** 写路径通道（route LLM + 结构化兜底；skill 锚定前为 draft）。 */
-  llmWriteChannel: TurnWriteChannel;
-  /** @deprecated 派生字段：llmWriteChannel === 'host'；保留供 host_tool policy 与审计兼容。 */
-  hostMutationIntent: boolean;
+  readDeliverable: TurnReadDeliverable;
+  draftWriteChannel: import('./turn-write-channel.types').TurnWriteChannel;
+};
+
+/**
+ * 不可由 taskKind 推导的路由元数据（契约内与 taskKind 并列存储，不重复 route/writeChannel）。
+ */
+export type TurnRouteMeta = {
+  method: TurnRoutingMethod;
+  reason: string;
+  suggestedSkillId: number | null;
+  pageContextApplies: boolean;
+  pageContextTaskKind: TurnPageReadKind;
+  llmPageContextTaskKind: PageContextTaskKind;
+  readDeliverable: TurnReadDeliverable;
 };
 
 export type TurnRouteLlmInput = {
@@ -43,8 +57,6 @@ export type TurnRouteLlmInput = {
   }>;
   availableHostTools: Array<{ name: string; description: string }>;
   pageHostSkillCandidate: { id: number; name: string } | null;
-  /** C 端显式点选 Skill 时传入；仍须结合 userMessage 判定 route。 */
   requestedSkill: { id: number; name: string; description: string | null } | null;
-  /** 显式 Skill 的 Workflow 推导通道（供 route LLM 参考，非强制）。 */
   requestedSkillExecutionChannels?: SkillExecutionChannels | null;
 };
