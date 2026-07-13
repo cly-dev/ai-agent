@@ -211,6 +211,7 @@ export type HostFillLlmStreamResult = {
   appendCount: number;
   routedMessageChars: number;
   rawAccumulatedLen: number;
+  rawAccumulatedText: string;
   reconciledFromStreamResult: boolean;
 };
 
@@ -262,6 +263,7 @@ export async function runHostFillLlmStream(input: {
     appendCount: input.textSession.appendCount,
     routedMessageChars: input.textSession.routedMessageChars,
     rawAccumulatedLen: input.textSession.getRawAccumulatedLength(),
+    rawAccumulatedText: input.textSession.getRawAccumulatedText(),
     reconciledFromStreamResult,
   };
 }
@@ -516,7 +518,8 @@ async function runPlanReasonHostMachineLayerObservation(
 }
 
 /**
- * reason 机器层：始终 stream LLM；能 dispatch 则 DSL fill_stream，否则仅 observation。
+ * reason 机器层：始终 stream LLM；能 fill_stream 则 DSL append，否则 observation。
+ * 结构化 instant HostTool 不走本层 prose fill（由 tool-call / PageAction instant 交付）。
  */
 export async function runPlanReasonHostMachineLayer(
   deps: PlanReasonHostMachineLayerDeps,
@@ -528,7 +531,7 @@ export async function runPlanReasonHostMachineLayer(
   });
   if (fillTools.length === 0) {
     deps.logger.warn(
-      `plan reason host fill skipped: no streamable host tool fields runId=${context.runId}`,
+      `plan reason host fill skipped: no fill_stream host tools (structured tools use instant dispatch elsewhere) runId=${context.runId}`,
     );
     return { fills: [], delivery: 'observation' };
   }

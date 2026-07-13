@@ -4,15 +4,19 @@ import {
 } from '@nestjs/common';
 import {
   canDispatchHostAction,
+  resolveHostToolDeliveryContract,
   type HostToolDecisionDefinition,
+  type HostToolDeliveryProfile,
+  type HostToolProduceMode,
 } from '../host-bridge';
-import { resolveStreamablePathFromHostTool } from '../host-bridge/host-tool-stream-target.util';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 import type { HostToolDetailRow } from '../../modules/host-tool/host-tool.types';
 
 export type ResolvedPageActionHostTool = {
   definition: HostToolDecisionDefinition;
   streamablePath: string | null;
+  delivery: HostToolDeliveryProfile;
+  produceMode: HostToolProduceMode;
 };
 
 export function hostToolRowToDecisionDefinition(
@@ -69,7 +73,7 @@ export function resolvePageActionHostTool(
     });
   }
   const definition = hostToolRowToDecisionDefinition(hostTool);
-  const streamablePath = resolveStreamablePathFromHostTool(definition);
+  const contract = resolveHostToolDeliveryContract(definition);
   const hostPageScope = hostTool.hostPage?.scope ?? null;
   if (
     !canDispatchHostAction({
@@ -82,5 +86,10 @@ export function resolvePageActionHostTool(
       message: 'pageContext anchor is insufficient to dispatch host action',
     });
   }
-  return { definition, streamablePath };
+  return {
+    definition,
+    streamablePath: contract.streamablePath,
+    delivery: contract.delivery,
+    produceMode: contract.produceMode,
+  };
 }

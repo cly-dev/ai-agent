@@ -1,13 +1,22 @@
 import type { HostActionHostToolInvocation } from '../host-bridge/host-action.types';
-import { resolvePlanReasonHostFillTools } from '../host-bridge/host-tool-stream-target.util';
+import { dispatchHostActionInstant } from '../host-bridge/host-action-instant-dispatch.util';
+import { parseHostToolArgsFromLlmText } from '../host-bridge/host-tool-args-from-llm.util';
+import {
+  hostToolContractWillDispatchLive,
+  resolveHostToolDeliveryContract,
+} from '../host-bridge/host-tool-delivery-contract.util';
+import { isHostToolStreamEnabled } from '../host-bridge/host-tool-stream-env.util';
+import { HostToolStreamSession } from '../host-bridge/host-tool-stream-session.util';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 import type { LlmService } from '../llm/llm.service';
 import type { LlmChatMessage } from '../llm/llm.types';
+import { buildPlanHostFillsFromMachineText } from '../agent-engine/engine/main/plan-present/plan-reason-host-machine-layer.util';
 import {
   PAGE_ACTION_STREAM_REASON,
   buildPageActionStreamId,
 } from './page-action.constants';
 import {
+  createInlineHostActionPublisher,
   endInlineSseResponse,
   writePageActionLifecycle,
 } from './page-action-inline-sse.util';
@@ -28,9 +37,6 @@ import {
 } from './page-action-fill-debug.util';
 import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
 import { executePageActionLlmDslStream } from './page-action-llm-dsl-stream.util';
-import { HostToolStreamSession } from '../host-bridge/host-tool-stream-session.util';
-import { buildPlanHostFillsFromMachineText } from '../agent-engine/engine/main/plan-present/plan-reason-host-machine-layer.util';
-import { createInlineHostActionPublisher } from './page-action-inline-sse.util';
 
 export type PageActionHostFillExecuteInput = {
   actionRunId: number;
@@ -88,10 +94,11 @@ export async function executePageActionHostFill(
 ): Promise<PageActionHostFillExecuteResult> {
   const recorder = input.stepRecorder ?? new PageActionRunStepRecorder();
   const terminalLifecycle = input.terminalLifecycle ?? 'self';
-  const fillTools = resolvePlanReasonHostFillTools({
-    hostTools: [input.hostTool.definition],
-    allowedToolNames: new Set([input.hostTool.definition.name]),
-  });
+  const contract = resolveHostToolDeliveryContract(input.hostTool.definition);
+  const willDispatchLive = hostToolContractWillDispatchLive(
+    contract,
+    isHostToolStreamEnabled(),
+  );
   const streamId = buildPageActionStreamId({
     actionRunId: input.actionRunId,
     actionKey: input.actionKey,
@@ -121,7 +128,7 @@ export async function executePageActionHostFill(
 
   let dslOutcome: 'dispatched' | 'failed' | 'skipped' = 'skipped';
   let fillText = '';
-  const canDispatchDsl = fillTools.length > 0;
+  let displayText = '';
 
   try {
     llmCallCount += 1;
@@ -151,6 +158,7 @@ export async function executePageActionHostFill(
 
     model = streamResult.model;
     fillText = streamResult.fillText;
+    displayText = streamResult.displayText;
     appendCount = streamResult.appendCount;
     promptTokens = streamResult.promptTokens;
     completionTokens = streamResult.completionTokens;
@@ -164,7 +172,7 @@ export async function executePageActionHostFill(
       appendCount,
       rawAccumulatedLen: fillText.length,
       rawPreview: truncateForPageActionLog(fillText, 2000),
-      streamResultPreview: truncateForPageActionLog(fillText, 2000),
+      streamResultPreview: truncateForPageActionLog(displayText, 2000),
       streamMeta: undefined,
     });
 
@@ -173,9 +181,9 @@ export async function executePageActionHostFill(
         probe,
         fillTextLen: fillText.length,
         appendCount,
-        fillTextPreview: truncateForPageActionLog(fillText, 500),
+        fillTextPreview: truncateForPageActionLog(displayText, 500),
       });
-    } else if (canDispatchDsl && fillText.trim().length === 0) {
+    } else if (willDispatchLive && fillText.trim().length === 0) {
       logPageActionFillEmpty({
         probe,
         model,
@@ -194,7 +202,8 @@ export async function executePageActionHostFill(
         {
           phase: 'completed',
           ...lifecycleBase(input, streamId),
-          text: fillText,
+          // 展示用 displayText；权威 JSON 仍在返回的 fillText 里落库
+          text: displayText || fillText,
           dslOutcome,
         },
         recorder,
@@ -226,7 +235,7 @@ export async function executePageActionHostFill(
   return {
     fillText,
     dslOutcome,
-    streamId: canDispatchDsl ? streamId : null,
+    streamId: willDispatchLive ? streamId : null,
     model,
     promptTokens,
     completionTokens,
@@ -279,50 +288,91 @@ export async function replayPageActionInlineStream(input: {
   });
 
   const fillText = input.fillText?.trim() ?? '';
+  let replayDslOutcome = input.dslOutcome;
 
   if (
     fillText &&
     input.dslOutcome === 'dispatched' &&
     input.hostTool
   ) {
-    const fillTools = resolvePlanReasonHostFillTools({
-      hostTools: [input.hostTool.definition],
-      allowedToolNames: new Set([input.hostTool.definition.name]),
-    });
-    if (fillTools.length > 0) {
+    const contract = resolveHostToolDeliveryContract(input.hostTool.definition);
     const publish = createInlineHostActionPublisher(sink, {
       onPayload: (payload) => {
         recorder.recordHostActionPayload(payload);
       },
     });
-    const streamSession = new HostToolStreamSession({
-      publish,
-      sessionId: `page-action:${input.actionRunId}`,
-      pageContext: input.pageContext ?? {},
-      runId: input.actionRunId,
-      turnId: input.actionRunId,
-      reason: PAGE_ACTION_STREAM_REASON,
-      generation: input.generation,
-    });
-    streamSession.begin({
-      streamId,
-      tools: fillTools,
-      reason: PAGE_ACTION_STREAM_REASON,
-    });
-    streamSession.appendFillChunk(fillText);
-    const fills = buildPlanHostFillsFromMachineText({
-      text: fillText,
-      fillTools,
-      allowedToolNames: new Set([input.hostTool.definition.name]),
-    });
-    if (fills.length > 0) {
-      streamSession.finalize({
-        hostTools: toHostToolInvocations(fills),
+
+    if (contract.delivery === 'fill_stream' && contract.streamablePath) {
+      const fillTools = [
+        {
+          name: input.hostTool.definition.name,
+          streamablePath: contract.streamablePath,
+        },
+      ];
+      const streamSession = new HostToolStreamSession({
+        publish,
+        sessionId: `page-action:${input.actionRunId}`,
+        pageContext: input.pageContext ?? {},
+        runId: input.actionRunId,
+        turnId: input.actionRunId,
+        reason: PAGE_ACTION_STREAM_REASON,
+        generation: input.generation,
+      });
+      streamSession.begin({
+        streamId,
+        tools: fillTools,
         reason: PAGE_ACTION_STREAM_REASON,
       });
-    } else {
-      streamSession.abort({ emitSessionEnd: streamSession.hasBegun });
-    }
+      streamSession.appendFillChunk(fillText);
+      const fills = buildPlanHostFillsFromMachineText({
+        text: fillText,
+        fillTools,
+        allowedToolNames: new Set([input.hostTool.definition.name]),
+      });
+      if (fills.length > 0) {
+        streamSession.finalize({
+          hostTools: toHostToolInvocations(fills),
+          reason: PAGE_ACTION_STREAM_REASON,
+        });
+      } else {
+        streamSession.abort({ emitSessionEnd: streamSession.hasBegun });
+        replayDslOutcome = 'failed';
+        recorder.record({
+          type: 'dsl',
+          name: 'stream.replay_failed',
+          status: 'failed',
+          detail: { reason: 'empty_fill_on_replay', delivery: 'fill_stream' },
+        });
+      }
+    } else if (contract.delivery === 'instant') {
+      const args = parseHostToolArgsFromLlmText({
+        text: fillText,
+        argsSchema: input.hostTool.definition.argsSchema,
+      });
+      if (args) {
+        dispatchHostActionInstant(publish, `page-action:${input.actionRunId}`, {
+          pageContext: input.pageContext,
+          runId: input.actionRunId,
+          turnId: input.actionRunId,
+          hostTools: [{ name: input.hostTool.definition.name, args }],
+          reason: PAGE_ACTION_STREAM_REASON,
+          streamId,
+          generation: input.generation,
+        });
+      } else {
+        // 避免假 dispatched：重放未能下发 host_action 时降级并记账
+        replayDslOutcome = 'failed';
+        recorder.record({
+          type: 'dsl',
+          name: 'instant.replay_failed',
+          status: 'failed',
+          detail: {
+            reason: 'structured_args_parse_or_validate_failed',
+            delivery: 'instant',
+            fillTextLen: fillText.length,
+          },
+        });
+      }
     }
   }
 
@@ -332,7 +382,7 @@ export async function replayPageActionInlineStream(input: {
       phase: 'completed',
       ...lifecycle,
       text: fillText,
-      dslOutcome: input.dslOutcome,
+      dslOutcome: replayDslOutcome,
     },
     recorder,
   );

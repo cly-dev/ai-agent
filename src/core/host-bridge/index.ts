@@ -45,6 +45,23 @@ export {
   resolveHostToolStringArgKey,
 } from './host-tool-string-arg.util';
 export {
+  hostToolArgsSchemaIsStructured,
+  hostToolContractDispatchesDsl,
+  hostToolContractWillDispatchLive,
+  pickHostToolProseStreamArgKey,
+  resolveHostToolDeliveryContract,
+  resolveHostToolDeliveryContracts,
+  type HostToolDeliveryContract,
+  type HostToolDeliveryProfile,
+  type HostToolProduceMode,
+} from './host-tool-delivery-contract.util';
+export {
+  buildHostToolArgsDisplayText,
+  extractJsonObjectFromLlmText,
+  parseHostToolArgsFromLlmText,
+  softValidateHostToolArgsAgainstSchema,
+} from './host-tool-args-from-llm.util';
+export {
   HOST_TOOL_STREAM_OBSERVATION_NAME,
   buildHostToolStreamObservation,
   findHostToolStreamObservation,

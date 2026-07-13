@@ -22,5 +22,7 @@ export function buildPageActionBuiltinShowResultHostTool(): ResolvedPageActionHo
       isRequired: false,
     },
     streamablePath: PAGE_ACTION_BUILTIN_SHOW_RESULT_TEXT_PATH,
+    delivery: 'fill_stream',
+    produceMode: 'prose_stream',
   };
 }

@@ -1,5 +1,5 @@
 import type { HostToolDecisionDefinition } from './host-tool-decision.types';
-import { pickHostToolStringArgKey } from './host-tool-string-arg.util';
+import { resolveHostToolDeliveryContract } from './host-tool-delivery-contract.util';
 import { isHostToolStreamEnabled } from './host-tool-stream-env.util';
 
 export const HOST_TOOL_STREAM_REASON = 'plan_host_tool_stream' as const;
@@ -28,26 +28,17 @@ export function primaryHostToolStreamTool(
   return target.tools[0]!;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** 从 Host Tool argsSchema 推断可 append 的 string 字段路径。 */
+/** 与交付契约一致：仅 fill_stream 返回可 append 路径。 */
 export function resolveStreamablePathFromHostTool(
   tool: HostToolDecisionDefinition,
 ): string | null {
-  const schema = tool.argsSchema;
-  if (!isRecord(schema)) {
-    return null;
-  }
-  const properties = schema.properties;
-  if (!isRecord(properties)) {
-    return null;
-  }
-  return pickHostToolStringArgKey(properties);
+  return resolveHostToolDeliveryContract(tool).streamablePath;
 }
 
-/** 为 plan_host_fill 解析各 tool 的填表字段（与 SSE 无关）。 */
+/**
+ * 为 plan_host_fill / fill_stream 解析可 arg.append 的工具。
+ * 结构化 instant 工具不在此列（由 tool-call 或 PageAction instant 路径交付）。
+ */
 export function resolvePlanReasonHostFillTools(input: {
   hostTools: HostToolDecisionDefinition[];
   allowedToolNames: Set<string>;
