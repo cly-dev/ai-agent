@@ -1,0 +1,41 @@
+import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
+import type { AgentChatPageContext } from '../host-bridge/page-context.types';
+import type { LlmService } from '../llm/llm.service';
+import type { LlmChatMessage } from '../llm/llm.types';
+import type { SummarizeNodeInput } from '../workflow/workflow-node-input.types';
+import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
+import type { ResolvedPageActionSummarizeHostTool } from './page-action-summarize-host-tool.util';
+export type PageWorkflowSummarizeStreamLifecycle = 'terminal' | 'none';
+export type PageWorkflowSummarizeResult = {
+    summaryText: string;
+    dslOutcome: 'dispatched' | 'failed' | 'skipped' | null;
+    model: string | null;
+    promptTokens: number | null;
+    completionTokens: number | null;
+    emittedLifecycle: boolean;
+};
+export declare function shouldEmitPageSummarizeLifecycle(input: {
+    mode: SummarizeNodeInput['mode'];
+    existingFillText: string;
+    summaryText: string;
+    responseWritable: boolean;
+}): boolean;
+export declare function executePageWorkflowSummarize(input: {
+    llmService: LlmService;
+    messages: LlmChatMessage[];
+    nodeInput: SummarizeNodeInput;
+    sseSink: PageActionSseSink;
+    actionRunId: number;
+    actionKey: string;
+    generation: number;
+    clientActionId?: string | null;
+    existingFillText: string;
+    pageContext: AgentChatPageContext | null;
+    summarizeHostTool: ResolvedPageActionSummarizeHostTool;
+    stepRecorder?: PageActionRunStepRecorder;
+    streamLifecycle?: PageWorkflowSummarizeStreamLifecycle;
+    streamIdSegment?: string | null;
+    systemPrompt?: string | null;
+    objectivePrefix?: string | null;
+    nodeObjective?: string | null;
+}): Promise<PageWorkflowSummarizeResult>;
