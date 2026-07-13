@@ -1,0 +1,77 @@
+import type { AgentRunStep, ToolObservation } from '../types/agent-engine.types';
+import { planObservationBucketsFromState, type PlanObservationBuckets, type PlanRunContext } from './plan-observation-scope.util';
+import type { TaskPlanAdvanceResult, TaskPlanSnapshot } from './task-plan.types';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
+import type { OuterPlanSkillSelectMethod } from './outer-plan-skill-resolve.util';
+import { type PlanScopedTool } from './task-plan.util';
+export type TaskPlanSyncResult = {
+    taskPlan: TaskPlanSnapshot | null;
+    planAdvance: TaskPlanAdvanceResult | null;
+    workflowRun?: WorkflowRunState;
+    workflowAwaitingReact?: boolean;
+};
+export type PlanSyncSite = 'llm' | 'result_check' | 'readiness';
+export type SyncTaskPlanBeforeReActInput = {
+    taskPlan: TaskPlanSnapshot | null | undefined;
+    scopedTools?: PlanScopedTool[];
+    skillConfig?: unknown;
+    runOwnedObservations?: ToolObservation[];
+    observationBuckets?: PlanObservationBuckets;
+    pageContextEntityId?: string | null;
+    workflowRun?: WorkflowRunState | null;
+    workflowNodeDefs?: WorkflowNodeDef[] | null;
+    workflowAwaitingReact?: boolean;
+};
+export declare function syncTaskPlanBeforeReAct(input: SyncTaskPlanBeforeReActInput): TaskPlanSyncResult;
+export declare function buildPlanRunStepOutput(input: {
+    taskPlan: TaskPlanSnapshot;
+    method: string;
+    llmFallbackReason?: string | null;
+    droppedHostToolStepIds?: string[];
+    prunedHostToolStepIds?: string[];
+    availableHostToolCount: number;
+    availableHostToolNames: string[];
+    availableSkillIds: number[];
+    requestedSkillId?: number | null;
+    requestedSkillEnforced?: boolean;
+    sessionWorkingMemoryIncluded?: boolean;
+    skillFrameExpanded?: boolean;
+    outerFrameCount?: number;
+    outerSkillSelectMethod?: OuterPlanSkillSelectMethod | null;
+    autoSelectedSkillId?: number | null;
+    turnRoute?: string | null;
+    turnSkillSelect?: string | null;
+    pageContextPlan?: string | null;
+    pageContextApplies?: boolean;
+    pageContextTaskKind?: string | null;
+    pageContextDataSufficiency?: string | null;
+    planGoalInherited?: boolean;
+    planGoal?: string | null;
+    planGoalStrategy?: string | null;
+    sessionResumeAction?: string | null;
+    sessionResumeFollowUpReason?: string | null;
+}): Record<string, unknown>;
+export declare function buildSkillFrameExpandedPlanSyncStep(input: {
+    step: number;
+    taskPlan: TaskPlanSnapshot;
+    availableHostToolCount: number;
+    availableHostToolNames: string[];
+    frameCountBefore: number;
+    planRunContext?: PlanRunContext;
+}): AgentRunStep;
+export declare function buildPlanSyncRunStep(input: {
+    step: number;
+    planAdvance: TaskPlanAdvanceResult;
+    fromStepId: string | null;
+    site: PlanSyncSite;
+    planRunContext?: PlanRunContext;
+}): AgentRunStep;
+export declare function toPlanSyncAgentStep(input: {
+    step: number;
+    planAdvance: TaskPlanAdvanceResult;
+    fromStepId: string | null;
+    site: PlanSyncSite;
+    planRunContext?: PlanRunContext;
+    normalizeOutput: (value: unknown) => Record<string, unknown> | string | undefined;
+}): AgentRunStep;
+export { planObservationBucketsFromState };
