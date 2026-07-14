@@ -23,64 +23,64 @@ export declare class UserService {
     create(data: CreateUserDto): Promise<{
         generatedPassword: string;
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: UserStatus;
     }>;
     findAll(): Promise<{
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: UserStatus;
     }[]>;
     findOne(id: number): Promise<{
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: UserStatus;
     }>;
     update(id: number, data: UpdateUserDto): Promise<{
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: UserStatus;
     }>;
     remove(id: number): Promise<{
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: UserStatus;
     }>;
     private syntheticEmployeeIdFromEmail;
     findOrCreateByExternalAccount(profile: ExternalAccountProfile): Promise<Omit<{
         id: number;
-        employeeId: string;
+        createdAt: Date;
         email: string;
         password: string;
         username: string;
-        status: UserStatus;
         mustChangePassword: boolean;
-        createdAt: Date;
+        employeeId: string;
+        status: UserStatus;
     }, "password">>;
     signUserAccessToken(user: {
         id: number;
@@ -93,13 +93,13 @@ export declare class UserService {
         accessToken: string;
         user: {
             id: number;
-            employeeId: string;
+            createdAt: Date;
             email: string;
             password: string;
             username: string;
-            status: UserStatus;
             mustChangePassword: boolean;
-            createdAt: Date;
+            employeeId: string;
+            status: UserStatus;
         };
         mustChangePassword: boolean;
     }>;
@@ -109,21 +109,21 @@ export declare class UserService {
     }>;
     getAllowedToolsForApp(userId: number, appClientId: number): Promise<{
         path: string;
-        name: string;
-        schema: import("@prisma/client/runtime/client").JsonValue;
         id: number;
-        createdAt: Date;
+        appClientId: number;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
-        appClientId: number;
+        name: string;
+        method: import("../../../generated/prisma/enums").HttpMethod;
         definitionKey: string;
         riskLevel: import("../../../generated/prisma/enums").ToolLevel;
+        schema: import("@prisma/client/runtime/client").JsonValue;
         inputSchema: import("@prisma/client/runtime/client").JsonValue;
         outputSchema: import("@prisma/client/runtime/client").JsonValue;
         responseProfile: import("@prisma/client/runtime/client").JsonValue;
         agentMetadata: import("@prisma/client/runtime/client").JsonValue;
-        method: import("../../../generated/prisma/enums").HttpMethod;
         integrationId: number;
         toolCategoryId: number;
         timeout: number;

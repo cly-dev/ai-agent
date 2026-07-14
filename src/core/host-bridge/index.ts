@@ -59,8 +59,18 @@ export {
   buildHostToolArgsDisplayText,
   extractJsonObjectFromLlmText,
   parseHostToolArgsFromLlmText,
+  parseHostToolArgsFromLlmTextCandidates,
+  parseHostToolArgsFromLlmTextDetailed,
   softValidateHostToolArgsAgainstSchema,
+  unwrapHostToolArgsEnvelope,
+  type ParseHostToolArgsFromLlmResult,
 } from './host-tool-args-from-llm.util';
+export {
+  collectContextIdCatalog,
+  enrichHostToolArgsSchemaWithContextCatalogs,
+  sanitizeHostToolArgsAgainstContextCatalogs,
+  type SanitizeHostToolArgsCatalogResult,
+} from './host-tool-args-context-catalog.util';
 export {
   HOST_TOOL_STREAM_OBSERVATION_NAME,
   buildHostToolStreamObservation,

@@ -30,7 +30,7 @@ function lifecycleBase(input, streamId) {
     };
 }
 async function executePageActionHostFill(llmService, input) {
-    var _a, _b;
+    var _a, _b, _c;
     const recorder = (_a = input.stepRecorder) !== null && _a !== void 0 ? _a : new page_action_run_steps_util_1.PageActionRunStepRecorder();
     const terminalLifecycle = (_b = input.terminalLifecycle) !== null && _b !== void 0 ? _b : 'self';
     const contract = (0, host_tool_delivery_contract_util_1.resolveHostToolDeliveryContract)(input.hostTool.definition);
@@ -59,21 +59,26 @@ async function executePageActionHostFill(llmService, input) {
     let fillText = '';
     let displayText = '';
     try {
-        llmCallCount += 1;
         (0, page_action_fill_debug_util_1.logPageActionFillStart)(probe);
         const streamResult = await (0, page_action_llm_dsl_stream_util_1.executePageActionLlmDslStream)({
             llmService,
             messages: input.messages,
             sseSink: sink,
             pageContext: input.pageContext,
+            actionContext: (_c = input.actionContext) !== null && _c !== void 0 ? _c : null,
             actionRunId: input.actionRunId,
+            actionKey: input.actionKey,
             generation: input.generation,
             streamId,
             hostTool: input.hostTool,
             reason: page_action_constants_1.PAGE_ACTION_STREAM_REASON,
             stepRecorder: recorder,
             signal: input.signal,
-            budgetHints: { callKind: 'summarize' },
+            budgetHints: {
+                callKind: contract.delivery === 'instant' && contract.produceMode === 'structured'
+                    ? 'decision'
+                    : 'summarize',
+            },
             onLlmDelta: (delta) => {
                 (0, page_action_fill_debug_util_1.recordPageActionFillStreamDelta)(probe, delta.contentDelta, delta.done === true);
             },
@@ -85,6 +90,7 @@ async function executePageActionHostFill(llmService, input) {
         promptTokens = streamResult.promptTokens;
         completionTokens = streamResult.completionTokens;
         dslOutcome = streamResult.dslOutcome;
+        llmCallCount = streamResult.llmCallCount;
         (0, page_action_fill_debug_util_1.logPageActionFillStreamEnd)({
             probe,
             model,

@@ -9,6 +9,7 @@ import type { PageWorkflowToolBundle } from '../../page-action/page-workflow-too
 import type { PageActionRunStepRecorder } from '../../page-action/page-action-run-steps.util';
 export type PageWorkflowExecutorRuntime = {
     pageContext: AgentChatPageContext | null;
+    actionContext?: Record<string, unknown> | null;
     messages: LlmChatMessage[];
     nodeOutputs: Record<string, unknown>;
     systemPrompt: string;

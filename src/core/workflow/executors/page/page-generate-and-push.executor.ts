@@ -42,6 +42,7 @@ export const pageGenerateAndPushExecutor: WorkflowExecutor = {
       systemPrompt: runtime.systemPrompt,
       messages,
       pageContext: runtime.pageContext,
+      actionContext: runtime.actionContext ?? null,
       hostTool,
       sseSink: runtime.sseSink,
       stepRecorder: runtime.stepRecorder,

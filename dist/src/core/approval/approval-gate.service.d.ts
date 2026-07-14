@@ -31,23 +31,23 @@ export declare class ApprovalGateService {
     constructor(approvalRequests: ApprovalRequestService);
     suspend(input: SuspendForApprovalInput): Promise<{
         id: number;
-        status: import("../../../generated/prisma/enums").ApprovalStatus;
-        createdAt: Date;
-        updatedAt: Date;
         appClientId: number;
-        title: string;
-        sessionId: string;
         workflowId: number;
         workflowVersion: number;
+        createdAt: Date;
+        updatedAt: Date;
+        status: import("../../../generated/prisma/enums").ApprovalStatus;
         idempotencyKey: string;
         source: ApprovalSource;
         initiatorUserId: number;
         approverUserId: number;
         nodeId: string;
+        title: string;
         summary: string;
         previewBlocks: import("@prisma/client/runtime/client").JsonValue;
         resumeSnapshot: import("@prisma/client/runtime/client").JsonValue;
         pageActionRunId: number;
+        sessionId: string;
         decidedByUserId: number;
         decidedAt: Date;
         decisionNote: string;

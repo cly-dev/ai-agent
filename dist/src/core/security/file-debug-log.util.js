@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isWorkflowFileDebugEnabled = exports.isWorkflowDebugEnabled = exports.isToolEngineFileDebugEnabled = exports.isFileDebugLogEnabled = exports.isAgentEngineDebugEnabled = void 0;
+exports.isPageActionRunFileDebugEnabled = exports.isPageActionRunDebugEnabled = exports.isWorkflowFileDebugEnabled = exports.isWorkflowDebugEnabled = exports.isToolEngineFileDebugEnabled = exports.isFileDebugLogEnabled = exports.isAgentEngineDebugEnabled = void 0;
 const runtime_env_util_1 = require("./runtime-env.util");
 function readTriStateEnv(name) {
     var _a;
@@ -60,4 +60,26 @@ function isWorkflowFileDebugEnabled() {
     return isWorkflowDebugEnabled();
 }
 exports.isWorkflowFileDebugEnabled = isWorkflowFileDebugEnabled;
+function isPageActionRunDebugEnabled() {
+    if ((0, runtime_env_util_1.isProductionRuntime)()) {
+        return false;
+    }
+    const explicit = readTriStateEnv('PAGE_ACTION_DEBUG');
+    if (explicit !== undefined) {
+        return explicit;
+    }
+    const fillExplicit = readTriStateEnv('PAGE_ACTION_FILL_DEBUG');
+    if (fillExplicit === false) {
+        return false;
+    }
+    return true;
+}
+exports.isPageActionRunDebugEnabled = isPageActionRunDebugEnabled;
+function isPageActionRunFileDebugEnabled() {
+    if ((0, runtime_env_util_1.isProductionRuntime)()) {
+        return false;
+    }
+    return isPageActionRunDebugEnabled();
+}
+exports.isPageActionRunFileDebugEnabled = isPageActionRunFileDebugEnabled;
 //# sourceMappingURL=file-debug-log.util.js.map

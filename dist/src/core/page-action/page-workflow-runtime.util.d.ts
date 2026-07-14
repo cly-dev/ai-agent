@@ -18,6 +18,7 @@ export type PageWorkflowRunnerInput = {
     objectivePrefix?: string | null;
     messages: LlmChatMessage[];
     pageContext: AgentChatPageContext | null;
+    actionContext?: Record<string, unknown> | null;
     hostTool: ResolvedPageActionHostTool | null;
     llmService: LlmService;
     prisma: PrismaService;

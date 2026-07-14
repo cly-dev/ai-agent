@@ -11,7 +11,8 @@ export { dispatchHostActionSse, type HostActionEventPublisher, } from './host-ac
 export { isHostToolStreamEnabled } from './host-tool-stream-env.util';
 export { HOST_TOOL_STRING_ARG_KEYS, pickHostToolStringArgKey, readHostToolStringArg, resolveHostToolStringArgKey, } from './host-tool-string-arg.util';
 export { hostToolArgsSchemaIsStructured, hostToolContractDispatchesDsl, hostToolContractWillDispatchLive, pickHostToolProseStreamArgKey, resolveHostToolDeliveryContract, resolveHostToolDeliveryContracts, type HostToolDeliveryContract, type HostToolDeliveryProfile, type HostToolProduceMode, } from './host-tool-delivery-contract.util';
-export { buildHostToolArgsDisplayText, extractJsonObjectFromLlmText, parseHostToolArgsFromLlmText, softValidateHostToolArgsAgainstSchema, } from './host-tool-args-from-llm.util';
+export { buildHostToolArgsDisplayText, extractJsonObjectFromLlmText, parseHostToolArgsFromLlmText, parseHostToolArgsFromLlmTextCandidates, parseHostToolArgsFromLlmTextDetailed, softValidateHostToolArgsAgainstSchema, unwrapHostToolArgsEnvelope, type ParseHostToolArgsFromLlmResult, } from './host-tool-args-from-llm.util';
+export { collectContextIdCatalog, enrichHostToolArgsSchemaWithContextCatalogs, sanitizeHostToolArgsAgainstContextCatalogs, type SanitizeHostToolArgsCatalogResult, } from './host-tool-args-context-catalog.util';
 export { HOST_TOOL_STREAM_OBSERVATION_NAME, buildHostToolStreamObservation, findHostToolStreamObservation, isHostToolStreamAlreadyDispatched, type HostToolStreamObservationOutput, type HostToolStreamToolObservation, } from './host-tool-stream-observation.util';
 export { shouldReplayHostAction } from './host-tool-stream-replay.util';
 export { HostToolStreamSession, type HostToolStreamFinalizeResult, } from './host-tool-stream-session.util';

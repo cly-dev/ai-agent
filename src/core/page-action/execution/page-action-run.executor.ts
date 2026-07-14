@@ -46,6 +46,10 @@ import { resolvePageActionSummarizeHostTool } from '../page-action-summarize-hos
 import { resolvePageActionRunOutputText } from '../resolve-page-action-run-output-text.util';
 import { PageActionRunStreamHub } from '../stream/page-action-run-stream.hub';
 import type { PageActionRunExecutionInput } from './page-action-invoke.types';
+import {
+  logPageActionLlmPrompt,
+  logPageActionRunDebug,
+} from '../page-action-run-debug.util';
 
 @Injectable()
 export class PageActionRunExecutor {
@@ -104,6 +108,36 @@ export class PageActionRunExecutor {
       pageContext: input.pageContext,
     });
 
+    logPageActionRunDebug('invoke', {
+      actionRunId: input.runId,
+      actionKey: input.actionKey,
+      generation: input.generation,
+      workflowId: input.workflowId,
+      hostTool: input.hostToolResolved
+        ? {
+            id: input.hostToolResolved.definition.id,
+            name: input.hostToolResolved.definition.name,
+            delivery: input.hostToolResolved.delivery,
+            produceMode: input.hostToolResolved.produceMode,
+            argsSchema: input.hostToolResolved.definition.argsSchema,
+          }
+        : null,
+      instruction: input.instruction,
+      pageContext: input.pageContext,
+      context: input.context ?? null,
+      systemPromptLength: input.systemPrompt.length,
+    });
+    logPageActionLlmPrompt({
+      actionRunId: input.runId,
+      actionKey: input.actionKey,
+      phase: 'initial_messages',
+      messages,
+      meta: {
+        hasWorkflow: Boolean(input.workflowId),
+        hasHostTool: Boolean(input.hostToolResolved),
+      },
+    });
+
     try {
       if (input.workflowId) {
         await this.executeWorkflow({
@@ -126,6 +160,7 @@ export class PageActionRunExecutor {
           systemPrompt: input.systemPrompt,
           messages,
           pageContext: input.pageContext,
+          actionContext: input.context ?? null,
           hostTool: input.hostToolResolved,
           sseSink,
           stepRecorder,
@@ -153,6 +188,24 @@ export class PageActionRunExecutor {
             errorCode: terminal.errorCode,
             errorMessage: terminal.errorMessage,
           },
+        });
+        logPageActionRunDebug('result', {
+          actionRunId: input.runId,
+          actionKey: input.actionKey,
+          path: 'host_fill',
+          terminalPhase: terminal.phase,
+          dslOutcome: result.dslOutcome,
+          streamId: result.streamId,
+          model: result.model,
+          promptTokens: result.promptTokens,
+          completionTokens: result.completionTokens,
+          llmCallCount: result.llmCallCount,
+          appendCount: result.appendCount,
+          fillText: result.fillText,
+          errorCode: terminal.errorCode,
+          errorMessage: terminal.errorMessage,
+          durationMs: Date.now() - startedAt,
+          steps: result.steps,
         });
         return;
       }
@@ -218,6 +271,21 @@ export class PageActionRunExecutor {
           errorMessage: terminal.errorMessage,
         },
       });
+      logPageActionRunDebug('result', {
+        actionRunId: input.runId,
+        actionKey: input.actionKey,
+        path: 'summarize',
+        terminalPhase: terminal.phase,
+        dslOutcome: summary.dslOutcome,
+        streamId,
+        model: summary.model,
+        promptTokens: summary.promptTokens,
+        completionTokens: summary.completionTokens,
+        fillText: terminal.fillText,
+        errorCode: terminal.errorCode,
+        errorMessage: terminal.errorMessage,
+        durationMs: Date.now() - startedAt,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const errorCode =
@@ -227,6 +295,13 @@ export class PageActionRunExecutor {
         'code' in (error.getResponse() as object)
           ? String((error.getResponse() as { code?: string }).code)
           : 'LLM_FAILED';
+      logPageActionRunDebug('error', {
+        actionRunId: input.runId,
+        actionKey: input.actionKey,
+        errorCode,
+        errorMessage: message,
+        durationMs: Date.now() - startedAt,
+      });
       writePageActionLifecycle(
         sseSink,
         {
@@ -362,6 +437,7 @@ export class PageActionRunExecutor {
       objectivePrefix: run.instruction,
       messages,
       pageContext: run.pageContext,
+      actionContext: run.context ?? null,
       hostTool: run.hostToolResolved,
       llmService: this.llmService,
       prisma: this.prisma,
@@ -422,6 +498,24 @@ export class PageActionRunExecutor {
         errorCode: terminalOutcome.errorCode,
         errorMessage: terminalOutcome.errorMessage,
       },
+    });
+    logPageActionRunDebug('result', {
+      actionRunId: run.runId,
+      actionKey: run.actionKey,
+      path: 'workflow',
+      workflowId: loadResult.workflowId,
+      workflowVersion: loadResult.version,
+      terminalPhase: terminalOutcome.phase,
+      dslOutcome: result.dslOutcome,
+      model: result.model,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      fillText: persistedFillText,
+      errorCode: terminalOutcome.errorCode,
+      errorMessage: terminalOutcome.errorMessage,
+      durationMs: Date.now() - startedAt,
+      steps: result.steps,
+      workflowRun: result.workflowRun,
     });
   }
 }

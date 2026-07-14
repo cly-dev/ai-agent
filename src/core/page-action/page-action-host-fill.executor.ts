@@ -46,6 +46,8 @@ export type PageActionHostFillExecuteInput = {
   systemPrompt: string;
   messages: LlmChatMessage[];
   pageContext: AgentChatPageContext | null;
+  /** PageAction invoke.context；供 HostTool x-contextIdCatalog */
+  actionContext?: Record<string, unknown> | null;
   hostTool: ResolvedPageActionHostTool;
   sseSink: PageActionSseSink;
   signal?: AbortSignal;
@@ -131,7 +133,6 @@ export async function executePageActionHostFill(
   let displayText = '';
 
   try {
-    llmCallCount += 1;
     logPageActionFillStart(probe);
 
     const streamResult = await executePageActionLlmDslStream({
@@ -139,14 +140,22 @@ export async function executePageActionHostFill(
       messages: input.messages,
       sseSink: sink,
       pageContext: input.pageContext,
+      actionContext: input.actionContext ?? null,
       actionRunId: input.actionRunId,
+      actionKey: input.actionKey,
       generation: input.generation,
       streamId,
       hostTool: input.hostTool,
       reason: PAGE_ACTION_STREAM_REASON,
       stepRecorder: recorder,
       signal: input.signal,
-      budgetHints: { callKind: 'summarize' },
+      // instant：主路径 decision；stream 兜底在 dsl-stream 内改用 summarize。fill_stream 整段 summarize。
+      budgetHints: {
+        callKind:
+          contract.delivery === 'instant' && contract.produceMode === 'structured'
+            ? 'decision'
+            : 'summarize',
+      },
       onLlmDelta: (delta) => {
         recordPageActionFillStreamDelta(
           probe,
@@ -163,6 +172,7 @@ export async function executePageActionHostFill(
     promptTokens = streamResult.promptTokens;
     completionTokens = streamResult.completionTokens;
     dslOutcome = streamResult.dslOutcome;
+    llmCallCount = streamResult.llmCallCount;
 
     logPageActionFillStreamEnd({
       probe,

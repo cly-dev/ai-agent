@@ -7,8 +7,8 @@ import {
 /**
  * Host Tool 交付契约：由 argsSchema 推导，避免「默认 DSL」被误当成「必须 fill_stream」。
  *
- * - fill_stream：正文类 string（优先 text/content/…）→ prose 流式 + arg.append
- * - instant：结构化 args（object/array 等）→ 整包 tool.flush
+ * - fill_stream + prose_stream：正文类 string → prose 流式 + arg.append
+ * - instant + structured：复杂 args → 主路径 bindTools/tool_call 产参，整包 tool.flush
  * - observation：无可执行 args → 不发 host_action
  *
  * 冲突时：required 含 object/array → 优先 instant（避免 locale 等旁路 string 抢走流式）。

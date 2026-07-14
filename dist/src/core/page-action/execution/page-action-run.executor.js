@@ -34,6 +34,7 @@ const page_workflow_tool_bundle_util_1 = require("../page-workflow-tool-bundle.u
 const page_action_summarize_host_tool_util_1 = require("../page-action-summarize-host-tool.util");
 const resolve_page_action_run_output_text_util_1 = require("../resolve-page-action-run-output-text.util");
 const page_action_run_stream_hub_1 = require("../stream/page-action-run-stream.hub");
+const page_action_run_debug_util_1 = require("../page-action-run-debug.util");
 let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecutor {
     constructor(prisma, llmService, toolEngine, approvalGate, triggerPermission, runStreamHub) {
         this.prisma = prisma;
@@ -51,7 +52,7 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
         });
     }
     async execute(input) {
-        var _a;
+        var _a, _b, _c;
         const sseSink = this.runStreamHub.openWriter(input.runId);
         const startedAt = Date.now();
         const stepRecorder = new page_action_run_steps_util_1.PageActionRunStepRecorder();
@@ -77,6 +78,35 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
             context: (_a = input.context) !== null && _a !== void 0 ? _a : null,
             pageContext: input.pageContext,
         });
+        (0, page_action_run_debug_util_1.logPageActionRunDebug)('invoke', {
+            actionRunId: input.runId,
+            actionKey: input.actionKey,
+            generation: input.generation,
+            workflowId: input.workflowId,
+            hostTool: input.hostToolResolved
+                ? {
+                    id: input.hostToolResolved.definition.id,
+                    name: input.hostToolResolved.definition.name,
+                    delivery: input.hostToolResolved.delivery,
+                    produceMode: input.hostToolResolved.produceMode,
+                    argsSchema: input.hostToolResolved.definition.argsSchema,
+                }
+                : null,
+            instruction: input.instruction,
+            pageContext: input.pageContext,
+            context: (_b = input.context) !== null && _b !== void 0 ? _b : null,
+            systemPromptLength: input.systemPrompt.length,
+        });
+        (0, page_action_run_debug_util_1.logPageActionLlmPrompt)({
+            actionRunId: input.runId,
+            actionKey: input.actionKey,
+            phase: 'initial_messages',
+            messages,
+            meta: {
+                hasWorkflow: Boolean(input.workflowId),
+                hasHostTool: Boolean(input.hostToolResolved),
+            },
+        });
         try {
             if (input.workflowId) {
                 await this.executeWorkflow({
@@ -98,6 +128,7 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
                     systemPrompt: input.systemPrompt,
                     messages,
                     pageContext: input.pageContext,
+                    actionContext: (_c = input.context) !== null && _c !== void 0 ? _c : null,
                     hostTool: input.hostToolResolved,
                     sseSink,
                     stepRecorder,
@@ -123,6 +154,24 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
                         errorCode: terminal.errorCode,
                         errorMessage: terminal.errorMessage,
                     },
+                });
+                (0, page_action_run_debug_util_1.logPageActionRunDebug)('result', {
+                    actionRunId: input.runId,
+                    actionKey: input.actionKey,
+                    path: 'host_fill',
+                    terminalPhase: terminal.phase,
+                    dslOutcome: result.dslOutcome,
+                    streamId: result.streamId,
+                    model: result.model,
+                    promptTokens: result.promptTokens,
+                    completionTokens: result.completionTokens,
+                    llmCallCount: result.llmCallCount,
+                    appendCount: result.appendCount,
+                    fillText: result.fillText,
+                    errorCode: terminal.errorCode,
+                    errorMessage: terminal.errorMessage,
+                    durationMs: Date.now() - startedAt,
+                    steps: result.steps,
                 });
                 return;
             }
@@ -177,6 +226,21 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
                     errorMessage: terminal.errorMessage,
                 },
             });
+            (0, page_action_run_debug_util_1.logPageActionRunDebug)('result', {
+                actionRunId: input.runId,
+                actionKey: input.actionKey,
+                path: 'summarize',
+                terminalPhase: terminal.phase,
+                dslOutcome: summary.dslOutcome,
+                streamId,
+                model: summary.model,
+                promptTokens: summary.promptTokens,
+                completionTokens: summary.completionTokens,
+                fillText: terminal.fillText,
+                errorCode: terminal.errorCode,
+                errorMessage: terminal.errorMessage,
+                durationMs: Date.now() - startedAt,
+            });
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -186,6 +250,13 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
                 'code' in error.getResponse()
                 ? String(error.getResponse().code)
                 : 'LLM_FAILED';
+            (0, page_action_run_debug_util_1.logPageActionRunDebug)('error', {
+                actionRunId: input.runId,
+                actionKey: input.actionKey,
+                errorCode,
+                errorMessage: message,
+                durationMs: Date.now() - startedAt,
+            });
             (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sseSink, Object.assign(Object.assign({ phase: 'failed' }, lifecycleBase), { errorCode, errorMessage: message }), stepRecorder);
             await this.prisma.pageActionRun.update({
                 where: { id: input.runId },
@@ -207,6 +278,7 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
         }
     }
     async executeWorkflow(input) {
+        var _a;
         const { input: run, messages, sseSink, stepRecorder, startedAt, lifecycleBase } = input;
         const [loadResult, allowedToolIds] = await Promise.all([
             (0, load_workflow_definition_util_1.loadWorkflowForRunDetailed)(this.prisma, {
@@ -277,6 +349,7 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
             objectivePrefix: run.instruction,
             messages,
             pageContext: run.pageContext,
+            actionContext: (_a = run.context) !== null && _a !== void 0 ? _a : null,
             hostTool: run.hostToolResolved,
             llmService: this.llmService,
             prisma: this.prisma,
@@ -331,6 +404,24 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
                 errorCode: terminalOutcome.errorCode,
                 errorMessage: terminalOutcome.errorMessage,
             },
+        });
+        (0, page_action_run_debug_util_1.logPageActionRunDebug)('result', {
+            actionRunId: run.runId,
+            actionKey: run.actionKey,
+            path: 'workflow',
+            workflowId: loadResult.workflowId,
+            workflowVersion: loadResult.version,
+            terminalPhase: terminalOutcome.phase,
+            dslOutcome: result.dslOutcome,
+            model: result.model,
+            promptTokens: result.promptTokens,
+            completionTokens: result.completionTokens,
+            fillText: persistedFillText,
+            errorCode: terminalOutcome.errorCode,
+            errorMessage: terminalOutcome.errorMessage,
+            durationMs: Date.now() - startedAt,
+            steps: result.steps,
+            workflowRun: result.workflowRun,
         });
     }
 };

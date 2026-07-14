@@ -188,6 +188,7 @@ export async function executePageWorkflowSummarize(input: {
       sseSink: input.sseSink,
       pageContext: input.pageContext,
       actionRunId: input.actionRunId,
+      actionKey: input.actionKey,
       generation: input.generation,
       streamId,
       hostTool: input.summarizeHostTool.hostTool,

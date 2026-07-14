@@ -14,6 +14,7 @@ export type PageActionLlmDslStreamResult = {
     promptTokens: number | null;
     completionTokens: number | null;
     appendCount: number;
+    llmCallCount: number;
     streamable: boolean;
     delivery: HostToolDeliveryContract['delivery'];
 };
@@ -24,7 +25,9 @@ export declare function executePageActionLlmDslStream(input: {
     messages: LlmChatMessage[];
     sseSink: PageActionSseSink;
     pageContext: AgentChatPageContext | null;
+    actionContext?: Record<string, unknown> | null;
     actionRunId: number;
+    actionKey?: string | null;
     generation: number;
     streamId: string;
     hostTool: ResolvedPageActionHostTool;

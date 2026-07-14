@@ -12,6 +12,7 @@ export type PageActionHostFillExecuteInput = {
     systemPrompt: string;
     messages: LlmChatMessage[];
     pageContext: AgentChatPageContext | null;
+    actionContext?: Record<string, unknown> | null;
     hostTool: ResolvedPageActionHostTool;
     sseSink: PageActionSseSink;
     signal?: AbortSignal;

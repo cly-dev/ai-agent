@@ -14,7 +14,7 @@ function isRecord(value) {
 exports.pageGenerateAndPushExecutor = {
     action: 'generate_and_push',
     async run(ctx) {
-        var _a;
+        var _a, _b;
         const { runtime } = (0, executor_host_util_1.requirePageExecutorHost)(ctx.host);
         const nodeInput = (isRecord(ctx.def.input) ? ctx.def.input : {});
         const hostTool = await (0, page_action_workflow_host_util_1.resolvePageActionHostToolForPushNode)(runtime.prisma, {
@@ -32,6 +32,7 @@ exports.pageGenerateAndPushExecutor = {
             systemPrompt: runtime.systemPrompt,
             messages,
             pageContext: runtime.pageContext,
+            actionContext: (_b = runtime.actionContext) !== null && _b !== void 0 ? _b : null,
             hostTool,
             sseSink: runtime.sseSink,
             stepRecorder: runtime.stepRecorder,

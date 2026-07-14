@@ -7,7 +7,63 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** 从 LLM 输出中提取首个 JSON object（支持 ```json 围栏）。 */
+function stripMarkdownFences(text: string): string {
+  const fenced = text.match(/```(?:json|JSON)?\s*([\s\S]*?)```/);
+  if (fenced?.[1]) {
+    return fenced[1].trim();
+  }
+  // 未闭合围栏：```json\n{...}
+  const open = text.match(/^```(?:json|JSON)?\s*\r?\n?([\s\S]*)$/);
+  if (open?.[1]) {
+    return open[1].replace(/```\s*$/, '').trim();
+  }
+  return text;
+}
+
+/** 去掉模型常加的裸语言标签：`json\n{...}`（无 markdown 围栏）。 */
+function stripLeadingLanguageTag(text: string): string {
+  return text.replace(/^(json|JSON|javascript|JavaScript)\s*\r?\n/, '');
+}
+
+/** 按花括号平衡扫描，提取文本中所有完整 `{...}` 片段（从左到右）。 */
+function extractBalancedJsonObjectSlices(text: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '{') {
+      if (depth === 0) {
+        start = i;
+      }
+      depth += 1;
+    } else if (ch === '}') {
+      if (depth === 0) {
+        continue;
+      }
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        out.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
+function tryParseJsonRecord(candidate: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(candidate) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 从 LLM 输出中提取 JSON object。
+ * 兼容：markdown 围栏、裸 `json` 前缀、think 噪声中的多个 `{`（取最后一个可解析 object）。
+ */
 export function extractJsonObjectFromLlmText(
   content: string,
 ): Record<string, unknown> | null {
@@ -15,24 +71,23 @@ export function extractJsonObjectFromLlmText(
   if (!trimmed) {
     return null;
   }
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced?.[1]?.trim() ?? trimmed;
-  try {
-    const parsed = JSON.parse(candidate) as unknown;
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    const start = candidate.indexOf('{');
-    const end = candidate.lastIndexOf('}');
-    if (start < 0 || end <= start) {
-      return null;
-    }
-    try {
-      const parsed = JSON.parse(candidate.slice(start, end + 1)) as unknown;
-      return isRecord(parsed) ? parsed : null;
-    } catch {
-      return null;
+  const withoutFence = stripMarkdownFences(trimmed);
+  const candidate = stripLeadingLanguageTag(withoutFence.trim());
+
+  const direct = tryParseJsonRecord(candidate);
+  if (direct) {
+    return direct;
+  }
+
+  // 从后往前试完整平衡 object：优先靠近文末的参数 JSON，避开 think 里的 `{`
+  const slices = extractBalancedJsonObjectSlices(candidate);
+  for (let i = slices.length - 1; i >= 0; i -= 1) {
+    const parsed = tryParseJsonRecord(slices[i]!);
+    if (parsed) {
+      return parsed;
     }
   }
+  return null;
 }
 
 function typeTokenMatches(value: unknown, typeToken: string): boolean {
@@ -66,7 +121,6 @@ function valueMatchesPropDef(value: unknown, def: Record<string, unknown>): bool
       (token) => typeof token === 'string' && typeTokenMatches(value, token),
     );
   }
-  // 无 type：有 items 则期望 array，有 properties 则期望 object
   if (def.items != null) {
     return Array.isArray(value);
   }
@@ -90,7 +144,6 @@ export function softValidateHostToolArgsAgainstSchema(
     if (Object.keys(args).length === 0) {
       return false;
     }
-    // 无 required：仍校验已出现键的类型（若 schema 有定义）
     if (!properties) {
       return true;
     }
@@ -119,6 +172,59 @@ export function softValidateHostToolArgsAgainstSchema(
 }
 
 /**
+ * 兼容模型把工具名包在外层：`{ "applyBlogCategoryTags": { ...args } }`。
+ * 仅当外层不合 schema、内层 object 合 schema 时解包。
+ */
+export function unwrapHostToolArgsEnvelope(
+  parsed: Record<string, unknown>,
+  argsSchema: Record<string, unknown>,
+): Record<string, unknown> {
+  if (softValidateHostToolArgsAgainstSchema(parsed, argsSchema)) {
+    return parsed;
+  }
+  const keys = Object.keys(parsed);
+  if (keys.length === 1) {
+    const inner = parsed[keys[0]!];
+    if (isRecord(inner) && softValidateHostToolArgsAgainstSchema(inner, argsSchema)) {
+      return inner;
+    }
+  }
+  for (const value of Object.values(parsed)) {
+    if (isRecord(value) && softValidateHostToolArgsAgainstSchema(value, argsSchema)) {
+      return value;
+    }
+  }
+  return parsed;
+}
+
+export type ParseHostToolArgsFromLlmResult =
+  | { ok: true; args: Record<string, unknown> }
+  | {
+      ok: false;
+      reason: 'parse_failed' | 'validate_failed';
+      preview: string;
+    };
+
+/**
+ * LLM 正文 → Host Tool arguments（带失败分型，便于审计）。
+ */
+export function parseHostToolArgsFromLlmTextDetailed(input: {
+  text: string;
+  argsSchema: Record<string, unknown>;
+}): ParseHostToolArgsFromLlmResult {
+  const preview = input.text.trim().slice(0, 240);
+  const extracted = extractJsonObjectFromLlmText(input.text);
+  if (!extracted) {
+    return { ok: false, reason: 'parse_failed', preview };
+  }
+  const args = unwrapHostToolArgsEnvelope(extracted, input.argsSchema);
+  if (!softValidateHostToolArgsAgainstSchema(args, input.argsSchema)) {
+    return { ok: false, reason: 'validate_failed', preview };
+  }
+  return { ok: true, args };
+}
+
+/**
  * LLM 正文 → Host Tool arguments。
  * 解析失败或软校验失败返回 null（调用方应标 dsl failed，而非 silent skip）。
  */
@@ -126,14 +232,38 @@ export function parseHostToolArgsFromLlmText(input: {
   text: string;
   argsSchema: Record<string, unknown>;
 }): Record<string, unknown> | null {
-  const args = extractJsonObjectFromLlmText(input.text);
-  if (!args) {
-    return null;
+  const detailed = parseHostToolArgsFromLlmTextDetailed(input);
+  return detailed.ok ? detailed.args : null;
+}
+
+/**
+ * 多候选正文依次解析（message 通道 / 去 think 后全文 / sanitize 正文）。
+ * 避免只用 raw 或只用 content 时被 think 花括号污染。
+ */
+export function parseHostToolArgsFromLlmTextCandidates(input: {
+  candidates: Array<string | null | undefined>;
+  argsSchema: Record<string, unknown>;
+}): ParseHostToolArgsFromLlmResult {
+  let lastFail: ParseHostToolArgsFromLlmResult = {
+    ok: false,
+    reason: 'parse_failed',
+    preview: '',
+  };
+  for (const candidate of input.candidates) {
+    const text = candidate?.trim();
+    if (!text) {
+      continue;
+    }
+    const result = parseHostToolArgsFromLlmTextDetailed({
+      text,
+      argsSchema: input.argsSchema,
+    });
+    if (result.ok) {
+      return result;
+    }
+    lastFail = result;
   }
-  if (!softValidateHostToolArgsAgainstSchema(args, input.argsSchema)) {
-    return null;
-  }
-  return args;
+  return lastFail;
 }
 
 const DISPLAY_STRING_CAP = 12;

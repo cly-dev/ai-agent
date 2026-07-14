@@ -25,6 +25,8 @@ export type PageWorkflowRunnerInput = {
   objectivePrefix?: string | null;
   messages: LlmChatMessage[];
   pageContext: AgentChatPageContext | null;
+  /** PageAction invoke.context；供 HostTool x-contextIdCatalog */
+  actionContext?: Record<string, unknown> | null;
   hostTool: ResolvedPageActionHostTool | null;
   llmService: LlmService;
   prisma: PrismaService;
@@ -47,6 +49,7 @@ export function createPageWorkflowExecutorRuntime(
 ): PageWorkflowExecutorRuntime {
   return {
     pageContext: input.pageContext,
+    actionContext: input.actionContext ?? null,
     messages: input.messages,
     nodeOutputs: {},
     systemPrompt: input.systemPrompt,

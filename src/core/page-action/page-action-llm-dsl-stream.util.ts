@@ -3,12 +3,14 @@ import {
   createPlanReasonHostFillStreamTextSession,
   runHostFillLlmStream,
 } from '../agent-engine/engine/main/plan-present/plan-reason-host-machine-layer.util';
+import { extractRoutedMessageFromLlmText } from '../agent-engine/engine/llm-stream-router.util';
 import { dispatchHostActionInstant } from '../host-bridge/host-action-instant-dispatch.util';
 import type { HostActionHostToolInvocation } from '../host-bridge/host-action.types';
 import {
   buildHostToolArgsDisplayText,
-  parseHostToolArgsFromLlmText,
+  parseHostToolArgsFromLlmTextCandidates,
 } from '../host-bridge/host-tool-args-from-llm.util';
+import { sanitizeHostToolArgsAgainstContextCatalogs } from '../host-bridge/host-tool-args-context-catalog.util';
 import {
   hostToolContractWillDispatchLive,
   resolveHostToolDeliveryContract,
@@ -27,6 +29,14 @@ import {
 import { createInlineHostActionPublisher } from './page-action-inline-sse.util';
 import type { ResolvedPageActionHostTool } from './page-action-host-tool.util';
 import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
+import {
+  isLlmAbortError,
+  produceHostToolArgsViaToolCall,
+} from './page-action-structured-produce.util';
+import {
+  logPageActionLlmPrompt,
+  logPageActionLlmResponse,
+} from './page-action-run-debug.util';
 import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
 
 export type PageActionLlmDslStreamResult = {
@@ -39,6 +49,8 @@ export type PageActionLlmDslStreamResult = {
   promptTokens: number | null;
   completionTokens: number | null;
   appendCount: number;
+  /** 实际 LLM 调用次数（tool_call 失败再 stream 兜底时为 2）。 */
+  llmCallCount: number;
   /** true：fill_stream 可 arg.append；instant 为 false（但仍可能 dsl dispatched）。 */
   streamable: boolean;
   delivery: HostToolDeliveryContract['delivery'];
@@ -69,23 +81,63 @@ function resolveDslOutcomeWithoutDispatch(fillText: string): 'failed' | 'skipped
   return fillText.trim().length > 0 ? 'skipped' : 'failed';
 }
 
-/** 将 argsSchema 约束并入已有 system 消息，避免再塞一条 user 干扰业务 prompt。 */
-function withStructuredArgsHint(
+/**
+ * tool_call 主路径：点名 bound host tool；格式由 API tool schema 约束。
+ */
+function withToolCallTaskMessages(
   messages: LlmChatMessage[],
-  argsSchema: Record<string, unknown>,
+  toolName: string,
 ): LlmChatMessage[] {
-  const hint =
-    '\n\n[Host tool args] Reply with one JSON object matching this schema only ' +
-    '(no markdown fences, no commentary):\n' +
-    JSON.stringify(argsSchema);
-  if (messages.length === 0) {
-    return [{ role: 'system', content: hint.trim() }];
+  const prefix =
+    `Task: call host tool \`${toolName}\` exactly once with filled arguments. ` +
+    'Follow the system business rules. Do not answer article Q&A; do not invent ids outside context.\n\n';
+  return messages.map((message) => {
+    if (message.role !== 'user') {
+      return message;
+    }
+    return { role: 'user', content: `${prefix}${message.content}` };
+  });
+}
+
+/** stream+parse 兜底：明确要求 JSON args（无 tool_call 协议时）。 */
+function withJsonArgsFallbackMessages(
+  messages: LlmChatMessage[],
+  toolName: string,
+): LlmChatMessage[] {
+  const prefix =
+    `Task: output only JSON arguments for host tool \`${toolName}\` (no markdown, no Q&A). ` +
+    'Follow the system business rules; do not invent ids outside context.\n\n';
+  return messages.map((message) => {
+    if (message.role !== 'user') {
+      return message;
+    }
+    return { role: 'user', content: `${prefix}${message.content}` };
+  });
+}
+
+function resolveFallbackAuditStartName(startName: string): string {
+  if (startName.endsWith('.start')) {
+    return `${startName.slice(0, -'.start'.length)}.fallback.start`;
   }
-  const [first, ...rest] = messages;
-  if (first?.role === 'system') {
-    return [{ role: 'system', content: `${first.content}${hint}` }, ...rest];
+  return `${startName}.fallback`;
+}
+
+function resolveFallbackAuditEndName(endName: string): string {
+  if (endName.endsWith('.end')) {
+    return `${endName.slice(0, -'.end'.length)}.fallback.end`;
   }
-  return [{ role: 'system', content: hint.trim() }, ...messages];
+  return `${endName}.fallback`;
+}
+
+/** 多次 LLM 调用的 token 累加；两侧皆空则保持 null。 */
+function addNullableTokenCounts(
+  left: number | null,
+  right: number | null,
+): number | null {
+  if (left == null && right == null) {
+    return null;
+  }
+  return (left ?? 0) + (right ?? 0);
 }
 
 /**
@@ -106,10 +158,31 @@ export function canPageActionDispatchDsl(
   return hostToolContractWillDispatchLive(contract, isHostToolStreamEnabled());
 }
 
+function dispatchInstantArgs(input: {
+  publish: ReturnType<typeof createInlineHostActionPublisher>;
+  actionRunId: number;
+  pageContext: AgentChatPageContext | null;
+  generation: number;
+  streamId: string;
+  reason: string;
+  toolName: string;
+  args: Record<string, unknown>;
+}): void {
+  dispatchHostActionInstant(input.publish, `page-action:${input.actionRunId}`, {
+    pageContext: input.pageContext,
+    runId: input.actionRunId,
+    turnId: input.actionRunId,
+    hostTools: [{ name: input.toolName, args: input.args }],
+    reason: input.reason,
+    streamId: input.streamId,
+    generation: input.generation,
+  });
+}
+
 /**
  * PageAction 共用：按 HostTool 交付契约 produce → dispatch。
- * - fill_stream：LLM prose 流 + arg.append（需 HOST_TOOL_STREAM）
- * - instant：LLM 结构化 JSON → tool.flush（不要求顶层 string）
+ * - fill_stream：streamChat prose + arg.append
+ * - instant：主路径 bindTools/tool_call；失败再 fallback stream+parse → tool.flush
  * - observation：仅 LLM，不发 host_action
  */
 export async function executePageActionLlmDslStream(input: {
@@ -117,7 +190,11 @@ export async function executePageActionLlmDslStream(input: {
   messages: LlmChatMessage[];
   sseSink: PageActionSseSink;
   pageContext: AgentChatPageContext | null;
+  /** PageAction invoke.context；供 x-contextIdCatalog 白名单 */
+  actionContext?: Record<string, unknown> | null;
   actionRunId: number;
+  /** 便于开发日志归档 */
+  actionKey?: string | null;
   generation: number;
   streamId: string;
   hostTool: ResolvedPageActionHostTool;
@@ -137,6 +214,9 @@ export async function executePageActionLlmDslStream(input: {
   );
   const fillStreamLive =
     contract.delivery === 'fill_stream' && streamEnabled;
+  // produceMode structured = 非 prose 结构化 args；实现上用 native tool_call
+  const useToolCallPrimary =
+    contract.delivery === 'instant' && contract.produceMode === 'structured';
   const fillTools =
     contract.streamablePath != null
       ? [
@@ -171,6 +251,7 @@ export async function executePageActionLlmDslStream(input: {
         produceMode: contract.produceMode,
         streamablePath: contract.streamablePath,
         willDispatchLive,
+        toolCallPrimary: useToolCallPrimary,
       },
     });
   }
@@ -183,6 +264,10 @@ export async function executePageActionLlmDslStream(input: {
   let displayText = '';
   let dslOutcome: 'dispatched' | 'failed' | 'skipped' = 'skipped';
   let streamSession: HostToolStreamSession | null = null;
+  let llmCallCount = 0;
+  let toolCallPrimaryFailed = false;
+  /** tool_call 模型侧失败时才允许 stream+parse 兜底 */
+  let allowStreamParseFallback = false;
 
   const publish = createInlineHostActionPublisher(input.sseSink, {
     onPayload: (payload) => {
@@ -190,6 +275,196 @@ export async function executePageActionLlmDslStream(input: {
     },
   });
 
+  const startName = input.llmAudit?.startName ?? 'streamChat.start';
+  const endName = input.llmAudit?.endName ?? 'streamChat.end';
+
+  // —— instant 主路径：bindTools + tool_call ——
+  if (useToolCallPrimary) {
+    const toolName = input.hostTool.definition.name;
+    const toolCallMessages = withToolCallTaskMessages(input.messages, toolName);
+    recorder?.recordLlm(startName, {
+      messageCount: toolCallMessages.length,
+      delivery: contract.delivery,
+      produceMode: 'structured',
+      producePath: 'tool_call',
+      streamableTools: [],
+      dslDispatch: willDispatchLive,
+      tool: toolName,
+    });
+
+    try {
+      const produced = await produceHostToolArgsViaToolCall({
+        llmService: input.llmService,
+        messages: toolCallMessages,
+        hostTool: input.hostTool.definition,
+        actionContext: input.actionContext ?? null,
+        actionRunId: input.actionRunId,
+        actionKey: input.actionKey,
+        budgetHints: { callKind: 'decision' },
+        signal: input.signal,
+      });
+      if (produced.llmInvoked) {
+        llmCallCount += 1;
+      }
+      model = produced.model;
+      promptTokens = produced.promptTokens;
+      completionTokens = produced.completionTokens;
+
+      // 本仓库 strictNullChecks=false，`!produced.ok` 无法收窄；必须用 === false
+      if (produced.ok === false) {
+        toolCallPrimaryFailed = true;
+        allowStreamParseFallback = produced.retryWithStreamParse;
+        recorder?.recordLlm(endName, {
+          model,
+          appendCount: 0,
+          sessionFillTextLen: 0,
+          producePath: 'tool_call',
+          delivery: contract.delivery,
+          dslDispatch: false,
+          toolCallFailed: true,
+          error: produced.error,
+          retryWithStreamParse: produced.retryWithStreamParse,
+          promptTokens,
+          completionTokens,
+        });
+        recorder?.record({
+          type: 'dsl',
+          name: 'produce.tool_call_failed',
+          status: 'failed',
+          detail: {
+            delivery: 'instant',
+            error: produced.error,
+            fallback: produced.retryWithStreamParse
+              ? 'stream_parse'
+              : 'none',
+          },
+        });
+
+        // 本地 bind/协议失败：直接失败，不烧第二枪
+        if (!produced.retryWithStreamParse) {
+          return {
+            fillText: '',
+            displayText: '',
+            dslOutcome: 'failed',
+            model,
+            promptTokens,
+            completionTokens,
+            appendCount: 0,
+            llmCallCount,
+            streamable: false,
+            delivery: contract.delivery,
+          };
+        }
+      } else {
+        fillText = JSON.stringify(produced.args);
+        displayText = buildHostToolArgsDisplayText(produced.args);
+        input.onLlmDelta?.({ contentDelta: displayText, done: true });
+        const droppedKeys = Object.keys(produced.droppedCatalogIds ?? {});
+        recorder?.recordLlm(endName, {
+          model,
+          appendCount: 0,
+          sessionFillTextLen: fillText.length,
+          producePath: 'tool_call',
+          delivery: contract.delivery,
+          dslDispatch: true,
+          promptTokens,
+          completionTokens,
+          ...(droppedKeys.length > 0
+            ? { droppedCatalogIds: produced.droppedCatalogIds }
+            : {}),
+        });
+        if (droppedKeys.length > 0) {
+          recorder?.record({
+            type: 'dsl',
+            name: 'args.catalog_sanitized',
+            status: 'ok',
+            detail: {
+              delivery: 'instant',
+              droppedCatalogIds: produced.droppedCatalogIds,
+            },
+          });
+        }
+        dispatchInstantArgs({
+          publish,
+          actionRunId: input.actionRunId,
+          pageContext: input.pageContext,
+          generation: input.generation,
+          streamId: input.streamId,
+          reason: input.reason,
+          toolName,
+          args: produced.args,
+        });
+        dslOutcome = 'dispatched';
+        recorder?.record({
+          type: 'dsl',
+          name: 'instant.dispatched',
+          status: 'ok',
+          detail: {
+            delivery: 'instant',
+            producePath: 'tool_call',
+            tool: toolName,
+            argKeys: Object.keys(produced.args),
+          },
+        });
+        return {
+          fillText,
+          displayText: displayText || fillText,
+          dslOutcome,
+          model,
+          promptTokens,
+          completionTokens,
+          appendCount: 0,
+          llmCallCount,
+          streamable: false,
+          delivery: contract.delivery,
+        };
+      }
+    } catch (error) {
+      if (isLlmAbortError(error, input.signal)) {
+        throw error;
+      }
+      toolCallPrimaryFailed = true;
+      allowStreamParseFallback = true;
+      // produce 已吞非 abort；此处仅兜底未计入的异常
+      if (llmCallCount === 0) {
+        llmCallCount += 1;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      recorder?.recordLlm(endName, {
+        model,
+        appendCount: 0,
+        sessionFillTextLen: 0,
+        producePath: 'tool_call',
+        delivery: contract.delivery,
+        dslDispatch: false,
+        toolCallFailed: true,
+        error: message,
+        retryWithStreamParse: true,
+        promptTokens,
+        completionTokens,
+      });
+      recorder?.record({
+        type: 'dsl',
+        name: 'produce.tool_call_failed',
+        status: 'failed',
+        detail: {
+          delivery: 'instant',
+          error: message,
+          fallback: 'stream_parse',
+        },
+      });
+    }
+  }
+
+  // abort 后禁止再开 stream 兜底
+  if (input.signal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+
+  // tool_call 本地失败已 early-return；此处仅 fill_stream / observation / 允许的 fallback
+  const isStreamParseFallback = toolCallPrimaryFailed && allowStreamParseFallback;
+
+  // —— fill_stream / observation / tool_call fallback：streamChat ——
   if (fillStreamLive) {
     streamSession = new HostToolStreamSession({
       publish,
@@ -213,19 +488,40 @@ export async function executePageActionLlmDslStream(input: {
     },
   });
 
-  const llmMessages =
-    contract.produceMode === 'structured'
-      ? withStructuredArgsHint(input.messages, input.hostTool.definition.argsSchema)
-      : input.messages;
+  const llmMessages = isStreamParseFallback
+    ? withJsonArgsFallbackMessages(
+        input.messages,
+        input.hostTool.definition.name,
+      )
+    : input.messages;
 
-  const startName = input.llmAudit?.startName ?? 'streamChat.start';
-  const endName = input.llmAudit?.endName ?? 'streamChat.end';
-  recorder?.recordLlm(startName, {
+  const streamStartName = isStreamParseFallback
+    ? resolveFallbackAuditStartName(startName)
+    : startName;
+  const streamEndName = isStreamParseFallback
+    ? resolveFallbackAuditEndName(endName)
+    : endName;
+
+  recorder?.recordLlm(streamStartName, {
     messageCount: llmMessages.length,
     delivery: contract.delivery,
     produceMode: contract.produceMode,
+    producePath: isStreamParseFallback ? 'stream_parse_fallback' : 'stream',
     streamableTools: fillTools.map((tool) => tool.name),
     dslDispatch: willDispatchLive,
+  });
+
+  logPageActionLlmPrompt({
+    actionRunId: input.actionRunId,
+    actionKey: input.actionKey,
+    phase: isStreamParseFallback ? 'stream_parse_fallback' : 'stream',
+    messages: llmMessages,
+    meta: {
+      delivery: contract.delivery,
+      produceMode: contract.produceMode,
+      willDispatchLive,
+      fillStreamLive,
+    },
   });
 
   try {
@@ -234,25 +530,53 @@ export async function executePageActionLlmDslStream(input: {
       messages: llmMessages,
       textSession,
       signal: input.signal,
-      budgetHints: input.budgetHints,
+      // tool_call 主路径用 decision；fill_stream / stream 兜底用 summarize（或调用方传入）
+      budgetHints: isStreamParseFallback
+        ? { callKind: 'summarize' }
+        : (input.budgetHints ?? { callKind: 'summarize' }),
       onLlmDelta: (delta) => {
         input.onLlmDelta?.(delta);
       },
     });
+    llmCallCount += 1;
 
-    model = llmFill.model;
+    model = llmFill.model ?? model;
     fillText = llmFill.fillText;
     displayText = llmFill.fillText;
     appendCount = llmFill.appendCount;
     const responseMeta = responseMetaFromStreamRaw(llmFill.streamResult.raw);
     const usage = extractLlmTokenUsageFromResponseMeta(responseMeta);
-    promptTokens = usage?.promptTokens ?? null;
-    completionTokens = usage?.completionTokens ?? null;
+    // 兜底时累加，避免只保留第二枪的用量
+    promptTokens = addNullableTokenCounts(
+      promptTokens,
+      usage?.promptTokens ?? null,
+    );
+    completionTokens = addNullableTokenCounts(
+      completionTokens,
+      usage?.completionTokens ?? null,
+    );
     if (!model) {
       model = resolveLlmModelNameFromResponseMeta(responseMeta);
     }
 
-    recorder?.recordLlm(endName, {
+    logPageActionLlmResponse({
+      actionRunId: input.actionRunId,
+      actionKey: input.actionKey,
+      phase: isStreamParseFallback ? 'stream_parse_fallback' : 'stream',
+      model,
+      promptTokens,
+      completionTokens,
+      detail: {
+        appendCount,
+        fillText,
+        rawAccumulatedText: llmFill.rawAccumulatedText,
+        streamResultContent: llmFill.streamResult.content ?? null,
+        fellBackToInvoke:
+          llmFill.streamResult.streamMeta?.fellBackToInvoke ?? false,
+      },
+    });
+
+    recorder?.recordLlm(streamEndName, {
       model,
       appendCount,
       sessionFillTextLen: fillText.length,
@@ -266,6 +590,7 @@ export async function executePageActionLlmDslStream(input: {
       promptTokens,
       completionTokens,
       delivery: contract.delivery,
+      producePath: isStreamParseFallback ? 'stream_parse_fallback' : 'stream',
       dslDispatch: willDispatchLive,
     });
 
@@ -297,30 +622,49 @@ export async function executePageActionLlmDslStream(input: {
         });
       }
     } else if (contract.delivery === 'instant') {
-      // 结构化参数：优先用未 sanitize 的原文解析，避免填表 sanitize 破坏 JSON。
-      const structuredSource =
-        llmFill.rawAccumulatedText.trim() ||
-        llmFill.streamResult.content?.trim() ||
-        fillText;
-      const args = parseHostToolArgsFromLlmText({
-        text: structuredSource,
+      const routedFromFull = extractRoutedMessageFromLlmText(
+        llmFill.streamResult.content ?? '',
+      );
+      const parsed = parseHostToolArgsFromLlmTextCandidates({
+        candidates: [
+          llmFill.rawAccumulatedText,
+          routedFromFull,
+          fillText,
+          llmFill.streamResult.content,
+        ],
         argsSchema: input.hostTool.definition.argsSchema,
       });
-      if (args) {
-        const hostTools: HostActionHostToolInvocation[] = [
-          { name: input.hostTool.definition.name, args },
-        ];
-        // 权威 JSON 供 DB 重放；displayText 供 lifecycle 展示。
-        fillText = JSON.stringify(args);
-        displayText = buildHostToolArgsDisplayText(args);
-        dispatchHostActionInstant(publish, `page-action:${input.actionRunId}`, {
+      if (parsed.ok) {
+        const sanitized = sanitizeHostToolArgsAgainstContextCatalogs(
+          parsed.args,
+          input.hostTool.definition.argsSchema,
+          input.actionContext ?? null,
+        );
+        fillText = JSON.stringify(sanitized.args);
+        displayText = buildHostToolArgsDisplayText(sanitized.args);
+        if (Object.keys(sanitized.droppedByField).length > 0) {
+          recorder?.record({
+            type: 'dsl',
+            name: 'args.catalog_sanitized',
+            status: 'ok',
+            detail: {
+              delivery: 'instant',
+              producePath: isStreamParseFallback
+                ? 'stream_parse_fallback'
+                : 'stream_parse',
+              droppedCatalogIds: sanitized.droppedByField,
+            },
+          });
+        }
+        dispatchInstantArgs({
+          publish,
+          actionRunId: input.actionRunId,
           pageContext: input.pageContext,
-          runId: input.actionRunId,
-          turnId: input.actionRunId,
-          hostTools,
-          reason: input.reason,
-          streamId: input.streamId,
           generation: input.generation,
+          streamId: input.streamId,
+          reason: input.reason,
+          toolName: input.hostTool.definition.name,
+          args: sanitized.args,
         });
         dslOutcome = 'dispatched';
         recorder?.record({
@@ -329,20 +673,28 @@ export async function executePageActionLlmDslStream(input: {
           status: 'ok',
           detail: {
             delivery: 'instant',
+            producePath: isStreamParseFallback
+              ? 'stream_parse_fallback'
+              : 'stream_parse',
             tool: input.hostTool.definition.name,
-            argKeys: Object.keys(args),
+            argKeys: Object.keys(sanitized.args),
           },
         });
       } else {
         dslOutcome = 'failed';
+        const failReason =
+          parsed.ok === false ? parsed.reason : 'parse_failed';
+        const failPreview = parsed.ok === false ? parsed.preview : '';
         recorder?.record({
           type: 'dsl',
           name: 'instant.failed',
           status: 'failed',
           detail: {
-            reason: 'structured_args_parse_or_validate_failed',
+            reason: failReason,
             delivery: 'instant',
-            fillTextLen: structuredSource.length,
+            preview: failPreview,
+            rawAccumulatedLen: llmFill.rawAccumulatedLen,
+            streamResultContentLen: llmFill.streamResult.content?.length ?? 0,
           },
         });
       }
@@ -364,6 +716,7 @@ export async function executePageActionLlmDslStream(input: {
     promptTokens,
     completionTokens,
     appendCount,
+    llmCallCount,
     streamable: contract.delivery === 'fill_stream',
     delivery: contract.delivery,
   };

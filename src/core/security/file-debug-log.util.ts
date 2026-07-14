@@ -68,3 +68,31 @@ export function isWorkflowFileDebugEnabled(): boolean {
   }
   return isWorkflowDebugEnabled();
 }
+
+/**
+ * PageAction 运行调试（控制台 + 文件）。
+ * 生产一律关闭；非生产默认开，可用 `PAGE_ACTION_DEBUG=0` 关掉。
+ */
+export function isPageActionRunDebugEnabled(): boolean {
+  if (isProductionRuntime()) {
+    return false;
+  }
+  const explicit = readTriStateEnv('PAGE_ACTION_DEBUG');
+  if (explicit !== undefined) {
+    return explicit;
+  }
+  // 与 fill 调试同默认：非生产开；也可被 PAGE_ACTION_FILL_DEBUG=0 连带关掉
+  const fillExplicit = readTriStateEnv('PAGE_ACTION_FILL_DEBUG');
+  if (fillExplicit === false) {
+    return false;
+  }
+  return true;
+}
+
+/** 是否写入 `logs/page-action/`；生产一律关闭。 */
+export function isPageActionRunFileDebugEnabled(): boolean {
+  if (isProductionRuntime()) {
+    return false;
+  }
+  return isPageActionRunDebugEnabled();
+}

@@ -3,9 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildPageWorkflowRunnerResult = exports.createPageWorkflowExecutorRuntime = void 0;
 const page_action_run_completion_util_1 = require("./page-action-run-completion.util");
 function createPageWorkflowExecutorRuntime(input, recorder) {
-    var _a, _b;
+    var _a, _b, _c;
     return {
         pageContext: input.pageContext,
+        actionContext: (_a = input.actionContext) !== null && _a !== void 0 ? _a : null,
         messages: input.messages,
         nodeOutputs: {},
         systemPrompt: input.systemPrompt,
@@ -18,11 +19,11 @@ function createPageWorkflowExecutorRuntime(input, recorder) {
         actionRunId: input.actionRunId,
         actionKey: input.actionKey,
         generation: input.generation,
-        clientActionId: (_a = input.clientActionId) !== null && _a !== void 0 ? _a : null,
+        clientActionId: (_b = input.clientActionId) !== null && _b !== void 0 ? _b : null,
         sseSink: input.sseSink,
         hostTool: input.hostTool,
         stepRecorder: recorder,
-        toolBundle: (_b = input.toolBundle) !== null && _b !== void 0 ? _b : null,
+        toolBundle: (_c = input.toolBundle) !== null && _c !== void 0 ? _c : null,
         fillText: '',
         dslOutcome: null,
         metrics: {

@@ -10,6 +10,8 @@ import type { PageActionRunStepRecorder } from '../../page-action/page-action-ru
 
 export type PageWorkflowExecutorRuntime = {
   pageContext: AgentChatPageContext | null;
+  /** PageAction invoke.context；供 HostTool x-contextIdCatalog */
+  actionContext?: Record<string, unknown> | null;
   messages: LlmChatMessage[];
   nodeOutputs: Record<string, unknown>;
   systemPrompt: string;
