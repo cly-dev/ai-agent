@@ -1,0 +1,13 @@
+import type { RelationRef } from '../shared/relation-ref';
+export declare class UserEntity {
+    id?: number;
+    employeeId: string;
+    email: string;
+    password: string;
+    username: string;
+    mustChangePassword?: boolean;
+    createdAt?: Date;
+    sessions: RelationRef[];
+    llmModelConfigs: RelationRef[];
+    userApps: RelationRef[];
+}

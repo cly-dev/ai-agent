@@ -1,0 +1,47 @@
+import type { AgentChatPageContext } from '../host-bridge/page-context.types';
+import type { LlmService } from '../llm/llm.service';
+import type { LlmChatMessage } from '../llm/llm.types';
+import type { ResolvedPageActionHostTool } from './page-action-host-tool.util';
+import { PageActionRunStepRecorder, type PageActionRunStep } from './page-action-run-steps.util';
+import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
+export type PageActionHostFillExecuteInput = {
+    actionRunId: number;
+    actionKey: string;
+    generation: number;
+    clientActionId?: string | null;
+    systemPrompt: string;
+    messages: LlmChatMessage[];
+    pageContext: AgentChatPageContext | null;
+    actionContext?: Record<string, unknown> | null;
+    hostTool: ResolvedPageActionHostTool;
+    sseSink: PageActionSseSink;
+    signal?: AbortSignal;
+    stepRecorder?: PageActionRunStepRecorder;
+    terminalLifecycle?: 'self' | 'delegated';
+    streamIdSegment?: string | null;
+};
+export type PageActionHostFillExecuteResult = {
+    fillText: string;
+    dslOutcome: 'dispatched' | 'failed' | 'skipped' | null;
+    streamId: string | null;
+    model: string | null;
+    promptTokens: number | null;
+    completionTokens: number | null;
+    llmCallCount: number;
+    appendCount: number;
+    steps: PageActionRunStep[];
+};
+export declare function executePageActionHostFill(llmService: LlmService, input: PageActionHostFillExecuteInput): Promise<PageActionHostFillExecuteResult>;
+export declare function replayPageActionInlineStream(input: {
+    sseSink: PageActionSseSink;
+    actionRunId: number;
+    actionKey: string;
+    generation: number;
+    clientActionId?: string | null;
+    fillText: string | null;
+    dslOutcome: string | null;
+    streamId: string | null;
+    pageContext: AgentChatPageContext | null;
+    hostTool: ResolvedPageActionHostTool | null;
+    stepRecorder?: PageActionRunStepRecorder;
+}): Promise<PageActionRunStep[]>;
