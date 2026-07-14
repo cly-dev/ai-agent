@@ -1,0 +1,124 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveLlmHostToolsFromCatalog = exports.buildHostToolCatalogFilterDiagnostics = exports.toHostToolDecisionDefinitions = exports.filterHostToolCatalogRowsForPage = exports.resolvePreferredHostToolIdsFromCatalog = void 0;
+function resolvePreferredHostToolIdsFromCatalog(catalog, input) {
+    const agentBoundIds = catalog.agentBoundHostToolIds;
+    if (agentBoundIds.length === 0) {
+        return { preferredIds: [], requiredByToolId: new Map() };
+    }
+    const allSkillBindings = input.skillId != null
+        ? catalog.skillBindings.filter((row) => row.skillId === input.skillId)
+        : [];
+    const skillBindings = allSkillBindings
+        .filter((row) => input.skillTriggers.includes(row.trigger))
+        .map((row) => ({
+        hostToolId: row.hostToolId,
+        isRequired: row.isRequired,
+    }));
+    let preferredIds;
+    if (input.skillId != null) {
+        if (skillBindings.length > 0) {
+            preferredIds = skillBindings.map((row) => row.hostToolId);
+        }
+        else if (allSkillBindings.length === 0) {
+            preferredIds = agentBoundIds;
+        }
+        else {
+            preferredIds = [];
+        }
+    }
+    else {
+        preferredIds = agentBoundIds;
+    }
+    const requiredByToolId = new Map(skillBindings.map((row) => [row.hostToolId, row.isRequired]));
+    return { preferredIds, requiredByToolId };
+}
+exports.resolvePreferredHostToolIdsFromCatalog = resolvePreferredHostToolIdsFromCatalog;
+function filterHostToolCatalogRowsForPage(input) {
+    if (input.preferredIds.length === 0) {
+        return [];
+    }
+    const preferredSet = new Set(input.preferredIds);
+    const pageScope = input.pageScope.trim();
+    return input.catalog.agentBoundTools.filter((tool) => {
+        if (!preferredSet.has(tool.hostToolId)) {
+            return false;
+        }
+        if (!tool.isActive) {
+            return false;
+        }
+        if (pageScope) {
+            if (tool.hostPageScope != null && tool.hostPageScope !== pageScope) {
+                return false;
+            }
+            return true;
+        }
+        return tool.hostPageScope == null;
+    });
+}
+exports.filterHostToolCatalogRowsForPage = filterHostToolCatalogRowsForPage;
+function toHostToolDecisionDefinitions(tools, requiredByToolId, preferredIds) {
+    const toolById = new Map(tools.map((tool) => [tool.hostToolId, tool]));
+    return preferredIds
+        .map((id) => toolById.get(id))
+        .filter((tool) => tool != null)
+        .map((tool) => {
+        var _a;
+        return ({
+            id: tool.hostToolId,
+            name: tool.name,
+            description: tool.description,
+            argsSchema: tool.argsSchema,
+            hostPageScope: tool.hostPageScope,
+            isRequired: (_a = requiredByToolId.get(tool.hostToolId)) !== null && _a !== void 0 ? _a : false,
+        });
+    });
+}
+exports.toHostToolDecisionDefinitions = toHostToolDecisionDefinitions;
+function buildHostToolCatalogFilterDiagnostics(catalog, input) {
+    const toolById = new Map(catalog.agentBoundTools.map((tool) => [tool.hostToolId, tool]));
+    return input.preferredIds.map((hostToolId) => {
+        const tool = toolById.get(hostToolId);
+        if (!tool) {
+            return {
+                hostToolId,
+                name: '(missing from catalog)',
+                included: false,
+                reasons: ['not_in_agent_bound_catalog'],
+                hostPageScope: null,
+                isActive: false,
+            };
+        }
+        const reasons = [];
+        if (!tool.isActive) {
+            reasons.push('inactive');
+        }
+        if (tool.hostPageScope != null && tool.hostPageScope !== input.pageScope) {
+            reasons.push(`page_mismatch:expected=${input.pageScope},actual=${tool.hostPageScope}`);
+        }
+        return {
+            hostToolId,
+            name: tool.name,
+            included: reasons.length === 0,
+            reasons,
+            hostPageScope: tool.hostPageScope,
+            isActive: tool.isActive,
+        };
+    });
+}
+exports.buildHostToolCatalogFilterDiagnostics = buildHostToolCatalogFilterDiagnostics;
+function resolveLlmHostToolsFromCatalog(catalog, input) {
+    const pageScope = input.pageScope.trim();
+    const { preferredIds, requiredByToolId } = resolvePreferredHostToolIdsFromCatalog(catalog, {
+        skillId: input.skillId,
+        skillTriggers: input.skillTriggers,
+    });
+    const scoped = filterHostToolCatalogRowsForPage({
+        catalog,
+        pageScope,
+        preferredIds,
+    });
+    return toHostToolDecisionDefinitions(scoped, requiredByToolId, preferredIds);
+}
+exports.resolveLlmHostToolsFromCatalog = resolveLlmHostToolsFromCatalog;
+//# sourceMappingURL=host-tool-catalog-resolve.util.js.map
