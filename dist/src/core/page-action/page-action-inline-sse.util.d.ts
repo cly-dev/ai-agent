@@ -4,7 +4,7 @@ import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
 import type { WorkflowActionKind } from '../workflow/workflow.types';
 import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
 export type PageActionSseTarget = PageActionSseSink;
-export type PageActionSsePhase = 'started' | 'completed' | 'failed' | 'awaiting_approval';
+export type PageActionSsePhase = 'started' | 'stream' | 'completed' | 'failed' | 'awaiting_approval';
 export type PageWorkflowNodeSsePhase = 'start' | 'complete' | 'failed' | 'awaiting_approval';
 export type PageWorkflowNodeSsePayload = {
     phase: PageWorkflowNodeSsePhase;
@@ -37,6 +37,10 @@ export declare function writeSseEvent(target: PageActionSseTarget, event: string
 export declare function createInlineHostActionPublisher(target: PageActionSseTarget, options?: {
     onPayload?: (payload: HostActionSsePayload) => void;
 }): HostActionEventPublisher;
+export declare function writePageActionStreamDelta(target: PageActionSseTarget, payload: Omit<PageActionLifecyclePayload, 'phase'> & {
+    phase?: 'stream';
+    text: string;
+}): void;
 export declare function writePageActionLifecycle(target: PageActionSseTarget, payload: PageActionLifecyclePayload, recorder?: PageActionRunStepRecorder): void;
 export declare function writePageWorkflowNodeSse(target: PageActionSseTarget, payload: PageWorkflowNodeSsePayload): void;
 export declare function endInlineSseResponse(target: PageActionSseTarget): void;

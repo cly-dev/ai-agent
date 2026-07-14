@@ -19,11 +19,18 @@
 - **那么** 系统必须仅创建 `PageActionRun`，且必须在 runner 内完成 Workflow 全流程
 
 ### 需求:generate_and_push 必须复用 Host Fill 管道
-系统执行 `generate_and_push` 时，必须复用 `runHostFillLlmStream` 与 Host Tool DSL 派发逻辑，且必须保持与现有 `host_action` SSE 兼容。
+系统执行 `generate_and_push` 时，必须复用 PageAction Host Fill 执行器（`executePageActionHostFill` → `tool_call` → `host_action` instant flush）。B 端注册的 HostTool（`id > 0`）一律 structured instant，**不做** `arg.append` 逐字流式。
 
-#### 场景:流式填表
-- **当** 节点 `input.stream` 为 true（默认）
-- **那么** 系统必须发送 `host_action` 流式事件，且 `generation` 必须与 `PageActionRun.generation` 一致
+#### 场景:结构化推送到预览
+- **当** 节点绑定 B 端 HostTool 且 LLM 产参成功
+- **那么** 系统必须发送 `host_action`（`tool.flush`），且 `generation` 必须与 `PageActionRun.generation` 一致
+
+### 需求:summarize 必须使用 prose 流（非 HostTool DSL）
+系统执行 Workflow / PageAction 的 `summarize` 步骤时，必须使用 `page_action` SSE（`phase=stream` 增量 + `phase=completed` 定稿），**不得**经 `host_action` / 内置 `page_action.show_result` DSL。
+
+#### 场景:总结流式输出
+- **当** summarize 节点 `input.stream` 为 true（默认）且非 draft
+- **那么** 系统必须发送 `page_action` 且 `phase=stream` 携带 prose 增量；定稿时 `fillText` 写入 run，`dslOutcome` 为 null
 
 ### 需求:fetch_data 必须调用已绑定 HTTP Tool
 系统执行 `fetch_data` 时，必须使用节点 `input.toolId` 对应 Tool 执行 HTTP 调用，且必须将 observation 供后续节点使用。

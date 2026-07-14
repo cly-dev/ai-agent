@@ -87,7 +87,7 @@ describe('parsePromptBlocks', () => {
     });
   });
 
-  it('routes summarize user messages through composite parser', () => {
+  it('routes summarize user messages through composite parser when callKind is summarize', () => {
     const messages: LlmChatMessage[] = [
       {
         role: 'user',
@@ -95,8 +95,31 @@ describe('parsePromptBlocks', () => {
       },
     ];
 
-    const blocks = parsePromptBlocks(messages);
+    const blocks = parsePromptBlocks(messages, { callKind: 'summarize' });
     expect(blocks.some((b) => b.kind === 'current_user_request')).toBe(true);
     expect(blocks.some((b) => b.kind === 'current_run_observations')).toBe(true);
+  });
+
+  it('does not composite PageAction-style user messages under decision callKind', () => {
+    const messages: LlmChatMessage[] = [
+      {
+        role: 'system',
+        content: 'You are a tagging assistant.',
+      },
+      {
+        role: 'user',
+        content: [
+          'User request: apply tags',
+          '<page_context>{"page":"blog-article-edit"}</page_context>',
+          '<context>{"title":"Brake Pad","categories":[{"id":"1","title":"Brake Pad"}]}</context>',
+        ].join('\n'),
+      },
+    ];
+
+    const blocks = parsePromptBlocks(messages, { callKind: 'decision' });
+    expect(blocks.some((b) => b.kind === 'summarize_context')).toBe(false);
+    expect(blocks.some((b) => b.kind === 'invoke_context')).toBe(true);
+    expect(blocks.some((b) => b.kind === 'current_user_request')).toBe(true);
+    expect(blocks.some((b) => b.kind === 'other')).toBe(true);
   });
 });

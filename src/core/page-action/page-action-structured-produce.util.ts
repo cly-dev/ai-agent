@@ -1,7 +1,7 @@
 import type { AIMessage } from '@langchain/core/messages';
 import { extractToolCalls } from '../agent-engine/engine/main/agent-graph/runtime/decision.util';
 import {
-  enrichHostToolArgsSchemaWithContextCatalogs,
+  resolveHostToolArgsSchemaForToolCallBind,
   sanitizeHostToolArgsAgainstContextCatalogs,
 } from '../host-bridge/host-tool-args-context-catalog.util';
 import {
@@ -76,7 +76,7 @@ export type HostToolToolCallProduceResult =
 /**
  * instant 主产出：与 compose_mutation / ReAct host tool 同构——
  * `bindTools(hostTool stub)` + `tool_choice=工具名`，从 tool_call.arguments 取参。
- * 若 argsSchema 标注 x-contextIdCatalog，则用 PageAction context 注入 enum 并 sanitize。
+ * 若 argsSchema 标注 x-contextIdCatalog，flush 前 sanitize 白名单；enum 注入默认关（见 HOST_TOOL_CATALOG_ENUM_INJECT）。
  */
 export async function produceHostToolArgsViaToolCall(input: {
   llmService: LlmService;
@@ -100,13 +100,14 @@ export async function produceHostToolArgsViaToolCall(input: {
       throw new DOMException('The operation was aborted.', 'AbortError');
     }
 
-    const enrichedSchema = enrichHostToolArgsSchemaWithContextCatalogs(
-      input.hostTool.argsSchema,
-      input.actionContext ?? null,
-    );
+    const { schema: schemaForBind, catalogEnumInjected } =
+      resolveHostToolArgsSchemaForToolCallBind(
+        input.hostTool.argsSchema,
+        input.actionContext ?? null,
+      );
     const toolForBind: HostToolDecisionDefinition = {
       ...input.hostTool,
-      argsSchema: enrichedSchema,
+      argsSchema: schemaForBind,
     };
 
     let tools;
@@ -161,7 +162,7 @@ export async function produceHostToolArgsViaToolCall(input: {
             (input.hostTool.argsSchema.properties as Record<string, unknown> | undefined) ??
               {},
           ),
-          catalogEnumInjected: enrichedSchema !== input.hostTool.argsSchema,
+          catalogEnumInjected,
         },
       });
     }

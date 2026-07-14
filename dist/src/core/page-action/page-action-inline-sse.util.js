@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.endInlineSseResponse = exports.writePageWorkflowNodeSse = exports.writePageActionLifecycle = exports.createInlineHostActionPublisher = exports.writeSseEvent = void 0;
+exports.endInlineSseResponse = exports.writePageWorkflowNodeSse = exports.writePageActionLifecycle = exports.writePageActionStreamDelta = exports.createInlineHostActionPublisher = exports.writeSseEvent = void 0;
 function resolveSseTarget(target) {
     return target;
 }
@@ -20,6 +20,13 @@ function createInlineHostActionPublisher(target, options) {
     };
 }
 exports.createInlineHostActionPublisher = createInlineHostActionPublisher;
+function writePageActionStreamDelta(target, payload) {
+    if (target.writableEnded || !payload.text) {
+        return;
+    }
+    writeSseEvent(target, 'page_action', Object.assign(Object.assign({}, payload), { phase: 'stream' }));
+}
+exports.writePageActionStreamDelta = writePageActionStreamDelta;
 function writePageActionLifecycle(target, payload, recorder) {
     var _a, _b, _c, _d, _e, _f, _g;
     recorder === null || recorder === void 0 ? void 0 : recorder.recordLifecycle(payload.phase, {

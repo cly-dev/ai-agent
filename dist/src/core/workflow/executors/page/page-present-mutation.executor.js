@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pagePresentMutationExecutor = void 0;
 const page_workflow_summarize_util_1 = require("../../../page-action/page-workflow-summarize.util");
-const page_action_summarize_host_tool_util_1 = require("../../../page-action/page-action-summarize-host-tool.util");
 const page_workflow_messages_util_1 = require("../../../page-action/page-workflow-messages.util");
 const page_workflow_node_util_1 = require("../../../page-action/page-workflow-node.util");
 const workflow_run_util_1 = require("../../workflow-run.util");
@@ -16,11 +15,6 @@ exports.pagePresentMutationExecutor = {
         const nodeInput = ctx.def.input;
         const mode = (_a = nodeInput.mode) !== null && _a !== void 0 ? _a : 'brief';
         const messages = (0, page_workflow_messages_util_1.injectWorkflowNodeObjective)((0, page_workflow_messages_util_1.appendWorkflowNodeOutputsToMessages)(runtime.messages, runtime.nodeOutputs), ctx.def.objective, runtime.objectivePrefix);
-        const summarizeHostTool = await (0, page_action_summarize_host_tool_util_1.resolvePageActionSummarizeHostTool)(runtime.prisma, {
-            appClientId: runtime.appClientId,
-            pageContext: runtime.pageContext,
-            fallbackHostTool: runtime.hostTool,
-        });
         const summarizeResult = await (0, page_workflow_summarize_util_1.executePageWorkflowSummarize)({
             llmService: runtime.llmService,
             messages,
@@ -32,7 +26,6 @@ exports.pagePresentMutationExecutor = {
             clientActionId: (_b = runtime.clientActionId) !== null && _b !== void 0 ? _b : null,
             existingFillText: runtime.fillText,
             pageContext: runtime.pageContext,
-            summarizeHostTool,
             stepRecorder: runtime.stepRecorder,
             streamLifecycle: 'none',
             systemPrompt: runtime.systemPrompt,

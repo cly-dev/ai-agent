@@ -19,20 +19,22 @@ export declare class AgentSessionScopeService implements OnModuleInit {
     getSessionAllowedTools(sessionId: string, agentId: number, userId: number, appClientId: number): Promise<({
         integration: {
             id: number;
-            name: string;
             updatedAt: Date;
-            baseUrl: string;
+            name: string;
             apiKey: string;
+            baseUrl: string;
             authMode: import("../../../../../../generated/prisma/enums").IntegrationAuthMode;
         };
     } & {
+        path: string;
         id: number;
         appClientId: number;
-        name: string;
         description: string;
         isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
+        method: import("../../../../../../generated/prisma/enums").HttpMethod;
         definitionKey: string;
         riskLevel: import("../../../../../../generated/prisma/enums").ToolLevel;
         schema: import("@prisma/client/runtime/client").JsonValue;
@@ -40,8 +42,6 @@ export declare class AgentSessionScopeService implements OnModuleInit {
         outputSchema: import("@prisma/client/runtime/client").JsonValue;
         responseProfile: import("@prisma/client/runtime/client").JsonValue;
         agentMetadata: import("@prisma/client/runtime/client").JsonValue;
-        method: import("../../../../../../generated/prisma/enums").HttpMethod;
-        path: string;
         integrationId: number;
         toolCategoryId: number;
         timeout: number;

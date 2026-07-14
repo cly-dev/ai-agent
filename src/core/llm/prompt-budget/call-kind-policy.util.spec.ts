@@ -69,4 +69,18 @@ describe('call-kind-policy', () => {
       ),
     ).toBe(2);
   });
+
+  it('caps decision other/agent_prompt at L1 to avoid empty system', () => {
+    const policy = resolveCallKindPolicy('decision');
+    expect(
+      applyCallKindPolicyToBlock('other', BLOCK_MAX_DEGRADE.other, policy),
+    ).toBe(1);
+    expect(
+      applyCallKindPolicyToBlock(
+        'agent_prompt',
+        BLOCK_MAX_DEGRADE.agent_prompt,
+        policy,
+      ),
+    ).toBe(1);
+  });
 });

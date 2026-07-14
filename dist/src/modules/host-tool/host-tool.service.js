@@ -400,11 +400,17 @@ let HostToolService = HostToolService_1 = class HostToolService {
         await this.assertAppClientExists(appClientId);
         const batchScope = ((_a = dto.scope) === null || _a === void 0 ? void 0 : _a.trim()) || undefined;
         const created = [];
-        const skipped = [];
+        const updated = [];
         for (const item of dto.tools) {
             const name = item.name.trim();
             const itemScope = ((_b = item.scope) === null || _b === void 0 ? void 0 : _b.trim()) || batchScope;
             const isGeneric = item.generic === true || !itemScope;
+            let hostPageId = null;
+            if (!isGeneric && itemScope) {
+                hostPageId = await this.ensureHostPageForScope(appClientId, itemScope, dto.pageLabel, dto.routePattern);
+            }
+            const definitionKey = ((_c = item.definitionKey) === null || _c === void 0 ? void 0 : _c.trim()) ||
+                (isGeneric ? name : `${itemScope}.${name}`);
             const existing = await this.prisma.hostTool.findUnique({
                 where: {
                     appClientId_name: { appClientId, name },
@@ -412,19 +418,30 @@ let HostToolService = HostToolService_1 = class HostToolService {
                 select: { id: true, name: true },
             });
             if (existing) {
-                skipped.push({
-                    name: existing.name,
-                    id: existing.id,
-                    reason: 'already_exists',
+                const row = await this.prisma.hostTool.update({
+                    where: { id: existing.id },
+                    data: {
+                        hostPageId,
+                        definitionKey,
+                        description: item.description,
+                        argsSchema: item.argsSchema,
+                        argsTemplate: item.argsTemplate === undefined
+                            ? undefined
+                            : item.argsTemplate == null
+                                ? client_1.Prisma.JsonNull
+                                : item.argsTemplate,
+                        isActive: true,
+                    },
+                    include: host_tool_types_1.HOST_TOOL_DETAIL_INCLUDE,
+                });
+                updated.push({
+                    name: row.name,
+                    id: row.id,
+                    created: false,
+                    tool: (0, host_tool_mapper_1.toHostToolResponse)(row),
                 });
                 continue;
             }
-            let hostPageId = null;
-            if (!isGeneric && itemScope) {
-                hostPageId = await this.ensureHostPageForScope(appClientId, itemScope, dto.pageLabel, dto.routePattern);
-            }
-            const definitionKey = ((_c = item.definitionKey) === null || _c === void 0 ? void 0 : _c.trim()) ||
-                (isGeneric ? name : `${itemScope}.${name}`);
             const row = await this.prisma.hostTool.create({
                 data: {
                     appClientId,
@@ -447,10 +464,14 @@ let HostToolService = HostToolService_1 = class HostToolService {
                 tool: (0, host_tool_mapper_1.toHostToolResponse)(row),
             });
         }
-        if (created.length > 0) {
-            await this.runtimeCacheInvalidator.invalidateForHostTools(created.map((row) => row.id));
+        const touchedIds = [
+            ...created.map((row) => row.id),
+            ...updated.map((row) => row.id),
+        ];
+        if (touchedIds.length > 0) {
+            await this.runtimeCacheInvalidator.invalidateForHostTools(touchedIds);
         }
-        return { created, skipped };
+        return { created, updated, skipped: [] };
     }
     async findClientCatalog(appClientId, query) {
         var _a;

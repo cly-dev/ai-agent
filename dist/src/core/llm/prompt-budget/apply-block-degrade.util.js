@@ -4,6 +4,7 @@ exports.mergeSessionHistoryTurnBlocks = exports.applyDegradeToBlock = void 0;
 const prompt_budget_constants_1 = require("./prompt-budget.constants");
 const observation_degrade_util_1 = require("./observation-degrade.util");
 const goa_degrade_util_1 = require("./goa-degrade.util");
+const context_json_degrade_util_1 = require("./context-json-degrade.util");
 const text_degrade_util_1 = require("./text-degrade.util");
 function applyDegradeToBlock(block, level) {
     var _a;
@@ -84,7 +85,12 @@ function applyDegradeToBlock(block, level) {
             break;
         case 'session_history_turns':
             if (payload.type === 'text') {
-                payload.text = (0, text_degrade_util_1.excerptText)(payload.text, level === 1 ? 3000 : level === 2 ? 1500 : 800);
+                if (payload.text.includes('<context>')) {
+                    payload.text = (0, context_json_degrade_util_1.degradeTaggedContextJsonMessage)(payload.text, level);
+                }
+                else {
+                    payload.text = (0, text_degrade_util_1.excerptText)(payload.text, level === 1 ? 3000 : level === 2 ? 1500 : 800);
+                }
             }
             break;
         case 'session_goa':
@@ -119,6 +125,11 @@ function applyDegradeToBlock(block, level) {
                         : level === 2
                             ? (0, text_degrade_util_1.excerptText)(payload.text, 1500)
                             : payload.text;
+            }
+            break;
+        case 'invoke_context':
+            if (payload.type === 'text' && level >= 1) {
+                payload.text = (0, context_json_degrade_util_1.degradeInvokeContextBlockText)(payload.text, level);
             }
             break;
         default:

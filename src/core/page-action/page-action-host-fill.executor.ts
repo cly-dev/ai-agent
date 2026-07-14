@@ -20,6 +20,7 @@ import {
   endInlineSseResponse,
   writePageActionLifecycle,
 } from './page-action-inline-sse.util';
+import { replayPageActionProseStream } from './page-action-prose-stream.util';
 import type { ResolvedPageActionHostTool } from './page-action-host-tool.util';
 import {
   PageActionRunStepRecorder,
@@ -299,12 +300,9 @@ export async function replayPageActionInlineStream(input: {
 
   const fillText = input.fillText?.trim() ?? '';
   let replayDslOutcome = input.dslOutcome;
+  let hostActionReplayed = false;
 
-  if (
-    fillText &&
-    input.dslOutcome === 'dispatched' &&
-    input.hostTool
-  ) {
+  if (fillText && input.dslOutcome === 'dispatched' && input.hostTool) {
     const contract = resolveHostToolDeliveryContract(input.hostTool.definition);
     const publish = createInlineHostActionPublisher(sink, {
       onPayload: (payload) => {
@@ -344,6 +342,7 @@ export async function replayPageActionInlineStream(input: {
           hostTools: toHostToolInvocations(fills),
           reason: PAGE_ACTION_STREAM_REASON,
         });
+        hostActionReplayed = true;
       } else {
         streamSession.abort({ emitSessionEnd: streamSession.hasBegun });
         replayDslOutcome = 'failed';
@@ -369,6 +368,7 @@ export async function replayPageActionInlineStream(input: {
           streamId,
           generation: input.generation,
         });
+        hostActionReplayed = true;
       } else {
         // 避免假 dispatched：重放未能下发 host_action 时降级并记账
         replayDslOutcome = 'failed';
@@ -383,6 +383,26 @@ export async function replayPageActionInlineStream(input: {
           },
         });
       }
+    }
+  }
+
+  // 总结 prose / 无 host_action 的 run：迟订阅重放 stream delta
+  if (fillText && !hostActionReplayed) {
+    const replayDeltas = replayPageActionProseStream({
+      sseSink: sink,
+      fillText,
+      lifecycle: {
+        ...lifecycle,
+        streamId,
+      },
+    });
+    if (replayDeltas > 0) {
+      recorder.record({
+        type: 'lifecycle',
+        name: 'prose_stream.replay',
+        status: 'ok',
+        detail: { deltaCount: replayDeltas },
+      });
     }
   }
 

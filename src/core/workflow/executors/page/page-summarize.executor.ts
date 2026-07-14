@@ -1,5 +1,5 @@
+import { Logger } from '@nestjs/common';
 import { executePageWorkflowSummarize } from '../../../page-action/page-workflow-summarize.util';
-import { resolvePageActionSummarizeHostTool } from '../../../page-action/page-action-summarize-host-tool.util';
 import {
   appendWorkflowNodeOutputsToMessages,
   injectWorkflowNodeObjective,
@@ -11,25 +11,35 @@ import type { SummarizeNodeInput } from '../../workflow-node-input.types';
 import { requirePageExecutorHost } from '../executor-host.util';
 import type { WorkflowExecutor } from '../workflow-executor.types';
 
+const logger = new Logger('PageSummarizeExecutor');
+
+function warnDeprecatedSummarizeHostToolId(
+  nodeId: string,
+  hostToolId: unknown,
+): void {
+  if (
+    typeof hostToolId === 'number' &&
+    Number.isInteger(hostToolId) &&
+    hostToolId > 0
+  ) {
+    logger.warn(
+      `summarize node ${nodeId}: input.hostToolId=${hostToolId} is ignored; ` +
+        'summarize uses page_action prose stream (phase=stream), not HostTool DSL',
+    );
+  }
+}
+
 export const pageSummarizeExecutor: WorkflowExecutor = {
   action: 'summarize',
   async run(ctx) {
     const { runtime } = requirePageExecutorHost(ctx.host);
     const nodeInput = ctx.def.input as SummarizeNodeInput;
+    warnDeprecatedSummarizeHostToolId(ctx.nodeId, nodeInput.hostToolId);
     const mode = nodeInput.mode ?? 'final';
     const messages = injectWorkflowNodeObjective(
       appendWorkflowNodeOutputsToMessages(runtime.messages, runtime.nodeOutputs),
       ctx.def.objective,
       runtime.objectivePrefix,
-    );
-    const summarizeHostTool = await resolvePageActionSummarizeHostTool(
-      runtime.prisma,
-      {
-        appClientId: runtime.appClientId,
-        nodeHostToolId: nodeInput.hostToolId,
-        pageContext: runtime.pageContext,
-        fallbackHostTool: runtime.hostTool,
-      },
     );
     const summarizeResult = await executePageWorkflowSummarize({
       llmService: runtime.llmService,
@@ -42,7 +52,6 @@ export const pageSummarizeExecutor: WorkflowExecutor = {
       clientActionId: runtime.clientActionId ?? null,
       existingFillText: runtime.fillText,
       pageContext: runtime.pageContext,
-      summarizeHostTool,
       stepRecorder: runtime.stepRecorder,
       streamIdSegment: ctx.nodeId,
       systemPrompt: runtime.systemPrompt,
@@ -50,9 +59,6 @@ export const pageSummarizeExecutor: WorkflowExecutor = {
       nodeObjective: ctx.def.objective,
     });
     mergePageWorkflowLlmMetrics(runtime.metrics, summarizeResult);
-    if (summarizeResult.dslOutcome) {
-      runtime.dslOutcome = summarizeResult.dslOutcome;
-    }
 
     const outputRef = buildWorkflowNodeOutputRef(ctx.def.action, ctx.nodeId);
     const nodeOutput = {

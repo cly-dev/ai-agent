@@ -39,8 +39,8 @@ async function produceHostToolArgsViaToolCall(input) {
         if ((_a = input.signal) === null || _a === void 0 ? void 0 : _a.aborted) {
             throw new DOMException('The operation was aborted.', 'AbortError');
         }
-        const enrichedSchema = (0, host_tool_args_context_catalog_util_1.enrichHostToolArgsSchemaWithContextCatalogs)(input.hostTool.argsSchema, (_b = input.actionContext) !== null && _b !== void 0 ? _b : null);
-        const toolForBind = Object.assign(Object.assign({}, input.hostTool), { argsSchema: enrichedSchema });
+        const { schema: schemaForBind, catalogEnumInjected } = (0, host_tool_args_context_catalog_util_1.resolveHostToolArgsSchemaForToolCallBind)(input.hostTool.argsSchema, (_b = input.actionContext) !== null && _b !== void 0 ? _b : null);
+        const toolForBind = Object.assign(Object.assign({}, input.hostTool), { argsSchema: schemaForBind });
         let tools;
         let byName;
         try {
@@ -87,7 +87,7 @@ async function produceHostToolArgsViaToolCall(input) {
                     preFitMessageCount: input.messages.length,
                     fittedMessageCount: fittedMessages.length,
                     argsSchemaKeys: Object.keys((_e = input.hostTool.argsSchema.properties) !== null && _e !== void 0 ? _e : {}),
-                    catalogEnumInjected: enrichedSchema !== input.hostTool.argsSchema,
+                    catalogEnumInjected,
                 },
             });
         }

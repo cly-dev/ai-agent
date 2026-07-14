@@ -36,6 +36,7 @@ export type PromptBlockKind =
   | 'session_history_guide'
   | 'session_history_turns'
   | 'summarize_context'
+  | 'invoke_context'
   | 'user_memory'
   | 'agent_prompt'
   | 'response_style'

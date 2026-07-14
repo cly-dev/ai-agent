@@ -42,7 +42,6 @@ import { PageActionRunStepRecorder } from '../page-action-run-steps.util';
 import { buildPageActionLlmMessages } from '../page-action-prompt.util';
 import { buildPageActionStreamId } from '../page-action.constants';
 import { loadPageWorkflowToolBundle } from '../page-workflow-tool-bundle.util';
-import { resolvePageActionSummarizeHostTool } from '../page-action-summarize-host-tool.util';
 import { resolvePageActionRunOutputText } from '../resolve-page-action-run-output-text.util';
 import { PageActionRunStreamHub } from '../stream/page-action-run-stream.hub';
 import type { PageActionRunExecutionInput } from './page-action-invoke.types';
@@ -210,15 +209,6 @@ export class PageActionRunExecutor {
         return;
       }
 
-      const summarizeHostTool = await resolvePageActionSummarizeHostTool(
-        this.prisma,
-        {
-          appClientId: input.appClientId,
-          pageContext: input.pageContext,
-          fallbackHostTool: input.hostToolResolved,
-        },
-      );
-
       const summary = await executePageWorkflowSummarize({
         llmService: this.llmService,
         messages,
@@ -230,7 +220,6 @@ export class PageActionRunExecutor {
         clientActionId: input.clientActionId,
         existingFillText: '',
         pageContext: input.pageContext,
-        summarizeHostTool,
         stepRecorder,
         systemPrompt: input.systemPrompt,
         objectivePrefix: input.instruction,

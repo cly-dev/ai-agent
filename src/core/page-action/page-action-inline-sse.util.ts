@@ -12,6 +12,7 @@ function resolveSseTarget(target: PageActionSseTarget): PageActionSseSink {
 
 export type PageActionSsePhase =
   | 'started'
+  | 'stream'
   | 'completed'
   | 'failed'
   | 'awaiting_approval';
@@ -74,6 +75,23 @@ export function createInlineHostActionPublisher(
     options?.onPayload?.(envelope.payload);
     writeSseEvent(target, 'host_action', envelope.payload);
   };
+}
+
+/** 总结 prose 增量；不写 run steps，避免逐步骤膨胀。 */
+export function writePageActionStreamDelta(
+  target: PageActionSseTarget,
+  payload: Omit<PageActionLifecyclePayload, 'phase'> & {
+    phase?: 'stream';
+    text: string;
+  },
+): void {
+  if (target.writableEnded || !payload.text) {
+    return;
+  }
+  writeSseEvent(target, 'page_action', {
+    ...payload,
+    phase: 'stream' as const,
+  });
 }
 
 export function writePageActionLifecycle(

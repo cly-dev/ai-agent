@@ -14,6 +14,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const CONTEXT_ID_CATALOG_KEY = 'x-contextIdCatalog';
 
+/**
+ * 是否将 context 目录 id 注入 tool schema enum。
+ * 默认关：大批量裸 id enum 不参与 message fit，却进 API，易与 prompt 映射脱节。
+ * 开启：HOST_TOOL_CATALOG_ENUM_INJECT=1
+ */
+export function isHostToolCatalogEnumInjectEnabled(): boolean {
+  const raw = process.env.HOST_TOOL_CATALOG_ENUM_INJECT?.trim().toLowerCase();
+  if (!raw) {
+    return false;
+  }
+  if (raw === '0' || raw === 'false' || raw === 'off' || raw === 'no') {
+    return false;
+  }
+  return true;
+}
+
+/** bindTools 用 schema：默认不灌 enum；sanitize 仍按 x-contextIdCatalog 白名单。 */
+export function resolveHostToolArgsSchemaForToolCallBind(
+  argsSchema: Record<string, unknown>,
+  context: Record<string, unknown> | null | undefined,
+): { schema: Record<string, unknown>; catalogEnumInjected: boolean } {
+  if (!isHostToolCatalogEnumInjectEnabled()) {
+    return { schema: argsSchema, catalogEnumInjected: false };
+  }
+  const enriched = enrichHostToolArgsSchemaWithContextCatalogs(argsSchema, context);
+  return {
+    schema: enriched,
+    catalogEnumInjected: enriched !== argsSchema,
+  };
+}
+
 /** 从 context 点分路径读取 `{ id }[]`，收集 id 集合（string 化）。 */
 export function collectContextIdCatalog(
   context: Record<string, unknown> | null | undefined,

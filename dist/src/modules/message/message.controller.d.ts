@@ -15,10 +15,10 @@ export declare class MessageController {
         };
     }, sessionId: string, body: SaveMessageDto): Promise<{
         id: number;
-        createdAt: Date;
-        sessionId: string;
-        role: string;
         content: string;
+        createdAt: Date;
+        role: string;
+        sessionId: string;
         toolName: string;
         toolInput: import("@prisma/client/runtime/client").JsonValue;
         toolOutput: import("@prisma/client/runtime/client").JsonValue;

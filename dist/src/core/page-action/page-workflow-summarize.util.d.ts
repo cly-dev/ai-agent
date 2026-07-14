@@ -4,11 +4,10 @@ import type { LlmService } from '../llm/llm.service';
 import type { LlmChatMessage } from '../llm/llm.types';
 import type { SummarizeNodeInput } from '../workflow/workflow-node-input.types';
 import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
-import type { ResolvedPageActionSummarizeHostTool } from './page-action-summarize-host-tool.util';
 export type PageWorkflowSummarizeStreamLifecycle = 'terminal' | 'none';
 export type PageWorkflowSummarizeResult = {
     summaryText: string;
-    dslOutcome: 'dispatched' | 'failed' | 'skipped' | null;
+    dslOutcome: null;
     model: string | null;
     promptTokens: number | null;
     completionTokens: number | null;
@@ -31,11 +30,11 @@ export declare function executePageWorkflowSummarize(input: {
     clientActionId?: string | null;
     existingFillText: string;
     pageContext: AgentChatPageContext | null;
-    summarizeHostTool: ResolvedPageActionSummarizeHostTool;
     stepRecorder?: PageActionRunStepRecorder;
     streamLifecycle?: PageWorkflowSummarizeStreamLifecycle;
     streamIdSegment?: string | null;
     systemPrompt?: string | null;
     objectivePrefix?: string | null;
     nodeObjective?: string | null;
+    signal?: AbortSignal;
 }): Promise<PageWorkflowSummarizeResult>;

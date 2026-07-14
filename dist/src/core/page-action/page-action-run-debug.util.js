@@ -141,26 +141,30 @@ function logPageActionLlmPrompt(input) {
         stage: input.phase,
         record,
     });
+    const promptJsonRel = jsonFile
+        ? path.relative(process.cwd(), jsonFile)
+        : null;
+    const isPostFitPhase = /fitted|after_fit|cropped/i.test(input.phase);
     appendRunLogBlock({
         actionRunId: input.actionRunId,
         actionKey: input.actionKey,
         stage: 'prompt',
-        record: Object.assign(Object.assign({}, record), { messages: normalized.map((row) => ({
-                index: row.index,
-                role: row.role,
-                contentLength: row.contentLength,
-                estimatedTokens: row.estimatedTokens,
-                contentPreview: row.content.length > 400
-                    ? `${row.content.slice(0, 400)}…`
-                    : row.content,
-            })), promptJsonFile: jsonFile
-                ? `logs/${path.relative(process.cwd(), jsonFile)}`
-                : null }),
+        record: Object.assign(Object.assign({}, record), { messages: isPostFitPhase
+                ? normalized
+                : normalized.map((row) => ({
+                    index: row.index,
+                    role: row.role,
+                    contentLength: row.contentLength,
+                    estimatedTokens: row.estimatedTokens,
+                    contentPreview: row.content.length > 400
+                        ? `${row.content.slice(0, 400)}…`
+                        : row.content,
+                })), promptJsonFile: promptJsonRel, messagesFullInLog: isPostFitPhase }),
     });
     if (jsonFile) {
         logger.log(`page_action.prompt phase=${input.phase} actionRunId=${input.actionRunId}` +
             ` messages=${normalized.length} tokens≈${estimatedTokens}` +
-            ` → logs/${path.relative(process.cwd(), jsonFile)}`);
+            ` → ${promptJsonRel}`);
     }
     return jsonFile;
 }

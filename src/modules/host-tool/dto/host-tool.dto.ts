@@ -248,7 +248,7 @@ export class ClientHostToolRegisterItemDto {
   argsTemplate?: Record<string, unknown>;
 }
 
-/** C 端：首次注册入库，同名工具已存在则跳过（幂等）。 */
+/** C 端：按 name upsert HostTool（首次创建，已存在则更新元数据）。 */
 export class RegisterClientHostToolsDto {
   @ApiPropertyOptional({
     description: 'pageContext.page；页内工具批次 scope',

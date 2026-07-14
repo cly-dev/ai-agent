@@ -48,6 +48,7 @@ export {
   hostToolArgsSchemaIsStructured,
   hostToolContractDispatchesDsl,
   hostToolContractWillDispatchLive,
+  isRegisteredHostTool,
   pickHostToolProseStreamArgKey,
   resolveHostToolDeliveryContract,
   resolveHostToolDeliveryContracts,
@@ -68,6 +69,8 @@ export {
 export {
   collectContextIdCatalog,
   enrichHostToolArgsSchemaWithContextCatalogs,
+  isHostToolCatalogEnumInjectEnabled,
+  resolveHostToolArgsSchemaForToolCallBind,
   sanitizeHostToolArgsAgainstContextCatalogs,
   type SanitizeHostToolArgsCatalogResult,
 } from './host-tool-args-context-catalog.util';

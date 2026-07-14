@@ -38,7 +38,9 @@ async function loadHostToolRow(
 }
 
 /**
- * summarize DSL 锚点：节点 hostToolId → PageAction.hostToolId → 内置展示 tool。
+ * @deprecated PageAction summarize 已改 prose_stream（page-action-prose-stream.util），
+ * 不再解析 summarize 用 HostTool。保留供历史 workflow 配置或迁移脚本引用。
+ * generate_and_push / 单步 host fill 仍用 PageAction.hostToolId。
  */
 export async function resolvePageActionSummarizeHostTool(
   prisma: PrismaService,

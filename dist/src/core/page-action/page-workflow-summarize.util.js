@@ -1,12 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.executePageWorkflowSummarize = exports.shouldEmitPageSummarizeLifecycle = void 0;
-const llm_user_facing_text_util_1 = require("../llm/llm-user-facing-text.util");
-const llm_response_meta_util_1 = require("../llm/llm-response-meta.util");
 const page_action_constants_1 = require("./page-action.constants");
 const page_action_run_audit_util_1 = require("./page-action-run-audit.util");
 const workflow_debug_util_1 = require("../workflow/trace/workflow-debug.util");
-const page_action_llm_dsl_stream_util_1 = require("./page-action-llm-dsl-stream.util");
+const page_action_prose_stream_util_1 = require("./page-action-prose-stream.util");
+const llm_user_facing_text_util_1 = require("../llm/llm-user-facing-text.util");
+const llm_response_meta_util_1 = require("../llm/llm-response-meta.util");
 function shouldEmitPageSummarizeLifecycle(input) {
     var _a;
     const mode = (_a = input.mode) !== null && _a !== void 0 ? _a : 'final';
@@ -75,49 +75,39 @@ async function executePageWorkflowSummarize(input) {
         streamLifecycle,
     });
     if (useLlmStream) {
-        recorder === null || recorder === void 0 ? void 0 : recorder.recordLlm('summarize.start', Object.assign({ messageCount: input.messages.length, mode, delivery: 'dsl_stream', builtinHostTool: input.summarizeHostTool.builtin, hostToolName: input.summarizeHostTool.hostTool.definition.name }, (0, page_action_run_audit_util_1.buildLlmStepAudit)({
-            systemPrompt: input.systemPrompt,
-            objectivePrefix: input.objectivePrefix,
-            nodeObjective: input.nodeObjective,
-            promptMessages: input.messages,
-        })));
-        const streamResult = await (0, page_action_llm_dsl_stream_util_1.executePageActionLlmDslStream)({
+        const streamResult = await (0, page_action_prose_stream_util_1.executePageActionProseStream)({
             llmService: input.llmService,
             messages: input.messages,
             sseSink: input.sseSink,
-            pageContext: input.pageContext,
             actionRunId: input.actionRunId,
             actionKey: input.actionKey,
             generation: input.generation,
             streamId,
-            hostTool: input.summarizeHostTool.hostTool,
-            reason: page_action_constants_1.PAGE_ACTION_SUMMARIZE_STREAM_REASON,
+            clientActionId: input.clientActionId,
             stepRecorder: recorder,
+            signal: input.signal,
             budgetHints: { callKind: 'summarize' },
-            llmAudit: { startName: 'summarize.stream.start', endName: 'summarize.stream.end' },
-        });
-        const summaryText = streamResult.fillText;
-        recorder === null || recorder === void 0 ? void 0 : recorder.recordLlm('summarize.end', {
-            summaryTextLength: summaryText.length,
-            summaryText: (0, page_action_run_audit_util_1.summarizeTextForAudit)(summaryText, 4000),
-            model: streamResult.model,
-            promptTokens: streamResult.promptTokens,
-            completionTokens: streamResult.completionTokens,
-            delivery: 'dsl_stream',
-            dslOutcome: streamResult.dslOutcome,
-            appendCount: streamResult.appendCount,
+            llmAudit: {
+                startName: 'summarize.start',
+                endName: 'summarize.end',
+                startDetail: Object.assign({ mode }, (0, page_action_run_audit_util_1.buildLlmStepAudit)({
+                    systemPrompt: input.systemPrompt,
+                    objectivePrefix: input.objectivePrefix,
+                    nodeObjective: input.nodeObjective,
+                    promptMessages: input.messages,
+                })),
+            },
         });
         (0, workflow_debug_util_1.logWorkflowDebug)('page_summarize', {
             actionRunId: input.actionRunId,
             actionKey: input.actionKey,
             mode,
-            delivery: 'dsl_stream',
-            summaryTextLength: summaryText.length,
-            dslOutcome: streamResult.dslOutcome,
+            delivery: 'prose_stream',
+            summaryTextLength: streamResult.summaryText.length,
         });
         return {
-            summaryText,
-            dslOutcome: streamResult.dslOutcome,
+            summaryText: streamResult.summaryText,
+            dslOutcome: null,
             model: streamResult.model,
             promptTokens: streamResult.promptTokens,
             completionTokens: streamResult.completionTokens,

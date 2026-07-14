@@ -1,5 +1,10 @@
 import type { LlmChatMessage } from '../llm.types';
-import type { PromptBlock, PromptBlockKind, PromptBlockPayload } from './prompt-budget.types';
+import type {
+  PromptBlock,
+  PromptBlockKind,
+  PromptBlockPayload,
+  PromptBudgetCallKind,
+} from './prompt-budget.types';
 import {
   BLOCK_MAX_DEGRADE,
   BLOCK_PRIORITY,
@@ -15,6 +20,10 @@ import {
   isCompositeSummarizeUserMessage,
   parseCompositeUserMessage,
 } from './prompt-block-composite-parser.util';
+import {
+  parseDecisionInvokeUserMessage,
+  shouldParseAsDecisionInvokeUserMessage,
+} from './prompt-block-decision-user-parser.util';
 
 let blockIdCounter = 0;
 
@@ -173,15 +182,35 @@ function classifySystemMessage(
   });
 }
 
+export type ParsePromptBlocksOptions = {
+  callKind?: PromptBudgetCallKind;
+};
+
+/** composite 拆分仅用于 summarize/plan 管线；decision 等路径勿误拆 PageAction user。 */
+export function shouldParseAsCompositeMessage(
+  content: string,
+  callKind?: PromptBudgetCallKind,
+): boolean {
+  if (callKind !== 'summarize' && callKind !== 'plan') {
+    return false;
+  }
+  return isCompositeSummarizeUserMessage(content);
+}
+
 function parseSingleMessage(
   message: LlmChatMessage,
   messageIndex: number,
+  options?: ParsePromptBlocksOptions,
 ): PromptBlock[] {
   const content = message.content;
 
+  if (shouldParseAsDecisionInvokeUserMessage(message, options?.callKind)) {
+    return parseDecisionInvokeUserMessage(message, messageIndex);
+  }
+
   if (
     (message.role === 'user' || message.role === 'assistant') &&
-    isCompositeSummarizeUserMessage(content)
+    shouldParseAsCompositeMessage(content, options?.callKind)
   ) {
     return parseCompositeUserMessage(message, messageIndex);
   }
@@ -271,9 +300,14 @@ function parseSingleMessage(
   ];
 }
 
-export function parsePromptBlocks(messages: LlmChatMessage[]): PromptBlock[] {
+export function parsePromptBlocks(
+  messages: LlmChatMessage[],
+  options?: ParsePromptBlocksOptions,
+): PromptBlock[] {
   blockIdCounter = 0;
-  return messages.flatMap((message, index) => parseSingleMessage(message, index));
+  return messages.flatMap((message, index) =>
+    parseSingleMessage(message, index, options),
+  );
 }
 
 export function resetPromptBlockIdCounterForTests(): void {

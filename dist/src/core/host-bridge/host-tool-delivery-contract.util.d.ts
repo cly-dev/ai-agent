@@ -7,8 +7,9 @@ export type HostToolDeliveryContract = {
     delivery: HostToolDeliveryProfile;
     streamablePath: string | null;
 };
+export declare function isRegisteredHostTool(tool: Pick<HostToolDecisionDefinition, 'id'>): boolean;
 export declare function pickHostToolProseStreamArgKey(properties: Record<string, unknown>): string | null;
-export declare function hostToolArgsSchemaIsStructured(argsSchema: Record<string, unknown> | null | undefined): boolean;
+export declare function hostToolArgsSchemaIsStructured(argsSchema: Record<string, unknown> | null | undefined, toolId?: number): boolean;
 export declare function resolveHostToolDeliveryContract(tool: HostToolDecisionDefinition): HostToolDeliveryContract;
 export declare function resolveHostToolDeliveryContracts(input: {
     hostTools: HostToolDecisionDefinition[];

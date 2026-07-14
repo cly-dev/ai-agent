@@ -1,10 +1,33 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sanitizeHostToolArgsAgainstContextCatalogs = exports.enrichHostToolArgsSchemaWithContextCatalogs = exports.collectContextIdCatalog = void 0;
+exports.sanitizeHostToolArgsAgainstContextCatalogs = exports.enrichHostToolArgsSchemaWithContextCatalogs = exports.collectContextIdCatalog = exports.resolveHostToolArgsSchemaForToolCallBind = exports.isHostToolCatalogEnumInjectEnabled = void 0;
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 const CONTEXT_ID_CATALOG_KEY = 'x-contextIdCatalog';
+function isHostToolCatalogEnumInjectEnabled() {
+    var _a;
+    const raw = (_a = process.env.HOST_TOOL_CATALOG_ENUM_INJECT) === null || _a === void 0 ? void 0 : _a.trim().toLowerCase();
+    if (!raw) {
+        return false;
+    }
+    if (raw === '0' || raw === 'false' || raw === 'off' || raw === 'no') {
+        return false;
+    }
+    return true;
+}
+exports.isHostToolCatalogEnumInjectEnabled = isHostToolCatalogEnumInjectEnabled;
+function resolveHostToolArgsSchemaForToolCallBind(argsSchema, context) {
+    if (!isHostToolCatalogEnumInjectEnabled()) {
+        return { schema: argsSchema, catalogEnumInjected: false };
+    }
+    const enriched = enrichHostToolArgsSchemaWithContextCatalogs(argsSchema, context);
+    return {
+        schema: enriched,
+        catalogEnumInjected: enriched !== argsSchema,
+    };
+}
+exports.resolveHostToolArgsSchemaForToolCallBind = resolveHostToolArgsSchemaForToolCallBind;
 function collectContextIdCatalog(context, catalogPath) {
     const out = new Set();
     if (!context || !catalogPath.trim()) {

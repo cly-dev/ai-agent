@@ -89,11 +89,14 @@ export class HostToolController {
     required: true,
   })
   @ApiOperation({
-    summary: 'C 端：幂等注册 Host Tool 元数据',
+    summary: 'C 端：幂等注册 / 更新 Host Tool 元数据',
     description:
-      '与前端 registry 同步：App 内同名工具首次入库，已存在则跳过。页内工具带 scope 时自动创建 HostPage。执行仍在浏览器。',
+      '与前端 registry 同步：App 内同名工具首次创建，已存在则更新 description/argsSchema/argsTemplate/hostPage。页内工具带 scope 时自动 ensure HostPage。执行仍在浏览器。',
   })
-  @ApiResponse({ status: 201, description: '注册结果（created + skipped）' })
+  @ApiResponse({
+    status: 201,
+    description: '注册结果（created + updated；skipped 恒空，兼容旧客户端）',
+  })
   clientRegister(
     @Req() req: Request,
     @Body() body: RegisterClientHostToolsDto,

@@ -8,7 +8,7 @@ export type PromptBudgetHints = {
     phase?: string;
 };
 export type DegradeLevel = 0 | 1 | 2 | 3 | 4;
-export type PromptBlockKind = 'current_user_request' | 'plan_context' | 'plan_step_override' | 'tool_decision' | 'tool_schema' | 'host_tool_schema' | 'pending_write_tool_call' | 'current_run_observations' | 'working_memory_observations' | 'page_context' | 'session_goa' | 'session_history_summary' | 'session_history_guide' | 'session_history_turns' | 'summarize_context' | 'user_memory' | 'agent_prompt' | 'response_style' | 'message_blocks_spec' | 'tool_result_legacy' | 'other';
+export type PromptBlockKind = 'current_user_request' | 'plan_context' | 'plan_step_override' | 'tool_decision' | 'tool_schema' | 'host_tool_schema' | 'pending_write_tool_call' | 'current_run_observations' | 'working_memory_observations' | 'page_context' | 'session_goa' | 'session_history_summary' | 'session_history_guide' | 'session_history_turns' | 'summarize_context' | 'invoke_context' | 'user_memory' | 'agent_prompt' | 'response_style' | 'message_blocks_spec' | 'tool_result_legacy' | 'other';
 export type ObservationPayload = {
     tool: string;
     executed?: boolean;

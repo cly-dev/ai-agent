@@ -8,14 +8,14 @@ export declare const llmTaskPlanStepSchema: z.ZodObject<{
     id: z.ZodString;
     phase: z.ZodEnum<{
         gather: "gather";
-        answer: "answer";
         analyze: "analyze";
+        answer: "answer";
         mutate: "mutate";
     }>;
     kind: z.ZodEnum<{
         tool: "tool";
-        reason: "reason";
         summarize: "summarize";
+        reason: "reason";
         host_tool: "host_tool";
     }>;
     toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
@@ -32,15 +32,15 @@ export declare const llmOuterPlanStepSchema: z.ZodObject<{
     id: z.ZodString;
     phase: z.ZodEnum<{
         gather: "gather";
-        answer: "answer";
         analyze: "analyze";
+        answer: "answer";
         mutate: "mutate";
     }>;
     kind: z.ZodEnum<{
         tool: "tool";
         skill: "skill";
-        reason: "reason";
         summarize: "summarize";
+        reason: "reason";
         host_tool: "host_tool";
     }>;
     skillId: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
@@ -58,24 +58,24 @@ export declare const llmOuterPlanSchema: z.ZodObject<{
     deliverable: z.ZodEnum<{
         list: "list";
         detail: "detail";
+        answer: "answer";
         analysis: "analysis";
         mutation: "mutation";
-        answer: "answer";
     }>;
     goal: z.ZodString;
     steps: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         phase: z.ZodEnum<{
             gather: "gather";
-            answer: "answer";
             analyze: "analyze";
+            answer: "answer";
             mutate: "mutate";
         }>;
         kind: z.ZodEnum<{
             tool: "tool";
             skill: "skill";
-            reason: "reason";
             summarize: "summarize";
+            reason: "reason";
             host_tool: "host_tool";
         }>;
         skillId: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
@@ -94,23 +94,23 @@ export declare const llmTaskPlanSchema: z.ZodObject<{
     deliverable: z.ZodEnum<{
         list: "list";
         detail: "detail";
+        answer: "answer";
         analysis: "analysis";
         mutation: "mutation";
-        answer: "answer";
     }>;
     goal: z.ZodString;
     steps: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         phase: z.ZodEnum<{
             gather: "gather";
-            answer: "answer";
             analyze: "analyze";
+            answer: "answer";
             mutate: "mutate";
         }>;
         kind: z.ZodEnum<{
             tool: "tool";
-            reason: "reason";
             summarize: "summarize";
+            reason: "reason";
             host_tool: "host_tool";
         }>;
         toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;

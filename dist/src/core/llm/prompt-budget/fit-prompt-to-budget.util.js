@@ -11,8 +11,8 @@ function computeEffectiveBudget(budget) {
     const reserve = (0, prompt_budget_constants_1.getPromptBudgetReserveTokens)();
     return Math.max(256, Math.floor(budget * (1 - margin)) - reserve);
 }
-function estimateRawMessagesTokens(messages) {
-    const blocks = (0, prompt_block_parser_util_1.parsePromptBlocks)(messages);
+function estimateRawMessagesTokens(messages, hints) {
+    const blocks = (0, prompt_block_parser_util_1.parsePromptBlocks)(messages, { callKind: hints === null || hints === void 0 ? void 0 : hints.callKind });
     return (0, prompt_block_render_util_1.estimateBlocksTokens)(blocks);
 }
 function buildSkippedReport(budget, tokensBefore) {
@@ -30,7 +30,8 @@ function buildSkippedReport(budget, tokensBefore) {
 function fitPromptToBudget(messages, budget, hints) {
     var _a;
     const policy = (0, call_kind_policy_util_1.resolveCallKindPolicy)(hints === null || hints === void 0 ? void 0 : hints.callKind, hints === null || hints === void 0 ? void 0 : hints.skipFit);
-    const tokensBefore = estimateRawMessagesTokens(messages);
+    const parseOptions = { callKind: hints === null || hints === void 0 ? void 0 : hints.callKind };
+    const tokensBefore = estimateRawMessagesTokens(messages, hints);
     if (!(0, prompt_budget_constants_1.isPromptBudgetEnabled)() || policy.skipFit) {
         return {
             messages,
@@ -38,7 +39,7 @@ function fitPromptToBudget(messages, budget, hints) {
         };
     }
     const effectiveBudget = computeEffectiveBudget(budget);
-    const originals = (0, apply_block_degrade_util_1.mergeSessionHistoryTurnBlocks)((0, prompt_block_parser_util_1.parsePromptBlocks)(messages).map((block) => (Object.assign(Object.assign({}, block), { payload: structuredClone(block.payload) }))));
+    const originals = (0, apply_block_degrade_util_1.mergeSessionHistoryTurnBlocks)((0, prompt_block_parser_util_1.parsePromptBlocks)(messages, parseOptions).map((block) => (Object.assign(Object.assign({}, block), { payload: structuredClone(block.payload) }))));
     for (const block of originals) {
         block.maxDegradeLevel = (0, call_kind_policy_util_1.applyCallKindPolicyToBlock)(block.kind, block.maxDegradeLevel, policy);
     }

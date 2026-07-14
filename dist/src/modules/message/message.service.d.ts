@@ -24,10 +24,10 @@ export declare class MessageService {
     }>;
     findAllBySession(sessionId: string, userId: number, appClientId: number, query: QueryChatListDto): Promise<import("../../common/pagination").PaginatedResult<{
         id: number;
-        createdAt: Date;
-        sessionId: string;
-        role: string;
         content: string;
+        createdAt: Date;
+        role: string;
+        sessionId: string;
         toolName: string;
         toolInput: import("@prisma/client/runtime/client").JsonValue;
         toolOutput: import("@prisma/client/runtime/client").JsonValue;

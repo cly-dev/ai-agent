@@ -1,10 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetPromptBlockIdCounterForTests = exports.parsePromptBlocks = void 0;
+exports.resetPromptBlockIdCounterForTests = exports.parsePromptBlocks = exports.shouldParseAsCompositeMessage = void 0;
 const prompt_budget_constants_1 = require("./prompt-budget.constants");
 const goa_degrade_util_1 = require("./goa-degrade.util");
 const observation_degrade_util_1 = require("./observation-degrade.util");
 const prompt_block_composite_parser_util_1 = require("./prompt-block-composite-parser.util");
+const prompt_block_decision_user_parser_util_1 = require("./prompt-block-decision-user-parser.util");
 let blockIdCounter = 0;
 function nextBlockId(kind, messageIndex) {
     blockIdCounter += 1;
@@ -128,11 +129,21 @@ function classifySystemMessage(content, message, messageIndex) {
         toolCallId: message.toolCallId,
     });
 }
-function parseSingleMessage(message, messageIndex) {
+function shouldParseAsCompositeMessage(content, callKind) {
+    if (callKind !== 'summarize' && callKind !== 'plan') {
+        return false;
+    }
+    return (0, prompt_block_composite_parser_util_1.isCompositeSummarizeUserMessage)(content);
+}
+exports.shouldParseAsCompositeMessage = shouldParseAsCompositeMessage;
+function parseSingleMessage(message, messageIndex, options) {
     var _a, _b;
     const content = message.content;
+    if ((0, prompt_block_decision_user_parser_util_1.shouldParseAsDecisionInvokeUserMessage)(message, options === null || options === void 0 ? void 0 : options.callKind)) {
+        return (0, prompt_block_decision_user_parser_util_1.parseDecisionInvokeUserMessage)(message, messageIndex);
+    }
     if ((message.role === 'user' || message.role === 'assistant') &&
-        (0, prompt_block_composite_parser_util_1.isCompositeSummarizeUserMessage)(content)) {
+        shouldParseAsCompositeMessage(content, options === null || options === void 0 ? void 0 : options.callKind)) {
         return (0, prompt_block_composite_parser_util_1.parseCompositeUserMessage)(message, messageIndex);
     }
     if (content.includes('<working_memory_observations>') ||
@@ -211,9 +222,9 @@ function parseSingleMessage(message, messageIndex) {
         }),
     ];
 }
-function parsePromptBlocks(messages) {
+function parsePromptBlocks(messages, options) {
     blockIdCounter = 0;
-    return messages.flatMap((message, index) => parseSingleMessage(message, index));
+    return messages.flatMap((message, index) => parseSingleMessage(message, index, options));
 }
 exports.parsePromptBlocks = parsePromptBlocks;
 function resetPromptBlockIdCounterForTests() {

@@ -1,6 +1,6 @@
 import type { ResolvedPageActionHostTool } from './page-action-host-tool.util';
 
-/** C 端内置 handler：渐进展示 PageAction 总结/分析正文（无需 B 端绑 Host Tool）。 */
+/** C 端内置：历史 host_action 展示锚点；新总结流走 page_action phase=stream。 */
 export const PAGE_ACTION_BUILTIN_SHOW_RESULT_TOOL_NAME =
   'page_action.show_result' as const;
 

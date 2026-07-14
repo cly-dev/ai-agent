@@ -21,9 +21,11 @@ export type GenerateAndPushNodeInput = {
 
 export type SummarizeNodeInput = {
   mode?: WorkflowSummarizeMode;
-  /** 是否 DSL 流式交付；默认 true（终态 summarize）。 */
+  /** 是否 prose 流式；默认 true（终态 summarize）。 */
   stream?: boolean;
-  /** 展示/流式 Host Tool；缺省用 PageAction.hostToolId 或内置 page_action.show_result。 */
+  /**
+   * @deprecated 已忽略。总结走 page_action phase=stream，不再绑定 HostTool。
+   */
   hostToolId?: number;
 };
 

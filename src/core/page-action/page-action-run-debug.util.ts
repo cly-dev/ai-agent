@@ -192,7 +192,9 @@ export function logPageActionRunDebug(
 }
 
 /**
- * 记录送给 LLM 的完整提示词（开发环境写 JSON 全文到 `logs/page-action/prompt/`）。
+ * 记录送给 LLM 的完整提示词（开发环境）。
+ * - 全文 JSON → `logs/page-action/prompt/`
+ * - 主 run `.log`：`*_fitted` 等裁剪后 phase 写 messages 全文；其余 phase 只写 preview
  */
 export function logPageActionLlmPrompt(input: {
   actionRunId: number;
@@ -233,27 +235,33 @@ export function logPageActionLlmPrompt(input: {
     stage: input.phase,
     record,
   });
+  const promptJsonRel = jsonFile
+    ? path.relative(process.cwd(), jsonFile)
+    : null;
 
+  // fit 之后（*_fitted）：主 .log 也落全文，便于直接对照裁剪结果。
+  // 其余 phase 仍只写摘要，全文在独立 prompt JSON，避免 initial 把 .log 撑爆。
+  const isPostFitPhase = /fitted|after_fit|cropped/i.test(input.phase);
   appendRunLogBlock({
     actionRunId: input.actionRunId,
     actionKey: input.actionKey,
     stage: 'prompt',
     record: {
       ...record,
-      // 总 log 里只保留索引摘要，全文走独立 prompt JSON，避免单个 .log 体积爆炸
-      messages: normalized.map((row) => ({
-        index: row.index,
-        role: row.role,
-        contentLength: row.contentLength,
-        estimatedTokens: row.estimatedTokens,
-        contentPreview:
-          row.content.length > 400
-            ? `${row.content.slice(0, 400)}…`
-            : row.content,
-      })),
-      promptJsonFile: jsonFile
-        ? `logs/${path.relative(process.cwd(), jsonFile)}`
-        : null,
+      messages: isPostFitPhase
+        ? normalized
+        : normalized.map((row) => ({
+            index: row.index,
+            role: row.role,
+            contentLength: row.contentLength,
+            estimatedTokens: row.estimatedTokens,
+            contentPreview:
+              row.content.length > 400
+                ? `${row.content.slice(0, 400)}…`
+                : row.content,
+          })),
+      promptJsonFile: promptJsonRel,
+      messagesFullInLog: isPostFitPhase,
     },
   });
 
@@ -261,7 +269,7 @@ export function logPageActionLlmPrompt(input: {
     logger.log(
       `page_action.prompt phase=${input.phase} actionRunId=${input.actionRunId}` +
         ` messages=${normalized.length} tokens≈${estimatedTokens}` +
-        ` → logs/${path.relative(process.cwd(), jsonFile)}`,
+        ` → ${promptJsonRel}`,
     );
   }
 

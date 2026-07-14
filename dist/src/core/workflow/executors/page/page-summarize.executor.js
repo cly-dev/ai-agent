@@ -1,27 +1,31 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pageSummarizeExecutor = void 0;
+const common_1 = require("@nestjs/common");
 const page_workflow_summarize_util_1 = require("../../../page-action/page-workflow-summarize.util");
-const page_action_summarize_host_tool_util_1 = require("../../../page-action/page-action-summarize-host-tool.util");
 const page_workflow_messages_util_1 = require("../../../page-action/page-workflow-messages.util");
 const page_workflow_node_util_1 = require("../../../page-action/page-workflow-node.util");
 const workflow_run_util_1 = require("../../workflow-run.util");
 const workflow_node_output_util_1 = require("../../workflow-node-output.util");
 const executor_host_util_1 = require("../executor-host.util");
+const logger = new common_1.Logger('PageSummarizeExecutor');
+function warnDeprecatedSummarizeHostToolId(nodeId, hostToolId) {
+    if (typeof hostToolId === 'number' &&
+        Number.isInteger(hostToolId) &&
+        hostToolId > 0) {
+        logger.warn(`summarize node ${nodeId}: input.hostToolId=${hostToolId} is ignored; ` +
+            'summarize uses page_action prose stream (phase=stream), not HostTool DSL');
+    }
+}
 exports.pageSummarizeExecutor = {
     action: 'summarize',
     async run(ctx) {
         var _a, _b;
         const { runtime } = (0, executor_host_util_1.requirePageExecutorHost)(ctx.host);
         const nodeInput = ctx.def.input;
+        warnDeprecatedSummarizeHostToolId(ctx.nodeId, nodeInput.hostToolId);
         const mode = (_a = nodeInput.mode) !== null && _a !== void 0 ? _a : 'final';
         const messages = (0, page_workflow_messages_util_1.injectWorkflowNodeObjective)((0, page_workflow_messages_util_1.appendWorkflowNodeOutputsToMessages)(runtime.messages, runtime.nodeOutputs), ctx.def.objective, runtime.objectivePrefix);
-        const summarizeHostTool = await (0, page_action_summarize_host_tool_util_1.resolvePageActionSummarizeHostTool)(runtime.prisma, {
-            appClientId: runtime.appClientId,
-            nodeHostToolId: nodeInput.hostToolId,
-            pageContext: runtime.pageContext,
-            fallbackHostTool: runtime.hostTool,
-        });
         const summarizeResult = await (0, page_workflow_summarize_util_1.executePageWorkflowSummarize)({
             llmService: runtime.llmService,
             messages,
@@ -33,7 +37,6 @@ exports.pageSummarizeExecutor = {
             clientActionId: (_b = runtime.clientActionId) !== null && _b !== void 0 ? _b : null,
             existingFillText: runtime.fillText,
             pageContext: runtime.pageContext,
-            summarizeHostTool,
             stepRecorder: runtime.stepRecorder,
             streamIdSegment: ctx.nodeId,
             systemPrompt: runtime.systemPrompt,
@@ -41,9 +44,6 @@ exports.pageSummarizeExecutor = {
             nodeObjective: ctx.def.objective,
         });
         (0, page_workflow_node_util_1.mergePageWorkflowLlmMetrics)(runtime.metrics, summarizeResult);
-        if (summarizeResult.dslOutcome) {
-            runtime.dslOutcome = summarizeResult.dslOutcome;
-        }
         const outputRef = (0, workflow_node_output_util_1.buildWorkflowNodeOutputRef)(ctx.def.action, ctx.nodeId);
         const nodeOutput = {
             summaryText: summarizeResult.summaryText,

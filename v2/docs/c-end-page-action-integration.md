@@ -259,10 +259,13 @@ Accept: text/event-stream
 | phase | 含义 |
 |-------|------|
 | `started` | 开始执行 |
+| `stream` | 总结/分析 prose 增量（`text` 字段为 delta；仅 summarize 路径） |
 | `awaiting_approval` | 已挂起，等待审批 |
-| `completed` | 成功结束 |
+| `completed` | 成功结束（含完整 `text` / `fillText`） |
 | `failed` | 失败（见 `errorCode` / `errorMessage`） |
 | `cancelled` | 已取消 |
+
+HostTool 结构化写入（SEO、打标等）走 **`host_action`** 事件（`tool.flush` 定稿），不走 `phase=stream`。迟订阅重放时，总结类 run 会先重放若干 `stream` 再 `completed`。
 
 Workflow 场景下还有节点级字段（`nodeId`、`action`、`nodeStatus` 等），见 [frontend-workflow-config-guide.md §8](./frontend-workflow-config-guide.md#8-c-端-pageaction-invoke)。
 

@@ -21,6 +21,7 @@ export type ClientHostToolRegisterSkippedItem = {
 };
 export type ClientHostToolRegisterResult = {
     created: ClientHostToolRegisterResultItem[];
+    updated: ClientHostToolRegisterResultItem[];
     skipped: ClientHostToolRegisterSkippedItem[];
 };
 export declare class HostToolService {

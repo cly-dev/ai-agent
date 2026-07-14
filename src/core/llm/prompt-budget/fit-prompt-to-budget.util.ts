@@ -25,8 +25,11 @@ function computeEffectiveBudget(budget: number): number {
   return Math.max(256, Math.floor(budget * (1 - margin)) - reserve);
 }
 
-function estimateRawMessagesTokens(messages: LlmChatMessage[]): number {
-  const blocks = parsePromptBlocks(messages);
+function estimateRawMessagesTokens(
+  messages: LlmChatMessage[],
+  hints?: PromptBudgetHints,
+): number {
+  const blocks = parsePromptBlocks(messages, { callKind: hints?.callKind });
   return estimateBlocksTokens(blocks);
 }
 
@@ -49,7 +52,8 @@ export function fitPromptToBudget(
   hints?: PromptBudgetHints,
 ): FitMessagesResult {
   const policy = resolveCallKindPolicy(hints?.callKind, hints?.skipFit);
-  const tokensBefore = estimateRawMessagesTokens(messages);
+  const parseOptions = { callKind: hints?.callKind };
+  const tokensBefore = estimateRawMessagesTokens(messages, hints);
 
   if (!isPromptBudgetEnabled() || policy.skipFit) {
     return {
@@ -60,7 +64,7 @@ export function fitPromptToBudget(
 
   const effectiveBudget = computeEffectiveBudget(budget);
   const originals = mergeSessionHistoryTurnBlocks(
-    parsePromptBlocks(messages).map((block) => ({
+    parsePromptBlocks(messages, parseOptions).map((block) => ({
       ...block,
       payload: structuredClone(block.payload),
     })),

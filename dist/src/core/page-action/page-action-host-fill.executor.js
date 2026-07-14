@@ -9,6 +9,7 @@ const host_tool_stream_session_util_1 = require("../host-bridge/host-tool-stream
 const plan_reason_host_machine_layer_util_1 = require("../agent-engine/engine/main/plan-present/plan-reason-host-machine-layer.util");
 const page_action_constants_1 = require("./page-action.constants");
 const page_action_inline_sse_util_1 = require("./page-action-inline-sse.util");
+const page_action_prose_stream_util_1 = require("./page-action-prose-stream.util");
 const page_action_run_steps_util_1 = require("./page-action-run-steps.util");
 const page_action_fill_debug_util_1 = require("./page-action-fill-debug.util");
 const page_action_llm_dsl_stream_util_1 = require("./page-action-llm-dsl-stream.util");
@@ -176,9 +177,8 @@ async function replayPageActionInlineStream(input) {
     });
     const fillText = (_e = (_d = input.fillText) === null || _d === void 0 ? void 0 : _d.trim()) !== null && _e !== void 0 ? _e : '';
     let replayDslOutcome = input.dslOutcome;
-    if (fillText &&
-        input.dslOutcome === 'dispatched' &&
-        input.hostTool) {
+    let hostActionReplayed = false;
+    if (fillText && input.dslOutcome === 'dispatched' && input.hostTool) {
         const contract = (0, host_tool_delivery_contract_util_1.resolveHostToolDeliveryContract)(input.hostTool.definition);
         const publish = (0, page_action_inline_sse_util_1.createInlineHostActionPublisher)(sink, {
             onPayload: (payload) => {
@@ -217,6 +217,7 @@ async function replayPageActionInlineStream(input) {
                     hostTools: toHostToolInvocations(fills),
                     reason: page_action_constants_1.PAGE_ACTION_STREAM_REASON,
                 });
+                hostActionReplayed = true;
             }
             else {
                 streamSession.abort({ emitSessionEnd: streamSession.hasBegun });
@@ -244,6 +245,7 @@ async function replayPageActionInlineStream(input) {
                     streamId,
                     generation: input.generation,
                 });
+                hostActionReplayed = true;
             }
             else {
                 replayDslOutcome = 'failed';
@@ -258,6 +260,21 @@ async function replayPageActionInlineStream(input) {
                     },
                 });
             }
+        }
+    }
+    if (fillText && !hostActionReplayed) {
+        const replayDeltas = (0, page_action_prose_stream_util_1.replayPageActionProseStream)({
+            sseSink: sink,
+            fillText,
+            lifecycle: Object.assign(Object.assign({}, lifecycle), { streamId }),
+        });
+        if (replayDeltas > 0) {
+            recorder.record({
+                type: 'lifecycle',
+                name: 'prose_stream.replay',
+                status: 'ok',
+                detail: { deltaCount: replayDeltas },
+            });
         }
     }
     (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sink, Object.assign(Object.assign({ phase: 'completed' }, lifecycle), { text: fillText, dslOutcome: replayDslOutcome }), recorder);

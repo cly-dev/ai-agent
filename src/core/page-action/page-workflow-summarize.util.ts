@@ -1,6 +1,18 @@
-import type { AIMessage } from '@langchain/core/messages';
 import type { PageActionSseSink } from './stream/page-action-sse-sink.types';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
+import type { LlmService } from '../llm/llm.service';
+import type { LlmChatMessage } from '../llm/llm.types';
+import type { SummarizeNodeInput } from '../workflow/workflow-node-input.types';
+import { buildPageActionStreamId } from './page-action.constants';
+import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
+import {
+  buildLlmOutputStepAudit,
+  buildLlmStepAudit,
+  summarizeTextForAudit,
+} from './page-action-run-audit.util';
+import { logWorkflowDebug } from '../workflow/trace/workflow-debug.util';
+import { executePageActionProseStream } from './page-action-prose-stream.util';
+import type { AIMessage } from '@langchain/core/messages';
 import {
   extractAiMessageContentChannel,
   resolveLlmUserFacingTextFromAiMessage,
@@ -9,28 +21,13 @@ import {
   extractLlmTokenUsageFromResponseMeta,
   resolveLlmModelNameFromResponseMeta,
 } from '../llm/llm-response-meta.util';
-import type { LlmService } from '../llm/llm.service';
-import type { LlmChatMessage } from '../llm/llm.types';
-import type { SummarizeNodeInput } from '../workflow/workflow-node-input.types';
-import {
-  PAGE_ACTION_SUMMARIZE_STREAM_REASON,
-  buildPageActionStreamId,
-} from './page-action.constants';
-import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
-import {
-  buildLlmOutputStepAudit,
-  buildLlmStepAudit,
-  summarizeTextForAudit,
-} from './page-action-run-audit.util';
-import { logWorkflowDebug } from '../workflow/trace/workflow-debug.util';
-import { executePageActionLlmDslStream } from './page-action-llm-dsl-stream.util';
-import type { ResolvedPageActionSummarizeHostTool } from './page-action-summarize-host-tool.util';
 
 export type PageWorkflowSummarizeStreamLifecycle = 'terminal' | 'none';
 
 export type PageWorkflowSummarizeResult = {
   summaryText: string;
-  dslOutcome: 'dispatched' | 'failed' | 'skipped' | null;
+  /** 总结 prose 流不走 host_action；恒为 null。 */
+  dslOutcome: null;
   model: string | null;
   promptTokens: number | null;
   completionTokens: number | null;
@@ -143,15 +140,14 @@ export async function executePageWorkflowSummarize(input: {
   clientActionId?: string | null;
   existingFillText: string;
   pageContext: AgentChatPageContext | null;
-  summarizeHostTool: ResolvedPageActionSummarizeHostTool;
   stepRecorder?: PageActionRunStepRecorder;
-  /** terminal：终态 summarize；none：中间步（present_mutation 等，不推 DSL） */
+  /** terminal：终态 summarize；none：中间步（present_mutation 等，不推流） */
   streamLifecycle?: PageWorkflowSummarizeStreamLifecycle;
-  /** host_action DSL streamId 分段（如 workflow nodeId） */
   streamIdSegment?: string | null;
   systemPrompt?: string | null;
   objectivePrefix?: string | null;
   nodeObjective?: string | null;
+  signal?: AbortSignal;
 }): Promise<PageWorkflowSummarizeResult> {
   const recorder = input.stepRecorder;
   const mode = input.nodeInput.mode ?? 'final';
@@ -168,61 +164,44 @@ export async function executePageWorkflowSummarize(input: {
   });
 
   if (useLlmStream) {
-    recorder?.recordLlm('summarize.start', {
-      messageCount: input.messages.length,
-      mode,
-      delivery: 'dsl_stream',
-      builtinHostTool: input.summarizeHostTool.builtin,
-      hostToolName: input.summarizeHostTool.hostTool.definition.name,
-      ...buildLlmStepAudit({
-        systemPrompt: input.systemPrompt,
-        objectivePrefix: input.objectivePrefix,
-        nodeObjective: input.nodeObjective,
-        promptMessages: input.messages,
-      }),
-    });
-
-    const streamResult = await executePageActionLlmDslStream({
+    const streamResult = await executePageActionProseStream({
       llmService: input.llmService,
       messages: input.messages,
       sseSink: input.sseSink,
-      pageContext: input.pageContext,
       actionRunId: input.actionRunId,
       actionKey: input.actionKey,
       generation: input.generation,
       streamId,
-      hostTool: input.summarizeHostTool.hostTool,
-      reason: PAGE_ACTION_SUMMARIZE_STREAM_REASON,
+      clientActionId: input.clientActionId,
       stepRecorder: recorder,
+      signal: input.signal,
       budgetHints: { callKind: 'summarize' },
-      llmAudit: { startName: 'summarize.stream.start', endName: 'summarize.stream.end' },
-    });
-
-    const summaryText = streamResult.fillText;
-
-    recorder?.recordLlm('summarize.end', {
-      summaryTextLength: summaryText.length,
-      summaryText: summarizeTextForAudit(summaryText, 4000),
-      model: streamResult.model,
-      promptTokens: streamResult.promptTokens,
-      completionTokens: streamResult.completionTokens,
-      delivery: 'dsl_stream',
-      dslOutcome: streamResult.dslOutcome,
-      appendCount: streamResult.appendCount,
+      llmAudit: {
+        startName: 'summarize.start',
+        endName: 'summarize.end',
+        startDetail: {
+          mode,
+          ...buildLlmStepAudit({
+            systemPrompt: input.systemPrompt,
+            objectivePrefix: input.objectivePrefix,
+            nodeObjective: input.nodeObjective,
+            promptMessages: input.messages,
+          }),
+        },
+      },
     });
 
     logWorkflowDebug('page_summarize', {
       actionRunId: input.actionRunId,
       actionKey: input.actionKey,
       mode,
-      delivery: 'dsl_stream',
-      summaryTextLength: summaryText.length,
-      dslOutcome: streamResult.dslOutcome,
+      delivery: 'prose_stream',
+      summaryTextLength: streamResult.summaryText.length,
     });
 
     return {
-      summaryText,
-      dslOutcome: streamResult.dslOutcome,
+      summaryText: streamResult.summaryText,
+      dslOutcome: null,
       model: streamResult.model,
       promptTokens: streamResult.promptTokens,
       completionTokens: streamResult.completionTokens,

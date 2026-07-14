@@ -5,13 +5,13 @@ import {
 } from './host-tool-string-arg.util';
 
 /**
- * Host Tool 交付契约：由 argsSchema 推导，避免「默认 DSL」被误当成「必须 fill_stream」。
+ * Host Tool 交付契约。
  *
- * - fill_stream + prose_stream：正文类 string → prose 流式 + arg.append
- * - instant + structured：复杂 args → 主路径 bindTools/tool_call 产参，整包 tool.flush
- * - observation：无可执行 args → 不发 host_action
+ * - **B 端注册 HostTool（id > 0）**：一律 instant + structured（tool_call → tool.flush）
+ * - **内置 / 伪工具（id === 0）**：仅用于 prose 展示锚点，可按 schema 走 fill_stream
+ * - PageAction 总结流式不走 HostTool，见 page-action-prose-stream.util
  *
- * 冲突时：required 含 object/array → 优先 instant（避免 locale 等旁路 string 抢走流式）。
+ * HOST_TOOL_STREAM 只影响 fill_stream 是否 live append，不改变 instant 资格。
  */
 export type HostToolDeliveryProfile = 'fill_stream' | 'instant' | 'observation';
 
@@ -27,6 +27,13 @@ export type HostToolDeliveryContract = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** B 端 HostTool 表注册的工具；与内置 page_action.show_result（id=0）区分。 */
+export function isRegisteredHostTool(
+  tool: Pick<HostToolDecisionDefinition, 'id'>,
+): boolean {
+  return Number.isInteger(tool.id) && tool.id > 0;
 }
 
 function readProperties(
@@ -59,14 +66,13 @@ function propertyDefIsStructured(def: unknown): boolean {
   if (schemaTypeIsStructured(def.type)) {
     return true;
   }
-  // 未写 type 但声明了 properties / items，仍视为结构化
   if (isRecord(def.properties) || def.items != null) {
     return true;
   }
   return false;
 }
 
-/** 优先正文键（text/content/…），不含任意 string 兜底——专供 fill_stream 判定。 */
+/** 优先正文键（text/content/…），专供内置 fill_stream 判定。 */
 export function pickHostToolProseStreamArgKey(
   properties: Record<string, unknown>,
 ): string | null {
@@ -102,21 +108,40 @@ function requiredHasStructuredProperty(
   return false;
 }
 
-/** argsSchema 是否具备可 instant flush 的顶层 properties。 */
+function instantStructuredContract(
+  tool: HostToolDecisionDefinition,
+): HostToolDeliveryContract {
+  return {
+    toolName: tool.name,
+    produceMode: 'structured',
+    delivery: 'instant',
+    streamablePath: null,
+  };
+}
+
+/** argsSchema 是否走 instant flush（注册 HostTool 恒为 true）。 */
 export function hostToolArgsSchemaIsStructured(
   argsSchema: Record<string, unknown> | null | undefined,
+  toolId?: number,
 ): boolean {
+  if (toolId != null && isRegisteredHostTool({ id: toolId })) {
+    return true;
+  }
   const properties = readProperties(argsSchema);
   return properties != null && hasStructuredProperty(properties);
 }
 
 /**
- * 从单个 HostTool 定义推导交付契约（schema 真源；不读 env）。
- * HOST_TOOL_STREAM 只影响 fill_stream 是否 live append，不改变 instant 资格。
+ * 从 HostTool 定义推导交付契约。
+ * 注册 HostTool 不读 schema 形状；内置工具仍按 prose 键推断 fill_stream。
  */
 export function resolveHostToolDeliveryContract(
   tool: HostToolDecisionDefinition,
 ): HostToolDeliveryContract {
+  if (isRegisteredHostTool(tool)) {
+    return instantStructuredContract(tool);
+  }
+
   const properties = readProperties(tool.argsSchema);
   if (!properties) {
     return {
@@ -134,17 +159,10 @@ export function resolveHostToolDeliveryContract(
     properties,
   );
 
-  // required 含 object/array，或仅有结构化字段：instant（整包 flush）
   if (requiredStructured || (structured && !prosePath)) {
-    return {
-      toolName: tool.name,
-      produceMode: 'structured',
-      delivery: 'instant',
-      streamablePath: null,
-    };
+    return instantStructuredContract(tool);
   }
 
-  // 正文类优先键 → fill_stream
   if (prosePath) {
     return {
       toolName: tool.name,
@@ -154,7 +172,6 @@ export function resolveHostToolDeliveryContract(
     };
   }
 
-  // 非优先名的顶层 string（如 message）：仍可流式，避免观察态误伤
   const anyStringPath = pickHostToolStringArgKey(properties);
   if (anyStringPath && !structured) {
     return {
@@ -166,12 +183,7 @@ export function resolveHostToolDeliveryContract(
   }
 
   if (structured) {
-    return {
-      toolName: tool.name,
-      produceMode: 'structured',
-      delivery: 'instant',
-      streamablePath: null,
-    };
+    return instantStructuredContract(tool);
   }
 
   return {
@@ -197,17 +209,12 @@ export function resolveHostToolDeliveryContracts(input: {
   return out;
 }
 
-/** 契约上是否 DSL 交付（不含 env；fill_stream 仍可能被 HOST_TOOL_STREAM 关掉）。 */
 export function hostToolContractDispatchesDsl(
   contract: HostToolDeliveryContract,
 ): boolean {
   return contract.delivery === 'fill_stream' || contract.delivery === 'instant';
 }
 
-/**
- * 当前运行时是否真的会发 host_action。
- * fill_stream 需 HOST_TOOL_STREAM；instant 始终可 flush。
- */
 export function hostToolContractWillDispatchLive(
   contract: HostToolDeliveryContract,
   isStreamEnabled: boolean,

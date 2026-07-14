@@ -18,6 +18,11 @@ function resolveCallKindPolicy(callKind, skipFit) {
         case 'decision':
             return {
                 maxDegradeLevelByKind: {
+                    other: 1,
+                    agent_prompt: 1,
+                    current_user_request: 0,
+                    invoke_context: 2,
+                    session_history_turns: 2,
                     current_run_observations: 2,
                     tool_schema: 2,
                     host_tool_schema: 2,

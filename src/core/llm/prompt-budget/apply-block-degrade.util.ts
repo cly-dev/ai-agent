@@ -13,6 +13,10 @@ import {
   degradeSessionHistorySummary,
 } from './goa-degrade.util';
 import {
+  degradeInvokeContextBlockText,
+  degradeTaggedContextJsonMessage,
+} from './context-json-degrade.util';
+import {
   compactToolSchemaJson,
   degradeActiveSkillInToolDecision,
   degradePlainText,
@@ -113,10 +117,17 @@ export function applyDegradeToBlock(
       break;
     case 'session_history_turns':
       if (payload.type === 'text') {
-        payload.text = excerptText(
-          payload.text,
-          level === 1 ? 3000 : level === 2 ? 1500 : 800,
-        );
+        if (payload.text.includes('<context>')) {
+          payload.text = degradeTaggedContextJsonMessage(
+            payload.text,
+            level as 1 | 2 | 3,
+          );
+        } else {
+          payload.text = excerptText(
+            payload.text,
+            level === 1 ? 3000 : level === 2 ? 1500 : 800,
+          );
+        }
       }
       break;
     case 'session_goa':
@@ -156,6 +167,14 @@ export function applyDegradeToBlock(
             : level === 2
               ? excerptText(payload.text, 1500)
               : payload.text;
+      }
+      break;
+    case 'invoke_context':
+      if (payload.type === 'text' && level >= 1) {
+        payload.text = degradeInvokeContextBlockText(
+          payload.text,
+          level as 1 | 2 | 3,
+        );
       }
       break;
     default:

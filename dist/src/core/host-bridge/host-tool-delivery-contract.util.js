@@ -1,10 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.hostToolContractWillDispatchLive = exports.hostToolContractDispatchesDsl = exports.resolveHostToolDeliveryContracts = exports.resolveHostToolDeliveryContract = exports.hostToolArgsSchemaIsStructured = exports.pickHostToolProseStreamArgKey = void 0;
+exports.hostToolContractWillDispatchLive = exports.hostToolContractDispatchesDsl = exports.resolveHostToolDeliveryContracts = exports.resolveHostToolDeliveryContract = exports.hostToolArgsSchemaIsStructured = exports.pickHostToolProseStreamArgKey = exports.isRegisteredHostTool = void 0;
 const host_tool_string_arg_util_1 = require("./host-tool-string-arg.util");
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+function isRegisteredHostTool(tool) {
+    return Number.isInteger(tool.id) && tool.id > 0;
+}
+exports.isRegisteredHostTool = isRegisteredHostTool;
 function readProperties(argsSchema) {
     if (!isRecord(argsSchema)) {
         return null;
@@ -64,12 +68,26 @@ function requiredHasStructuredProperty(argsSchema, properties) {
     }
     return false;
 }
-function hostToolArgsSchemaIsStructured(argsSchema) {
+function instantStructuredContract(tool) {
+    return {
+        toolName: tool.name,
+        produceMode: 'structured',
+        delivery: 'instant',
+        streamablePath: null,
+    };
+}
+function hostToolArgsSchemaIsStructured(argsSchema, toolId) {
+    if (toolId != null && isRegisteredHostTool({ id: toolId })) {
+        return true;
+    }
     const properties = readProperties(argsSchema);
     return properties != null && hasStructuredProperty(properties);
 }
 exports.hostToolArgsSchemaIsStructured = hostToolArgsSchemaIsStructured;
 function resolveHostToolDeliveryContract(tool) {
+    if (isRegisteredHostTool(tool)) {
+        return instantStructuredContract(tool);
+    }
     const properties = readProperties(tool.argsSchema);
     if (!properties) {
         return {
@@ -83,12 +101,7 @@ function resolveHostToolDeliveryContract(tool) {
     const structured = hasStructuredProperty(properties);
     const requiredStructured = requiredHasStructuredProperty(tool.argsSchema, properties);
     if (requiredStructured || (structured && !prosePath)) {
-        return {
-            toolName: tool.name,
-            produceMode: 'structured',
-            delivery: 'instant',
-            streamablePath: null,
-        };
+        return instantStructuredContract(tool);
     }
     if (prosePath) {
         return {
@@ -108,12 +121,7 @@ function resolveHostToolDeliveryContract(tool) {
         };
     }
     if (structured) {
-        return {
-            toolName: tool.name,
-            produceMode: 'structured',
-            delivery: 'instant',
-            streamablePath: null,
-        };
+        return instantStructuredContract(tool);
     }
     return {
         toolName: tool.name,

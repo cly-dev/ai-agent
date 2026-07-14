@@ -73,6 +73,7 @@ export type ClientHostToolRegisterResultItem = {
   tool?: HostToolResponse;
 };
 
+/** @deprecated 注册已改为存在则更新；保留空数组以兼容旧前端。 */
 export type ClientHostToolRegisterSkippedItem = {
   name: string;
   id: number;
@@ -81,6 +82,9 @@ export type ClientHostToolRegisterSkippedItem = {
 
 export type ClientHostToolRegisterResult = {
   created: ClientHostToolRegisterResultItem[];
+  /** 同名已存在：覆盖 description / argsSchema / argsTemplate / hostPage 等元数据。 */
+  updated: ClientHostToolRegisterResultItem[];
+  /** 恒为空；历史客户端若读 skipped 仍兼容。 */
   skipped: ClientHostToolRegisterSkippedItem[];
 };
 
@@ -598,7 +602,9 @@ export class HostToolService {
   // ── Client catalog ─────────────────────────────────────────────────────
 
   /**
-   * C 端幂等注册：App 内 `name` 首次写入 HostTool；已存在则跳过（不更新）。
+   * C 端幂等注册：App 内按 `name` upsert。
+   * - 首次：创建 HostTool
+   * - 已存在：更新 description / argsSchema / argsTemplate / definitionKey / hostPage，并确保 isActive
    * 页内工具可带 scope，自动 ensure HostPage。
    */
   async registerClientHostTools(
@@ -608,27 +614,12 @@ export class HostToolService {
     await this.assertAppClientExists(appClientId);
     const batchScope = dto.scope?.trim() || undefined;
     const created: ClientHostToolRegisterResultItem[] = [];
-    const skipped: ClientHostToolRegisterSkippedItem[] = [];
+    const updated: ClientHostToolRegisterResultItem[] = [];
 
     for (const item of dto.tools) {
       const name = item.name.trim();
       const itemScope = item.scope?.trim() || batchScope;
       const isGeneric = item.generic === true || !itemScope;
-
-      const existing = await this.prisma.hostTool.findUnique({
-        where: {
-          appClientId_name: { appClientId, name },
-        },
-        select: { id: true, name: true },
-      });
-      if (existing) {
-        skipped.push({
-          name: existing.name,
-          id: existing.id,
-          reason: 'already_exists',
-        });
-        continue;
-      }
 
       let hostPageId: number | null = null;
       if (!isGeneric && itemScope) {
@@ -643,6 +634,41 @@ export class HostToolService {
       const definitionKey =
         item.definitionKey?.trim() ||
         (isGeneric ? name : `${itemScope}.${name}`);
+
+      const existing = await this.prisma.hostTool.findUnique({
+        where: {
+          appClientId_name: { appClientId, name },
+        },
+        select: { id: true, name: true },
+      });
+
+      if (existing) {
+        // 同名覆盖元数据，避免前端改 schema/文案后还得先删再注册
+        const row = await this.prisma.hostTool.update({
+          where: { id: existing.id },
+          data: {
+            hostPageId,
+            definitionKey,
+            description: item.description,
+            argsSchema: item.argsSchema as Prisma.InputJsonValue,
+            argsTemplate:
+              item.argsTemplate === undefined
+                ? undefined
+                : item.argsTemplate == null
+                  ? Prisma.JsonNull
+                  : (item.argsTemplate as Prisma.InputJsonValue),
+            isActive: true,
+          },
+          include: HOST_TOOL_DETAIL_INCLUDE,
+        });
+        updated.push({
+          name: row.name,
+          id: row.id,
+          created: false,
+          tool: toHostToolResponse(row),
+        });
+        continue;
+      }
 
       const row = await this.prisma.hostTool.create({
         data: {
@@ -668,13 +694,15 @@ export class HostToolService {
       });
     }
 
-    if (created.length > 0) {
-      await this.runtimeCacheInvalidator.invalidateForHostTools(
-        created.map((row) => row.id),
-      );
+    const touchedIds = [
+      ...created.map((row) => row.id),
+      ...updated.map((row) => row.id),
+    ];
+    if (touchedIds.length > 0) {
+      await this.runtimeCacheInvalidator.invalidateForHostTools(touchedIds);
     }
 
-    return { created, skipped };
+    return { created, updated, skipped: [] };
   }
 
   async findClientCatalog(

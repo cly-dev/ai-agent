@@ -31,7 +31,6 @@ const page_action_run_steps_util_1 = require("../page-action-run-steps.util");
 const page_action_prompt_util_1 = require("../page-action-prompt.util");
 const page_action_constants_1 = require("../page-action.constants");
 const page_workflow_tool_bundle_util_1 = require("../page-workflow-tool-bundle.util");
-const page_action_summarize_host_tool_util_1 = require("../page-action-summarize-host-tool.util");
 const resolve_page_action_run_output_text_util_1 = require("../resolve-page-action-run-output-text.util");
 const page_action_run_stream_hub_1 = require("../stream/page-action-run-stream.hub");
 const page_action_run_debug_util_1 = require("../page-action-run-debug.util");
@@ -175,11 +174,6 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
                 });
                 return;
             }
-            const summarizeHostTool = await (0, page_action_summarize_host_tool_util_1.resolvePageActionSummarizeHostTool)(this.prisma, {
-                appClientId: input.appClientId,
-                pageContext: input.pageContext,
-                fallbackHostTool: input.hostToolResolved,
-            });
             const summary = await (0, page_workflow_summarize_util_1.executePageWorkflowSummarize)({
                 llmService: this.llmService,
                 messages,
@@ -191,7 +185,6 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
                 clientActionId: input.clientActionId,
                 existingFillText: '',
                 pageContext: input.pageContext,
-                summarizeHostTool,
                 stepRecorder,
                 systemPrompt: input.systemPrompt,
                 objectivePrefix: input.instruction,

@@ -87,7 +87,7 @@ describe('fitPromptToBudget', () => {
     const userContent = result.messages.map((m) => m.content).join('\n');
 
     expect(userContent).toContain('User request: Keep this exact question');
-    const userBlock = parsePromptBlocks(messages).find(
+    const userBlock = parsePromptBlocks(messages, { callKind: 'summarize' }).find(
       (b) => b.kind === 'current_user_request',
     );
     const policy = resolveCallKindPolicy('summarize');
@@ -219,12 +219,15 @@ describe('prompt budget degrade helpers', () => {
   });
 
   it('applies observation L2 long-field preview on text payloads', () => {
-    const block = parsePromptBlocks([
-      {
-        role: 'user',
-        content: 'User request: x\nTool result: ' + repeatChar('z', 9000),
-      },
-    ]).find((b) => b.kind === 'current_run_observations')!;
+    const block = parsePromptBlocks(
+      [
+        {
+          role: 'user',
+          content: 'User request: x\nTool result: ' + repeatChar('z', 9000),
+        },
+      ],
+      { callKind: 'summarize' },
+    ).find((b) => b.kind === 'current_run_observations')!;
 
     const l1 = applyDegradeToBlock(block, 1);
     expect(l1.payload.type).toBe('text');
@@ -234,12 +237,15 @@ describe('prompt budget degrade helpers', () => {
   });
 
   it('uses merged token estimate for same-index blocks', () => {
-    const blocks = parsePromptBlocks([
-      {
-        role: 'user',
-        content: 'User request: a\nTool result: ' + repeatChar('b', 200),
-      },
-    ]);
+    const blocks = parsePromptBlocks(
+      [
+        {
+          role: 'user',
+          content: 'User request: a\nTool result: ' + repeatChar('b', 200),
+        },
+      ],
+      { callKind: 'summarize' },
+    );
     const mergedTokens = estimateBlocksTokens(blocks);
     const rendered = renderPromptBlocks(blocks);
     expect(rendered).toHaveLength(1);

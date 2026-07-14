@@ -22,6 +22,12 @@ export function resolveCallKindPolicy(
     case 'decision':
       return {
         maxDegradeLevelByKind: {
+          // 无标签 system 走 other；L2 清空会丢掉产参规则，decision 禁止删光
+          other: 1,
+          agent_prompt: 1,
+          current_user_request: 0,
+          invoke_context: 2,
+          session_history_turns: 2,
           current_run_observations: 2,
           tool_schema: 2,
           host_tool_schema: 2,
