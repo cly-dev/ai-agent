@@ -1,8 +1,0 @@
-import type { RelationRef } from '../shared/relation-ref';
-export interface RoleSkillType {
-    id?: number;
-    roleId: number;
-    skillId: number;
-    role: RelationRef;
-    skill: RelationRef;
-}
