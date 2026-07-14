@@ -249,10 +249,30 @@ let HostToolService = HostToolService_1 = class HostToolService {
     }
     async removeHostTool(id) {
         const existing = await this.findHostToolOne(id);
+        await this.assertHostToolNotReferencedByPageActions(id);
         await this.assertHostToolNotReferencedByWorkflowNodes(existing.appClientId, id);
         await this.prisma.hostTool.delete({ where: { id } });
         await this.runtimeCacheInvalidator.invalidateForAppClient(existing.appClientId);
         return existing;
+    }
+    async assertHostToolNotReferencedByPageActions(hostToolId) {
+        const pageActions = await this.prisma.pageAction.findMany({
+            where: { hostToolId },
+            select: { id: true, actionKey: true, name: true, appClientId: true },
+            orderBy: { id: 'asc' },
+            take: 20,
+        });
+        if (pageActions.length === 0) {
+            return;
+        }
+        const total = await this.prisma.pageAction.count({ where: { hostToolId } });
+        throw new common_1.BadRequestException({
+            code: 'HOST_TOOL_REFERENCED_BY_PAGE_ACTIONS',
+            message: 'HostTool is referenced by PageAction and cannot be deleted; unbind or delete those PageActions first (or deactivate the HostTool)',
+            hostToolId,
+            total,
+            references: pageActions,
+        });
     }
     async assertHostToolNotReferencedByWorkflowNodes(appClientId, hostToolId) {
         const usages = await (0, workflow_node_reference_guard_util_1.findWorkflowNodeReferences)(this.prisma, {

@@ -370,6 +370,8 @@ export class HostToolService {
 
   async removeHostTool(id: number): Promise<HostToolResponse> {
     const existing = await this.findHostToolOne(id);
+    // PageAction.hostToolId 为 Restrict：必须先解绑/删除 PageAction，否则 DB 会 500
+    await this.assertHostToolNotReferencedByPageActions(id);
     await this.assertHostToolNotReferencedByWorkflowNodes(
       existing.appClientId,
       id,
@@ -377,6 +379,29 @@ export class HostToolService {
     await this.prisma.hostTool.delete({ where: { id } });
     await this.runtimeCacheInvalidator.invalidateForAppClient(existing.appClientId);
     return existing;
+  }
+
+  private async assertHostToolNotReferencedByPageActions(
+    hostToolId: number,
+  ): Promise<void> {
+    const pageActions = await this.prisma.pageAction.findMany({
+      where: { hostToolId },
+      select: { id: true, actionKey: true, name: true, appClientId: true },
+      orderBy: { id: 'asc' },
+      take: 20,
+    });
+    if (pageActions.length === 0) {
+      return;
+    }
+    const total = await this.prisma.pageAction.count({ where: { hostToolId } });
+    throw new BadRequestException({
+      code: 'HOST_TOOL_REFERENCED_BY_PAGE_ACTIONS',
+      message:
+        'HostTool is referenced by PageAction and cannot be deleted; unbind or delete those PageActions first (or deactivate the HostTool)',
+      hostToolId,
+      total,
+      references: pageActions,
+    });
   }
 
   private async assertHostToolNotReferencedByWorkflowNodes(

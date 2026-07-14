@@ -14,9 +14,9 @@ export declare class MessageController {
             userId?: number;
         };
     }, sessionId: string, body: SaveMessageDto): Promise<{
-        role: string;
         id: number;
         createdAt: Date;
+        role: string;
         sessionId: string;
         content: string;
         toolName: string;

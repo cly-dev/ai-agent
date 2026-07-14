@@ -41,14 +41,14 @@ export declare class AdminUserService {
     login(data: LoginAdminUserDto): Promise<{
         accessToken: string;
         user: {
-            role: AdminRole;
             id: number;
+            isActive: boolean;
+            createdAt: Date;
+            updatedAt: Date;
+            role: AdminRole;
             email: string;
             username: string;
             mustChangePassword: boolean;
-            createdAt: Date;
-            isActive: boolean;
-            updatedAt: Date;
         };
         mustChangePassword: boolean;
     }>;

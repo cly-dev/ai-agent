@@ -77,9 +77,9 @@ export declare class ChatController {
         agentId: number;
         createdAt: Date;
         messages: import("../../common/pagination").PaginatedResult<{
-            role: string;
             id: number;
             createdAt: Date;
+            role: string;
             sessionId: string;
             content: string;
             toolName: string;
