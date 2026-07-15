@@ -12,6 +12,8 @@ import {
 } from './page-action-host-tool.util';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 
+import { resolveGenerateAndPushHostToolIds } from '../workflow/resolve-workflow-node-tool-refs.util';
+
 async function loadHostToolRow(
   prisma: PrismaService,
   appClientId: number,
@@ -62,7 +64,46 @@ export async function resolvePageActionHostToolResolved(
   return resolvePageActionHostTool(row, pageContext);
 }
 
-/** generate_and_push 执行期：从节点 input.hostToolId 加载 HostTool。 */
+/** generate_and_push：解析节点 hostToolIds[]（含旧 hostToolId）为候选列表。 */
+export async function resolvePageActionHostToolsForPushNode(
+  prisma: PrismaService,
+  input: {
+    appClientId: number;
+    nodeInput: unknown;
+    pageContext: AgentChatPageContext | null | undefined;
+    fallbackHostTool?: ResolvedPageActionHostTool | null;
+  },
+): Promise<ResolvedPageActionHostTool[]> {
+  const hostToolIds = resolveGenerateAndPushHostToolIds(input.nodeInput);
+  if (hostToolIds.length === 0) {
+    if (input.fallbackHostTool) {
+      return [input.fallbackHostTool];
+    }
+    throw new BadRequestException({
+      code: 'PAGE_ACTION_PUSH_HOST_TOOL_MISSING',
+      message:
+        'generate_and_push node requires input.hostToolIds/hostToolId or PageAction.hostToolId',
+    });
+  }
+  const resolved: ResolvedPageActionHostTool[] = [];
+  for (const hostToolId of hostToolIds) {
+    const row = await loadHostToolRow(
+      prisma,
+      input.appClientId,
+      hostToolId,
+    );
+    if (!row.isActive) {
+      throw new BadRequestException({
+        code: 'HOST_TOOL_INACTIVE',
+        message: `HostTool "${row.name}" is inactive`,
+      });
+    }
+    resolved.push(resolvePageActionHostTool(row, input.pageContext));
+  }
+  return resolved;
+}
+
+/** @deprecated Prefer resolvePageActionHostToolsForPushNode */
 export async function resolvePageActionHostToolForPushNode(
   prisma: PrismaService,
   input: {
@@ -72,30 +113,11 @@ export async function resolvePageActionHostToolForPushNode(
     fallbackHostTool?: ResolvedPageActionHostTool | null;
   },
 ): Promise<ResolvedPageActionHostTool> {
-  if (
-    typeof input.hostToolId === 'number' &&
-    Number.isInteger(input.hostToolId) &&
-    input.hostToolId > 0
-  ) {
-    const row = await loadHostToolRow(
-      prisma,
-      input.appClientId,
-      input.hostToolId,
-    );
-    if (!row.isActive) {
-      throw new BadRequestException({
-        code: 'HOST_TOOL_INACTIVE',
-        message: `HostTool "${row.name}" is inactive`,
-      });
-    }
-    return resolvePageActionHostTool(row, input.pageContext);
-  }
-  if (input.fallbackHostTool) {
-    return input.fallbackHostTool;
-  }
-  throw new BadRequestException({
-    code: 'PAGE_ACTION_PUSH_HOST_TOOL_MISSING',
-    message:
-      'generate_and_push node requires input.hostToolId or PageAction.hostToolId',
+  const list = await resolvePageActionHostToolsForPushNode(prisma, {
+    appClientId: input.appClientId,
+    nodeInput: { hostToolId: input.hostToolId },
+    pageContext: input.pageContext,
+    fallbackHostTool: input.fallbackHostTool,
   });
+  return list[0]!;
 }

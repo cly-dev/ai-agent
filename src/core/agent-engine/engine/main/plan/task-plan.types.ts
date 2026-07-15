@@ -24,14 +24,24 @@ export type TaskDeliverable =
   | 'mutation'
   | 'answer';
 
-/** 步骤执行方式：`skill` 进入 skill 帧；`tool` 走 HTTP ReAct；`host_tool` 走 LLM→前端 Host Tool；`summarize` / `reason` 见各节点；`workflow_gate` 由 Workflow execute_node 执行（如 await_user_confirm）。 */
+/**
+ * 步骤执行方式：
+ * - `skill` 进入 skill 帧
+ * - `tool` 走 HTTP ReAct
+ * - `host_tool` 走 LLM→前端 Host Tool
+ * - `summarize` / `reason` 文本生成
+ * - `workflow_gate`：写确认门（await_user_confirm）
+ * - `workflow_inline`：Workflow execute_node 内聚能力（如 summarize_images），**不进 ReAct**；
+ *   不由 Plan LLM 自由推断，仅由 Workflow 资产 → Plan 镜像
+ */
 export type TaskStepKind =
   | 'skill'
   | 'tool'
   | 'host_tool'
   | 'summarize'
   | 'reason'
-  | 'workflow_gate';
+  | 'workflow_gate'
+  | 'workflow_inline';
 
 /** 任务阶段：`gather` 拉数、`analyze` 分析、`answer` 作答、`mutate` 写操作。 */
 export type TaskStepPhase = 'gather' | 'analyze' | 'answer' | 'mutate';
@@ -57,6 +67,11 @@ export type TaskPlanStep = {
   hostToolIds?: number[];
   objective: string;
   stopWhen?: TaskStepStopWhen;
+  /**
+   * kind=workflow_inline 时：对应的 Workflow action（往返 compile 用）。
+   * 第一期主要为 summarize_images。
+   */
+  workflowAction?: 'summarize_images';
 };
 
 /** Run 内可 JSON 序列化的 Plan 快照（Plan 栈 + 当前活跃帧投影）。 */

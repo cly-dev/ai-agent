@@ -7,6 +7,7 @@ import { AdminRoleGuard } from './auth/admin-role.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { OutboundHttpModule } from './core/outbound-http/outbound-http.module';
+import { ImagePanelModule } from './core/image-panel/image-panel.module';
 import { LlmModule } from './core/llm/llm.module';
 import { MemoryModule } from './core/memory/memory.module';
 import { RuntimeCacheModule } from './core/runtime-cache/runtime-cache.module';
@@ -46,6 +47,7 @@ import { ConnectivityModule } from './modules/connectivity/connectivity.module';
       limit: 120,
     }),
     OutboundHttpModule,
+    ImagePanelModule,
     LlmModule,
     MemoryModule,
     RuntimeCacheModule,

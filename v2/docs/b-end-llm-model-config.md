@@ -129,6 +129,7 @@ Content-Type: application/json
 
 - `contextLength`：按上游真实窗口填（如 8k / 16k / 32k）。
 - `maxTokens`：单次**生成**上限；不要把整段 context（32768）填进 `maxTokens`。
+- Chat / PageAction 走 `LlmService` 时会自动校正「`maxTokens` ≥ 窗口」的误配；**PageAgent 代理**同样会把请求里的 `max_tokens` 夹到校准后的输出上限，避免上游报 `maximum context length` / `0 input tokens`。
 - `parameters` 为整对象更新语义时，若库里已有其它键，请先 GET 再合并后 PATCH，避免覆盖丢失。
 
 ### 5.3 新建一条 Chat 并启用

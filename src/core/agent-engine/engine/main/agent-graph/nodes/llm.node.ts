@@ -220,6 +220,10 @@ export function createLlmNode(bundle: AgentGraphNodeBundle): AgentGraphNodeFn {
       const hostToolsForPrompt = filterHostToolsForPlanStep(
         graphStateForLlm.scopedHostTools ?? [],
         graphStateForLlm.taskPlan,
+        {
+          workflowRun: graphStateForLlm.workflowRun,
+          workflowNodeDefs: graphStateForLlm.workflowNodeDefs,
+        },
       );
       let candidateRecallLangChainTools: DynamicStructuredTool[] | null = null;
       let candidateRecallStep: AgentRunStep | null = null;

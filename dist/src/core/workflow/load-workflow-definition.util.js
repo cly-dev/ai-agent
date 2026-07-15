@@ -11,24 +11,20 @@ var __rest = (this && this.__rest) || function (s, e) {
     return t;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.toWorkflowDefinition = exports.loadWorkflowForRun = exports.loadWorkflowForRunDetailed = exports.parseWorkflowOverridesJson = exports.parseWorkflowNodesJson = void 0;
+exports.toWorkflowDefinition = exports.loadWorkflowForRun = exports.loadWorkflowForRunDetailed = exports.parseWorkflowOverridesJson = exports.serializeWorkflowGraphJson = exports.parseWorkflowGraphJson = exports.parseWorkflowNodesJson = void 0;
 const apply_workflow_overrides_util_1 = require("./apply-workflow-overrides.util");
 const workflow_run_util_1 = require("./workflow-run.util");
 const workflow_definition_cache_util_1 = require("./workflow-definition-cache.util");
+const workflow_edge_util_1 = require("./graph/workflow-edge.util");
+Object.defineProperty(exports, "parseWorkflowGraphJson", { enumerable: true, get: function () { return workflow_edge_util_1.parseWorkflowGraphJson; } });
+Object.defineProperty(exports, "serializeWorkflowGraphJson", { enumerable: true, get: function () { return workflow_edge_util_1.serializeWorkflowGraphJson; } });
 const validate_workflow_against_scope_util_1 = require("./validate-workflow-against-scope.util");
+const validate_workflow_util_1 = require("./validate-workflow.util");
 function isRecord(value) {
     return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 function parseWorkflowNodesJson(value) {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-    return value.filter((row) => isRecord(row) &&
-        typeof row.id === 'string' &&
-        typeof row.action === 'string' &&
-        typeof row.name === 'string' &&
-        typeof row.objective === 'string' &&
-        isRecord(row.input));
+    return (0, workflow_edge_util_1.parseWorkflowGraphJson)(value).nodes;
 }
 exports.parseWorkflowNodesJson = parseWorkflowNodesJson;
 function parseWorkflowOverridesJson(value) {
@@ -92,27 +88,58 @@ async function loadWorkflowForRunDetailed(prisma, input) {
         version = revision.version;
         revisionFingerprint = `${revision.id}:${revision.createdAt.toISOString()}`;
     }
-    let baseNodes = (0, workflow_definition_cache_util_1.readCachedWorkflowLoad)(cacheKey, workflow.updatedAt, revisionFingerprint, version);
-    if (!baseNodes) {
-        baseNodes = parseWorkflowNodesJson(nodesJson);
-        if (baseNodes.length > 0) {
-            (0, workflow_definition_cache_util_1.rememberWorkflowLoadCache)(cacheKey, {
-                workflowId: workflow.id,
-                version,
-                workflowUpdatedAt: workflow.updatedAt.toISOString(),
-                revisionFingerprint,
-                baseNodes,
-            });
-        }
+    let graph = (0, workflow_definition_cache_util_1.readCachedWorkflowLoad)(cacheKey, workflow.updatedAt, revisionFingerprint, version);
+    const fromCache = graph != null;
+    if (!graph) {
+        graph = (0, workflow_edge_util_1.parseWorkflowGraphJson)(nodesJson);
     }
-    if (baseNodes.length === 0) {
+    if (graph.nodes.length === 0) {
         return {
             status: 'failed',
             reason: 'empty_nodes',
             workflowId: workflow.id,
         };
     }
-    const nodes = (0, apply_workflow_overrides_util_1.applyWorkflowOverrides)(baseNodes, input.workflowOverrides);
+    const hasDetectClues = graph.nodes.some((node) => node.action === 'detect_clues');
+    if (hasDetectClues && !graph.edgesDeclared) {
+        return {
+            status: 'failed',
+            reason: 'invalid_edges',
+            workflowId: workflow.id,
+        };
+    }
+    if (graph.edgesDeclared) {
+        if (graph.edgeParseIssues.length > 0 ||
+            (graph.nodes.length > 1 && graph.edges.length === 0)) {
+            return {
+                status: 'failed',
+                reason: 'invalid_edges',
+                workflowId: workflow.id,
+            };
+        }
+        const topologyIssues = (0, validate_workflow_util_1.validateWorkflowTopology)({
+            nodes: graph.nodes,
+            edges: graph.edges,
+            entryNodeId: graph.entryNodeId,
+        });
+        if (topologyIssues.length > 0) {
+            return {
+                status: 'failed',
+                reason: 'invalid_edges',
+                workflowId: workflow.id,
+            };
+        }
+    }
+    if (!fromCache) {
+        (0, workflow_definition_cache_util_1.rememberWorkflowLoadCache)(cacheKey, {
+            workflowId: workflow.id,
+            version,
+            workflowUpdatedAt: workflow.updatedAt.toISOString(),
+            revisionFingerprint,
+            graph,
+        });
+    }
+    const nodes = (0, apply_workflow_overrides_util_1.applyWorkflowOverrides)(graph.nodes, input.workflowOverrides);
     if (input.scope) {
         const compatible = (0, validate_workflow_against_scope_util_1.isWorkflowCompatibleWithScope)({
             nodes,
@@ -130,11 +157,16 @@ async function loadWorkflowForRunDetailed(prisma, input) {
         workflowId: workflow.id,
         version,
         nodes,
+        edges: graph.edges,
+        entryNodeId: graph.entryNodeId,
         compiledFrom: 'workflow_db',
     });
     return {
         status: 'loaded',
         nodes,
+        edges: graph.edges,
+        entryNodeId: graph.entryNodeId,
+        edgesDeclared: graph.edgesDeclared,
         workflowRun,
         workflowId: workflow.id,
         version,
@@ -152,17 +184,13 @@ async function loadWorkflowForRun(prisma, input) {
 }
 exports.loadWorkflowForRun = loadWorkflowForRun;
 function toWorkflowDefinition(row) {
-    var _a;
-    return {
-        workflowKey: row.workflowKey,
-        name: row.name,
-        profile: row.profile,
-        goal: (_a = row.goal) !== null && _a !== void 0 ? _a : null,
-        constraints: Array.isArray(row.constraints)
+    var _a, _b;
+    const graph = (0, workflow_edge_util_1.parseWorkflowGraphJson)(row.nodes);
+    return Object.assign({ workflowKey: row.workflowKey, name: row.name, profile: row.profile, goal: (_a = row.goal) !== null && _a !== void 0 ? _a : null, constraints: Array.isArray(row.constraints)
             ? row.constraints
-            : [],
-        nodes: parseWorkflowNodesJson(row.nodes),
-    };
+            : [], nodes: graph.nodes }, (graph.edgesDeclared
+        ? { edges: graph.edges, entryNodeId: (_b = graph.entryNodeId) !== null && _b !== void 0 ? _b : undefined }
+        : {}));
 }
 exports.toWorkflowDefinition = toWorkflowDefinition;
 //# sourceMappingURL=load-workflow-definition.util.js.map

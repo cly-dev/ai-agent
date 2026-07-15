@@ -41,6 +41,11 @@ export declare class WorkflowService {
     }): Promise<void>;
     private assertReferencingSkillsStillCompatible;
     private assertReferencingPageActionsStillCompatible;
+    private isNodesPayloadProvided;
+    private assertBEndNodesIncludeEdges;
+    private assertGraphEdgesWellFormed;
+    private normalizePersistedGraph;
+    private resolveWorkflowGraph;
     private resolveWorkflowNodes;
     private findEntityOrThrow;
     private assertAppClientExists;

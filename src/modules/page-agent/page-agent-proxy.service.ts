@@ -67,7 +67,9 @@ export class PageAgentProxyService {
   async proxyChatCompletions(input: ProxyChatInput): Promise<void> {
     const body = this.assertRequestBody(input.body);
     const config = await this.llmService.getActiveChatModelConfig();
-    const payload = this.buildUpstreamPayload(body, config);
+    // 与 Chat/PageAction 同口径：把误配成「整窗 maxTokens」校准成输出上限，避免上游 400。
+    const resolvedMaxTokens = await this.llmService.getResolvedMaxTokens();
+    const payload = this.buildUpstreamPayload(body, config, resolvedMaxTokens);
     const timeoutMs = this.readTimeoutMs();
     const startedAt = Date.now();
     const audit = await this.prisma.pageAgentLlmProxyAudit.create({
@@ -402,6 +404,7 @@ export class PageAgentProxyService {
   private buildUpstreamPayload(
     body: Record<string, unknown>,
     config: LlmModelConfig,
+    resolvedMaxTokens: number,
   ): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       ...body,
@@ -409,16 +412,21 @@ export class PageAgentProxyService {
       stream: false,
     };
     delete payload.stream_options;
+
     if (payload.temperature == null && config.temperature != null) {
       payload.temperature = config.temperature;
     }
-    if (
-      payload.max_tokens == null &&
-      payload.maxTokens == null &&
-      config.maxTokens != null
-    ) {
-      payload.max_tokens = config.maxTokens;
-    }
+
+    // 客户端可能传 max_tokens / maxTokens；与配置缺省统一夹到「输出上限」，禁止把 contextLength 当地输出窗。
+    const requestedRaw =
+      this.pickInt(payload.max_tokens) ?? this.pickInt(payload.maxTokens);
+    delete payload.maxTokens;
+    const safeMax =
+      requestedRaw == null
+        ? resolvedMaxTokens
+        : Math.min(requestedRaw, resolvedMaxTokens);
+    payload.max_tokens = Math.max(1, safeMax);
+
     return payload;
   }
 
@@ -435,6 +443,9 @@ export class PageAgentProxyService {
       requestedStream: body.stream,
       forcedStream: payload.stream,
       requestedModel: body.model,
+      requestedMaxTokens:
+        this.pickInt(body.max_tokens) ?? this.pickInt(body.maxTokens),
+      upstreamMaxTokens: this.pickInt(payload.max_tokens),
       toolChoice: body.tool_choice,
       hasStreamOptions: body.stream_options != null,
     });

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.compileTaskPlanFromWorkflow = exports.compileTaskPlanFromWorkflowNodes = void 0;
 const normalize_task_plan_for_workflow_util_1 = require("./normalize-task-plan-for-workflow.util");
+const resolve_workflow_node_tool_refs_util_1 = require("./resolve-workflow-node-tool-refs.util");
 function mapFetchDataToPlanStep(node) {
     return {
         id: node.id,
@@ -12,7 +13,7 @@ function mapFetchDataToPlanStep(node) {
     };
 }
 function mapGenerateAndPushToPlanSteps(node) {
-    const hostToolIds = node.input.hostToolId > 0 ? [node.input.hostToolId] : undefined;
+    const hostToolIds = (0, resolve_workflow_node_tool_refs_util_1.resolveGenerateAndPushHostToolIds)(node.input);
     return [
         {
             id: `${node.id}:reason`,
@@ -20,7 +21,7 @@ function mapGenerateAndPushToPlanSteps(node) {
             objective: node.objective,
             phase: 'answer',
         },
-        Object.assign({ id: node.id, kind: 'host_tool', objective: node.objective, phase: 'answer' }, (hostToolIds ? { hostToolIds } : {})),
+        Object.assign({ id: node.id, kind: 'host_tool', objective: node.objective, phase: 'answer' }, (hostToolIds.length > 0 ? { hostToolIds } : {})),
     ];
 }
 function mapSummarizeToPlanStep(node) {
@@ -35,6 +36,19 @@ function mapWorkflowNodeToPlanSteps(node) {
     switch (node.action) {
         case 'load_page_context':
             return [];
+        case 'detect_clues':
+            return [];
+        case 'summarize_images':
+            return [
+                {
+                    id: node.id,
+                    kind: 'workflow_inline',
+                    objective: node.objective,
+                    phase: 'gather',
+                    stopWhen: 'always',
+                    workflowAction: 'summarize_images',
+                },
+            ];
         case 'fetch_data':
             return [mapFetchDataToPlanStep(node)];
         case 'generate_and_push':

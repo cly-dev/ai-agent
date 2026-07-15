@@ -184,7 +184,6 @@ type WorkflowPresetCatalogEntry = {
 | `hostToolId` | HostTool 下拉 | `GET /admin/host-tool/by-app-client/:appClientId` |
 | `objectives.*` | 多行文本 | 见 §3.4 |
 | `fetchCompleteWhen` | 枚举 | `first_success` \| `fetch_all_pages` |
-| `pushStream` | 开关 | 默认 true |
 | `summarizeMode` | 枚举 | `brief` \| `detailed` \| `final` |
 | `presentMode` | 枚举 | `brief` \| `detailed` |
 | `confirmKind` | 枚举 | `mutation` \| `generic` |
@@ -293,13 +292,21 @@ type WorkflowNodeDef = {
 | action | input 必填 | profile 限制 |
 |--------|------------|--------------|
 | `load_page_context` | — | 全部 |
-| `fetch_data` | **`toolId`** | 全部 |
-| `generate_and_push` | **`hostToolId`** | 全部 |
+| `detect_clues` | —（状态在出边） | 全部 |
+| `fetch_data` | **`toolIds`（或遗留 `toolId`）** | 全部 |
+| `summarize_images` | —（见对接文档） | 全部 |
+| `generate_and_push` | **`hostToolIds`（或遗留 `hostToolId`）** | 全部 |
 | `summarize` | — | 全部 |
 | `compose_mutation` | **`toolId`** | chat / shared only |
 | `present_mutation` | — | chat / shared only |
 | `await_user_confirm` | — | chat / shared only |
 | `write_data` | **`toolId`** | chat / shared only |
+
+**节点专项对接**：
+
+- 图片识别：`[b-end-workflow-summarize-images.md](./b-end-workflow-summarize-images.md)`
+- 状态识别：`[b-end-workflow-detect-clues-edges.md](./b-end-workflow-detect-clues-edges.md)`
+- 多工具绑定：`[b-end-workflow-node-multi-tool-binding.md](./b-end-workflow-node-multi-tool-binding.md)`
 
 **已废弃（保存会失败）**：
 
@@ -358,14 +365,29 @@ function collectRequiredBindings(workflow: WorkflowResponse) {
   const hostToolIds = new Set<number>();
   for (const node of workflow.nodes as WorkflowNodeDef[]) {
     const input = node.input as Record<string, unknown>;
-    if (typeof input.toolId === 'number') toolIds.add(input.toolId);
-    if (typeof input.hostToolId === 'number') hostToolIds.add(input.hostToolId);
+    // 新字段：候选数组（优先）
+    if (Array.isArray(input.toolIds)) {
+      for (const id of input.toolIds) {
+        if (typeof id === 'number') toolIds.add(id);
+      }
+    } else if (typeof input.toolId === 'number') {
+      toolIds.add(input.toolId); // 遗留单绑
+    }
+    if (Array.isArray(input.hostToolIds)) {
+      for (const id of input.hostToolIds) {
+        if (typeof id === 'number') hostToolIds.add(id);
+      }
+    } else if (typeof input.hostToolId === 'number') {
+      hostToolIds.add(input.hostToolId); // 遗留单绑
+    }
   }
   return { toolIds: [...toolIds], hostToolIds: [...hostToolIds] };
 }
 ```
 
 也可直接用响应里的 `workflowTools[].toolId` / `workflowHostTools[].hostToolId`（与 nodes 一致）。
+
+> 节点多候选绑定说明见 [b-end-workflow-node-multi-tool-binding.md](./b-end-workflow-node-multi-tool-binding.md)。
 
 ### 4.4 保存顺序建议
 
@@ -545,7 +567,6 @@ export type WorkflowPresetConfig = {
   writeToolId?: number;
   hostToolId?: number;
   fetchCompleteWhen?: 'first_success' | 'fetch_all_pages';
-  pushStream?: boolean;
   summarizeMode?: 'brief' | 'detailed' | 'final';
   presentMode?: 'brief' | 'detailed';
   confirmKind?: 'mutation' | 'generic';
@@ -721,6 +742,9 @@ X-App-Dsn: <dsn>
 
 | 文档 | 内容 |
 |------|------|
-| [workflow-action-kinds.md](../workflow-action-kinds.md) | 8 种原子 action 权威定义 |
+| [workflow-action-kinds.md](../workflow-action-kinds.md) | 原子 action 权威定义（含 `summarize_images`） |
+| [b-end-workflow-summarize-images.md](./b-end-workflow-summarize-images.md) | **图片识别节点** B 端对接 |
+| [b-end-workflow-detect-clues-edges.md](./b-end-workflow-detect-clues-edges.md) | 状态识别节点与边 |
+| [b-end-workflow-node-multi-tool-binding.md](./b-end-workflow-node-multi-tool-binding.md) | 节点多 Tool / HostTool |
 | [b-end-workflow-preset-admin-guide.md](./b-end-workflow-preset-admin-guide.md) | 运营配置步骤 |
-| [frontend-workflow-config-guide.md](./frontend-workflow-config-guide.md) | 迁移摘要与 C 端 SSE |
+| [frontend-workflow-config-guide.md](./frontend-workflow-config-guide.md) | 编排器表单与类型 |

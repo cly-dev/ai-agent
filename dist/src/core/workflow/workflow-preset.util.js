@@ -53,7 +53,7 @@ function fetchNode(config, toolId, id = 'fetch_data') {
         name: '获取数据',
         objective: objective(config, 'fetch'),
         input: {
-            toolId,
+            toolIds: [toolId],
             completeWhen: (_a = config.fetchCompleteWhen) !== null && _a !== void 0 ? _a : 'first_success',
         },
     };
@@ -65,8 +65,7 @@ function pushNode(config, hostToolId, id = 'generate_push') {
         name: '生成并推送',
         objective: objective(config, 'push'),
         input: {
-            hostToolId,
-            stream: config.pushStream !== false,
+            hostToolIds: [hostToolId],
         },
     };
 }
@@ -176,7 +175,6 @@ exports.WORKFLOW_PRESET_CATALOG = [
         optionalConfig: [
             'readToolId',
             'fetchCompleteWhen',
-            'pushStream',
             'summarizeMode',
             'materializePageContext',
             'objectives',
@@ -194,7 +192,7 @@ exports.WORKFLOW_PRESET_CATALOG = [
         description: '加载页上下文 → Host Tool 推送 → 总结说明（不拉 HTTP 读接口）。',
         profiles: PRESET_PROFILES.page_context_push,
         requiredConfig: ['hostToolId'],
-        optionalConfig: ['pushStream', 'summarizeMode', 'materializePageContext', 'objectives'],
+        optionalConfig: ['summarizeMode', 'materializePageContext', 'objectives'],
         expandedActions: ['load_page_context', 'generate_and_push', 'summarize'],
     },
     {
@@ -205,7 +203,6 @@ exports.WORKFLOW_PRESET_CATALOG = [
         requiredConfig: ['readToolId', 'hostToolId'],
         optionalConfig: [
             'fetchCompleteWhen',
-            'pushStream',
             'summarizeMode',
             'objectives',
         ],

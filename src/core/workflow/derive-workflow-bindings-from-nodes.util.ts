@@ -1,4 +1,8 @@
 import type { WorkflowNodeDef } from './workflow.types';
+import {
+  resolveFetchDataToolIds,
+  resolveGenerateAndPushHostToolIds,
+} from './resolve-workflow-node-tool-refs.util';
 
 export type WorkflowDerivedToolBinding = {
   toolId: number;
@@ -18,7 +22,7 @@ function isPositiveInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
-/** 从 Workflow 节点收集 `input` 上声明的 toolId / hostToolId（配置 SSOT）。 */
+/** 从 Workflow 节点收集 input 上声明的 tool / hostTool id（配置 SSOT）。 */
 export function collectWorkflowNodeBindingRefs(nodes: WorkflowNodeDef[]): {
   toolIds: number[];
   hostToolIds: number[];
@@ -32,7 +36,12 @@ export function collectWorkflowNodeBindingRefs(nodes: WorkflowNodeDef[]): {
     }
     const input = rawInput;
     switch (node.action) {
-      case 'fetch_data':
+      case 'fetch_data': {
+        for (const toolId of resolveFetchDataToolIds(input)) {
+          toolIds.add(toolId);
+        }
+        break;
+      }
       case 'compose_mutation':
       case 'write_data': {
         const toolId = input.toolId;
@@ -42,8 +51,7 @@ export function collectWorkflowNodeBindingRefs(nodes: WorkflowNodeDef[]): {
         break;
       }
       case 'generate_and_push': {
-        const hostToolId = input.hostToolId;
-        if (isPositiveInt(hostToolId)) {
+        for (const hostToolId of resolveGenerateAndPushHostToolIds(input)) {
           hostToolIds.add(hostToolId);
         }
         break;
@@ -114,7 +122,7 @@ export function resolveWorkflowBindingsForSave(input: {
       issues.push({
         path: 'tools',
         code: 'orphan_tool_binding',
-        message: `tools[].toolId=${row.toolId} is not referenced by any workflow node input.toolId`,
+        message: `tools[].toolId=${row.toolId} is not referenced by any workflow node input.toolIds/toolId`,
       });
       continue;
     }
@@ -127,7 +135,7 @@ export function resolveWorkflowBindingsForSave(input: {
       issues.push({
         path: 'hostTools',
         code: 'orphan_host_tool_binding',
-        message: `hostTools[].hostToolId=${row.hostToolId} is not referenced by any workflow node input.hostToolId`,
+        message: `hostTools[].hostToolId=${row.hostToolId} is not referenced by any workflow node input.hostToolIds/hostToolId`,
       });
       continue;
     }

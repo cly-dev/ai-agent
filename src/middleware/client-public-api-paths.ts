@@ -28,6 +28,8 @@ export const CLIENT_PUBLIC_API_EXCLUDES: ClientPublicApiRoute[] = [
   },
   { path: 'approval', method: RequestMethod.ALL },
   { path: 'approval/(.*)', method: RequestMethod.ALL },
+  /** 开发态 IMAGE_PANEL 拼图 demo（与 www 静态页配套；生产随 ENABLE_DEV_STATIC 关闭） */
+  { path: 'dev/image-panel/(.*)', method: RequestMethod.ALL },
 ];
 
 function escapeRegex(value: string): string {

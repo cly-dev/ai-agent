@@ -11,20 +11,44 @@ const nodes: WorkflowNodeDef[] = [
     action: 'fetch_data',
     name: 'Fetch',
     objective: 'Fetch',
-    input: { toolId: 10 },
+    input: { toolIds: [10] },
   },
   {
     id: 'push',
     action: 'generate_and_push',
     name: 'Push',
     objective: 'Push',
-    input: { hostToolId: 4 },
+    input: { hostToolIds: [4] },
   },
 ];
 
 describe('derive-workflow-bindings-from-nodes.util', () => {
-  it('collectWorkflowNodeBindingRefs reads toolId and hostToolId from nodes', () => {
+  it('collectWorkflowNodeBindingRefs reads toolIds and hostToolIds from nodes', () => {
     expect(collectWorkflowNodeBindingRefs(nodes)).toEqual({
+      toolIds: [10],
+      hostToolIds: [4],
+    });
+  });
+
+  it('collectWorkflowNodeBindingRefs still reads legacy toolId / hostToolId', () => {
+    expect(
+      collectWorkflowNodeBindingRefs([
+        {
+          id: 'fetch',
+          action: 'fetch_data',
+          name: 'Fetch',
+          objective: 'Fetch',
+          input: { toolId: 10 },
+        },
+        {
+          id: 'push',
+          action: 'generate_and_push',
+          name: 'Push',
+          objective: 'Push',
+          input: { hostToolId: 4 },
+        },
+      ]),
+    ).toEqual({
       toolIds: [10],
       hostToolIds: [4],
     });

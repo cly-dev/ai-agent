@@ -1,4 +1,5 @@
 import { toHostToolResponse } from '../host-tool/host-tool.mapper';
+import { parseWorkflowGraphJson } from '../../core/workflow/graph/workflow-edge.util';
 import type {
   WorkflowDetailRow,
   WorkflowListRow,
@@ -59,10 +60,10 @@ export function toWorkflowResponse(row: WorkflowDetailRow): WorkflowResponse {
 }
 
 export function toWorkflowListItem(row: WorkflowListRow): WorkflowListItem {
-  const nodes = Array.isArray(row.nodes) ? row.nodes : [];
+  const nodeCount = parseWorkflowGraphJson(row.nodes).nodes.length;
   return {
     ...mapWorkflowCore(row),
-    nodeCount: nodes.length,
+    nodeCount,
   };
 }
 

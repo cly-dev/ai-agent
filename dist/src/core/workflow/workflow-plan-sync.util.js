@@ -19,7 +19,6 @@ function syncWorkflowRunAfterPlanAdvance(input) {
         }
     }
     const planAfter = input.planAdvance.updatedPlan;
-    const nextStepId = planAfter.currentStepId;
     const currentId = run.currentNodeId;
     if (currentId != null) {
         const active = run.nodes.find((node) => node.nodeId === currentId);
@@ -29,21 +28,11 @@ function syncWorkflowRunAfterPlanAdvance(input) {
             run = (0, workflow_run_util_1.completeWorkflowNode)(run, currentId, `obs:step:${currentId}`);
         }
     }
-    if (nextStepId) {
-        run = Object.assign(Object.assign({}, run), { currentNodeId: nextStepId });
-        const nextNode = run.nodes.find((node) => node.nodeId === nextStepId);
-        if ((nextNode === null || nextNode === void 0 ? void 0 : nextNode.status) === 'pending') {
-            return run;
-        }
-        return (0, workflow_run_util_1.advanceWorkflowRun)(run);
+    if (run.status !== 'running') {
+        return run;
     }
-    if (run.status === 'running') {
-        run = (0, workflow_run_util_1.advanceWorkflowRun)(run);
-        if (run.currentNodeId == null) {
-            run = (0, workflow_run_util_1.finalizeWorkflowRun)(run, 'completed');
-        }
-    }
-    return run;
+    run = (0, workflow_run_util_1.advanceWorkflowRun)(run);
+    return (0, workflow_run_util_1.finalizeWorkflowRunAfterAdvance)(run);
 }
 exports.syncWorkflowRunAfterPlanAdvance = syncWorkflowRunAfterPlanAdvance;
 function projectTaskPlanFromWorkflowRun(input) {

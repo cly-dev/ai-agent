@@ -15,7 +15,7 @@ import { runPageWorkflowMutationReact } from './page-workflow-mutation-react.uti
 import { resolvePageWorkflowPendingWrite, resolvePageWorkflowPresentSummary } from './page-workflow-pending-write.util';
 import {
   advanceWorkflowRun,
-  finalizeWorkflowRun,
+  finalizeWorkflowRunAfterAdvance,
   initWorkflowRun,
   startWorkflowNode,
 } from '../workflow/workflow-run.util';
@@ -78,6 +78,8 @@ export async function orchestratePageWorkflow(
       workflowId: input.workflowId,
       version: input.version,
       nodes: input.nodes,
+      edges: input.edges,
+      entryNodeId: input.entryNodeId,
       compiledFrom: input.resumeFrom ? 'resume' : 'workflow_db',
     });
 
@@ -165,9 +167,7 @@ export async function orchestratePageWorkflow(
       workflowRun = advanceWorkflowRun(workflowRun);
       // react 路径（compose_mutation / write_data）与 completed 路径一样：
       // 无下一节点时必须 finalize，否则 status 停留在 running → WORKFLOW_INCOMPLETE。
-      if (!workflowRun.currentNodeId && workflowRun.status === 'running') {
-        workflowRun = finalizeWorkflowRun(workflowRun, 'completed');
-      }
+      workflowRun = finalizeWorkflowRunAfterAdvance(workflowRun);
       continue;
     }
 
@@ -282,9 +282,7 @@ export async function orchestratePageWorkflow(
     if (nodeResult.kind === 'completed') {
       applyPageWorkflowNodeOutput(runtime, nodeResult.outcome);
       workflowRun = advanceWorkflowRun(workflowRun);
-      if (!workflowRun.currentNodeId && workflowRun.status === 'running') {
-        workflowRun = finalizeWorkflowRun(workflowRun, 'completed');
-      }
+      workflowRun = finalizeWorkflowRunAfterAdvance(workflowRun);
       logWorkflowDebug('page_node_advanced', {
         actionRunId: input.actionRunId,
         actionKey: input.actionKey,

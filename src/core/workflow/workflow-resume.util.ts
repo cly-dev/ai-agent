@@ -10,9 +10,13 @@ import {
 import {
   advanceWorkflowRun,
   completeWorkflowNode,
-  finalizeWorkflowRun,
+  finalizeWorkflowRunAfterAdvance,
 } from './workflow-run.util';
-import type { WorkflowNodeDef, WorkflowRunState } from './workflow.types';
+import type {
+  WorkflowEdge,
+  WorkflowNodeDef,
+  WorkflowRunState,
+} from './workflow.types';
 
 export function isResumableWorkflowRun(
   run: WorkflowRunState | null | undefined,
@@ -34,7 +38,17 @@ function nodeDefsCoverRun(
   return run.nodes.every((row) => defIds.has(row.nodeId));
 }
 
-export async function resolveWorkflowDefsForResume(
+/**
+ * Resume 解析整图：nodes +（DB 时）edges。
+ * 边是推进真源；禁止只拿 defs 再靠 GOA 缺边快照合成线性。
+ */
+export type WorkflowResumeResolvedGraph = {
+  nodes: WorkflowNodeDef[];
+  /** DB load 成功时带回；plan 回退为 null → 保留 savedRun.edges */
+  edges: WorkflowEdge[] | null;
+};
+
+export async function resolveWorkflowGraphForResume(
   prisma: PrismaService,
   input: {
     savedRun: WorkflowRunState;
@@ -45,7 +59,7 @@ export async function resolveWorkflowDefsForResume(
       allowedHostToolIds: number[];
     };
   },
-): Promise<WorkflowNodeDef[] | null> {
+): Promise<WorkflowResumeResolvedGraph | null> {
   if (input.savedRun.workflowId > 0) {
     const loaded = await loadWorkflowForRun(prisma, {
       workflowId: input.savedRun.workflowId,
@@ -54,18 +68,18 @@ export async function resolveWorkflowDefsForResume(
       scope: input.scope,
     });
     if (loaded && nodeDefsCoverRun(loaded.nodes, input.savedRun)) {
-      return loaded.nodes;
+      return { nodes: loaded.nodes, edges: loaded.edges };
     }
   }
 
   const fromPlan = compileTaskPlanToWorkflowNodes(input.taskPlan.steps);
   if (fromPlan.length > 0 && nodeDefsCoverRun(fromPlan, input.savedRun)) {
-    return fromPlan;
+    return { nodes: fromPlan, edges: null };
   }
 
   const runNodeIds = new Set(input.savedRun.nodes.map((row) => row.nodeId));
   const matched = fromPlan.filter((row) => runNodeIds.has(row.id));
-  return matched.length > 0 ? matched : null;
+  return matched.length > 0 ? { nodes: matched, edges: null } : null;
 }
 
 export function shouldAwaitReactOnWorkflowResume(
@@ -144,9 +158,7 @@ export function advanceWorkflowRunAfterWriteConfirm(
     `obs:write_confirm:${currentId}`,
   );
   next = advanceWorkflowRun(next);
-  if (!next.currentNodeId && next.status === 'running') {
-    next = finalizeWorkflowRun(next, 'completed');
-  }
+  next = finalizeWorkflowRunAfterAdvance(next);
   return next;
 }
 
@@ -156,15 +168,25 @@ export function workflowRunHasPendingNodes(
   return run?.status === 'running' && run.currentNodeId != null;
 }
 
+/**
+ * 组装 resume 切片：edges 写回 workflowRun（DB 真源），不另起一套路由状态。
+ */
 export function buildWorkflowResumeGraphSlice(input: {
   savedRun: WorkflowRunState;
   nodes: WorkflowNodeDef[];
+  /** DB load 的边；省略则保留 savedRun.edges */
+  edges?: WorkflowEdge[] | null;
 }): WorkflowResumeGraphSlice {
+  const workflowRun: WorkflowRunState =
+    input.edges != null
+      ? { ...input.savedRun, edges: input.edges }
+      : input.savedRun;
+
   return {
-    workflowRun: input.savedRun,
+    workflowRun,
     workflowNodeDefs: input.nodes,
     workflowAwaitingReact: shouldAwaitReactOnWorkflowResume(
-      input.savedRun,
+      workflowRun,
       input.nodes,
     ),
   };

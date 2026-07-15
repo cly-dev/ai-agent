@@ -10,7 +10,9 @@
 |------|------|
 | [proposal.md](./proposal.md) | 为什么做、做什么、影响范围、成功标准 |
 | [design.md](./design.md) | 架构、数据模型、Harness/LangGraph 设计、阶段规划 |
-| [workflow-action-kinds.md](./workflow-action-kinds.md) | **动作节点类型定稿**（8 种、input、profile、Plan 映射） |
+| [workflow-action-kinds.md](./workflow-action-kinds.md) | **动作节点类型定稿**（含 `summarize_images`、input、profile、Plan 映射） |
+| [docs/b-end-workflow-node-structure.md](./docs/b-end-workflow-node-structure.md) | **B 端心智：节点五层结构 / Preset vs 原子** |
+| [docs/b-end-workflow-summarize-images.md](./docs/b-end-workflow-summarize-images.md) | **B 端对接：图片识别节点** |
 | [tasks.md](./tasks.md) | 分 PR 实现清单（可勾选） |
 
 ## 规格（Specs）

@@ -16,6 +16,7 @@ const admin_role_guard_1 = require("./auth/admin-role.guard");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
 const outbound_http_module_1 = require("./core/outbound-http/outbound-http.module");
+const image_panel_module_1 = require("./core/image-panel/image-panel.module");
 const llm_module_1 = require("./core/llm/llm.module");
 const memory_module_1 = require("./core/memory/memory.module");
 const runtime_cache_module_1 = require("./core/runtime-cache/runtime-cache.module");
@@ -57,6 +58,7 @@ AppModule = __decorate([
                 limit: 120,
             }),
             outbound_http_module_1.OutboundHttpModule,
+            image_panel_module_1.ImagePanelModule,
             llm_module_1.LlmModule,
             memory_module_1.MemoryModule,
             runtime_cache_module_1.RuntimeCacheModule,

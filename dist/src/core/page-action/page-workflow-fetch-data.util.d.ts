@@ -2,6 +2,8 @@ import type { PageWorkflowToolBundle } from './page-workflow-tool-bundle.util';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 import type { ToolEngineService } from '../tool-engine/tool-engine.service';
+import type { LlmService } from '../llm/llm.service';
+import type { LlmChatMessage } from '../llm/llm.types';
 import type { FetchDataNodeInput } from '../workflow/workflow-node-input.types';
 import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
 export type PageWorkflowFetchObservation = {
@@ -22,4 +24,7 @@ export declare function executePageWorkflowFetchData(input: {
     stepRecorder?: PageActionRunStepRecorder;
     nodeId?: string;
     toolBundle?: PageWorkflowToolBundle | null;
+    llmService?: LlmService;
+    messages?: LlmChatMessage[];
+    nodeObjective?: string;
 }): Promise<PageWorkflowFetchObservation>;

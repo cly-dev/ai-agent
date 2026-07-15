@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.toWorkflowRevisionSummaryResponse = exports.toWorkflowRevisionResponse = exports.toWorkflowListItem = exports.toWorkflowResponse = void 0;
 const host_tool_mapper_1 = require("../host-tool/host-tool.mapper");
+const workflow_edge_util_1 = require("../../core/workflow/graph/workflow-edge.util");
 function mapToolBindings(row) {
     return row.workflowTools.map((binding) => ({
         id: binding.id,
@@ -42,8 +43,8 @@ function toWorkflowResponse(row) {
 }
 exports.toWorkflowResponse = toWorkflowResponse;
 function toWorkflowListItem(row) {
-    const nodes = Array.isArray(row.nodes) ? row.nodes : [];
-    return Object.assign(Object.assign({}, mapWorkflowCore(row)), { nodeCount: nodes.length });
+    const nodeCount = (0, workflow_edge_util_1.parseWorkflowGraphJson)(row.nodes).nodes.length;
+    return Object.assign(Object.assign({}, mapWorkflowCore(row)), { nodeCount });
 }
 exports.toWorkflowListItem = toWorkflowListItem;
 function toWorkflowRevisionResponse(row, currentVersion) {

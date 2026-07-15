@@ -25,6 +25,8 @@ import type { AgentMachineCode } from '../../../agent-run-user-messages.util';
 import type { SkillIntentMismatchCode } from '../../../turn/skill-intent-alignment.types';
 import { isEmptyListToolObservation } from '../../../tool/tool-observation.util';
 import { splitToolObservationsFromState } from '../../../graph-tool-observations.util';
+import { workflowNodeOutputsToSummarizeObservations } from '../../../../../workflow/workflow-node-outputs-summarize.util';
+
 import {
   isMutationTool,
   resolveToolStepMachineCode,
@@ -211,6 +213,7 @@ export function buildSummarizeObservationFromState(
       | 'toolObservations'
       | 'workflowRun'
       | 'planRunContext'
+      | 'workflowNodeOutputs'
     >,
     planContext?: {
       taskPlan?: TaskPlanSnapshot | null;
@@ -219,9 +222,16 @@ export function buildSummarizeObservationFromState(
     },
   ): ToolObservation | null {
     const rawSplit = splitToolObservationsFromState(state);
+    // Chat 终态 summarize 原先不读 workflowNodeOutputs，会漏识图摘要；镜像进 current_run。
+    const fromWorkflow = workflowNodeOutputsToSummarizeObservations(
+      state.workflowNodeOutputs,
+    );
     const usableSplit: SplitToolObservationsOutput = {
       workingMemory: filterUsableToolObservations(rawSplit.workingMemory),
-      currentRun: filterUsableToolObservations(rawSplit.currentRun),
+      currentRun: [
+        ...filterUsableToolObservations(rawSplit.currentRun),
+        ...fromWorkflow,
+      ],
     };
     const memoryScope = resolveSummarizeMemoryScope({
       split: usableSplit,

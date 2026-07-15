@@ -1,14 +1,27 @@
 import type {
+  WorkflowEdge,
   WorkflowNodeDef,
   WorkflowRunCompiledFrom,
   WorkflowRunState,
   WorkflowRunStatus,
 } from './workflow.types';
+import {
+  advanceWorkflowRunAlongEdges,
+  resolveEntryNodeId,
+} from './graph/workflow-run-advance.util';
+import { synthesizeLinearWorkflowEdges } from './graph/workflow-edge.util';
 
-function cloneRun(run: WorkflowRunState): WorkflowRunState {
+export function cloneWorkflowRun(run: WorkflowRunState): WorkflowRunState {
   return {
     ...run,
     nodes: run.nodes.map((node) => ({ ...node })),
+    edges: run.edges?.map((edge) => ({
+      ...edge,
+      clue: edge.clue ? { ...edge.clue } : undefined,
+    })),
+    routing: run.routing
+      ? { pendingNodeIds: [...run.routing.pendingNodeIds] }
+      : undefined,
   };
 }
 
@@ -24,25 +37,12 @@ function assertNodeExists(run: WorkflowRunState, nodeId: string): number {
   return index;
 }
 
-function nextPendingNodeId(
-  run: WorkflowRunState,
-  afterNodeId: string | null,
-): string | null {
-  const startIndex =
-    afterNodeId == null ? 0 : findNodeIndex(run, afterNodeId) + 1;
-  for (let index = startIndex; index < run.nodes.length; index += 1) {
-    const node = run.nodes[index];
-    if (node.status === 'pending') {
-      return node.nodeId;
-    }
-  }
-  return null;
-}
-
 export function initWorkflowRun(input: {
   workflowId: number;
   version: number;
   nodes: WorkflowNodeDef[];
+  edges?: WorkflowEdge[] | null;
+  entryNodeId?: string | null;
   compiledFrom?: WorkflowRunCompiledFrom;
   now?: string;
 }): WorkflowRunState {
@@ -57,13 +57,22 @@ export function initWorkflowRun(input: {
     status: 'pending' as const,
   }));
 
+  const edges =
+    input.edges != null
+      ? input.edges
+      : synthesizeLinearWorkflowEdges(input.nodes);
+
   return {
     workflowId: input.workflowId,
     version: input.version,
-    currentNodeId: input.nodes[0]?.id ?? null,
+    currentNodeId: resolveEntryNodeId({
+      nodes: input.nodes,
+      entryNodeId: input.entryNodeId,
+    }),
     status: 'running',
     compiledFrom: input.compiledFrom,
     nodes: runNodes,
+    edges,
   };
 }
 
@@ -72,7 +81,7 @@ export function startWorkflowNode(
   nodeId: string,
   now: string = new Date().toISOString(),
 ): WorkflowRunState {
-  const next = cloneRun(run);
+  const next = cloneWorkflowRun(run);
   const index = assertNodeExists(next, nodeId);
   const node = next.nodes[index];
   if (node.status !== 'pending' && node.status !== 'running') {
@@ -90,7 +99,7 @@ export function completeWorkflowNode(
   outputRef?: string,
   now: string = new Date().toISOString(),
 ): WorkflowRunState {
-  const next = cloneRun(run);
+  const next = cloneWorkflowRun(run);
   const index = assertNodeExists(next, nodeId);
   const node = next.nodes[index];
   node.status = 'succeeded';
@@ -107,7 +116,7 @@ export function failWorkflowNode(
   error: { code: string; message: string },
   now: string = new Date().toISOString(),
 ): WorkflowRunState {
-  const next = cloneRun(run);
+  const next = cloneWorkflowRun(run);
   const index = assertNodeExists(next, nodeId);
   const node = next.nodes[index];
   node.status = 'failed';
@@ -123,7 +132,7 @@ export function skipWorkflowNode(
   nodeId: string,
   now: string = new Date().toISOString(),
 ): WorkflowRunState {
-  const next = cloneRun(run);
+  const next = cloneWorkflowRun(run);
   const index = assertNodeExists(next, nodeId);
   const node = next.nodes[index];
   node.status = 'skipped';
@@ -131,36 +140,41 @@ export function skipWorkflowNode(
   return next;
 }
 
-export function advanceWorkflowRun(run: WorkflowRunState): WorkflowRunState {
+/**
+ * 推进工作流。优先使用 run.edges；也可显式传入 edges 覆盖。
+ * 无边时按 nodes 顺序合成 always 边后再推进（单节点则边为空，等价无下一跳）。
+ */
+export function advanceWorkflowRun(
+  run: WorkflowRunState,
+  edges?: WorkflowEdge[] | null,
+): WorkflowRunState {
   if (run.status === 'failed' || run.status === 'cancelled') {
     return run;
   }
 
-  const next = cloneRun(run);
-  const currentId = next.currentNodeId;
-  if (currentId != null) {
-    const current = next.nodes[findNodeIndex(next, currentId)];
-    if (
-      current &&
-      current.status !== 'succeeded' &&
-      current.status !== 'skipped'
-    ) {
-      throw new Error(
-        `cannot advance: current node ${currentId} is ${current.status}`,
-      );
-    }
-  }
+  const resolvedEdges =
+    edges != null
+      ? edges
+      : run.edges != null
+        ? run.edges
+        : synthesizeLinearWorkflowEdges(
+            run.nodes.map((node) => ({
+              id: node.nodeId,
+              action: node.action,
+              name: node.name,
+              objective: '',
+              input: {},
+            })) as WorkflowNodeDef[],
+          );
 
-  const upcoming = nextPendingNodeId(next, currentId);
-  next.currentNodeId = upcoming;
-  return next;
+  return advanceWorkflowRunAlongEdges({ run, edges: resolvedEdges });
 }
 
 export function finalizeWorkflowRun(
   run: WorkflowRunState,
   status: Extract<WorkflowRunStatus, 'completed' | 'failed' | 'cancelled'>,
 ): WorkflowRunState {
-  const next = cloneRun(run);
+  const next = cloneWorkflowRun(run);
   next.status = status;
   if (status === 'completed') {
     next.currentNodeId = null;
@@ -182,4 +196,51 @@ export function allWorkflowNodesTerminal(run: WorkflowRunState): boolean {
       node.status === 'failed' ||
       node.status === 'skipped',
   );
+}
+
+/**
+ * advance 后无下一节点时收尾：全部终态 → completed；仍有 pending → failed。
+ * 正常状态分支在 routing 时应已 skip 干净；此处防漏网孤儿被标 completed。
+ */
+export function finalizeWorkflowRunAfterAdvance(
+  run: WorkflowRunState,
+): WorkflowRunState {
+  if (run.status !== 'running' || run.currentNodeId != null) {
+    return run;
+  }
+  if (allWorkflowNodesTerminal(run)) {
+    return finalizeWorkflowRun(run, 'completed');
+  }
+  const pendingIds = run.nodes
+    .filter((node) => node.status === 'pending')
+    .map((node) => node.nodeId);
+  const next = finalizeWorkflowRun(run, 'failed');
+  const now = new Date().toISOString();
+  // 漏网 pending：首个标失败带原因，其余 skip，避免半终态残留
+  for (let i = 0; i < pendingIds.length; i += 1) {
+    const nodeId = pendingIds[i]!;
+    const index = next.nodes.findIndex((node) => node.nodeId === nodeId);
+    if (index < 0) {
+      continue;
+    }
+    if (i === 0) {
+      next.nodes[index] = {
+        ...next.nodes[index],
+        status: 'failed',
+        finishedAt: now,
+        error: {
+          code: 'WORKFLOW_ORPHAN_PENDING',
+          message: `workflow ended with pending nodes: ${pendingIds.join(', ')}`,
+        },
+      };
+      next.currentNodeId = nodeId;
+      continue;
+    }
+    next.nodes[index] = {
+      ...next.nodes[index],
+      status: 'skipped',
+      finishedAt: now,
+    };
+  }
+  return next;
 }

@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IMAGE_PANEL/v1 Demo</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --panel: #111827;
+        --line: #334155;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --ok: #34d399;
+        --warn: #fbbf24;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+        background: radial-gradient(1200px 600px at 10% -10%, #1e293b, var(--bg));
+        color: var(--text);
+        padding: 24px;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 22px;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 18px;
+        line-height: 1.5;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        gap: 16px;
+      }
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: color-mix(in srgb, var(--panel) 92%, black);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin: 10px 0 6px;
+      }
+      textarea,
+      input {
+        width: 100%;
+        border: 1px solid var(--line);
+        background: #0f172a;
+        color: var(--text);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font: inherit;
+      }
+      textarea {
+        min-height: 140px;
+        resize: vertical;
+        line-height: 1.4;
+      }
+      #hint {
+        min-height: 64px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 12px 14px;
+        cursor: pointer;
+        color: #04111f;
+        font-weight: 700;
+        background: linear-gradient(135deg, #38bdf8, #818cf8);
+      }
+      button.secondary {
+        background: #1e293b;
+        color: var(--text);
+        border: 1px solid var(--line);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      @media (max-width: 700px) {
+        .metrics {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      .metric {
+        background: #0f172a;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+      }
+      .metric .k {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .metric .v {
+        margin-top: 4px;
+        font-size: 18px;
+        font-variant-numeric: tabular-nums;
+        color: var(--accent);
+      }
+      .metric .v.ok {
+        color: var(--ok);
+      }
+      .metric .v.warn {
+        color: var(--warn);
+      }
+      #preview {
+        width: 100%;
+        max-height: 50vh;
+        object-fit: contain;
+        background: #020617;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        display: none;
+      }
+      #empty {
+        color: var(--muted);
+        font-size: 13px;
+        padding: 28px 8px;
+      }
+      pre {
+        margin: 12px 0 0;
+        max-height: 240px;
+        overflow: auto;
+        background: #020617;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+        font-size: 12px;
+        color: #cbd5e1;
+        white-space: pre-wrap;
+      }
+      h3 {
+        margin: 16px 0 6px;
+        font-size: 13px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .err {
+        margin-top: 10px;
+        color: #fca5a5;
+        font-size: 13px;
+        white-space: pre-wrap;
+      }
+      a {
+        color: var(--accent);
+      }
+      #modelLine {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 8px;
+        min-height: 1.2em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>IMAGE_PANEL/v1 Demo</h1>
+      <p class="sub">
+        先拼图看耗时；再点「拼图并识别」用<strong>当前启用的 chat 模型</strong>做多模态看图。
+        模型需支持 <code>image_url</code>（如 Qwen-VL / GPT-4o 等），纯文本模型会报错。
+        <br />
+        <a href="/index.html">← 回 SSE Console</a>
+      </p>
+
+      <div class="grid">
+        <section class="card">
+          <label for="urls">图片 URL（每行一个）</label>
+          <textarea id="urls">
+https://picsum.photos/seed/panel1/800/600
+https://picsum.photos/seed/panel2/600/900
+https://picsum.photos/seed/panel3/1200/800
+https://picsum.photos/seed/panel4/640/640</textarea
+          >
+          <div class="row">
+            <div>
+              <label for="cellPx">cellPx</label>
+              <input id="cellPx" type="number" value="512" min="128" max="1024" />
+            </div>
+            <div>
+              <label for="maxCells">maxCells</label>
+              <input id="maxCells" type="number" value="6" min="1" max="6" />
+            </div>
+          </div>
+          <label for="hint">识别提示 hint（可选）</label>
+          <textarea id="hint" placeholder="例如：这是邮件附件，请关注运单号/金额等关键文字"></textarea>
+          <div class="actions">
+            <button id="runStitch" class="secondary" type="button">仅拼图</button>
+            <button id="runRecognize" type="button">拼图并识别</button>
+          </div>
+          <div id="error" class="err"></div>
+        </section>
+
+        <section class="card">
+          <div id="modelLine"></div>
+          <div class="metrics">
+            <div class="metric">
+              <div class="k">浏览器往返</div>
+              <div class="v" id="mClient">—</div>
+            </div>
+            <div class="metric">
+              <div class="k">stitchMs</div>
+              <div class="v ok" id="mStitch">—</div>
+            </div>
+            <div class="metric">
+              <div class="k">visionMs</div>
+              <div class="v warn" id="mVision">—</div>
+            </div>
+            <div class="metric">
+              <div class="k">fetchMs</div>
+              <div class="v" id="mFetch">—</div>
+            </div>
+            <div class="metric">
+              <div class="k">renderMs</div>
+              <div class="v" id="mRender">—</div>
+            </div>
+            <div class="metric">
+              <div class="k">服务端 total</div>
+              <div class="v" id="mTotal">—</div>
+            </div>
+          </div>
+          <div id="empty">还没有结果。建议先「仅拼图」，再试「拼图并识别」。</div>
+          <img id="preview" alt="IMAGE_PANEL preview" />
+          <h3>模型识别结果</h3>
+          <pre id="visionOut">（尚未识别）</pre>
+          <h3>manifest / timing</h3>
+          <pre id="manifest"></pre>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      function setBusy(busy) {
+        $('runStitch').disabled = busy;
+        $('runRecognize').disabled = busy;
+      }
+
+      function unwrap(envelope) {
+        const data =
+          envelope && typeof envelope === 'object' && 'data' in envelope
+            ? envelope.data
+            : envelope;
+        const apiStatus =
+          envelope && typeof envelope === 'object' && 'status' in envelope
+            ? envelope.status
+            : 200;
+        return { data, apiStatus, message: envelope?.message };
+      }
+
+      function renderCommon(data, clientMs) {
+        $('mClient').textContent = clientMs + ' ms';
+        $('mFetch').textContent = (data.timing?.fetchMs ?? '—') + ' ms';
+        $('mRender').textContent = (data.timing?.renderMs ?? '—') + ' ms';
+        $('mStitch').textContent =
+          (data.timing?.stitchMs ?? data.timing?.totalMs ?? '—') + ' ms';
+        $('mVision').textContent =
+          data.timing?.visionMs != null ? data.timing.visionMs + ' ms' : '—';
+        $('mTotal').textContent = (data.timing?.totalMs ?? '—') + ' ms';
+
+        $('empty').style.display = 'none';
+        const img = $('preview');
+        img.style.display = 'block';
+        img.src = data.panelDataUrl;
+
+        if (data.model) {
+          $('modelLine').textContent =
+            '模型: ' +
+            data.model.model +
+            ' | endpoint: ' +
+            (data.model.endpoint || data.model.baseUrl) +
+            ' (id=' +
+            data.model.id +
+            ')';
+        } else {
+          $('modelLine').textContent = '';
+        }
+
+        $('manifest').textContent = JSON.stringify(
+          {
+            width: data.width,
+            height: data.height,
+            bytes: data.bytes,
+            visionImageBytes: data.visionImageBytes,
+            timing: data.timing,
+            manifest: data.manifest,
+          },
+          null,
+          2,
+        );
+      }
+
+      async function callApi(path, withRecognize) {
+        const err = $('error');
+        err.textContent = '';
+        setBusy(true);
+
+        const urls = $('urls')
+          .value.split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        const body = {
+          urls,
+          cellPx: Number($('cellPx').value) || 512,
+          maxCells: Number($('maxCells').value) || 6,
+        };
+        const hint = $('hint').value.trim();
+        if (withRecognize && hint) {
+          body.hint = hint;
+        }
+
+        const t0 = performance.now();
+        try {
+          const res = await fetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const clientMs = Math.round(performance.now() - t0);
+          const envelope = await res.json().catch(() => ({}));
+          const { data, apiStatus, message } = unwrap(envelope);
+          if (!res.ok || (typeof apiStatus === 'number' && apiStatus !== 200) || !data) {
+            throw new Error(
+              message
+                ? Array.isArray(message)
+                  ? message.join('; ')
+                  : String(message)
+                : `HTTP ${res.status}`,
+            );
+          }
+
+          renderCommon(data, clientMs);
+
+          if (withRecognize) {
+            $('visionOut').textContent = data.visionParsed
+              ? JSON.stringify(data.visionParsed, null, 2)
+              : data.visionRawText || '（空响应）';
+          } else {
+            $('visionOut').textContent = '（仅拼图，未调用模型）';
+          }
+        } catch (e) {
+          err.textContent = e instanceof Error ? e.message : String(e);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      $('runStitch').addEventListener('click', () =>
+        callApi('/dev/image-panel/stitch', false),
+      );
+      $('runRecognize').addEventListener('click', () =>
+        callApi('/dev/image-panel/recognize', true),
+      );
+    </script>
+  </body>
+</html>

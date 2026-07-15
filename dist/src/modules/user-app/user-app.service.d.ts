@@ -13,20 +13,20 @@ export declare class UserAppService {
         appId: number;
     }>;
     findAll(): Promise<({
+        appClient: {
+            id: number;
+            name: string;
+            dsn: string;
+        };
         user: {
             id: number;
             email: string;
             username: string;
         };
         role: {
-            name: string;
             id: number;
+            name: string;
             allowToolLevel: import("../../../generated/prisma/enums").ToolLevel;
-        };
-        appClient: {
-            name: string;
-            id: number;
-            dsn: string;
         };
     } & {
         id: number;
@@ -36,20 +36,20 @@ export declare class UserAppService {
         appId: number;
     })[]>;
     findOne(id: number): Promise<{
+        appClient: {
+            id: number;
+            name: string;
+            dsn: string;
+        };
         user: {
             id: number;
             email: string;
             username: string;
         };
         role: {
-            name: string;
             id: number;
+            name: string;
             allowToolLevel: import("../../../generated/prisma/enums").ToolLevel;
-        };
-        appClient: {
-            name: string;
-            id: number;
-            dsn: string;
         };
     } & {
         id: number;
@@ -59,20 +59,20 @@ export declare class UserAppService {
         appId: number;
     }>;
     update(id: number, body: UpdateUserAppDto): Promise<{
+        appClient: {
+            id: number;
+            name: string;
+            dsn: string;
+        };
         user: {
             id: number;
             email: string;
             username: string;
         };
         role: {
-            name: string;
             id: number;
+            name: string;
             allowToolLevel: import("../../../generated/prisma/enums").ToolLevel;
-        };
-        appClient: {
-            name: string;
-            id: number;
-            dsn: string;
         };
     } & {
         id: number;

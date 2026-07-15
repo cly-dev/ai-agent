@@ -37,10 +37,10 @@ describe('workflow-preset.util', () => {
       'summarize',
     ]);
     expect(nodes[1]?.input).toEqual(
-      expect.objectContaining({ toolId: 20 }),
+      expect.objectContaining({ toolIds: [20] }),
     );
     expect(nodes[2]?.input).toEqual(
-      expect.objectContaining({ hostToolId: 10 }),
+      expect.objectContaining({ hostToolIds: [10] }),
     );
   });
 

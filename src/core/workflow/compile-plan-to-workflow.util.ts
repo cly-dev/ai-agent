@@ -174,6 +174,18 @@ function mapPlanStepToWorkflowNodes(
           input: { confirmKind: 'mutation' },
         },
       ];
+    case 'workflow_inline':
+      // 仅支持从 Workflow 资产编译来的镜像；Plan LLM 不应产出此 kind。
+      if (step.workflowAction === 'summarize_images') {
+        return [
+          {
+            ...baseNodeFromStep(step),
+            action: 'summarize_images',
+            input: { from: 'upstream', maxCells: 6, onFailure: 'degrade' },
+          },
+        ];
+      }
+      return [];
     case 'skill':
       return [];
     default:

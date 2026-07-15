@@ -30,6 +30,8 @@ function workflowActionToKind(action) {
             return 'summarize';
         case 'load_page_context':
             return 'context';
+        case 'summarize_images':
+            return 'image_context';
         case 'await_user_confirm':
             return 'confirm';
         default:
@@ -40,6 +42,7 @@ function workflowActionToPhase(action) {
     switch (action) {
         case 'load_page_context':
         case 'fetch_data':
+        case 'summarize_images':
             return 'gather';
         case 'compose_mutation':
             return 'analyze';

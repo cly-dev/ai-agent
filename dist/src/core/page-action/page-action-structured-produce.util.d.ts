@@ -31,3 +31,17 @@ export declare function produceHostToolArgsViaToolCall(input: {
     budgetHints?: PromptBudgetHints;
     signal?: AbortSignal;
 }): Promise<HostToolToolCallProduceResult>;
+export type HostToolCandidateProduceResult = HostToolToolCallProduceResult & {
+    toolName?: string;
+    hostTool?: HostToolDecisionDefinition;
+};
+export declare function produceHostToolCallAmongCandidates(input: {
+    llmService: LlmService;
+    messages: LlmChatMessage[];
+    hostTools: HostToolDecisionDefinition[];
+    actionContext?: Record<string, unknown> | null;
+    actionRunId?: number;
+    actionKey?: string | null;
+    budgetHints?: PromptBudgetHints;
+    signal?: AbortSignal;
+}): Promise<HostToolCandidateProduceResult>;

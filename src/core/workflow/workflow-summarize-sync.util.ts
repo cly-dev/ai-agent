@@ -5,8 +5,9 @@ import {
 } from './workflow-plan-sync.util';
 import {
   advanceWorkflowRun,
-  finalizeWorkflowRun,
+  finalizeWorkflowRunAfterAdvance,
 } from './workflow-run.util';
+import { listAlwaysEdgesFrom } from './graph/workflow-edge.util';
 import type { WorkflowActionKind, WorkflowRunState } from './workflow.types';
 
 function summarizeCompletionOutputRef(action: WorkflowActionKind, nodeId: string): string {
@@ -24,28 +25,71 @@ function isWorkflowSummarizeCompletionAction(
 }
 
 /**
- * present_mutation 预览后须 advance 到 await_user_confirm，即使 plan 仍 continue。
- * 终端 summarize 节点在 continuePlan 时保持 running，待 plan 全走完再 advance。
+ * present_mutation：始终 complete+advance（预览后要进 await）。
+ * summarize：plan 结束时 complete；若仍有扇出兄弟或 always 后续 pending，也必须 complete，
+ * 否则独立分支叶会卡死（线性「continuePlan 保持 running」仅在无后续图边时保留）。
  */
 function shouldCompleteWorkflowNodeAfterSummarize(
   action: WorkflowActionKind,
+  run: WorkflowRunState,
   input: { continuePlan: boolean; finished: boolean },
 ): boolean {
   if (action === 'present_mutation') {
     return true;
   }
-  if (action === 'summarize') {
-    return input.finished || !input.continuePlan;
+  if (action !== 'summarize') {
+    return false;
   }
-  return false;
+  if (input.finished || !input.continuePlan) {
+    return true;
+  }
+  if ((run.routing?.pendingNodeIds?.length ?? 0) > 0) {
+    return true;
+  }
+  const currentId = run.currentNodeId;
+  if (!currentId || !run.edges?.length) {
+    return false;
+  }
+  return listAlwaysEdgesFrom(run.edges, currentId).some((edge) => {
+    const target = run.nodes.find((row) => row.nodeId === edge.to);
+    return target?.status === 'pending';
+  });
 }
 
-function findWorkflowNodeIdByAction(
+/**
+ * 按当前/指定 id 解析 action 节点，避免多分支下 first-by-action 挂错。
+ */
+function resolveWorkflowNodeIdByAction(
   defs: AgentGraphState['workflowNodeDefs'],
+  run: WorkflowRunState,
   action: WorkflowActionKind,
+  preferredId?: string | null,
 ): string | null {
-  const row = defs?.find((node) => node.action === action);
-  return row?.id ?? null;
+  if (preferredId) {
+    const preferred = getWorkflowNodeDef(defs, preferredId);
+    if (preferred?.action === action) {
+      return preferredId;
+    }
+  }
+  const currentId = run.currentNodeId;
+  if (currentId) {
+    const current = getWorkflowNodeDef(defs, currentId);
+    if (current?.action === action) {
+      return currentId;
+    }
+  }
+  const candidates = (defs ?? []).filter((node) => node.action === action);
+  if (candidates.length === 0) {
+    return null;
+  }
+  if (candidates.length === 1) {
+    return candidates[0]!.id;
+  }
+  const active = candidates.find((node) => {
+    const row = run.nodes.find((n) => n.nodeId === node.id);
+    return row?.status === 'pending' || row?.status === 'running';
+  });
+  return active?.id ?? candidates[0]!.id;
 }
 
 function isNodeTerminal(
@@ -67,35 +111,35 @@ function alignWorkflowRunForPresentSummarize(
   if (!run) {
     return null;
   }
-  const presentNodeId =
-    input.summarizedPlanStepId &&
-    getWorkflowNodeDef(state.workflowNodeDefs, input.summarizedPlanStepId)
-      ?.action === 'present_mutation'
-      ? input.summarizedPlanStepId
-      : findWorkflowNodeIdByAction(state.workflowNodeDefs, 'present_mutation');
+  const presentNodeId = resolveWorkflowNodeIdByAction(
+    state.workflowNodeDefs,
+    run,
+    'present_mutation',
+    input.summarizedPlanStepId,
+  );
   if (!presentNodeId) {
     return run;
   }
 
-  const currentDef = getWorkflowNodeDef(
-    state.workflowNodeDefs,
-    run.currentNodeId,
-  );
-  if (currentDef?.action === 'present_mutation' && run.currentNodeId === presentNodeId) {
+  if (run.currentNodeId === presentNodeId) {
     return run;
   }
 
   let aligned = run;
-  const composeNodeId = findWorkflowNodeIdByAction(
+  const composeNodeId = resolveWorkflowNodeIdByAction(
     state.workflowNodeDefs,
+    aligned,
     'compose_mutation',
   );
   if (composeNodeId && !isNodeTerminal(aligned, composeNodeId)) {
-    aligned = completeWorkflowNodeFromSummarize(
-      aligned,
-      composeNodeId,
-      `obs:step:${composeNodeId}`,
-    );
+    // 仅当 compose 是 present 的紧邻前置（当前仍停在 compose）时补齐
+    if (aligned.currentNodeId === composeNodeId) {
+      aligned = completeWorkflowNodeFromSummarize(
+        aligned,
+        composeNodeId,
+        `obs:step:${composeNodeId}`,
+      );
+    }
   }
   return { ...aligned, currentNodeId: presentNodeId };
 }
@@ -133,7 +177,7 @@ export function applyWorkflowAfterSummarize(
   if (!isWorkflowSummarizeCompletionAction(action)) {
     return run !== state.workflowRun ? { workflowRun: run, workflowAwaitingReact: false } : {};
   }
-  if (!shouldCompleteWorkflowNodeAfterSummarize(action, input)) {
+  if (!shouldCompleteWorkflowNodeAfterSummarize(action, run, input)) {
     return run !== state.workflowRun ? { workflowRun: run, workflowAwaitingReact: false } : {};
   }
 
@@ -143,9 +187,7 @@ export function applyWorkflowAfterSummarize(
     summarizeCompletionOutputRef(action, nodeId),
   );
   workflowRun = advanceWorkflowRun(workflowRun);
-  if (workflowRun.currentNodeId == null && workflowRun.status === 'running') {
-    workflowRun = finalizeWorkflowRun(workflowRun, 'completed');
-  }
+  workflowRun = finalizeWorkflowRunAfterAdvance(workflowRun);
   return {
     workflowRun,
     workflowAwaitingReact: false,

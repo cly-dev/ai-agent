@@ -9,7 +9,19 @@ exports.WORKFLOW_ACTION_REGISTRY = [
         batch: 'A',
     },
     {
+        kind: 'detect_clues',
+        implemented: true,
+        allowedProfiles: ['page_action', 'chat_skill', 'shared'],
+        batch: 'A',
+    },
+    {
         kind: 'fetch_data',
+        implemented: true,
+        allowedProfiles: ['page_action', 'chat_skill', 'shared'],
+        batch: 'A',
+    },
+    {
+        kind: 'summarize_images',
         implemented: true,
         allowedProfiles: ['page_action', 'chat_skill', 'shared'],
         batch: 'A',

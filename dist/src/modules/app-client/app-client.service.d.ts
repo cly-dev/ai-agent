@@ -10,52 +10,52 @@ export declare class AppClientService {
     private readonly appClientAuthService;
     constructor(prisma: PrismaService, userService: UserService, appClientAuthService: AppClientAuthService);
     create(dto: CreateAppClientDto): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
+        name: string;
         dsn: string;
         authConfig: import("@prisma/client/runtime/client").JsonValue;
     }>;
     findAll(): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
+        name: string;
         dsn: string;
         authConfig: import("@prisma/client/runtime/client").JsonValue;
     }[]>;
     findOne(id: number): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
+        name: string;
         dsn: string;
         authConfig: import("@prisma/client/runtime/client").JsonValue;
     }>;
     update(id: number, dto: UpdateAppClientDto): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
+        name: string;
         dsn: string;
         authConfig: import("@prisma/client/runtime/client").JsonValue;
     }>;
     remove(id: number): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
+        name: string;
         dsn: string;
         authConfig: import("@prisma/client/runtime/client").JsonValue;
     }>;
@@ -66,13 +66,13 @@ export declare class AppClientService {
         accessToken: string;
         user: Omit<{
             id: number;
-            employeeId: string;
+            createdAt: Date;
             email: string;
             password: string;
             username: string;
-            status: import("../../../generated/prisma/enums").UserStatus;
             mustChangePassword: boolean;
-            createdAt: Date;
+            employeeId: string;
+            status: import("../../../generated/prisma/enums").UserStatus;
         }, "password">;
         accountTokenBound: boolean;
         userAppCreated: boolean;

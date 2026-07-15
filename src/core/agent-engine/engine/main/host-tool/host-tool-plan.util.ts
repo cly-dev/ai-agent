@@ -9,13 +9,33 @@ import {
   advancePlanAfterStepComplete,
   getPendingPlanHostToolStep,
 } from '../plan/task-plan.util';
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
+import { getWorkflowNodeDef } from '../../../../workflow/workflow-graph-routing.util';
+import { resolveGenerateAndPushHostToolIds } from '../../../../workflow/resolve-workflow-node-tool-refs.util';
 
-/** 按当前 plan 步收窄 Host Tool（host_tool 步用 hostToolNames 或全量 scoped）。 */
+/** 按当前 plan 步 / Workflow 节点收窄 Host Tool。 */
 export function filterHostToolsForPlanStep(
   hostTools: HostToolDecisionDefinition[],
   taskPlan: TaskPlanSnapshot | null | undefined,
+  options?: {
+    workflowRun?: WorkflowRunState | null;
+    workflowNodeDefs?: WorkflowNodeDef[] | null;
+  },
 ): HostToolDecisionDefinition[] {
-  const step = getPendingPlanHostToolStep(taskPlan);
+  // 图 SSOT：generate_and_push 节点 hostToolIds[] 优先
+  const currentDef = getWorkflowNodeDef(
+    options?.workflowNodeDefs,
+    options?.workflowRun?.currentNodeId,
+  );
+  if (currentDef?.action === 'generate_and_push') {
+    const nodeIds = resolveGenerateAndPushHostToolIds(currentDef.input);
+    if (nodeIds.length > 0) {
+      const allowed = new Set(nodeIds);
+      return hostTools.filter((tool) => allowed.has(tool.id));
+    }
+  }
+
+  const step = getPendingPlanHostToolStep(taskPlan, options?.workflowRun);
   if (!step) {
     return [];
   }

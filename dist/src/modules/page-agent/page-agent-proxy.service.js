@@ -32,7 +32,8 @@ let PageAgentProxyService = PageAgentProxyService_1 = class PageAgentProxyServic
     async proxyChatCompletions(input) {
         const body = this.assertRequestBody(input.body);
         const config = await this.llmService.getActiveChatModelConfig();
-        const payload = this.buildUpstreamPayload(body, config);
+        const resolvedMaxTokens = await this.llmService.getResolvedMaxTokens();
+        const payload = this.buildUpstreamPayload(body, config, resolvedMaxTokens);
         const timeoutMs = this.readTimeoutMs();
         const startedAt = Date.now();
         const audit = await this.prisma.pageAgentLlmProxyAudit.create({
@@ -274,20 +275,23 @@ let PageAgentProxyService = PageAgentProxyService_1 = class PageAgentProxyServic
         const normalizedPath = path.startsWith('/') ? path : `/${path}`;
         return `${base}${normalizedPath}`;
     }
-    buildUpstreamPayload(body, config) {
+    buildUpstreamPayload(body, config, resolvedMaxTokens) {
+        var _a;
         const payload = Object.assign(Object.assign({}, body), { model: config.model, stream: false });
         delete payload.stream_options;
         if (payload.temperature == null && config.temperature != null) {
             payload.temperature = config.temperature;
         }
-        if (payload.max_tokens == null &&
-            payload.maxTokens == null &&
-            config.maxTokens != null) {
-            payload.max_tokens = config.maxTokens;
-        }
+        const requestedRaw = (_a = this.pickInt(payload.max_tokens)) !== null && _a !== void 0 ? _a : this.pickInt(payload.maxTokens);
+        delete payload.maxTokens;
+        const safeMax = requestedRaw == null
+            ? resolvedMaxTokens
+            : Math.min(requestedRaw, resolvedMaxTokens);
+        payload.max_tokens = Math.max(1, safeMax);
         return payload;
     }
     buildRequestMeta(body, payload) {
+        var _a;
         const messages = Array.isArray(body.messages) ? body.messages : [];
         const tools = Array.isArray(body.tools) ? body.tools : [];
         return (0, page_action_run_audit_util_1.summarizeRecordForAudit)({
@@ -297,6 +301,8 @@ let PageAgentProxyService = PageAgentProxyService_1 = class PageAgentProxyServic
             requestedStream: body.stream,
             forcedStream: payload.stream,
             requestedModel: body.model,
+            requestedMaxTokens: (_a = this.pickInt(body.max_tokens)) !== null && _a !== void 0 ? _a : this.pickInt(body.maxTokens),
+            upstreamMaxTokens: this.pickInt(payload.max_tokens),
             toolChoice: body.tool_choice,
             hasStreamOptions: body.stream_options != null,
         });

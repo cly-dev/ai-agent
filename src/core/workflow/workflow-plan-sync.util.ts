@@ -5,7 +5,7 @@ import { hydrateTaskPlanWithWorkflowDefs } from './workflow-resume.util';
 import {
   advanceWorkflowRun,
   completeWorkflowNode,
-  finalizeWorkflowRun,
+  finalizeWorkflowRunAfterAdvance,
   startWorkflowNode,
 } from './workflow-run.util';
 import type { WorkflowNodeDef, WorkflowRunState } from './workflow.types';
@@ -18,6 +18,10 @@ export function newlyCompletedPlanStepIds(
   return planAfter.completedStepIds.filter((id) => !before.has(id));
 }
 
+/**
+ * Plan 侧「步完成」只用来 complete 对应 workflow 节点；下一跳一律走边 advance。
+ * 禁止用 plan.currentStepId / nodes 声明序改写 currentNodeId（会跳过分支 always）。
+ */
 export function syncWorkflowRunAfterPlanAdvance(input: {
   workflowRun: WorkflowRunState;
   planBefore: TaskPlanSnapshot;
@@ -35,7 +39,6 @@ export function syncWorkflowRunAfterPlanAdvance(input: {
   }
 
   const planAfter = input.planAdvance.updatedPlan;
-  const nextStepId = planAfter.currentStepId;
   const currentId = run.currentNodeId;
   if (currentId != null) {
     const active = run.nodes.find((node) => node.nodeId === currentId);
@@ -47,22 +50,12 @@ export function syncWorkflowRunAfterPlanAdvance(input: {
     }
   }
 
-  if (nextStepId) {
-    run = { ...run, currentNodeId: nextStepId };
-    const nextNode = run.nodes.find((node) => node.nodeId === nextStepId);
-    if (nextNode?.status === 'pending') {
-      return run;
-    }
-    return advanceWorkflowRun(run);
+  if (run.status !== 'running') {
+    return run;
   }
 
-  if (run.status === 'running') {
-    run = advanceWorkflowRun(run);
-    if (run.currentNodeId == null) {
-      run = finalizeWorkflowRun(run, 'completed');
-    }
-  }
-  return run;
+  run = advanceWorkflowRun(run);
+  return finalizeWorkflowRunAfterAdvance(run);
 }
 
 /**

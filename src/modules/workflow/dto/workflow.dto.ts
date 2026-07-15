@@ -115,11 +115,11 @@ export class CreateWorkflowDto {
 
   @ApiPropertyOptional({
     description:
-      'WorkflowNodeDef[]；与 preset 二选一。fetch_data 须 input.toolId，generate_and_push 须 input.hostToolId',
+      'B 端须传文档对象 { nodes, edges, entryNodeId? }（与 preset 二选一）。线性流程也必须传 edges（节点间 always 边）；线索分支用 clue/default。禁止仅传 nodes[]',
   })
   @ValidateIf((dto: CreateWorkflowDto) => dto.preset == null)
-  @IsArray()
-  nodes?: Record<string, unknown>[];
+  @IsOptional()
+  nodes?: unknown;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
@@ -141,7 +141,7 @@ export class CreateWorkflowDto {
   @ApiPropertyOptional({
     type: [WorkflowToolBindingDto],
     description:
-      '可选。仅用于为 nodes[].input.toolId 覆盖 isRequired；绑定 ID 必须在节点 input 上声明，省略则自动从 nodes 推导',
+      '可选。仅用于为 nodes[].input.toolIds/toolId 覆盖 isRequired；绑定 ID 必须在节点 input 上声明，省略则自动从 nodes 推导',
   })
   @IsOptional()
   @IsArray()
@@ -152,7 +152,7 @@ export class CreateWorkflowDto {
   @ApiPropertyOptional({
     type: [WorkflowHostToolBindingDto],
     description:
-      '可选。仅用于为 nodes[].input.hostToolId 覆盖 isRequired；绑定 ID 必须在节点 input 上声明，省略则自动从 nodes 推导',
+      '可选。仅用于为 nodes[].input.hostToolIds/hostToolId 覆盖 isRequired；绑定 ID 必须在节点 input 上声明，省略则自动从 nodes 推导',
   })
   @IsOptional()
   @IsArray()
@@ -204,12 +204,12 @@ export class UpdateWorkflowDto {
   presetConfig?: Record<string, unknown>;
 
   @ApiPropertyOptional({
-    description: '更新 nodes 会递增 version 并写 revision；与 preset 二选一',
+    description:
+      '更新 nodes 会递增 version 并写 revision；B 端须传 { nodes, edges, entryNodeId? }（线性也须 always 边）；与 preset 二选一',
   })
   @ValidateIf((dto: UpdateWorkflowDto) => dto.preset == null)
   @IsOptional()
-  @IsArray()
-  nodes?: Record<string, unknown>[];
+  nodes?: unknown;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
@@ -231,7 +231,7 @@ export class UpdateWorkflowDto {
   @ApiPropertyOptional({
     type: [WorkflowToolBindingDto],
     description:
-      '可选。仅用于为 nodes[].input.toolId 覆盖 isRequired；绑定 ID 必须在节点 input 上声明，省略则自动从 nodes 推导',
+      '可选。仅用于为 nodes[].input.toolIds/toolId 覆盖 isRequired；绑定 ID 必须在节点 input 上声明，省略则自动从 nodes 推导',
   })
   @IsOptional()
   @IsArray()
@@ -242,7 +242,7 @@ export class UpdateWorkflowDto {
   @ApiPropertyOptional({
     type: [WorkflowHostToolBindingDto],
     description:
-      '可选。仅用于为 nodes[].input.hostToolId 覆盖 isRequired；绑定 ID 必须在节点 input 上声明，省略则自动从 nodes 推导',
+      '可选。仅用于为 nodes[].input.hostToolIds/hostToolId 覆盖 isRequired；绑定 ID 必须在节点 input 上声明，省略则自动从 nodes 推导',
   })
   @IsOptional()
   @IsArray()

@@ -13,8 +13,10 @@ describe('executor-registry', () => {
     expect(page).not.toBe(chat);
   });
 
-  it('returns null for batch B actions on page profile', () => {
-    expect(getWorkflowExecutor('compose_mutation', 'page')).toBeNull();
+  it('returns page mutation executors for batch B actions', () => {
+    expect(getWorkflowExecutor('compose_mutation', 'page')?.action).toBe(
+      'compose_mutation',
+    );
   });
 
   it('returns chat executors for batch B mutation actions', () => {
@@ -26,12 +28,26 @@ describe('executor-registry', () => {
     );
   });
 
-  it('lists four page executors for batch A', () => {
+  it('returns shared summarize_images executor for chat and page', () => {
+    const chat = getWorkflowExecutor('summarize_images', 'chat');
+    const page = getWorkflowExecutor('summarize_images', 'page');
+    expect(chat?.action).toBe('summarize_images');
+    expect(page?.action).toBe('summarize_images');
+    expect(page).toBe(chat);
+  });
+
+  it('lists page executors including summarize_images', () => {
     expect(listWorkflowExecutors('page').map((row) => row.action)).toEqual([
       'load_page_context',
+      'detect_clues',
       'fetch_data',
+      'summarize_images',
       'generate_and_push',
       'summarize',
+      'present_mutation',
+      'compose_mutation',
+      'write_data',
+      'await_user_confirm',
     ]);
   });
 });

@@ -1,7 +1,9 @@
 import { getWorkflowActionRegistryEntry } from '../workflow-action-registry';
 import type { WorkflowActionKind } from '../workflow.types';
+import { detectCluesExecutor } from '../detect-clues';
 import { fetchDataExecutor, generateAndPushExecutor } from './delegate-react.executor';
 import { loadPageContextExecutor } from './load-page-context.executor';
+import { summarizeImagesExecutor } from './summarize-images.executor';
 import {
   awaitUserConfirmExecutor,
   composeMutationExecutor,
@@ -22,7 +24,9 @@ import type { WorkflowExecutor } from './workflow-executor.types';
 
 const CHAT_EXECUTORS: WorkflowExecutor[] = [
   loadPageContextExecutor,
+  detectCluesExecutor,
   fetchDataExecutor,
+  summarizeImagesExecutor,
   generateAndPushExecutor,
   summarizeActionExecutor,
   composeMutationExecutor,
@@ -33,7 +37,9 @@ const CHAT_EXECUTORS: WorkflowExecutor[] = [
 
 const PAGE_EXECUTORS: WorkflowExecutor[] = [
   loadPageContextExecutor,
+  detectCluesExecutor,
   pageFetchDataExecutor,
+  summarizeImagesExecutor,
   pageGenerateAndPushExecutor,
   pageSummarizeExecutor,
   pagePresentMutationExecutor,

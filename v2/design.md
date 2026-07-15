@@ -84,6 +84,7 @@ PageActionRun: workflowId?, workflowVersion?, workflowRun Json
 ```typescript
 type WorkflowActionKind =
   | 'load_page_context'
+  | 'detect_clues'
   | 'fetch_data'
   | 'generate_and_push'
   | 'summarize'
@@ -98,6 +99,26 @@ type WorkflowNodeDef = {
   name: string;
   objective: string;
   input: WorkflowActionInput; // 按 action 区分，见 workflow-action-kinds.md
+};
+
+/** 可选顶层边；缺省按 nodes[] 顺序合成 always */
+type WorkflowEdge = {
+  id: string;
+  from: string;
+  to: string;
+  kind?: 'always' | 'clue' | 'default';
+  clue?: { key: string; description: string };
+};
+
+type WorkflowDefinition = {
+  workflowKey: string;
+  name: string;
+  profile: WorkflowProfile;
+  goal?: string | null;
+  constraints?: string[];
+  nodes: WorkflowNodeDef[];
+  edges?: WorkflowEdge[];
+  entryNodeId?: string;
 };
 
 type WorkflowNodeStatus =
@@ -474,8 +495,10 @@ Route LLM 输出 **`writeChannel`**（`none` | `http` | `host`），与读路径
 | present summarize | `present_mutation` |
 | write tool | `write_data` |
 | 写确认暂停（运行时） | 插入 `await_user_confirm`（**不由 Plan LLM 自由推断**；mutation 模板或 runtime 插入） |
+| `workflow_inline` + `summarize_images` | `summarize_images`（**仅资产镜像往返**；Plan LLM schema 不含此 kind） |
 
-编译器产出 `WorkflowRunState`；L1 只信 `workflowRun`（见上文 §三条硬约束）。
+编译器产出 `WorkflowRunState`；L1 只信 `workflowRun`（见上文 §三条硬约束）。  
+**`summarize_images` 不由 Plan LLM 规划**——须画布 opt-in；详见 `workflow-action-kinds.md` §Plan 与 `docs/b-end-workflow-summarize-images.md` §11。
 
 ### Workflow → TaskPlan（双写过渡期，executor 未全覆盖时）
 
@@ -485,11 +508,13 @@ Route LLM 输出 **`writeChannel`**（`none` | `http` | `host`），与读路径
 |-----------------|-------------------|
 | fetch_data | kind: tool + toolRole |
 | load_page_context | 单步或 summarize 前奏（编译策略） |
+| summarize_images | kind: `workflow_inline` + `workflowAction: summarize_images`（不进 ReAct） |
 | generate_and_push | kind: reason + host_tool（合并） |
 | summarize / present_mutation | kind: summarize（按 action 区分 harness） |
 | compose_mutation | compose_write |
 | write_data | write tool |
-| await_user_confirm | 运行时闸门，非 Plan kind |
+| await_user_confirm | kind: `workflow_gate`（运行时闸门） |
+| detect_clues | 无 Plan 步（仅 workflow 执行轴） |
 
 **禁止**将 TaskPlanStep 作为 B 端配置 schema。
 

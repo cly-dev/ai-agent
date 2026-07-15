@@ -422,6 +422,8 @@ export class PageActionRunExecutor {
       workflowId: loadResult.workflowId,
       version: loadResult.version,
       nodes: loadResult.nodes,
+      edges: loadResult.edges,
+      entryNodeId: loadResult.entryNodeId,
       systemPrompt: run.systemPrompt,
       objectivePrefix: run.instruction,
       messages,

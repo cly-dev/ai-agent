@@ -24,6 +24,7 @@ exports.CLIENT_PUBLIC_API_EXCLUDES = [
     },
     { path: 'approval', method: common_1.RequestMethod.ALL },
     { path: 'approval/(.*)', method: common_1.RequestMethod.ALL },
+    { path: 'dev/image-panel/(.*)', method: common_1.RequestMethod.ALL },
 ];
 function escapeRegex(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

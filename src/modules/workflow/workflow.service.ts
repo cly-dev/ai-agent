@@ -11,8 +11,14 @@ import {
   type PaginatedResult,
 } from '../../common/pagination';
 import {
+  parseWorkflowGraphJson,
   parseWorkflowNodesJson,
+  serializeWorkflowGraphJson,
 } from '../../core/workflow/load-workflow-definition.util';
+import {
+  synthesizeLinearWorkflowEdges,
+  type ParsedWorkflowGraph,
+} from '../../core/workflow/graph/workflow-edge.util';
 import {
   collectWorkflowNodeBindingRefs,
   resolveWorkflowBindingsForSave,
@@ -25,7 +31,11 @@ import {
   validateWorkflowPresetInput,
 } from '../../core/workflow/workflow-preset.util';
 import type { WorkflowPresetKind } from '../../core/workflow/workflow-preset.types';
-import type { WorkflowBindingRefs, WorkflowProfile } from '../../core/workflow/workflow.types';
+import type {
+  WorkflowBindingRefs,
+  WorkflowNodeDef,
+  WorkflowProfile,
+} from '../../core/workflow/workflow.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import type {
   CreateWorkflowDto,
@@ -59,12 +69,16 @@ export class WorkflowService {
   async create(dto: CreateWorkflowDto): Promise<WorkflowResponse> {
     await this.assertAppClientExists(dto.appClientId);
     const workflowKey = dto.workflowKey.trim();
-    const nodes = this.resolveWorkflowNodes({
-      profile: dto.profile,
-      preset: dto.preset,
-      presetConfig: dto.presetConfig,
-      nodes: dto.nodes,
-    });
+    const graph = this.normalizePersistedGraph(
+      this.resolveWorkflowGraph({
+        profile: dto.profile,
+        preset: dto.preset,
+        presetConfig: dto.presetConfig,
+        nodes: dto.nodes,
+        requireExplicitEdges: dto.preset == null,
+      }),
+    );
+    const nodes = graph.nodes;
     const bindingResolution = resolveWorkflowBindingsForSave({
       nodes,
       explicitTools: dto.tools,
@@ -74,7 +88,7 @@ export class WorkflowService {
       throw new BadRequestException({
         code: 'WORKFLOW_BINDING_RESOLUTION_FAILED',
         message:
-          'Workflow tool bindings must be declared on node input.toolId / input.hostToolId; tools[] and hostTools[] may only set isRequired for those ids',
+          'Workflow tool bindings must be declared on node input.toolIds/toolId / input.hostToolIds/hostToolId; tools[] and hostTools[] may only set isRequired for those ids',
         issues: bindingResolution.issues,
       });
     }
@@ -87,9 +101,13 @@ export class WorkflowService {
       goal: dto.goal ?? null,
       constraints: dto.constraints ?? [],
       nodes,
+      edges: graph.edges,
+      entryNodeId: graph.entryNodeId ?? undefined,
       bindings: this.toBindingRefs(tools, hostTools),
     });
     await this.assertBindingsExist(dto.appClientId, tools, hostTools);
+
+    const nodesJson = serializeWorkflowGraphJson(graph) as Prisma.InputJsonValue;
 
     try {
       const row = await this.prisma.$transaction(async (tx) => {
@@ -102,7 +120,7 @@ export class WorkflowService {
             goal: dto.goal?.trim() || null,
             profile: dto.profile,
             deliverable: dto.deliverable ?? WorkflowDeliverable.answer,
-            nodes: nodes as unknown as Prisma.InputJsonValue,
+            nodes: nodesJson,
             version: 1,
             constraints: (dto.constraints ?? []) as Prisma.InputJsonValue,
             isActive: dto.isActive ?? true,
@@ -156,11 +174,7 @@ export class WorkflowService {
 
   async update(id: number, dto: UpdateWorkflowDto): Promise<WorkflowResponse> {
     const existing = await this.findEntityOrThrow(id);
-    if (
-      dto.preset != null &&
-      dto.nodes != null &&
-      dto.nodes.length > 0
-    ) {
+    if (dto.preset != null && this.isNodesPayloadProvided(dto.nodes)) {
       throw new BadRequestException({
         code: 'WORKFLOW_PRESET_NODES_CONFLICT',
         message: 'Provide either preset + presetConfig or nodes, not both',
@@ -168,18 +182,25 @@ export class WorkflowService {
     }
     const expandedFromPreset =
       dto.preset != null
-        ? this.resolveWorkflowNodes({
-            profile: existing.profile as WorkflowProfile,
-            preset: dto.preset,
-            presetConfig: dto.presetConfig,
-          })
+        ? this.normalizePersistedGraph(
+            this.resolveWorkflowGraph({
+              profile: existing.profile as WorkflowProfile,
+              preset: dto.preset,
+              presetConfig: dto.presetConfig,
+              requireExplicitEdges: false,
+            }),
+          )
         : null;
-    const nodes =
+    if (dto.nodes != null && dto.preset == null) {
+      this.assertBEndNodesIncludeEdges(dto.nodes);
+    }
+    const graphFromDto =
       expandedFromPreset != null
         ? expandedFromPreset
         : dto.nodes != null
-          ? parseWorkflowNodesJson(dto.nodes)
-          : undefined;
+          ? this.normalizePersistedGraph(parseWorkflowGraphJson(dto.nodes))
+          : null;
+    const nodes = graphFromDto?.nodes;
     const tools =
       dto.tools != null ? this.normalizeToolBindings(dto.tools) : undefined;
     const hostTools =
@@ -191,9 +212,11 @@ export class WorkflowService {
       await this.assertCanDeactivate(id);
     }
 
-    const nextNodes =
-      nodes ??
-      parseWorkflowNodesJson(existing.nodes);
+    const existingGraph = this.normalizePersistedGraph(
+      parseWorkflowGraphJson(existing.nodes),
+    );
+    const nextGraph: ParsedWorkflowGraph = graphFromDto ?? existingGraph;
+    const nextNodes = nextGraph.nodes;
 
     const shouldResolveBindings =
       nodes != null || tools != null || hostTools != null;
@@ -208,7 +231,7 @@ export class WorkflowService {
       throw new BadRequestException({
         code: 'WORKFLOW_BINDING_RESOLUTION_FAILED',
         message:
-          'Workflow tool bindings must be declared on node input.toolId / input.hostToolId; tools[] and hostTools[] may only set isRequired for those ids',
+          'Workflow tool bindings must be declared on node input.toolIds/toolId / input.hostToolIds/hostToolId; tools[] and hostTools[] may only set isRequired for those ids',
         issues: bindingResolution.issues,
       });
     }
@@ -249,6 +272,8 @@ export class WorkflowService {
           ? (existing.constraints as string[])
           : []),
       nodes: nextNodes,
+      edges: nextGraph.edges,
+      entryNodeId: nextGraph.entryNodeId ?? undefined,
       bindings: nextBindings,
     });
 
@@ -259,6 +284,11 @@ export class WorkflowService {
         resolvedHostTools,
       );
     }
+
+    const nodesJson =
+      graphFromDto != null
+        ? (serializeWorkflowGraphJson(graphFromDto) as Prisma.InputJsonValue)
+        : undefined;
 
     const row = await this.prisma.$transaction(async (tx) => {
       if (shouldResolveBindings) {
@@ -294,9 +324,7 @@ export class WorkflowService {
             : {}),
           ...(dto.goal !== undefined ? { goal: dto.goal?.trim() || null } : {}),
           ...(dto.deliverable != null ? { deliverable: dto.deliverable } : {}),
-          ...(nodes != null
-            ? { nodes: nodes as unknown as Prisma.InputJsonValue }
-            : {}),
+          ...(nodesJson != null ? { nodes: nodesJson } : {}),
           ...(dto.constraints != null
             ? { constraints: dto.constraints as Prisma.InputJsonValue }
             : {}),
@@ -551,13 +579,105 @@ export class WorkflowService {
     // PageAction 仅引用 workflowId；不再校验 nodes 是否含 generate_and_push。
   }
 
-  private resolveWorkflowNodes(input: {
+  private isNodesPayloadProvided(nodes: unknown): boolean {
+    if (nodes == null) {
+      return false;
+    }
+    if (Array.isArray(nodes)) {
+      return nodes.length > 0;
+    }
+    if (
+      typeof nodes === 'object' &&
+      Array.isArray((nodes as { nodes?: unknown }).nodes)
+    ) {
+      return ((nodes as { nodes: unknown[] }).nodes?.length ?? 0) > 0;
+    }
+    return true;
+  }
+
+  /**
+   * B 端手配 nodes：必须传文档对象且含 edges 数组。
+   * 多节点时 edges 不可为空（至少 always 串联）。
+   * 声明的每条边必须可严格解析（禁止静默丢弃后改写拓扑）。
+   */
+  private assertBEndNodesIncludeEdges(nodes: unknown): void {
+    if (Array.isArray(nodes)) {
+      throw new BadRequestException({
+        code: 'WORKFLOW_EDGES_REQUIRED',
+        message:
+          'B 端须传 { nodes, edges, entryNodeId? }；线性流程也须声明 always 边，禁止仅传 nodes[]',
+      });
+    }
+    if (
+      nodes == null ||
+      typeof nodes !== 'object' ||
+      !Array.isArray((nodes as { nodes?: unknown }).nodes) ||
+      !Array.isArray((nodes as { edges?: unknown }).edges)
+    ) {
+      throw new BadRequestException({
+        code: 'WORKFLOW_EDGES_REQUIRED',
+        message:
+          'B 端须传 { nodes, edges, entryNodeId? }，且 edges 必须为数组',
+      });
+    }
+    const nodeList = (nodes as { nodes: unknown[] }).nodes;
+    const edgeList = (nodes as { edges: unknown[] }).edges;
+    if (nodeList.length > 1 && edgeList.length === 0) {
+      throw new BadRequestException({
+        code: 'WORKFLOW_EDGES_REQUIRED',
+        message:
+          'nodes 长度大于 1 时 edges 不能为空；请按节点顺序配置 always 边（或 clue/default 分支图）',
+      });
+    }
+  }
+
+  private assertGraphEdgesWellFormed(graph: ParsedWorkflowGraph): void {
+    if (!graph.edgesDeclared) {
+      return;
+    }
+    if (graph.edgeParseIssues.length > 0) {
+      throw new BadRequestException({
+        code: 'WORKFLOW_EDGES_INVALID',
+        message:
+          'edges 存在无法解析的项；请修正后重试（不会静默丢弃并改走线性）',
+        issues: graph.edgeParseIssues,
+      });
+    }
+  }
+
+  /** 持久化统一为带 edges 的文档；仅未声明 edges 时（Preset/遗留）才合成 always。 */
+  private normalizePersistedGraph(
+    graph: ParsedWorkflowGraph,
+  ): ParsedWorkflowGraph {
+    this.assertGraphEdgesWellFormed(graph);
+    if (graph.edgesDeclared) {
+      return {
+        ...graph,
+        entryNodeId: graph.entryNodeId ?? graph.nodes[0]?.id ?? null,
+      };
+    }
+    const edges =
+      graph.edges.length > 0
+        ? graph.edges
+        : synthesizeLinearWorkflowEdges(graph.nodes);
+    return {
+      nodes: graph.nodes,
+      edges,
+      entryNodeId: graph.entryNodeId ?? graph.nodes[0]?.id ?? null,
+      edgesDeclared: false,
+      edgeParseIssues: [],
+    };
+  }
+
+  private resolveWorkflowGraph(input: {
     profile: WorkflowProfile;
     preset?: WorkflowPresetKind;
     presetConfig?: Record<string, unknown>;
-    nodes?: Record<string, unknown>[];
-  }): ReturnType<typeof parseWorkflowNodesJson> {
-    if (input.preset != null && input.nodes != null && input.nodes.length > 0) {
+    nodes?: unknown;
+    /** true：手配 nodes，强制 { nodes, edges } */
+    requireExplicitEdges?: boolean;
+  }): ParsedWorkflowGraph {
+    if (input.preset != null && this.isNodesPayloadProvided(input.nodes)) {
       throw new BadRequestException({
         code: 'WORKFLOW_PRESET_NODES_CONFLICT',
         message: 'Provide either preset + presetConfig or nodes, not both',
@@ -577,19 +697,40 @@ export class WorkflowService {
           issues,
         });
       }
-      return expandWorkflowPreset({
+      const expandedNodes = expandWorkflowPreset({
         preset: input.preset,
         profile: input.profile,
         config,
       });
+      return parseWorkflowGraphJson(expandedNodes);
     }
-    if (!input.nodes?.length) {
+    if (!this.isNodesPayloadProvided(input.nodes)) {
       throw new BadRequestException({
         code: 'WORKFLOW_NODES_REQUIRED',
         message: 'Either preset or nodes must be provided',
       });
     }
-    return parseWorkflowNodesJson(input.nodes);
+    if (input.requireExplicitEdges !== false) {
+      this.assertBEndNodesIncludeEdges(input.nodes);
+    }
+    const graph = parseWorkflowGraphJson(input.nodes);
+    if (graph.nodes.length === 0) {
+      throw new BadRequestException({
+        code: 'WORKFLOW_NODES_REQUIRED',
+        message: 'Either preset or nodes must be provided',
+      });
+    }
+    return graph;
+  }
+
+  /** @deprecated Prefer resolveWorkflowGraph */
+  private resolveWorkflowNodes(input: {
+    profile: WorkflowProfile;
+    preset?: WorkflowPresetKind;
+    presetConfig?: Record<string, unknown>;
+    nodes?: unknown;
+  }): WorkflowNodeDef[] {
+    return this.resolveWorkflowGraph(input).nodes;
   }
 
   private async findEntityOrThrow(id: number) {
@@ -619,7 +760,9 @@ export class WorkflowService {
     profile: CreateWorkflowDto['profile'];
     goal?: string | null;
     constraints: string[];
-    nodes: ReturnType<typeof parseWorkflowNodesJson>;
+    nodes: WorkflowNodeDef[];
+    edges?: ParsedWorkflowGraph['edges'];
+    entryNodeId?: string;
     bindings: WorkflowBindingRefs;
   }): void {
     const issues = validateWorkflowDefinition({
@@ -630,6 +773,9 @@ export class WorkflowService {
         goal: input.goal,
         constraints: input.constraints,
         nodes: input.nodes,
+        ...(input.edges != null
+          ? { edges: input.edges, entryNodeId: input.entryNodeId }
+          : {}),
       },
       bindings: input.bindings,
     });

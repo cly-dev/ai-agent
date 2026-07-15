@@ -385,7 +385,10 @@ function createSummarizeNode(bundle) {
             taskPlanAfterSummarize != null;
         if (reasonHostFillDispatched) {
             const pendingHostStep = (0, task_plan_util_1.getPendingPlanHostToolStep)(taskPlanAfterSummarize, state.workflowRun);
-            const hostToolsForPrompt = (0, host_tool_plan_util_1.filterHostToolsForPlanStep)((_0 = state.scopedHostTools) !== null && _0 !== void 0 ? _0 : [], taskPlanAfterSummarize);
+            const hostToolsForPrompt = (0, host_tool_plan_util_1.filterHostToolsForPlanStep)((_0 = state.scopedHostTools) !== null && _0 !== void 0 ? _0 : [], taskPlanAfterSummarize, {
+                workflowRun: state.workflowRun,
+                workflowNodeDefs: state.workflowNodeDefs,
+            });
             if (pendingHostStep && hostToolsForPrompt.length > 0) {
                 const dispatched = hostToolHandle.tryDispatchHostToolFromPlanDraft({
                     graphState: resultState,

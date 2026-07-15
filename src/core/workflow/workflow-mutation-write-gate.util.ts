@@ -13,14 +13,37 @@ export type WriteConfirmationPolicy =
 
 function workflowAwaitNodeId(
   defs: WorkflowNodeDef[],
+  run?: WorkflowRunState | null,
 ): string | null {
-  return defs.find((row) => row.action === 'await_user_confirm')?.id ?? null;
+  const awaits = defs.filter((row) => row.action === 'await_user_confirm');
+  if (awaits.length === 0) {
+    return null;
+  }
+  if (run?.currentNodeId) {
+    const current = getWorkflowNodeDef(defs, run.currentNodeId);
+    if (current?.action === 'await_user_confirm') {
+      return run.currentNodeId;
+    }
+  }
+  if (awaits.length === 1) {
+    return awaits[0]!.id;
+  }
+  if (run) {
+    const active = awaits.find((row) => {
+      const node = run.nodes.find((n) => n.nodeId === row.id);
+      return node?.status === 'pending' || node?.status === 'running';
+    });
+    if (active) {
+      return active.id;
+    }
+  }
+  return awaits[0]!.id;
 }
 
 export function workflowHasAwaitUserConfirmNode(
   defs: WorkflowNodeDef[] | null | undefined,
 ): boolean {
-  return workflowAwaitNodeId(defs ?? []) != null;
+  return (defs ?? []).some((row) => row.action === 'await_user_confirm');
 }
 
 function isWorkflowNodeCompleted(
@@ -44,7 +67,7 @@ export function resolveWriteConfirmationPolicy(input: {
     return { kind: 'gate_now' };
   }
 
-  const awaitNodeId = workflowAwaitNodeId(defs);
+  const awaitNodeId = workflowAwaitNodeId(defs, run);
   if (!awaitNodeId) {
     return { kind: 'gate_now' };
   }

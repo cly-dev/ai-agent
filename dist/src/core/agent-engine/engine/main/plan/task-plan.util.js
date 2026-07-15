@@ -28,6 +28,7 @@ const VALID_STEP_KINDS = new Set([
     'summarize',
     'reason',
     'workflow_gate',
+    'workflow_inline',
 ]);
 const VALID_STEP_PHASES = new Set(['gather', 'analyze', 'answer', 'mutate']);
 function isRecord(value) {
@@ -86,8 +87,11 @@ function parseWorkflowSteps(raw) {
         const hostToolNames = readStringArray(item.hostToolNames);
         const hostToolIds = readPositiveIntArray(item.hostToolIds);
         const stopWhen = readString(item.stopWhen);
-        steps.push(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ id, phase: phase, kind: kind }, (toolRole ? { toolRole: toolRole } : {})), (pinnedToolNames ? { pinnedToolNames } : {})), (hostToolNames ? { hostToolNames } : {})), (hostToolIds ? { hostToolIds } : {})), { objective }), (stopWhen
+        const workflowAction = readString(item.workflowAction);
+        steps.push(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ id, phase: phase, kind: kind }, (toolRole ? { toolRole: toolRole } : {})), (pinnedToolNames ? { pinnedToolNames } : {})), (hostToolNames ? { hostToolNames } : {})), (hostToolIds ? { hostToolIds } : {})), { objective }), (stopWhen
             ? { stopWhen: stopWhen }
+            : {})), (workflowAction === 'summarize_images'
+            ? { workflowAction: 'summarize_images' }
             : {})));
     }
     return steps;
@@ -677,7 +681,10 @@ function resolvePlanStepExecutionRoute(step, workflowNodeAction) {
     if (step.kind === 'summarize' || step.kind === 'reason') {
         return 'summarize';
     }
-    if (step.kind === 'workflow_gate') {
+    if (step.kind === 'workflow_gate' || step.kind === 'workflow_inline') {
+        return 'workflow';
+    }
+    if (workflowNodeAction === 'summarize_images') {
         return 'workflow';
     }
     return 'llm';

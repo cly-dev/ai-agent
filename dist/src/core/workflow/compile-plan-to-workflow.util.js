@@ -91,6 +91,13 @@ function mapPlanStepToWorkflowNodes(step, constraints = []) {
             return [
                 Object.assign(Object.assign({}, baseNodeFromStep(step)), { action: 'await_user_confirm', input: { confirmKind: 'mutation' } }),
             ];
+        case 'workflow_inline':
+            if (step.workflowAction === 'summarize_images') {
+                return [
+                    Object.assign(Object.assign({}, baseNodeFromStep(step)), { action: 'summarize_images', input: { from: 'upstream', maxCells: 6, onFailure: 'degrade' } }),
+                ];
+            }
+            return [];
         case 'skill':
             return [];
         default:

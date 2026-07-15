@@ -82,6 +82,7 @@ const VALID_STEP_KINDS = new Set([
   'summarize',
   'reason',
   'workflow_gate',
+  'workflow_inline',
 ]);
 const VALID_STEP_PHASES = new Set(['gather', 'analyze', 'answer', 'mutate']);
 
@@ -148,6 +149,7 @@ function parseWorkflowSteps(raw: unknown): TaskPlanStep[] | null {
     const hostToolNames = readStringArray(item.hostToolNames);
     const hostToolIds = readPositiveIntArray(item.hostToolIds);
     const stopWhen = readString(item.stopWhen);
+    const workflowAction = readString(item.workflowAction);
     steps.push({
       id,
       phase: phase as TaskStepPhase,
@@ -159,6 +161,9 @@ function parseWorkflowSteps(raw: unknown): TaskPlanStep[] | null {
       objective,
       ...(stopWhen
         ? { stopWhen: stopWhen as TaskPlanStep['stopWhen'] }
+        : {}),
+      ...(workflowAction === 'summarize_images'
+        ? { workflowAction: 'summarize_images' as const }
         : {}),
     });
   }
@@ -983,7 +988,7 @@ export type PlanStepExecutionRoute =
 /**
  * 当前 pending 步应走哪条图路由。
  * - summarize / reason → summarize 节点（文本生成）
- * - workflow_gate → Workflow execute_node（如 await_user_confirm）
+ * - workflow_gate / workflow_inline → Workflow execute_node
  * - tool / host_tool / skill → llm 节点（工具决策 / Host Tool dispatch / skill 帧）
  * - 无 pending → terminal
  */
@@ -1000,7 +1005,10 @@ export function resolvePlanStepExecutionRoute(
   if (step.kind === 'summarize' || step.kind === 'reason') {
     return 'summarize';
   }
-  if (step.kind === 'workflow_gate') {
+  if (step.kind === 'workflow_gate' || step.kind === 'workflow_inline') {
+    return 'workflow';
+  }
+  if (workflowNodeAction === 'summarize_images') {
     return 'workflow';
   }
   return 'llm';

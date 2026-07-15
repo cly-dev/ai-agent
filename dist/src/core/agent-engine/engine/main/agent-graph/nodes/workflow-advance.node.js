@@ -18,8 +18,9 @@ function createWorkflowAdvanceNode(bundle) {
         const current = (0, workflow_graph_routing_util_1.getCurrentWorkflowNode)(state);
         const completedNodeId = current === null || current === void 0 ? void 0 : current.nodeId;
         let workflowRun = (0, workflow_run_util_1.advanceWorkflowRun)(run);
-        if (workflowRun.currentNodeId == null && workflowRun.status === 'running') {
-            workflowRun = (0, workflow_run_util_1.finalizeWorkflowRun)(workflowRun, 'completed');
+        const wasRunning = workflowRun.status === 'running';
+        workflowRun = (0, workflow_run_util_1.finalizeWorkflowRunAfterAdvance)(workflowRun);
+        if (wasRunning && workflowRun.status === 'completed') {
             deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, 'Workflow 步骤已全部完成。\n', 'delta');
         }
         const advancedNode = workflowRun.currentNodeId

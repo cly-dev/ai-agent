@@ -3,10 +3,11 @@ import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/wor
 import { type PlanScopedTool } from './task-plan.util';
 import type { TaskPlanSnapshot } from './task-plan.types';
 export type PlanToolCandidateTool = PlanScopedTool & {
+    id?: number;
     inputSchema?: unknown;
     schema?: unknown;
 };
-export type PlanToolCandidateStrategy = 'no_gather_step' | 'host_or_blocked' | 'plan_pinned_tool' | 'single_role_match' | 'broad_list_preferred' | 'list_operation_preferred' | 'role_match_all' | 'fallback_scoped';
+export type PlanToolCandidateStrategy = 'no_gather_step' | 'host_or_blocked' | 'workflow_node_tools' | 'plan_pinned_tool' | 'single_role_match' | 'broad_list_preferred' | 'list_operation_preferred' | 'role_match_all' | 'fallback_scoped';
 export type PlanToolCandidateResolveResult<T extends PlanToolCandidateTool> = {
     candidates: T[];
     strategy: PlanToolCandidateStrategy;

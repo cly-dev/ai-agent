@@ -14,7 +14,7 @@ export type TaskPlanSummaryObservation = {
 export type TaskPlanSource = 'workflow' | 'llm' | 'template' | 'minimal' | 'page_context';
 export type TaskPlanResolveMethod = TaskPlanSource;
 export type TaskDeliverable = 'analysis' | 'list' | 'detail' | 'mutation' | 'answer';
-export type TaskStepKind = 'skill' | 'tool' | 'host_tool' | 'summarize' | 'reason' | 'workflow_gate';
+export type TaskStepKind = 'skill' | 'tool' | 'host_tool' | 'summarize' | 'reason' | 'workflow_gate' | 'workflow_inline';
 export type TaskStepPhase = 'gather' | 'analyze' | 'answer' | 'mutate';
 export type TaskStepStopWhen = 'observation_non_empty' | 'observation_fetch_complete' | 'observation_has_fields' | 'always';
 export type TaskPlanStep = {
@@ -28,6 +28,7 @@ export type TaskPlanStep = {
     hostToolIds?: number[];
     objective: string;
     stopWhen?: TaskStepStopWhen;
+    workflowAction?: 'summarize_images';
 };
 export type TaskPlanSnapshot = {
     source: TaskPlanSource;

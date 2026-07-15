@@ -1,8 +1,12 @@
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { TaskPlanSnapshot } from '../agent-engine/engine/main/plan/task-plan.types';
-import type { WorkflowNodeDef, WorkflowRunState } from './workflow.types';
+import type { WorkflowEdge, WorkflowNodeDef, WorkflowRunState } from './workflow.types';
 export declare function isResumableWorkflowRun(run: WorkflowRunState | null | undefined): run is WorkflowRunState;
-export declare function resolveWorkflowDefsForResume(prisma: PrismaService, input: {
+export type WorkflowResumeResolvedGraph = {
+    nodes: WorkflowNodeDef[];
+    edges: WorkflowEdge[] | null;
+};
+export declare function resolveWorkflowGraphForResume(prisma: PrismaService, input: {
     savedRun: WorkflowRunState;
     taskPlan: TaskPlanSnapshot;
     appClientId: number;
@@ -10,7 +14,7 @@ export declare function resolveWorkflowDefsForResume(prisma: PrismaService, inpu
         allowedToolIds: number[];
         allowedHostToolIds: number[];
     };
-}): Promise<WorkflowNodeDef[] | null>;
+}): Promise<WorkflowResumeResolvedGraph | null>;
 export declare function shouldAwaitReactOnWorkflowResume(run: WorkflowRunState, defs: WorkflowNodeDef[]): boolean;
 export type WorkflowResumeGraphSlice = {
     workflowRun: WorkflowRunState;
@@ -32,4 +36,5 @@ export declare function workflowRunHasPendingNodes(run: WorkflowRunState | null 
 export declare function buildWorkflowResumeGraphSlice(input: {
     savedRun: WorkflowRunState;
     nodes: WorkflowNodeDef[];
+    edges?: WorkflowEdge[] | null;
 }): WorkflowResumeGraphSlice;

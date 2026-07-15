@@ -6,32 +6,35 @@ import {
   rememberWorkflowLoadCache,
   workflowLoadCacheKey,
 } from './workflow-definition-cache.util';
+import {
+  parseWorkflowGraphJson,
+  serializeWorkflowGraphJson,
+  type ParsedWorkflowGraph,
+} from './graph/workflow-edge.util';
 import type {
   WorkflowDefinition,
+  WorkflowEdge,
   WorkflowNodeDef,
   WorkflowOverrides,
   WorkflowRunState,
 } from './workflow.types';
 import { isWorkflowCompatibleWithScope } from './validate-workflow-against-scope.util';
+import { validateWorkflowTopology } from './validate-workflow.util';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/** @deprecated Prefer parseWorkflowGraphJson; retains nodes-only extraction. */
 export function parseWorkflowNodesJson(value: unknown): WorkflowNodeDef[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter(
-    (row): row is WorkflowNodeDef =>
-      isRecord(row) &&
-      typeof row.id === 'string' &&
-      typeof row.action === 'string' &&
-      typeof row.name === 'string' &&
-      typeof row.objective === 'string' &&
-      isRecord(row.input),
-  );
+  return parseWorkflowGraphJson(value).nodes;
 }
+
+export {
+  parseWorkflowGraphJson,
+  serializeWorkflowGraphJson,
+  type ParsedWorkflowGraph,
+};
 
 export function parseWorkflowOverridesJson(
   value: unknown,
@@ -53,6 +56,9 @@ export function parseWorkflowOverridesJson(
 
 export type LoadedWorkflowForRun = {
   nodes: WorkflowNodeDef[];
+  edges: WorkflowEdge[];
+  entryNodeId: string | null;
+  edgesDeclared: boolean;
   workflowRun: WorkflowRunState;
   workflowId: number;
   version: number;
@@ -63,6 +69,7 @@ export type WorkflowLoadFailureReason =
   | 'asset_missing'
   | 'revision_missing'
   | 'empty_nodes'
+  | 'invalid_edges'
   | 'scope_incompatible';
 
 export type WorkflowLoadResult =
@@ -132,26 +139,18 @@ export async function loadWorkflowForRunDetailed(
     revisionFingerprint = `${revision.id}:${revision.createdAt.toISOString()}`;
   }
 
-  let baseNodes = readCachedWorkflowLoad(
+  let graph = readCachedWorkflowLoad(
     cacheKey,
     workflow.updatedAt,
     revisionFingerprint,
     version,
   );
-  if (!baseNodes) {
-    baseNodes = parseWorkflowNodesJson(nodesJson);
-    if (baseNodes.length > 0) {
-      rememberWorkflowLoadCache(cacheKey, {
-        workflowId: workflow.id,
-        version,
-        workflowUpdatedAt: workflow.updatedAt.toISOString(),
-        revisionFingerprint,
-        baseNodes,
-      });
-    }
+  const fromCache = graph != null;
+  if (!graph) {
+    graph = parseWorkflowGraphJson(nodesJson);
   }
 
-  if (baseNodes.length === 0) {
+  if (graph.nodes.length === 0) {
     return {
       status: 'failed',
       reason: 'empty_nodes',
@@ -159,7 +158,56 @@ export async function loadWorkflowForRunDetailed(
     };
   }
 
-  const nodes = applyWorkflowOverrides(baseNodes, input.workflowOverrides);
+  // detect 必须带声明边；禁止无 edges 字段时静默合成线性 always
+  const hasDetectClues = graph.nodes.some(
+    (node) => node.action === 'detect_clues',
+  );
+  if (hasDetectClues && !graph.edgesDeclared) {
+    return {
+      status: 'failed',
+      reason: 'invalid_edges',
+      workflowId: workflow.id,
+    };
+  }
+
+  // 声明了 edges：解析失败 / 空边 / 拓扑非法 → fail closed
+  if (graph.edgesDeclared) {
+    if (
+      graph.edgeParseIssues.length > 0 ||
+      (graph.nodes.length > 1 && graph.edges.length === 0)
+    ) {
+      return {
+        status: 'failed',
+        reason: 'invalid_edges',
+        workflowId: workflow.id,
+      };
+    }
+    const topologyIssues = validateWorkflowTopology({
+      nodes: graph.nodes,
+      edges: graph.edges,
+      entryNodeId: graph.entryNodeId,
+    });
+    if (topologyIssues.length > 0) {
+      return {
+        status: 'failed',
+        reason: 'invalid_edges',
+        workflowId: workflow.id,
+      };
+    }
+  }
+
+  // 仅缓存校验通过的图，避免 invalid_edges 脏数据占坑
+  if (!fromCache) {
+    rememberWorkflowLoadCache(cacheKey, {
+      workflowId: workflow.id,
+      version,
+      workflowUpdatedAt: workflow.updatedAt.toISOString(),
+      revisionFingerprint,
+      graph,
+    });
+  }
+
+  const nodes = applyWorkflowOverrides(graph.nodes, input.workflowOverrides);
 
   if (input.scope) {
     const compatible = isWorkflowCompatibleWithScope({
@@ -179,12 +227,17 @@ export async function loadWorkflowForRunDetailed(
     workflowId: workflow.id,
     version,
     nodes,
+    edges: graph.edges,
+    entryNodeId: graph.entryNodeId,
     compiledFrom: 'workflow_db',
   });
 
   return {
     status: 'loaded',
     nodes,
+    edges: graph.edges,
+    entryNodeId: graph.entryNodeId,
+    edgesDeclared: graph.edgesDeclared,
     workflowRun,
     workflowId: workflow.id,
     version,
@@ -221,6 +274,7 @@ export function toWorkflowDefinition(row: {
   constraints?: unknown;
   nodes: unknown;
 }): WorkflowDefinition {
+  const graph = parseWorkflowGraphJson(row.nodes);
   return {
     workflowKey: row.workflowKey,
     name: row.name,
@@ -229,6 +283,9 @@ export function toWorkflowDefinition(row: {
     constraints: Array.isArray(row.constraints)
       ? (row.constraints as string[])
       : [],
-    nodes: parseWorkflowNodesJson(row.nodes),
+    nodes: graph.nodes,
+    ...(graph.edgesDeclared
+      ? { edges: graph.edges, entryNodeId: graph.entryNodeId ?? undefined }
+      : {}),
   };
 }

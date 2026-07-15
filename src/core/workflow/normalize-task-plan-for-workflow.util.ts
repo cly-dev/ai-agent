@@ -26,7 +26,11 @@ function workflowDefByStepId(
   return new Map(nodes.map((row) => [row.id, row]));
 }
 
-/** 将 Workflow await_user_confirm 节点对应的 Plan 步统一为 workflow_gate。 */
+/**
+ * Workflow 绑定后校正 Plan 步 kind：
+ * - await_user_confirm → workflow_gate
+ * - summarize_images → workflow_inline（不进 ReAct）
+ */
 export function normalizeTaskPlanStepsForWorkflow(
   steps: TaskPlanStep[],
   nodes: WorkflowNodeDef[],
@@ -43,6 +47,18 @@ export function normalizeTaskPlanStepsForWorkflow(
         kind: 'workflow_gate' as const,
         phase: step.phase ?? 'answer',
         stopWhen: step.stopWhen ?? 'always',
+      };
+    }
+    if (
+      def?.action === 'summarize_images' &&
+      step.kind !== 'workflow_inline'
+    ) {
+      return {
+        ...step,
+        kind: 'workflow_inline' as const,
+        phase: 'gather' as const,
+        stopWhen: 'always' as const,
+        workflowAction: 'summarize_images' as const,
       };
     }
     return step;

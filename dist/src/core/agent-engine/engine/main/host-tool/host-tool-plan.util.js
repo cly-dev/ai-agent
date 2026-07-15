@@ -2,13 +2,23 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.advanceHostToolPlanStep = exports.buildHostToolSkippedObservation = exports.buildHostToolDispatchObservations = exports.HOST_TOOL_INVOKE_OBSERVATION_NAME = exports.hostToolCallsMatchPlanStep = exports.partitionDecisionToolCalls = exports.partitionToolCallsByHost = exports.collectRemovedPendingHostToolStepIds = exports.enrichPlanStepsWithHostTools = exports.collectRequiredHostToolNamesForPlanStep = exports.filterHostToolsForPlanStep = void 0;
 const task_plan_util_1 = require("../plan/task-plan.util");
-function filterHostToolsForPlanStep(hostTools, taskPlan) {
-    var _a, _b;
-    const step = (0, task_plan_util_1.getPendingPlanHostToolStep)(taskPlan);
+const workflow_graph_routing_util_1 = require("../../../../workflow/workflow-graph-routing.util");
+const resolve_workflow_node_tool_refs_util_1 = require("../../../../workflow/resolve-workflow-node-tool-refs.util");
+function filterHostToolsForPlanStep(hostTools, taskPlan, options) {
+    var _a, _b, _c;
+    const currentDef = (0, workflow_graph_routing_util_1.getWorkflowNodeDef)(options === null || options === void 0 ? void 0 : options.workflowNodeDefs, (_a = options === null || options === void 0 ? void 0 : options.workflowRun) === null || _a === void 0 ? void 0 : _a.currentNodeId);
+    if ((currentDef === null || currentDef === void 0 ? void 0 : currentDef.action) === 'generate_and_push') {
+        const nodeIds = (0, resolve_workflow_node_tool_refs_util_1.resolveGenerateAndPushHostToolIds)(currentDef.input);
+        if (nodeIds.length > 0) {
+            const allowed = new Set(nodeIds);
+            return hostTools.filter((tool) => allowed.has(tool.id));
+        }
+    }
+    const step = (0, task_plan_util_1.getPendingPlanHostToolStep)(taskPlan, options === null || options === void 0 ? void 0 : options.workflowRun);
     if (!step) {
         return [];
     }
-    const allowed = (_a = step.hostToolNames) === null || _a === void 0 ? void 0 : _a.map((name) => name.trim()).filter(Boolean);
+    const allowed = (_b = step.hostToolNames) === null || _b === void 0 ? void 0 : _b.map((name) => name.trim()).filter(Boolean);
     if (step.hostToolNames != null) {
         if (!(allowed === null || allowed === void 0 ? void 0 : allowed.length)) {
             return [];
@@ -16,7 +26,7 @@ function filterHostToolsForPlanStep(hostTools, taskPlan) {
         const allowedSet = new Set(allowed);
         return hostTools.filter((tool) => allowedSet.has(tool.name));
     }
-    if ((_b = step.hostToolIds) === null || _b === void 0 ? void 0 : _b.length) {
+    if ((_c = step.hostToolIds) === null || _c === void 0 ? void 0 : _c.length) {
         const allowedIds = new Set(step.hostToolIds);
         return hostTools.filter((tool) => allowedIds.has(tool.id));
     }

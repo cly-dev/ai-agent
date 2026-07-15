@@ -23,6 +23,8 @@ async function orchestratePageWorkflow(input) {
         workflowId: input.workflowId,
         version: input.version,
         nodes: input.nodes,
+        edges: input.edges,
+        entryNodeId: input.entryNodeId,
         compiledFrom: input.resumeFrom ? 'resume' : 'workflow_db',
     });
     if ((_d = input.resumeFrom) === null || _d === void 0 ? void 0 : _d.advancePastAwait) {
@@ -97,9 +99,7 @@ async function orchestratePageWorkflow(input) {
             }
             runtime.nodeOutputs[nodeId] = reactResult.nodeOutput;
             workflowRun = (0, workflow_run_util_1.advanceWorkflowRun)(workflowRun);
-            if (!workflowRun.currentNodeId && workflowRun.status === 'running') {
-                workflowRun = (0, workflow_run_util_1.finalizeWorkflowRun)(workflowRun, 'completed');
-            }
+            workflowRun = (0, workflow_run_util_1.finalizeWorkflowRunAfterAdvance)(workflowRun);
             continue;
         }
         if (nodeResult.kind === 'suspend') {
@@ -200,9 +200,7 @@ async function orchestratePageWorkflow(input) {
         if (nodeResult.kind === 'completed') {
             (0, page_workflow_node_util_1.applyPageWorkflowNodeOutput)(runtime, nodeResult.outcome);
             workflowRun = (0, workflow_run_util_1.advanceWorkflowRun)(workflowRun);
-            if (!workflowRun.currentNodeId && workflowRun.status === 'running') {
-                workflowRun = (0, workflow_run_util_1.finalizeWorkflowRun)(workflowRun, 'completed');
-            }
+            workflowRun = (0, workflow_run_util_1.finalizeWorkflowRunAfterAdvance)(workflowRun);
             (0, workflow_debug_util_1.logWorkflowDebug)('page_node_advanced', {
                 actionRunId: input.actionRunId,
                 actionKey: input.actionKey,

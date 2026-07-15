@@ -309,3 +309,150 @@ export async function produceHostToolArgsViaToolCall(input: {
     };
   }
 }
+
+export type HostToolCandidateProduceResult = HostToolToolCallProduceResult & {
+  toolName?: string;
+  hostTool?: HostToolDecisionDefinition;
+};
+
+/**
+ * 多 HostTool 白名单：bindTools 候选集，由模型选一把并产出 args（Chat ReAct 同语义）。
+ * 单候选时仍强制 tool_choice。
+ */
+export async function produceHostToolCallAmongCandidates(input: {
+  llmService: LlmService;
+  messages: LlmChatMessage[];
+  hostTools: HostToolDecisionDefinition[];
+  actionContext?: Record<string, unknown> | null;
+  actionRunId?: number;
+  actionKey?: string | null;
+  budgetHints?: PromptBudgetHints;
+  signal?: AbortSignal;
+}): Promise<HostToolCandidateProduceResult> {
+  if (input.hostTools.length === 0) {
+    return {
+      ok: false,
+      error: 'host_tool_candidates_empty',
+      model: null,
+      promptTokens: null,
+      completionTokens: null,
+      llmInvoked: false,
+      retryWithStreamParse: false,
+    };
+  }
+  if (input.hostTools.length === 1) {
+    const only = input.hostTools[0]!;
+    const produced = await produceHostToolArgsViaToolCall({
+      ...input,
+      hostTool: only,
+    });
+    return { ...produced, toolName: only.name, hostTool: only };
+  }
+
+  let modelName: string | null = null;
+  let promptTokens: number | null = null;
+  let completionTokens: number | null = null;
+  let didInvoke = false;
+  try {
+    if (input.signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+    const toolsForBind = input.hostTools.map((tool) => {
+      const { schema } = resolveHostToolArgsSchemaForToolCallBind(
+        tool.argsSchema,
+        input.actionContext ?? null,
+      );
+      return { ...tool, argsSchema: schema };
+    });
+    const { tools } = buildHostLangChainTools(toolsForBind);
+    if (tools.length === 0) {
+      return {
+        ok: false,
+        error: 'host_tool_bind_failed',
+        model: null,
+        promptTokens: null,
+        completionTokens: null,
+        llmInvoked: false,
+        retryWithStreamParse: false,
+      };
+    }
+    const { model, messages: fittedMessages } =
+      await input.llmService.createLangChainChatModelForMessages(input.messages, {
+        budgetHints: input.budgetHints ?? { callKind: 'decision' },
+      });
+    const bound = model.bindTools(tools);
+    didInvoke = true;
+    const aiMessage = (await bound.invoke(fittedMessages, {
+      signal: input.signal,
+    })) as AIMessage;
+    const responseMeta = aiMessage.response_metadata as
+      | Record<string, unknown>
+      | undefined;
+    const usage = extractLlmTokenUsageFromResponseMeta(responseMeta);
+    promptTokens = usage?.promptTokens ?? null;
+    completionTokens = usage?.completionTokens ?? null;
+    modelName =
+      resolveLlmModelNameFromResponseMeta(responseMeta) ?? model.model ?? null;
+
+    const allowed = new Set(input.hostTools.map((tool) => tool.name));
+    const toolCalls = extractToolCalls(aiMessage);
+    const matched = toolCalls.find((call) => allowed.has(call.name));
+    const hostTool = input.hostTools.find((tool) => tool.name === matched?.name);
+    if (!matched || !hostTool) {
+      return {
+        ok: false,
+        error: matched ? 'host_tool_call_name_mismatch' : 'no_host_tool_call',
+        model: modelName,
+        promptTokens,
+        completionTokens,
+        llmInvoked: true,
+        retryWithStreamParse: true,
+      };
+    }
+    const rawArgs = isRecord(matched.arguments) ? matched.arguments : {};
+    const unwrapped = unwrapHostToolArgsEnvelope(rawArgs, hostTool.argsSchema);
+    const sanitized = sanitizeHostToolArgsAgainstContextCatalogs(
+      unwrapped,
+      hostTool.argsSchema,
+      input.actionContext ?? null,
+    );
+    if (!softValidateHostToolArgsAgainstSchema(sanitized.args, hostTool.argsSchema)) {
+      return {
+        ok: false,
+        error: 'tool_call_args_validate_failed',
+        model: modelName,
+        promptTokens,
+        completionTokens,
+        llmInvoked: true,
+        retryWithStreamParse: true,
+        toolName: hostTool.name,
+        hostTool,
+      };
+    }
+    return {
+      ok: true,
+      args: sanitized.args,
+      model: modelName,
+      promptTokens,
+      completionTokens,
+      llmInvoked: true,
+      retryWithStreamParse: false,
+      droppedCatalogIds: sanitized.droppedByField,
+      toolName: hostTool.name,
+      hostTool,
+    };
+  } catch (error) {
+    if (isLlmAbortError(error, input.signal)) {
+      throw error;
+    }
+    return {
+      ok: false,
+      error: formatUnknownError(error),
+      model: modelName,
+      promptTokens,
+      completionTokens,
+      llmInvoked: didInvoke,
+      retryWithStreamParse: true,
+    };
+  }
+}

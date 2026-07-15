@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pageFetchDataExecutor = void 0;
 const page_workflow_fetch_data_util_1 = require("../../../page-action/page-workflow-fetch-data.util");
+const page_workflow_messages_util_1 = require("../../../page-action/page-workflow-messages.util");
 const workflow_run_util_1 = require("../../workflow-run.util");
 const workflow_node_output_util_1 = require("../../workflow-node-output.util");
 const executor_host_util_1 = require("../executor-host.util");
@@ -20,6 +21,9 @@ exports.pageFetchDataExecutor = {
             stepRecorder: runtime.stepRecorder,
             nodeId: ctx.nodeId,
             toolBundle: runtime.toolBundle,
+            llmService: runtime.llmService,
+            messages: (0, page_workflow_messages_util_1.appendWorkflowNodeOutputsToMessages)(runtime.messages, runtime.nodeOutputs),
+            nodeObjective: ctx.def.objective,
         });
         const outputRef = (0, workflow_node_output_util_1.buildWorkflowNodeOutputRef)(ctx.def.action, ctx.nodeId);
         const nodeOutput = {

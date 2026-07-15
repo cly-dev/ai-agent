@@ -104,7 +104,10 @@ function createLlmNode(bundle) {
             const decisionEnableToolCall = ctx.input.enableToolCall && !planAnswerStep;
             const candidateResolve = (0, plan_tool_candidates_util_1.resolvePlanStepToolCandidatesFromState)(graphStateForLlm);
             let toolsForPrompt = candidateResolve.candidates;
-            const hostToolsForPrompt = (0, host_tool_plan_util_1.filterHostToolsForPlanStep)((_f = graphStateForLlm.scopedHostTools) !== null && _f !== void 0 ? _f : [], graphStateForLlm.taskPlan);
+            const hostToolsForPrompt = (0, host_tool_plan_util_1.filterHostToolsForPlanStep)((_f = graphStateForLlm.scopedHostTools) !== null && _f !== void 0 ? _f : [], graphStateForLlm.taskPlan, {
+                workflowRun: graphStateForLlm.workflowRun,
+                workflowNodeDefs: graphStateForLlm.workflowNodeDefs,
+            });
             let candidateRecallLangChainTools = null;
             let candidateRecallStep = null;
             const beforeStructuralResolve = toolsForPrompt.length;

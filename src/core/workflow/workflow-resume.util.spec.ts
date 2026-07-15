@@ -76,12 +76,32 @@ describe('workflow-resume.util', () => {
     expect(shouldAwaitReactOnWorkflowResume(run, nodes)).toBe(false);
   });
 
-  it('buildWorkflowResumeGraphSlice preserves saved run and defs', () => {
+  it('buildWorkflowResumeGraphSlice preserves saved run when edges omitted', () => {
     const savedRun = buildRunningRun('summarize');
     const slice = buildWorkflowResumeGraphSlice({ savedRun, nodes });
     expect(slice.workflowRun).toBe(savedRun);
     expect(slice.workflowNodeDefs).toEqual(nodes);
     expect(slice.workflowAwaitingReact).toBe(false);
+  });
+
+  it('buildWorkflowResumeGraphSlice rehydrates edges from load onto run', () => {
+    const savedRun = buildRunningRun('summarize');
+    const edges = [
+      {
+        id: 'e1',
+        from: 'fetch',
+        to: 'summarize',
+        kind: 'always' as const,
+      },
+    ];
+    const slice = buildWorkflowResumeGraphSlice({
+      savedRun,
+      nodes,
+      edges,
+    });
+    expect(slice.workflowRun).not.toBe(savedRun);
+    expect(slice.workflowRun.edges).toEqual(edges);
+    expect(slice.workflowRun.currentNodeId).toBe(savedRun.currentNodeId);
   });
 
   it('advanceWorkflowRunAfterWriteConfirm completes await_user_confirm and advances', () => {
@@ -123,9 +143,9 @@ describe('workflow-resume.util', () => {
   });
 });
 
-describe('resolveWorkflowDefsForResume', () => {
+describe('resolveWorkflowGraphForResume', () => {
   it('falls back to plan compile when workflowId is zero', async () => {
-    const { resolveWorkflowDefsForResume } = await import('./workflow-resume.util');
+    const { resolveWorkflowGraphForResume } = await import('./workflow-resume.util');
     const savedRun = initWorkflowRun({
       workflowId: 0,
       version: 1,
@@ -161,7 +181,7 @@ describe('resolveWorkflowDefsForResume', () => {
       activeFrameIndex: 0,
     } satisfies TaskPlanSnapshot;
 
-    const defs = await resolveWorkflowDefsForResume(
+    const graph = await resolveWorkflowGraphForResume(
       {} as never,
       {
         savedRun,
@@ -169,6 +189,7 @@ describe('resolveWorkflowDefsForResume', () => {
         appClientId: 1,
       },
     );
-    expect(defs?.map((row) => row.id)).toEqual(['fetch', 'summarize']);
+    expect(graph?.nodes.map((row) => row.id)).toEqual(['fetch', 'summarize']);
+    expect(graph?.edges).toBeNull();
   });
 });

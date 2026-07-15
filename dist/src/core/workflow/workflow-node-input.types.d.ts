@@ -4,14 +4,30 @@ export type WorkflowSummarizeMode = 'brief' | 'detailed' | 'draft' | 'final';
 export type LoadPageContextNodeInput = {
     materialize?: boolean;
 };
+export type DetectCluesNodeInput = {
+    hint?: string;
+};
+export type SummarizeImagesFrom = 'upstream' | 'page_context' | 'all';
+export type SummarizeImagesOnFailure = 'degrade' | 'fail';
+export type SummarizeImagesNodeInput = {
+    from?: SummarizeImagesFrom;
+    maxCells?: number;
+    maxGroups?: number;
+    maxCellsPerGroup?: number;
+    cellPx?: number;
+    hint?: string;
+    onFailure?: SummarizeImagesOnFailure;
+    cacheTtlSec?: number;
+};
 export type FetchDataNodeInput = {
+    toolIds?: number[];
     toolId?: number;
     definitionKey?: string;
     completeWhen?: WorkflowFetchCompleteWhen;
 };
 export type GenerateAndPushNodeInput = {
-    hostToolId: number;
-    stream?: boolean;
+    hostToolIds?: number[];
+    hostToolId?: number;
 };
 export type SummarizeNodeInput = {
     mode?: WorkflowSummarizeMode;
@@ -33,7 +49,9 @@ export type AwaitUserConfirmNodeInput = {
 };
 export type WorkflowNodeInputByAction = {
     load_page_context: LoadPageContextNodeInput;
+    detect_clues: DetectCluesNodeInput;
     fetch_data: FetchDataNodeInput;
+    summarize_images: SummarizeImagesNodeInput;
     generate_and_push: GenerateAndPushNodeInput;
     summarize: SummarizeNodeInput;
     compose_mutation: ComposeMutationNodeInput;

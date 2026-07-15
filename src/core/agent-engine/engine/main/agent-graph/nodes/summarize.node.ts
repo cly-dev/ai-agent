@@ -751,6 +751,10 @@ export function createSummarizeNode(bundle: AgentGraphNodeBundle): AgentGraphNod
             const hostToolsForPrompt = filterHostToolsForPlanStep(
               state.scopedHostTools ?? [],
               taskPlanAfterSummarize,
+              {
+                workflowRun: state.workflowRun,
+                workflowNodeDefs: state.workflowNodeDefs,
+              },
             );
             if (pendingHostStep && hostToolsForPrompt.length > 0) {
               const dispatched = hostToolHandle.tryDispatchHostToolFromPlanDraft({

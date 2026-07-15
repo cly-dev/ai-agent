@@ -1,9 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.allWorkflowNodesTerminal = exports.getWorkflowRunNode = exports.finalizeWorkflowRun = exports.advanceWorkflowRun = exports.skipWorkflowNode = exports.failWorkflowNode = exports.completeWorkflowNode = exports.startWorkflowNode = exports.initWorkflowRun = void 0;
-function cloneRun(run) {
-    return Object.assign(Object.assign({}, run), { nodes: run.nodes.map((node) => (Object.assign({}, node))) });
+exports.finalizeWorkflowRunAfterAdvance = exports.allWorkflowNodesTerminal = exports.getWorkflowRunNode = exports.finalizeWorkflowRun = exports.advanceWorkflowRun = exports.skipWorkflowNode = exports.failWorkflowNode = exports.completeWorkflowNode = exports.startWorkflowNode = exports.initWorkflowRun = exports.cloneWorkflowRun = void 0;
+const workflow_run_advance_util_1 = require("./graph/workflow-run-advance.util");
+const workflow_edge_util_1 = require("./graph/workflow-edge.util");
+function cloneWorkflowRun(run) {
+    var _a;
+    return Object.assign(Object.assign({}, run), { nodes: run.nodes.map((node) => (Object.assign({}, node))), edges: (_a = run.edges) === null || _a === void 0 ? void 0 : _a.map((edge) => (Object.assign(Object.assign({}, edge), { clue: edge.clue ? Object.assign({}, edge.clue) : undefined }))), routing: run.routing
+            ? { pendingNodeIds: [...run.routing.pendingNodeIds] }
+            : undefined });
 }
+exports.cloneWorkflowRun = cloneWorkflowRun;
 function findNodeIndex(run, nodeId) {
     return run.nodes.findIndex((node) => node.nodeId === nodeId);
 }
@@ -14,18 +20,7 @@ function assertNodeExists(run, nodeId) {
     }
     return index;
 }
-function nextPendingNodeId(run, afterNodeId) {
-    const startIndex = afterNodeId == null ? 0 : findNodeIndex(run, afterNodeId) + 1;
-    for (let index = startIndex; index < run.nodes.length; index += 1) {
-        const node = run.nodes[index];
-        if (node.status === 'pending') {
-            return node.nodeId;
-        }
-    }
-    return null;
-}
 function initWorkflowRun(input) {
-    var _a, _b;
     if (input.nodes.length === 0) {
         throw new Error('workflow must contain at least one node');
     }
@@ -35,19 +30,26 @@ function initWorkflowRun(input) {
         name: node.name,
         status: 'pending',
     }));
+    const edges = input.edges != null
+        ? input.edges
+        : (0, workflow_edge_util_1.synthesizeLinearWorkflowEdges)(input.nodes);
     return {
         workflowId: input.workflowId,
         version: input.version,
-        currentNodeId: (_b = (_a = input.nodes[0]) === null || _a === void 0 ? void 0 : _a.id) !== null && _b !== void 0 ? _b : null,
+        currentNodeId: (0, workflow_run_advance_util_1.resolveEntryNodeId)({
+            nodes: input.nodes,
+            entryNodeId: input.entryNodeId,
+        }),
         status: 'running',
         compiledFrom: input.compiledFrom,
         nodes: runNodes,
+        edges,
     };
 }
 exports.initWorkflowRun = initWorkflowRun;
 function startWorkflowNode(run, nodeId, now = new Date().toISOString()) {
     var _a;
-    const next = cloneRun(run);
+    const next = cloneWorkflowRun(run);
     const index = assertNodeExists(next, nodeId);
     const node = next.nodes[index];
     if (node.status !== 'pending' && node.status !== 'running') {
@@ -60,7 +62,7 @@ function startWorkflowNode(run, nodeId, now = new Date().toISOString()) {
 }
 exports.startWorkflowNode = startWorkflowNode;
 function completeWorkflowNode(run, nodeId, outputRef, now = new Date().toISOString()) {
-    const next = cloneRun(run);
+    const next = cloneWorkflowRun(run);
     const index = assertNodeExists(next, nodeId);
     const node = next.nodes[index];
     node.status = 'succeeded';
@@ -72,7 +74,7 @@ function completeWorkflowNode(run, nodeId, outputRef, now = new Date().toISOStri
 }
 exports.completeWorkflowNode = completeWorkflowNode;
 function failWorkflowNode(run, nodeId, error, now = new Date().toISOString()) {
-    const next = cloneRun(run);
+    const next = cloneWorkflowRun(run);
     const index = assertNodeExists(next, nodeId);
     const node = next.nodes[index];
     node.status = 'failed';
@@ -84,7 +86,7 @@ function failWorkflowNode(run, nodeId, error, now = new Date().toISOString()) {
 }
 exports.failWorkflowNode = failWorkflowNode;
 function skipWorkflowNode(run, nodeId, now = new Date().toISOString()) {
-    const next = cloneRun(run);
+    const next = cloneWorkflowRun(run);
     const index = assertNodeExists(next, nodeId);
     const node = next.nodes[index];
     node.status = 'skipped';
@@ -92,27 +94,26 @@ function skipWorkflowNode(run, nodeId, now = new Date().toISOString()) {
     return next;
 }
 exports.skipWorkflowNode = skipWorkflowNode;
-function advanceWorkflowRun(run) {
+function advanceWorkflowRun(run, edges) {
     if (run.status === 'failed' || run.status === 'cancelled') {
         return run;
     }
-    const next = cloneRun(run);
-    const currentId = next.currentNodeId;
-    if (currentId != null) {
-        const current = next.nodes[findNodeIndex(next, currentId)];
-        if (current &&
-            current.status !== 'succeeded' &&
-            current.status !== 'skipped') {
-            throw new Error(`cannot advance: current node ${currentId} is ${current.status}`);
-        }
-    }
-    const upcoming = nextPendingNodeId(next, currentId);
-    next.currentNodeId = upcoming;
-    return next;
+    const resolvedEdges = edges != null
+        ? edges
+        : run.edges != null
+            ? run.edges
+            : (0, workflow_edge_util_1.synthesizeLinearWorkflowEdges)(run.nodes.map((node) => ({
+                id: node.nodeId,
+                action: node.action,
+                name: node.name,
+                objective: '',
+                input: {},
+            })));
+    return (0, workflow_run_advance_util_1.advanceWorkflowRunAlongEdges)({ run, edges: resolvedEdges });
 }
 exports.advanceWorkflowRun = advanceWorkflowRun;
 function finalizeWorkflowRun(run, status) {
-    const next = cloneRun(run);
+    const next = cloneWorkflowRun(run);
     next.status = status;
     if (status === 'completed') {
         next.currentNodeId = null;
@@ -131,4 +132,35 @@ function allWorkflowNodesTerminal(run) {
         node.status === 'skipped');
 }
 exports.allWorkflowNodesTerminal = allWorkflowNodesTerminal;
+function finalizeWorkflowRunAfterAdvance(run) {
+    if (run.status !== 'running' || run.currentNodeId != null) {
+        return run;
+    }
+    if (allWorkflowNodesTerminal(run)) {
+        return finalizeWorkflowRun(run, 'completed');
+    }
+    const pendingIds = run.nodes
+        .filter((node) => node.status === 'pending')
+        .map((node) => node.nodeId);
+    const next = finalizeWorkflowRun(run, 'failed');
+    const now = new Date().toISOString();
+    for (let i = 0; i < pendingIds.length; i += 1) {
+        const nodeId = pendingIds[i];
+        const index = next.nodes.findIndex((node) => node.nodeId === nodeId);
+        if (index < 0) {
+            continue;
+        }
+        if (i === 0) {
+            next.nodes[index] = Object.assign(Object.assign({}, next.nodes[index]), { status: 'failed', finishedAt: now, error: {
+                    code: 'WORKFLOW_ORPHAN_PENDING',
+                    message: `workflow ended with pending nodes: ${pendingIds.join(', ')}`,
+                } });
+            next.currentNodeId = nodeId;
+            continue;
+        }
+        next.nodes[index] = Object.assign(Object.assign({}, next.nodes[index]), { status: 'skipped', finishedAt: now });
+    }
+    return next;
+}
+exports.finalizeWorkflowRunAfterAdvance = finalizeWorkflowRunAfterAdvance;
 //# sourceMappingURL=workflow-run.util.js.map

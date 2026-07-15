@@ -21,11 +21,28 @@ function readCachedWorkflowLoad(key, workflowUpdatedAt, revisionFingerprint, res
         workflowLoadCache.delete(key);
         return null;
     }
-    return cached.baseNodes;
+    return {
+        nodes: cached.baseNodes,
+        edges: cached.edges,
+        entryNodeId: cached.entryNodeId,
+        edgesDeclared: cached.edgesDeclared,
+        edgeParseIssues: cached.edgeParseIssues,
+    };
 }
 exports.readCachedWorkflowLoad = readCachedWorkflowLoad;
 function rememberWorkflowLoadCache(key, entry) {
-    workflowLoadCache.set(key, Object.assign(Object.assign({}, entry), { expiresAt: Date.now() + WORKFLOW_LOAD_CACHE_TTL_MS }));
+    workflowLoadCache.set(key, {
+        expiresAt: Date.now() + WORKFLOW_LOAD_CACHE_TTL_MS,
+        workflowId: entry.workflowId,
+        version: entry.version,
+        workflowUpdatedAt: entry.workflowUpdatedAt,
+        revisionFingerprint: entry.revisionFingerprint,
+        baseNodes: entry.graph.nodes,
+        edges: entry.graph.edges,
+        entryNodeId: entry.graph.entryNodeId,
+        edgesDeclared: entry.graph.edgesDeclared,
+        edgeParseIssues: entry.graph.edgeParseIssues,
+    });
 }
 exports.rememberWorkflowLoadCache = rememberWorkflowLoadCache;
 //# sourceMappingURL=workflow-definition-cache.util.js.map

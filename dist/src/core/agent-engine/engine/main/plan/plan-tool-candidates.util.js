@@ -5,6 +5,8 @@ const tool_decision_input_util_1 = require("../../../../tool-engine/tool-decisio
 const tool_user_facing_params_util_1 = require("../../../../tool-engine/tool-user-facing-params.util");
 const tool_agent_metadata_util_1 = require("../../../../tool-engine/tool-agent-metadata.util");
 const task_plan_util_1 = require("./task-plan.util");
+const workflow_graph_routing_util_1 = require("../../../../workflow/workflow-graph-routing.util");
+const resolve_workflow_node_tool_refs_util_1 = require("../../../../workflow/resolve-workflow-node-tool-refs.util");
 function listUserFacingRequiredParamsForTool(tool) {
     const compact = (0, tool_decision_input_util_1.buildCompactToolInput)(tool.inputSchema, tool.schema, tool.agentMetadata);
     return (0, tool_user_facing_params_util_1.listUserFacingRequiredParamNames)(compact);
@@ -40,7 +42,7 @@ function preferListOperationTools(tools) {
     return listTools.length > 0 ? listTools : tools;
 }
 function resolvePlanToolCandidates(input) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     const { step: executionStep, workflowNodeAction } = (0, task_plan_util_1.resolvePlanExecutionStep)({
         taskPlan: input.taskPlan,
         workflowRun: input.workflowRun,
@@ -62,24 +64,38 @@ function resolvePlanToolCandidates(input) {
             toolRole: null,
         };
     }
+    if (workflowNodeAction === 'fetch_data') {
+        const def = (0, workflow_graph_routing_util_1.getWorkflowNodeDef)(input.workflowNodeDefs, (_e = input.workflowRun) === null || _e === void 0 ? void 0 : _e.currentNodeId);
+        const nodeToolIds = (0, resolve_workflow_node_tool_refs_util_1.resolveFetchDataToolIds)(def === null || def === void 0 ? void 0 : def.input);
+        if (nodeToolIds.length > 0) {
+            const allowed = new Set(nodeToolIds);
+            const pinned = input.scopedTools.filter((tool) => tool.id != null && allowed.has(tool.id));
+            return {
+                candidates: pinned,
+                strategy: 'workflow_node_tools',
+                planStepId: (_f = executionStep === null || executionStep === void 0 ? void 0 : executionStep.id) !== null && _f !== void 0 ? _f : null,
+                toolRole: (_g = executionStep === null || executionStep === void 0 ? void 0 : executionStep.toolRole) !== null && _g !== void 0 ? _g : 'read-detail',
+            };
+        }
+    }
     const step = (0, task_plan_util_1.getPendingPlanToolStep)(input.taskPlan, input.workflowRun);
     if (!step || step.kind !== 'tool' || !step.toolRole) {
-        if ((step === null || step === void 0 ? void 0 : step.kind) === 'tool' && ((_e = step.pinnedToolNames) === null || _e === void 0 ? void 0 : _e.length)) {
+        if ((step === null || step === void 0 ? void 0 : step.kind) === 'tool' && ((_h = step.pinnedToolNames) === null || _h === void 0 ? void 0 : _h.length)) {
             const pinned = input.scopedTools.filter((tool) => step.pinnedToolNames.includes(tool.name));
             if (pinned.length > 0) {
                 return {
                     candidates: pinned,
                     strategy: 'plan_pinned_tool',
                     planStepId: step.id,
-                    toolRole: (_f = step.toolRole) !== null && _f !== void 0 ? _f : null,
+                    toolRole: (_j = step.toolRole) !== null && _j !== void 0 ? _j : null,
                 };
             }
         }
         return {
             candidates: input.scopedTools,
             strategy: 'no_gather_step',
-            planStepId: (_g = step === null || step === void 0 ? void 0 : step.id) !== null && _g !== void 0 ? _g : null,
-            toolRole: (_h = step === null || step === void 0 ? void 0 : step.toolRole) !== null && _h !== void 0 ? _h : null,
+            planStepId: (_k = step === null || step === void 0 ? void 0 : step.id) !== null && _k !== void 0 ? _k : null,
+            toolRole: (_l = step === null || step === void 0 ? void 0 : step.toolRole) !== null && _l !== void 0 ? _l : null,
         };
     }
     const pinnedNames = step.pinnedToolNames;

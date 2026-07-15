@@ -3,6 +3,8 @@
 > **受众**：B 端产品、运营、实施、管理台开发。  
 > **目标**：用 **场景 Preset** 低心智完成配置；需要时再展开原子节点微调。  
 > **技术细节**：[workflow-action-kinds.md](../workflow-action-kinds.md)、[frontend-workflow-config-guide.md](./frontend-workflow-config-guide.md)  
+> **状态识别（detect_clues + 多分支 edges）**：[b-end-workflow-detect-clues-edges.md](./b-end-workflow-detect-clues-edges.md)  
+> **节点多 Tool / HostTool 绑定**：[b-end-workflow-node-multi-tool-binding.md](./b-end-workflow-node-multi-tool-binding.md)  
 > **前端对接规格**：[frontend-b-end-workflow-integration-spec.md](./frontend-b-end-workflow-integration-spec.md)
 
 ---
@@ -199,7 +201,6 @@ POST /admin/workflow
 | `writeToolId` | number | HTTP 写 Tool id |
 | `hostToolId` | number | Host Tool id（推送） |
 | `fetchCompleteWhen` | enum | `first_success`（默认）\| `fetch_all_pages` |
-| `pushStream` | boolean | 推送是否流式，默认 true |
 | `summarizeMode` | enum | `brief` \| `detailed` \| `final`（默认 final） |
 | `presentMode` | enum | mutation 展示：`brief` \| `detailed` |
 | `confirmKind` | enum | `mutation`（默认）\| `generic` |

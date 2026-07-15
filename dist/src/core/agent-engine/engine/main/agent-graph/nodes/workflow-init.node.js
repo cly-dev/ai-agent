@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createWorkflowInitNode = void 0;
 const client_1 = require("../../../../../../../generated/prisma/client");
 const compile_plan_to_workflow_util_1 = require("../../../../../workflow/compile-plan-to-workflow.util");
+const compile_task_plan_from_workflow_util_1 = require("../../../../../workflow/compile-task-plan-from-workflow.util");
 const validate_workflow_against_scope_util_1 = require("../../../../../workflow/validate-workflow-against-scope.util");
 const workflow_init_audit_util_1 = require("../../../../../workflow/workflow-init-audit.util");
 const workflow_init_skill_util_1 = require("../../../../../workflow/workflow-init-skill.util");
@@ -43,7 +44,7 @@ function annotateWorkflowInitSkipped(state, reason, extra, userMessage) {
         }) }), (pendingRespond ? { pendingRespond } : {}));
 }
 function finalizeWorkflowInit(state, input) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e, _f;
     const stepNum = (0, agent_run_steps_util_1.nextRunStepNumber)(state.steps);
     const output = (0, workflow_init_audit_util_1.buildWorkflowInitRunStepOutput)({
         workflowRun: input.workflowRun,
@@ -52,12 +53,31 @@ function finalizeWorkflowInit(state, input) {
         skillId: input.skillId,
     });
     const steps = (0, workflow_init_audit_util_1.appendWorkflowInitRunStep)(state.steps, stepNum, output);
-    return Object.assign(Object.assign({}, state), { steps, taskPlan: state.taskPlan
-            ? (_a = (0, workflow_resume_util_1.hydrateTaskPlanWithWorkflowDefs)({
-                taskPlan: state.taskPlan,
+    let taskPlan = state.taskPlan;
+    if (input.source === 'workflow_db') {
+        const fromNodes = (0, compile_task_plan_from_workflow_util_1.compileTaskPlanFromWorkflow)({
+            nodes: input.nodes,
+            originalUserRequest: ((_b = (_a = state.taskPlan) === null || _a === void 0 ? void 0 : _a.originalUserRequest) === null || _b === void 0 ? void 0 : _b.trim()) ||
+                ctxMessageFallback(state),
+            goal: (_c = state.taskPlan) === null || _c === void 0 ? void 0 : _c.goal,
+        });
+        taskPlan = fromNodes !== null && fromNodes !== void 0 ? fromNodes : taskPlan;
+    }
+    else if (taskPlan) {
+        taskPlan =
+            (_d = (0, workflow_resume_util_1.hydrateTaskPlanWithWorkflowDefs)({
+                taskPlan,
                 workflowNodeDefs: input.nodes,
-            })) !== null && _a !== void 0 ? _a : state.taskPlan
-            : state.taskPlan, workflowRun: input.workflowRun, workflowNodeDefs: input.nodes, workflowNodeOutputs: (_b = state.workflowNodeOutputs) !== null && _b !== void 0 ? _b : {}, workflowAwaitingReact: (_c = input.workflowAwaitingReact) !== null && _c !== void 0 ? _c : false });
+            })) !== null && _d !== void 0 ? _d : taskPlan;
+    }
+    return Object.assign(Object.assign({}, state), { steps,
+        taskPlan, workflowRun: input.workflowRun, workflowNodeDefs: input.nodes, workflowNodeOutputs: (_e = state.workflowNodeOutputs) !== null && _e !== void 0 ? _e : {}, workflowAwaitingReact: (_f = input.workflowAwaitingReact) !== null && _f !== void 0 ? _f : false });
+}
+function ctxMessageFallback(state) {
+    var _a, _b, _c, _d;
+    return (((_b = (_a = state.taskPlan) === null || _a === void 0 ? void 0 : _a.originalUserRequest) === null || _b === void 0 ? void 0 : _b.trim()) ||
+        ((_d = (_c = state.taskPlan) === null || _c === void 0 ? void 0 : _c.goal) === null || _d === void 0 ? void 0 : _d.trim()) ||
+        '');
 }
 function createWorkflowInitNode(bundle) {
     const planNode = (0, plan_node_1.createPlanNode)(bundle);
@@ -93,16 +113,17 @@ function createWorkflowInitNode(bundle) {
         if (afterPlan.planRunContext === 'resume') {
             const savedRun = (_e = (_d = bundle.ctx.getSessionGoa()) === null || _d === void 0 ? void 0 : _d.activeTask) === null || _e === void 0 ? void 0 : _e.workflowRun;
             if ((0, workflow_resume_util_1.isResumableWorkflowRun)(savedRun)) {
-                const nodes = await (0, workflow_resume_util_1.resolveWorkflowDefsForResume)(deps.prisma, {
+                const graph = await (0, workflow_resume_util_1.resolveWorkflowGraphForResume)(deps.prisma, {
                     savedRun,
                     taskPlan: afterPlan.taskPlan,
                     appClientId: ctx.input.appClientId,
                     scope,
                 });
-                if (nodes) {
+                if (graph) {
                     const resumed = (0, workflow_resume_util_1.buildWorkflowResumeGraphSlice)({
                         savedRun,
-                        nodes,
+                        nodes: graph.nodes,
+                        edges: graph.edges,
                     });
                     const next = finalizeWorkflowInit(afterPlan, {
                         workflowRun: resumed.workflowRun,
@@ -114,7 +135,7 @@ function createWorkflowInitNode(bundle) {
                     (0, workflow_debug_util_1.logWorkflowDebug)('init_resume_goa', Object.assign(Object.assign({}, debugBase), { outcome: 'ok', workflowRun: next.workflowRun, source: 'resume' }));
                     return next;
                 }
-                deps.logger.warn(`workflow_init resume defs mismatch runId=${ctx.input.runId} workflowId=${savedRun.workflowId}`);
+                deps.logger.warn(`workflow_init resume graph mismatch runId=${ctx.input.runId} workflowId=${savedRun.workflowId}`);
                 (0, workflow_debug_util_1.logWorkflowDebug)('init_resume_goa', Object.assign(Object.assign({}, debugBase), { outcome: 'defs_mismatch', workflowId: savedRun.workflowId, workflowRun: savedRun }));
                 return annotateWorkflowInitSkipped(afterPlan, 'resume_defs_mismatch', { skillId: boundSkillId }, ctx.input.latestUserMessage);
             }

@@ -1,6 +1,7 @@
 import type { AgentGraphNodeBundle, AgentGraphNodeFn } from '../types/graph.types';
 import { AgentRunStatus } from '../../../../../../../generated/prisma/client';
 import { compileTaskPlanToWorkflow } from '../../../../../workflow/compile-plan-to-workflow.util';
+import { compileTaskPlanFromWorkflow } from '../../../../../workflow/compile-task-plan-from-workflow.util';
 import { isWorkflowCompatibleWithScope } from '../../../../../workflow/validate-workflow-against-scope.util';
 import {
   appendWorkflowInitRunStep,
@@ -15,7 +16,7 @@ import {
   buildWorkflowResumeGraphSlice,
   hydrateTaskPlanWithWorkflowDefs,
   isResumableWorkflowRun,
-  resolveWorkflowDefsForResume,
+  resolveWorkflowGraphForResume,
   shouldAwaitReactOnWorkflowResume,
 } from '../../../../../workflow/workflow-resume.util';
 import { logWorkflowDebug } from '../../../../../workflow/trace/workflow-debug.util';
@@ -103,20 +104,42 @@ function finalizeWorkflowInit(
     skillId: input.skillId,
   });
   const steps = appendWorkflowInitRunStep(state.steps, stepNum, output);
+  // workflow_db：用资产节点重编 Plan 镜像（含 summarize_images → workflow_inline），
+  // 避免仍沿用 Outer Plan 步序导致与 workflowRun 不一致。
+  let taskPlan = state.taskPlan;
+  if (input.source === 'workflow_db') {
+    const fromNodes = compileTaskPlanFromWorkflow({
+      nodes: input.nodes,
+      originalUserRequest:
+        state.taskPlan?.originalUserRequest?.trim() ||
+        ctxMessageFallback(state),
+      goal: state.taskPlan?.goal,
+    });
+    taskPlan = fromNodes ?? taskPlan;
+  } else if (taskPlan) {
+    taskPlan =
+      hydrateTaskPlanWithWorkflowDefs({
+        taskPlan,
+        workflowNodeDefs: input.nodes,
+      }) ?? taskPlan;
+  }
   return {
     ...state,
     steps,
-    taskPlan: state.taskPlan
-      ? hydrateTaskPlanWithWorkflowDefs({
-          taskPlan: state.taskPlan,
-          workflowNodeDefs: input.nodes,
-        }) ?? state.taskPlan
-      : state.taskPlan,
+    taskPlan,
     workflowRun: input.workflowRun,
     workflowNodeDefs: input.nodes,
     workflowNodeOutputs: state.workflowNodeOutputs ?? {},
     workflowAwaitingReact: input.workflowAwaitingReact ?? false,
   };
+}
+
+function ctxMessageFallback(state: AgentGraphState): string {
+  return (
+    state.taskPlan?.originalUserRequest?.trim() ||
+    state.taskPlan?.goal?.trim() ||
+    ''
+  );
 }
 
 /**
@@ -189,16 +212,17 @@ export function createWorkflowInitNode(
     if (afterPlan.planRunContext === 'resume') {
       const savedRun = bundle.ctx.getSessionGoa()?.activeTask?.workflowRun;
       if (isResumableWorkflowRun(savedRun)) {
-        const nodes = await resolveWorkflowDefsForResume(deps.prisma, {
+        const graph = await resolveWorkflowGraphForResume(deps.prisma, {
           savedRun,
           taskPlan: afterPlan.taskPlan,
           appClientId: ctx.input.appClientId,
           scope,
         });
-        if (nodes) {
+        if (graph) {
           const resumed = buildWorkflowResumeGraphSlice({
             savedRun,
-            nodes,
+            nodes: graph.nodes,
+            edges: graph.edges,
           });
           const next = finalizeWorkflowInit(afterPlan, {
             workflowRun: resumed.workflowRun,
@@ -220,7 +244,7 @@ export function createWorkflowInitNode(
           return next;
         }
         deps.logger.warn(
-          `workflow_init resume defs mismatch runId=${ctx.input.runId} workflowId=${savedRun.workflowId}`,
+          `workflow_init resume graph mismatch runId=${ctx.input.runId} workflowId=${savedRun.workflowId}`,
         );
         logWorkflowDebug('init_resume_goa', {
           ...debugBase,

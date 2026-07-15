@@ -8,12 +8,14 @@ import type { ResolvedPageActionHostTool } from './page-action-host-tool.util';
 import { PageActionRunStepRecorder, type PageActionRunStep } from './page-action-run-steps.util';
 import type { PageWorkflowToolBundle } from './page-workflow-tool-bundle.util';
 import type { PageWorkflowExecutorRuntime } from '../workflow/page/page-workflow-runtime.types';
-import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
+import type { WorkflowEdge, WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
 import { type PageActionRunCompletion } from './page-action-run-completion.util';
 export type PageWorkflowRunnerInput = {
     workflowId: number;
     version: number;
     nodes: WorkflowNodeDef[];
+    edges?: WorkflowEdge[];
+    entryNodeId?: string | null;
     systemPrompt: string;
     objectivePrefix?: string | null;
     messages: LlmChatMessage[];

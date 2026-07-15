@@ -14,7 +14,6 @@ export type WorkflowPresetConfig = {
     writeToolId?: number;
     hostToolId?: number;
     fetchCompleteWhen?: 'first_success' | 'fetch_all_pages';
-    pushStream?: boolean;
     summarizeMode?: 'brief' | 'detailed' | 'final';
     presentMode?: 'brief' | 'detailed';
     confirmKind?: 'mutation' | 'generic';

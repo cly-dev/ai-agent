@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveWorkflowBindingsForSave = exports.deriveWorkflowBindingsFromNodes = exports.collectWorkflowNodeBindingRefs = void 0;
+const resolve_workflow_node_tool_refs_util_1 = require("./resolve-workflow-node-tool-refs.util");
 function isRecord(value) {
     return value != null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -17,7 +18,12 @@ function collectWorkflowNodeBindingRefs(nodes) {
         }
         const input = rawInput;
         switch (node.action) {
-            case 'fetch_data':
+            case 'fetch_data': {
+                for (const toolId of (0, resolve_workflow_node_tool_refs_util_1.resolveFetchDataToolIds)(input)) {
+                    toolIds.add(toolId);
+                }
+                break;
+            }
             case 'compose_mutation':
             case 'write_data': {
                 const toolId = input.toolId;
@@ -27,8 +33,7 @@ function collectWorkflowNodeBindingRefs(nodes) {
                 break;
             }
             case 'generate_and_push': {
-                const hostToolId = input.hostToolId;
-                if (isPositiveInt(hostToolId)) {
+                for (const hostToolId of (0, resolve_workflow_node_tool_refs_util_1.resolveGenerateAndPushHostToolIds)(input)) {
                     hostToolIds.add(hostToolId);
                 }
                 break;
@@ -66,7 +71,7 @@ function resolveWorkflowBindingsForSave(input) {
             issues.push({
                 path: 'tools',
                 code: 'orphan_tool_binding',
-                message: `tools[].toolId=${row.toolId} is not referenced by any workflow node input.toolId`,
+                message: `tools[].toolId=${row.toolId} is not referenced by any workflow node input.toolIds/toolId`,
             });
             continue;
         }
@@ -78,7 +83,7 @@ function resolveWorkflowBindingsForSave(input) {
             issues.push({
                 path: 'hostTools',
                 code: 'orphan_host_tool_binding',
-                message: `hostTools[].hostToolId=${row.hostToolId} is not referenced by any workflow node input.hostToolId`,
+                message: `hostTools[].hostToolId=${row.hostToolId} is not referenced by any workflow node input.hostToolIds/hostToolId`,
             });
             continue;
         }

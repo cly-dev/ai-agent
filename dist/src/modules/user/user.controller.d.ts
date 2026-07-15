@@ -8,13 +8,13 @@ export declare class UserController {
         accessToken: string;
         user: {
             id: number;
-            employeeId: string;
+            createdAt: Date;
             email: string;
             password: string;
             username: string;
-            status: import("../../../generated/prisma/enums").UserStatus;
             mustChangePassword: boolean;
-            createdAt: Date;
+            employeeId: string;
+            status: import("../../../generated/prisma/enums").UserStatus;
         };
         mustChangePassword: boolean;
     }>;

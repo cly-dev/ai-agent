@@ -7,7 +7,9 @@ export type WorkflowProfile = 'chat_skill' | 'page_action' | 'shared';
 
 export type WorkflowActionKind =
   | 'load_page_context'
+  | 'detect_clues'
   | 'fetch_data'
+  | 'summarize_images'
   | 'generate_and_push'
   | 'summarize'
   | 'compose_mutation'
@@ -50,6 +52,25 @@ export type WorkflowRunCompiledFrom =
   | 'resume'
   | 'legacy_config';
 
+/** 顶层边：always 线性 / clue 状态分支 / default 零状态命中回落。 */
+export type WorkflowEdgeKind = 'always' | 'clue' | 'default';
+
+/** 单个可配置状态（产品：状态识别；协议字段名 clue）。 */
+export type WorkflowClueDef = {
+  key: string;
+  description: string;
+};
+
+export type WorkflowEdge = {
+  id: string;
+  from: string;
+  to: string;
+  /** 缺省 always（兼容线性隐式边）。 */
+  kind?: WorkflowEdgeKind;
+  /** kind=clue 时必填：该分支对应的状态定义（挂在边上，不在节点 input）。 */
+  clue?: WorkflowClueDef;
+};
+
 /** DB Workflow.nodes / API 配置层节点。 */
 export type WorkflowNodeDef<
   A extends WorkflowActionKind = WorkflowActionKind,
@@ -61,6 +82,30 @@ export type WorkflowNodeDef<
   input: WorkflowNodeInputByAction[A];
 };
 
+/**
+ * 单条状态判定结果。
+ * 路由真源仅 `matched`（可多选扇出）；confidence / value / reason 供审计。
+ */
+export type DetectClueItemResult = {
+  key: string;
+  matched: boolean;
+  /** 0–1 */
+  confidence: number;
+  value: string | null;
+  reason: string;
+};
+
+export type DetectCluesOutput = {
+  clues: DetectClueItemResult[];
+  /** 由 matched 派生，禁止与 LLM 双写。 */
+  matchedClueKeys: string[];
+};
+
+/** detect 扇出后待跑根队列；审计看 nodeOutputs，不在此堆 matched/enabled。 */
+export type WorkflowRunRoutingState = {
+  pendingNodeIds: string[];
+};
+
 export type WorkflowDefinition = {
   workflowKey: string;
   name: string;
@@ -68,6 +113,8 @@ export type WorkflowDefinition = {
   goal?: string | null;
   constraints?: string[];
   nodes: WorkflowNodeDef[];
+  edges?: WorkflowEdge[];
+  entryNodeId?: string;
 };
 
 export type WorkflowBindingRefs = {
@@ -97,6 +144,9 @@ export type WorkflowRunState = {
   status: WorkflowRunStatus;
   compiledFrom?: WorkflowRunCompiledFrom;
   nodes: WorkflowRunNodeState[];
+  /** 运行时图边（含线性合成）；advance 优先使用。 */
+  edges?: WorkflowEdge[];
+  routing?: WorkflowRunRoutingState;
 };
 
 export type WorkflowValidationIssue = {

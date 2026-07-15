@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildWorkflowResumeGraphSlice = exports.workflowRunHasPendingNodes = exports.advanceWorkflowRunAfterWriteConfirm = exports.prepareTaskPlanForWorkflowWriteConfirmResume = exports.hydrateTaskPlanWithWorkflowDefs = exports.shouldAwaitReactOnWorkflowResume = exports.resolveWorkflowDefsForResume = exports.isResumableWorkflowRun = void 0;
+exports.buildWorkflowResumeGraphSlice = exports.workflowRunHasPendingNodes = exports.advanceWorkflowRunAfterWriteConfirm = exports.prepareTaskPlanForWorkflowWriteConfirmResume = exports.hydrateTaskPlanWithWorkflowDefs = exports.shouldAwaitReactOnWorkflowResume = exports.resolveWorkflowGraphForResume = exports.isResumableWorkflowRun = void 0;
 const normalize_task_plan_for_workflow_util_1 = require("./normalize-task-plan-for-workflow.util");
 const compile_plan_to_workflow_util_1 = require("./compile-plan-to-workflow.util");
 const load_workflow_definition_util_1 = require("./load-workflow-definition.util");
@@ -20,7 +20,7 @@ function nodeDefsCoverRun(defs, run) {
     const defIds = new Set(defs.map((row) => row.id));
     return run.nodes.every((row) => defIds.has(row.nodeId));
 }
-async function resolveWorkflowDefsForResume(prisma, input) {
+async function resolveWorkflowGraphForResume(prisma, input) {
     if (input.savedRun.workflowId > 0) {
         const loaded = await (0, load_workflow_definition_util_1.loadWorkflowForRun)(prisma, {
             workflowId: input.savedRun.workflowId,
@@ -29,18 +29,18 @@ async function resolveWorkflowDefsForResume(prisma, input) {
             scope: input.scope,
         });
         if (loaded && nodeDefsCoverRun(loaded.nodes, input.savedRun)) {
-            return loaded.nodes;
+            return { nodes: loaded.nodes, edges: loaded.edges };
         }
     }
     const fromPlan = (0, compile_plan_to_workflow_util_1.compileTaskPlanToWorkflowNodes)(input.taskPlan.steps);
     if (fromPlan.length > 0 && nodeDefsCoverRun(fromPlan, input.savedRun)) {
-        return fromPlan;
+        return { nodes: fromPlan, edges: null };
     }
     const runNodeIds = new Set(input.savedRun.nodes.map((row) => row.nodeId));
     const matched = fromPlan.filter((row) => runNodeIds.has(row.id));
-    return matched.length > 0 ? matched : null;
+    return matched.length > 0 ? { nodes: matched, edges: null } : null;
 }
-exports.resolveWorkflowDefsForResume = resolveWorkflowDefsForResume;
+exports.resolveWorkflowGraphForResume = resolveWorkflowGraphForResume;
 function shouldAwaitReactOnWorkflowResume(run, defs) {
     const nodeId = run.currentNodeId;
     if (!nodeId) {
@@ -90,9 +90,7 @@ function advanceWorkflowRunAfterWriteConfirm(run) {
     }
     let next = (0, workflow_run_util_1.completeWorkflowNode)(run, currentId, `obs:write_confirm:${currentId}`);
     next = (0, workflow_run_util_1.advanceWorkflowRun)(next);
-    if (!next.currentNodeId && next.status === 'running') {
-        next = (0, workflow_run_util_1.finalizeWorkflowRun)(next, 'completed');
-    }
+    next = (0, workflow_run_util_1.finalizeWorkflowRunAfterAdvance)(next);
     return next;
 }
 exports.advanceWorkflowRunAfterWriteConfirm = advanceWorkflowRunAfterWriteConfirm;
@@ -101,10 +99,12 @@ function workflowRunHasPendingNodes(run) {
 }
 exports.workflowRunHasPendingNodes = workflowRunHasPendingNodes;
 function buildWorkflowResumeGraphSlice(input) {
+    const workflowRun = input.edges != null
+        ? Object.assign(Object.assign({}, input.savedRun), { edges: input.edges }) : input.savedRun;
     return {
-        workflowRun: input.savedRun,
+        workflowRun,
         workflowNodeDefs: input.nodes,
-        workflowAwaitingReact: shouldAwaitReactOnWorkflowResume(input.savedRun, input.nodes),
+        workflowAwaitingReact: shouldAwaitReactOnWorkflowResume(workflowRun, input.nodes),
     };
 }
 exports.buildWorkflowResumeGraphSlice = buildWorkflowResumeGraphSlice;

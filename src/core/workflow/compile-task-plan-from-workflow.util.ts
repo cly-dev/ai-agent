@@ -6,6 +6,7 @@ import {
   inferDeliverableFromWorkflowNodes,
   normalizeTaskPlanSnapshotForWorkflow,
 } from './normalize-task-plan-for-workflow.util';
+import { resolveGenerateAndPushHostToolIds } from './resolve-workflow-node-tool-refs.util';
 import type { WorkflowNodeDef } from './workflow.types';
 
 function mapFetchDataToPlanStep(node: WorkflowNodeDef): TaskPlanStep {
@@ -21,8 +22,7 @@ function mapFetchDataToPlanStep(node: WorkflowNodeDef): TaskPlanStep {
 function mapGenerateAndPushToPlanSteps(
   node: WorkflowNodeDef<'generate_and_push'>,
 ): TaskPlanStep[] {
-  const hostToolIds =
-    node.input.hostToolId > 0 ? [node.input.hostToolId] : undefined;
+  const hostToolIds = resolveGenerateAndPushHostToolIds(node.input);
   return [
     {
       id: `${node.id}:reason`,
@@ -35,7 +35,7 @@ function mapGenerateAndPushToPlanSteps(
       kind: 'host_tool',
       objective: node.objective,
       phase: 'answer',
-      ...(hostToolIds ? { hostToolIds } : {}),
+      ...(hostToolIds.length > 0 ? { hostToolIds } : {}),
     },
   ];
 }
@@ -53,6 +53,20 @@ function mapWorkflowNodeToPlanSteps(node: WorkflowNodeDef): TaskPlanStep[] {
   switch (node.action) {
     case 'load_page_context':
       return [];
+    case 'detect_clues':
+      return [];
+    case 'summarize_images':
+      // Plan 镜像：workflow_inline，执行仍走 execute_node（不进 ReAct）
+      return [
+        {
+          id: node.id,
+          kind: 'workflow_inline',
+          objective: node.objective,
+          phase: 'gather',
+          stopWhen: 'always',
+          workflowAction: 'summarize_images',
+        },
+      ];
     case 'fetch_data':
       return [mapFetchDataToPlanStep(node)];
     case 'generate_and_push':

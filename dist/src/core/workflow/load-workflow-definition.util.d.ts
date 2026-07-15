@@ -1,15 +1,20 @@
 import type { PrismaService } from '../../prisma/prisma.service';
-import type { WorkflowDefinition, WorkflowNodeDef, WorkflowOverrides, WorkflowRunState } from './workflow.types';
+import { parseWorkflowGraphJson, serializeWorkflowGraphJson, type ParsedWorkflowGraph } from './graph/workflow-edge.util';
+import type { WorkflowDefinition, WorkflowEdge, WorkflowNodeDef, WorkflowOverrides, WorkflowRunState } from './workflow.types';
 export declare function parseWorkflowNodesJson(value: unknown): WorkflowNodeDef[];
+export { parseWorkflowGraphJson, serializeWorkflowGraphJson, type ParsedWorkflowGraph, };
 export declare function parseWorkflowOverridesJson(value: unknown): WorkflowOverrides | null;
 export type LoadedWorkflowForRun = {
     nodes: WorkflowNodeDef[];
+    edges: WorkflowEdge[];
+    entryNodeId: string | null;
+    edgesDeclared: boolean;
     workflowRun: WorkflowRunState;
     workflowId: number;
     version: number;
     compiledFrom: 'workflow_db';
 };
-export type WorkflowLoadFailureReason = 'asset_missing' | 'revision_missing' | 'empty_nodes' | 'scope_incompatible';
+export type WorkflowLoadFailureReason = 'asset_missing' | 'revision_missing' | 'empty_nodes' | 'invalid_edges' | 'scope_incompatible';
 export type WorkflowLoadResult = ({
     status: 'loaded';
 } & LoadedWorkflowForRun) | {

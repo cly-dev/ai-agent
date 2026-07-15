@@ -1,4 +1,15 @@
 import type { LlmChatMessage } from '../llm/llm.types';
+import {
+  compactWorkflowNodeOutputForSummarize,
+  formatPriorOutputsForDetectClues,
+  workflowNodeOutputsToSummarizeObservations,
+} from './workflow-node-outputs-summarize.util';
+
+export {
+  compactWorkflowNodeOutputForSummarize,
+  formatPriorOutputsForDetectClues,
+  workflowNodeOutputsToSummarizeObservations,
+};
 
 export function formatWorkflowNodeOutputsForPrompt(
   nodeOutputs: Record<string, unknown>,
@@ -8,10 +19,10 @@ export function formatWorkflowNodeOutputsForPrompt(
     return null;
   }
   return entries
-    .map(
-      ([ref, value]) =>
-        `## ${ref}\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``,
-    )
+    .map(([ref, value]) => {
+      const compact = compactWorkflowNodeOutputForSummarize(ref, value);
+      return `## ${ref}\n\`\`\`json\n${JSON.stringify(compact, null, 2)}\n\`\`\``;
+    })
     .join('\n\n');
 }
 

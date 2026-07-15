@@ -3,7 +3,7 @@ import { AgentRunStatus } from '../../../../../../../generated/prisma/client';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import {
   advanceWorkflowRun,
-  finalizeWorkflowRun,
+  finalizeWorkflowRunAfterAdvance,
 } from '../../../../../workflow/workflow-run.util';
 import { getCurrentWorkflowNode } from '../../../../../workflow/workflow-graph-routing.util';
 import { projectTaskPlanFromWorkflowRun } from '../../../../../workflow/workflow-plan-sync.util';
@@ -22,8 +22,9 @@ export function createWorkflowAdvanceNode(
     const current = getCurrentWorkflowNode(state);
     const completedNodeId = current?.nodeId;
     let workflowRun = advanceWorkflowRun(run);
-    if (workflowRun.currentNodeId == null && workflowRun.status === 'running') {
-      workflowRun = finalizeWorkflowRun(workflowRun, 'completed');
+    const wasRunning = workflowRun.status === 'running';
+    workflowRun = finalizeWorkflowRunAfterAdvance(workflowRun);
+    if (wasRunning && workflowRun.status === 'completed') {
       deps.sse.emitThink(
         ctx.input.sessionId,
         ctx.input.runId,

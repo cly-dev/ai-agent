@@ -127,17 +127,19 @@ B 端默认用 **场景 Preset** 创建 Workflow，不必手拼原子节点。Pr
 | action | profile 限制 | input 字段 | 前端控件 |
 |--------|--------------|------------|----------|
 | `load_page_context` | page / chat / shared | `materialize?: boolean` | 开关，默认 true |
-| `fetch_data` | page / chat / shared | **`toolId: number`（必填）** | Tool 下拉，值为 `tool.id` |
+| `detect_clues` | page / chat / shared | `hint?: string` | 多行文本；**状态目录在出边 clue**，见 [b-end-workflow-detect-clues-edges.md](./b-end-workflow-detect-clues-edges.md) |
+| `fetch_data` | page / chat / shared | **`toolIds: number[]`（≥1；遗留 `toolId` 可读）** | Tool **多选**；见 [b-end-workflow-node-multi-tool-binding.md](./b-end-workflow-node-multi-tool-binding.md) |
 | | | `completeWhen?: 'first_success' \| 'fetch_all_pages'` | 下拉，默认 first_success |
-| `generate_and_push` | page / chat / shared | **`hostToolId: number`（必填）** | HostTool 下拉，值为 `hostTool.id` |
-| | | `stream?: boolean` | 开关，默认 true |
+| `summarize_images` | page / chat / shared | `from?` / `maxCells?` / `cellPx?` / `hint?` / `onFailure?` / `cacheTtlSec?` | **无 Tool 绑定**；见 [b-end-workflow-summarize-images.md](./b-end-workflow-summarize-images.md) |
+| `generate_and_push` | page / chat / shared | **`hostToolIds: number[]`（≥1；遗留 `hostToolId` 可读）** | HostTool **多选** |
 | `summarize` | page / chat / shared | `mode?: 'brief' \| 'detailed' \| 'draft' \| 'final'` | 下拉 |
 | `compose_mutation` | chat / shared only | **`toolId: number`（必填）** | Tool 下拉 |
 | `present_mutation` | chat / shared only | `mode?: 'brief' \| 'detailed'` | 下拉 |
 | `write_data` | chat / shared only | **`toolId: number`（必填）** | Tool 下拉 |
 | `await_user_confirm` | chat / shared only | `confirmKind?: 'mutation' \| 'generic'` | 下拉 |
 
-`profile=page_action` 的 Workflow **不得**包含 compose / present / write / await 四类节点（保存时服务端拒绝）。
+`profile=page_action` 的 Workflow **不得**包含 compose / present / write / await 四类节点（保存时服务端拒绝）。  
+`summarize_images` / `detect_clues` 属批次 A，**page / chat 均可**。
 
 ### 4.3 创建 / 更新 Workflow API
 
@@ -194,7 +196,7 @@ type CreateWorkflowBody = {
       "action": "generate_and_push",
       "name": "填入草稿",
       "objective": "生成并流式填入回复",
-      "input": { "hostToolId": 12, "stream": true }
+      "input": { "hostToolId": 12 }
     },
     {
       "id": "done",
@@ -416,7 +418,9 @@ type CreateWorkflowBody = {
 ```typescript
 export type WorkflowActionKind =
   | 'load_page_context'
+  | 'detect_clues'
   | 'fetch_data'
+  | 'summarize_images'
   | 'generate_and_push'
   | 'summarize'
   | 'compose_mutation'
@@ -427,13 +431,27 @@ export type WorkflowActionKind =
 export type WorkflowProfile = 'chat_skill' | 'page_action' | 'shared';
 
 export type FetchDataNodeInput = {
-  toolId: number;
+  /** 推荐：多候选 */
+  toolIds?: number[];
+  /** @deprecated 单绑兼容 */
+  toolId?: number;
   completeWhen?: 'first_success' | 'fetch_all_pages';
 };
 
 export type GenerateAndPushNodeInput = {
-  hostToolId: number;
-  stream?: boolean;
+  hostToolIds?: number[];
+  /** @deprecated 单绑兼容 */
+  hostToolId?: number;
+};
+
+/** 详见 b-end-workflow-summarize-images.md */
+export type SummarizeImagesNodeInput = {
+  from?: 'upstream' | 'page_context' | 'all';
+  maxCells?: number;
+  cellPx?: number;
+  hint?: string;
+  onFailure?: 'degrade' | 'fail';
+  cacheTtlSec?: number;
 };
 
 export type WorkflowValidationIssue = {

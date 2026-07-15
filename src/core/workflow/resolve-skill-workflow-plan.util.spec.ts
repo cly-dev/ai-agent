@@ -29,6 +29,9 @@ describe('resolve-skill-workflow-plan.util', () => {
           input: { mode: 'final' },
         },
       ],
+      edges: [],
+      entryNodeId: null,
+      edgesDeclared: false,
       workflowRun: {} as never,
     });
 

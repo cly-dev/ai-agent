@@ -1,4 +1,5 @@
-import type { WorkflowNodeDef } from './workflow.types';
+import type { WorkflowEdge, WorkflowNodeDef, WorkflowValidationIssue } from './workflow.types';
+import type { ParsedWorkflowGraph } from './graph/workflow-edge.util';
 
 const WORKFLOW_LOAD_CACHE_TTL_MS = 5 * 60_000;
 
@@ -9,6 +10,10 @@ type WorkflowLoadCacheEntry = {
   workflowUpdatedAt: string;
   revisionFingerprint: string | null;
   baseNodes: WorkflowNodeDef[];
+  edges: WorkflowEdge[];
+  entryNodeId: string | null;
+  edgesDeclared: boolean;
+  edgeParseIssues: WorkflowValidationIssue[];
 };
 
 const workflowLoadCache = new Map<string, WorkflowLoadCacheEntry>();
@@ -27,7 +32,7 @@ export function readCachedWorkflowLoad(
   workflowUpdatedAt: Date,
   revisionFingerprint: string | null,
   resolvedVersion: number,
-): WorkflowNodeDef[] | null {
+): ParsedWorkflowGraph | null {
   const cached = workflowLoadCache.get(key);
   if (!cached || cached.expiresAt <= Date.now()) {
     workflowLoadCache.delete(key);
@@ -41,15 +46,35 @@ export function readCachedWorkflowLoad(
     workflowLoadCache.delete(key);
     return null;
   }
-  return cached.baseNodes;
+  return {
+    nodes: cached.baseNodes,
+    edges: cached.edges,
+    entryNodeId: cached.entryNodeId,
+    edgesDeclared: cached.edgesDeclared,
+    edgeParseIssues: cached.edgeParseIssues,
+  };
 }
 
 export function rememberWorkflowLoadCache(
   key: string,
-  entry: Omit<WorkflowLoadCacheEntry, 'expiresAt'>,
+  entry: {
+    workflowId: number;
+    version: number;
+    workflowUpdatedAt: string;
+    revisionFingerprint: string | null;
+    graph: ParsedWorkflowGraph;
+  },
 ): void {
   workflowLoadCache.set(key, {
-    ...entry,
     expiresAt: Date.now() + WORKFLOW_LOAD_CACHE_TTL_MS,
+    workflowId: entry.workflowId,
+    version: entry.version,
+    workflowUpdatedAt: entry.workflowUpdatedAt,
+    revisionFingerprint: entry.revisionFingerprint,
+    baseNodes: entry.graph.nodes,
+    edges: entry.graph.edges,
+    entryNodeId: entry.graph.entryNodeId,
+    edgesDeclared: entry.graph.edgesDeclared,
+    edgeParseIssues: entry.graph.edgeParseIssues,
   });
 }

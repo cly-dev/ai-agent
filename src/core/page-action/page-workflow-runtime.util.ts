@@ -11,7 +11,7 @@ import {
 } from './page-action-run-steps.util';
 import type { PageWorkflowToolBundle } from './page-workflow-tool-bundle.util';
 import type { PageWorkflowExecutorRuntime } from '../workflow/page/page-workflow-runtime.types';
-import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
+import type { WorkflowEdge, WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
 import {
   resolvePageWorkflowCompletion,
   type PageActionRunCompletion,
@@ -21,6 +21,9 @@ export type PageWorkflowRunnerInput = {
   workflowId: number;
   version: number;
   nodes: WorkflowNodeDef[];
+  /** 可选；缺省由 init 按 nodes 顺序合成 always 边 */
+  edges?: WorkflowEdge[];
+  entryNodeId?: string | null;
   systemPrompt: string;
   objectivePrefix?: string | null;
   messages: LlmChatMessage[];

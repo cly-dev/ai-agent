@@ -25,6 +25,10 @@ function normalizeTaskPlanStepsForWorkflow(steps, nodes) {
         if ((def === null || def === void 0 ? void 0 : def.action) === 'await_user_confirm' && step.kind !== 'workflow_gate') {
             return Object.assign(Object.assign({}, step), { kind: 'workflow_gate', phase: (_a = step.phase) !== null && _a !== void 0 ? _a : 'answer', stopWhen: (_b = step.stopWhen) !== null && _b !== void 0 ? _b : 'always' });
         }
+        if ((def === null || def === void 0 ? void 0 : def.action) === 'summarize_images' &&
+            step.kind !== 'workflow_inline') {
+            return Object.assign(Object.assign({}, step), { kind: 'workflow_inline', phase: 'gather', stopWhen: 'always', workflowAction: 'summarize_images' });
+        }
         return step;
     });
 }

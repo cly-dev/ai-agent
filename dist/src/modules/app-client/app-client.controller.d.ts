@@ -13,65 +13,65 @@ export declare class AppClientController {
         accessToken: string;
         user: Omit<{
             id: number;
-            employeeId: string;
+            createdAt: Date;
             email: string;
             password: string;
             username: string;
-            status: import("../../../generated/prisma/enums").UserStatus;
             mustChangePassword: boolean;
-            createdAt: Date;
+            employeeId: string;
+            status: import("../../../generated/prisma/enums").UserStatus;
         }, "password">;
         accountTokenBound: boolean;
         userAppCreated: boolean;
     }>;
     create(body: CreateAppClientDto): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
+        name: string;
         dsn: string;
         authConfig: import("@prisma/client/runtime/client").JsonValue;
     }>;
     findAll(): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
+        name: string;
         dsn: string;
         authConfig: import("@prisma/client/runtime/client").JsonValue;
     }[]>;
     findOne(id: number): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
+        name: string;
         dsn: string;
         authConfig: import("@prisma/client/runtime/client").JsonValue;
     }>;
     testAuth(id: number, body: TestAppClientAuthDto): Promise<import("./auth/app-client-auth.types").AppClientAuthTestResult>;
     update(id: number, body: UpdateAppClientDto): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
+        name: string;
         dsn: string;
         authConfig: import("@prisma/client/runtime/client").JsonValue;
     }>;
     remove(id: number): Promise<{
-        name: string;
         id: number;
-        createdAt: Date;
         description: string;
         isActive: boolean;
+        createdAt: Date;
         updatedAt: Date;
+        name: string;
         dsn: string;
         authConfig: import("@prisma/client/runtime/client").JsonValue;
     }>;

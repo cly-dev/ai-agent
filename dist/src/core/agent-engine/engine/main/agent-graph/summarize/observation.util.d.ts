@@ -12,7 +12,7 @@ export declare function assessObservationQuality(output: unknown, agentMetadata?
 export declare function hasBusinessKeySignal(row: Record<string, unknown>): boolean;
 export declare function resolveToolStepCode(quality: 'high' | 'medium' | 'low', output: unknown, agentMetadata?: unknown): AgentMachineCode | null;
 export declare function filterUsableToolObservations(observations: ToolObservation[]): ToolObservation[];
-export declare function buildSummarizeObservationFromState(state: Pick<AgentGraphState, 'preloadedToolObservations' | 'toolObservations' | 'workflowRun' | 'planRunContext'>, planContext?: {
+export declare function buildSummarizeObservationFromState(state: Pick<AgentGraphState, 'preloadedToolObservations' | 'toolObservations' | 'workflowRun' | 'planRunContext' | 'workflowNodeOutputs'>, planContext?: {
     taskPlan?: TaskPlanSnapshot | null;
     scopedTools?: AgentGraphState['scopedTools'];
     workflowNodeDefs?: AgentGraphState['workflowNodeDefs'];

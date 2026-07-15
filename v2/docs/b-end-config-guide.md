@@ -4,6 +4,9 @@
 > **定位**：Workflow / Skill / PageAction 配置的**唯一入口文档**（2026-06 起）。  
 > **原则**：Workflow 节点 `input` 是工具绑定的 SSOT；绑了 `workflowId` 后不必再重复维护 SkillTool / PageAction.hostToolId。PageAction 不再支持内联创建 HostTool，必须绑定已有 `hostToolId`。
 
+> **相关**：节点结构心智见 [b-end-workflow-node-structure.md](./b-end-workflow-node-structure.md)。
+
+
 ---
 
 ## 1. 变更摘要
@@ -313,6 +316,9 @@ workflow-only Skill **不会**因 SkillTool 未覆盖而被阻断。有 SkillToo
 
 **Q：Chat scope 不对会怎样？**  
 `workflow_init` 可能 `scope_incompatible` 回退 `plan_compile`；用户完全无节点权限时发消息前 `SKILL_TOOLS_EMPTY`。
+
+**Q：图片识别 / 状态识别节点怎么配？**  
+专项对接：[b-end-workflow-summarize-images.md](./b-end-workflow-summarize-images.md) · [b-end-workflow-detect-clues-edges.md](./b-end-workflow-detect-clues-edges.md)。画布拖入 `summarize_images` 才识图；未配不影响部署。
 
 ---
 

@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # 本地：podman build -t agent-server:local .
 # Jenkins 用 .dockerfile（omnix/ 前缀）
+# sharp 为正式依赖（IMAGE_PANEL）；runner 阶段 pnpm install --prod 会装 Linux 原生二进制
 
 FROM node:22-bookworm AS base
 

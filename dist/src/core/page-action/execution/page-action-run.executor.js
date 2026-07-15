@@ -338,6 +338,8 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
             workflowId: loadResult.workflowId,
             version: loadResult.version,
             nodes: loadResult.nodes,
+            edges: loadResult.edges,
+            entryNodeId: loadResult.entryNodeId,
             systemPrompt: run.systemPrompt,
             objectivePrefix: run.instruction,
             messages,

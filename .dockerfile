@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Jenkins: Kaniko --context . ，git clone 到 omnix/ ；COPY 路径带 omnix/ 前缀
-# sharp：package.json pnpm.neverBuiltDependencies 跳过安装脚本（本地 transformers 文本 embedding 不依赖）
+# sharp：正式依赖（IMAGE_PANEL 拼图）；安装阶段需拉取 Linux 平台原生二进制，勿再 neverBuilt 跳过
 
 FROM node:22-bookworm AS base
 

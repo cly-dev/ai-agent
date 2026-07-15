@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.produceHostToolArgsViaToolCall = exports.isLlmAbortError = void 0;
+exports.produceHostToolCallAmongCandidates = exports.produceHostToolArgsViaToolCall = exports.isLlmAbortError = void 0;
 const decision_util_1 = require("../agent-engine/engine/main/agent-graph/runtime/decision.util");
 const host_tool_args_context_catalog_util_1 = require("../host-bridge/host-tool-args-context-catalog.util");
 const host_tool_args_from_llm_util_1 = require("../host-bridge/host-tool-args-from-llm.util");
@@ -215,4 +215,121 @@ async function produceHostToolArgsViaToolCall(input) {
     }
 }
 exports.produceHostToolArgsViaToolCall = produceHostToolArgsViaToolCall;
+async function produceHostToolCallAmongCandidates(input) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    if (input.hostTools.length === 0) {
+        return {
+            ok: false,
+            error: 'host_tool_candidates_empty',
+            model: null,
+            promptTokens: null,
+            completionTokens: null,
+            llmInvoked: false,
+            retryWithStreamParse: false,
+        };
+    }
+    if (input.hostTools.length === 1) {
+        const only = input.hostTools[0];
+        const produced = await produceHostToolArgsViaToolCall(Object.assign(Object.assign({}, input), { hostTool: only }));
+        return Object.assign(Object.assign({}, produced), { toolName: only.name, hostTool: only });
+    }
+    let modelName = null;
+    let promptTokens = null;
+    let completionTokens = null;
+    let didInvoke = false;
+    try {
+        if ((_a = input.signal) === null || _a === void 0 ? void 0 : _a.aborted) {
+            throw new DOMException('The operation was aborted.', 'AbortError');
+        }
+        const toolsForBind = input.hostTools.map((tool) => {
+            var _a;
+            const { schema } = (0, host_tool_args_context_catalog_util_1.resolveHostToolArgsSchemaForToolCallBind)(tool.argsSchema, (_a = input.actionContext) !== null && _a !== void 0 ? _a : null);
+            return Object.assign(Object.assign({}, tool), { argsSchema: schema });
+        });
+        const { tools } = (0, host_tool_langchain_util_1.buildHostLangChainTools)(toolsForBind);
+        if (tools.length === 0) {
+            return {
+                ok: false,
+                error: 'host_tool_bind_failed',
+                model: null,
+                promptTokens: null,
+                completionTokens: null,
+                llmInvoked: false,
+                retryWithStreamParse: false,
+            };
+        }
+        const { model, messages: fittedMessages } = await input.llmService.createLangChainChatModelForMessages(input.messages, {
+            budgetHints: (_b = input.budgetHints) !== null && _b !== void 0 ? _b : { callKind: 'decision' },
+        });
+        const bound = model.bindTools(tools);
+        didInvoke = true;
+        const aiMessage = (await bound.invoke(fittedMessages, {
+            signal: input.signal,
+        }));
+        const responseMeta = aiMessage.response_metadata;
+        const usage = (0, llm_response_meta_util_1.extractLlmTokenUsageFromResponseMeta)(responseMeta);
+        promptTokens = (_c = usage === null || usage === void 0 ? void 0 : usage.promptTokens) !== null && _c !== void 0 ? _c : null;
+        completionTokens = (_d = usage === null || usage === void 0 ? void 0 : usage.completionTokens) !== null && _d !== void 0 ? _d : null;
+        modelName =
+            (_f = (_e = (0, llm_response_meta_util_1.resolveLlmModelNameFromResponseMeta)(responseMeta)) !== null && _e !== void 0 ? _e : model.model) !== null && _f !== void 0 ? _f : null;
+        const allowed = new Set(input.hostTools.map((tool) => tool.name));
+        const toolCalls = (0, decision_util_1.extractToolCalls)(aiMessage);
+        const matched = toolCalls.find((call) => allowed.has(call.name));
+        const hostTool = input.hostTools.find((tool) => tool.name === (matched === null || matched === void 0 ? void 0 : matched.name));
+        if (!matched || !hostTool) {
+            return {
+                ok: false,
+                error: matched ? 'host_tool_call_name_mismatch' : 'no_host_tool_call',
+                model: modelName,
+                promptTokens,
+                completionTokens,
+                llmInvoked: true,
+                retryWithStreamParse: true,
+            };
+        }
+        const rawArgs = isRecord(matched.arguments) ? matched.arguments : {};
+        const unwrapped = (0, host_tool_args_from_llm_util_1.unwrapHostToolArgsEnvelope)(rawArgs, hostTool.argsSchema);
+        const sanitized = (0, host_tool_args_context_catalog_util_1.sanitizeHostToolArgsAgainstContextCatalogs)(unwrapped, hostTool.argsSchema, (_g = input.actionContext) !== null && _g !== void 0 ? _g : null);
+        if (!(0, host_tool_args_from_llm_util_1.softValidateHostToolArgsAgainstSchema)(sanitized.args, hostTool.argsSchema)) {
+            return {
+                ok: false,
+                error: 'tool_call_args_validate_failed',
+                model: modelName,
+                promptTokens,
+                completionTokens,
+                llmInvoked: true,
+                retryWithStreamParse: true,
+                toolName: hostTool.name,
+                hostTool,
+            };
+        }
+        return {
+            ok: true,
+            args: sanitized.args,
+            model: modelName,
+            promptTokens,
+            completionTokens,
+            llmInvoked: true,
+            retryWithStreamParse: false,
+            droppedCatalogIds: sanitized.droppedByField,
+            toolName: hostTool.name,
+            hostTool,
+        };
+    }
+    catch (error) {
+        if (isLlmAbortError(error, input.signal)) {
+            throw error;
+        }
+        return {
+            ok: false,
+            error: formatUnknownError(error),
+            model: modelName,
+            promptTokens,
+            completionTokens,
+            llmInvoked: didInvoke,
+            retryWithStreamParse: true,
+        };
+    }
+}
+exports.produceHostToolCallAmongCandidates = produceHostToolCallAmongCandidates;
 //# sourceMappingURL=page-action-structured-produce.util.js.map

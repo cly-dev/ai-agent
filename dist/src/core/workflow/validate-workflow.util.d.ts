@@ -1,4 +1,4 @@
-import type { WorkflowBindingRefs, WorkflowDefinition, WorkflowValidationIssue } from './workflow.types';
+import type { WorkflowBindingRefs, WorkflowDefinition, WorkflowEdge, WorkflowNodeDef, WorkflowValidationIssue } from './workflow.types';
 export declare function validateWorkflowDefinition(input: {
     definition: WorkflowDefinition;
     bindings?: WorkflowBindingRefs;
@@ -7,3 +7,8 @@ export declare function isValidWorkflowDefinition(input: {
     definition: WorkflowDefinition;
     bindings?: WorkflowBindingRefs;
 }): boolean;
+export declare function validateWorkflowTopology(input: {
+    nodes: WorkflowNodeDef[];
+    edges: WorkflowEdge[];
+    entryNodeId?: string | null;
+}): WorkflowValidationIssue[];

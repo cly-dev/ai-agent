@@ -14,8 +14,12 @@ import {
   type PlanScopedTool,
 } from './task-plan.util';
 import type { TaskPlanSnapshot, TaskPlanStep } from './task-plan.types';
+import { getWorkflowNodeDef } from '../../../../workflow/workflow-graph-routing.util';
+import { resolveFetchDataToolIds } from '../../../../workflow/resolve-workflow-node-tool-refs.util';
 
 export type PlanToolCandidateTool = PlanScopedTool & {
+  /** Workflow 节点 toolIds 白名单匹配用；scopedTools 注入时通常有 id */
+  id?: number;
   inputSchema?: unknown;
   schema?: unknown;
 };
@@ -23,6 +27,7 @@ export type PlanToolCandidateTool = PlanScopedTool & {
 export type PlanToolCandidateStrategy =
   | 'no_gather_step'
   | 'host_or_blocked'
+  | 'workflow_node_tools'
   | 'plan_pinned_tool'
   | 'single_role_match'
   | 'broad_list_preferred'
@@ -121,6 +126,27 @@ export function resolvePlanToolCandidates<T extends PlanToolCandidateTool>(input
       planStepId: input.taskPlan?.currentStepId ?? null,
       toolRole: null,
     };
+  }
+
+  // 图 SSOT：fetch_data 节点 toolIds[] 白名单优先于 role 召回
+  if (workflowNodeAction === 'fetch_data') {
+    const def = getWorkflowNodeDef(
+      input.workflowNodeDefs,
+      input.workflowRun?.currentNodeId,
+    );
+    const nodeToolIds = resolveFetchDataToolIds(def?.input);
+    if (nodeToolIds.length > 0) {
+      const allowed = new Set(nodeToolIds);
+      const pinned = input.scopedTools.filter(
+        (tool) => tool.id != null && allowed.has(tool.id),
+      );
+      return {
+        candidates: pinned,
+        strategy: 'workflow_node_tools',
+        planStepId: executionStep?.id ?? null,
+        toolRole: executionStep?.toolRole ?? 'read-detail',
+      };
+    }
   }
 
   const step = getPendingPlanToolStep(input.taskPlan, input.workflowRun);

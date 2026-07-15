@@ -20,7 +20,7 @@ export declare class CreateWorkflowDto {
     deliverable?: WorkflowDeliverable;
     preset?: WorkflowPresetKind;
     presetConfig?: Record<string, unknown>;
-    nodes?: Record<string, unknown>[];
+    nodes?: unknown;
     constraints?: string[];
     isActive?: boolean;
     sortOrder?: number;
@@ -35,7 +35,7 @@ export declare class UpdateWorkflowDto {
     deliverable?: WorkflowDeliverable;
     preset?: WorkflowPresetKind;
     presetConfig?: Record<string, unknown>;
-    nodes?: Record<string, unknown>[];
+    nodes?: unknown;
     constraints?: string[];
     isActive?: boolean;
     sortOrder?: number;

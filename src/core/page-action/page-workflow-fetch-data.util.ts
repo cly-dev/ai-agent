@@ -2,12 +2,17 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import type { AIMessage } from '@langchain/core/messages';
 import type { PageWorkflowToolBundle } from './page-workflow-tool-bundle.util';
 import { toToolExecutionDefinition } from './page-workflow-tool-bundle.util';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { resolvePageContextEntityId } from '../host-bridge/page-context-metadata-scan.util';
 import type { AgentChatPageContext } from '../host-bridge/page-context.types';
 import type { ToolEngineService } from '../tool-engine/tool-engine.service';
+import type { LlmService } from '../llm/llm.service';
+import type { LlmChatMessage } from '../llm/llm.types';
+import { extractToolCalls } from '../agent-engine/engine/main/agent-graph/runtime/decision.util';
+import { resolveFetchDataToolIds } from '../workflow/resolve-workflow-node-tool-refs.util';
 import type { FetchDataNodeInput } from '../workflow/workflow-node-input.types';
 import type { PageActionRunStepRecorder } from './page-action-run-steps.util';
 import {
@@ -23,6 +28,8 @@ export type PageWorkflowFetchObservation = {
   toolName: string;
   agentMetadata: unknown;
 };
+
+type ResolvedFetchTool = Awaited<ReturnType<typeof resolveFetchDataTool>>;
 
 function buildReadToolInputFromPageContext(
   pageContext: AgentChatPageContext | null,
@@ -94,8 +101,88 @@ async function resolveFetchDataTool(
   }
   throw new BadRequestException({
     code: 'FETCH_TOOL_UNRESOLVED',
-    message: 'fetch_data node requires toolId or definitionKey',
+    message: 'fetch_data node requires toolIds/toolId or definitionKey',
   });
+}
+
+async function resolveFetchToolsForNode(input: {
+  prisma: PrismaService;
+  appClientId: number;
+  nodeInput: FetchDataNodeInput;
+  toolBundle?: PageWorkflowToolBundle | null;
+}): Promise<ResolvedFetchTool[]> {
+  const toolIds = resolveFetchDataToolIds(input.nodeInput);
+  if (toolIds.length === 0) {
+    return [
+      await resolveFetchDataTool(input.prisma, {
+        appClientId: input.appClientId,
+        definitionKey: input.nodeInput.definitionKey,
+      }),
+    ];
+  }
+  const tools: ResolvedFetchTool[] = [];
+  for (const toolId of toolIds) {
+    const cached = input.toolBundle?.toolById.get(toolId);
+    if (cached) {
+      tools.push(cached);
+      continue;
+    }
+    tools.push(
+      await resolveFetchDataTool(input.prisma, {
+        appClientId: input.appClientId,
+        toolId,
+      }),
+    );
+  }
+  return tools;
+}
+
+/**
+ * 多候选时：bindTools 白名单，由模型选一个 tool_call（与 Chat ReAct 同语义）。
+ */
+async function selectFetchToolViaLlm(input: {
+  llmService: LlmService;
+  toolEngine: ToolEngineService;
+  tools: ResolvedFetchTool[];
+  messages: LlmChatMessage[];
+  toolBuildCtx: NonNullable<PageWorkflowToolBundle>['toolBuildCtx'];
+  objective?: string;
+}): Promise<ResolvedFetchTool> {
+  const defs = input.tools.map((tool) => toToolExecutionDefinition(tool));
+  const bundle = input.toolEngine.buildLangChainTools(defs, input.toolBuildCtx);
+  const promptMessages: LlmChatMessage[] = [...input.messages];
+  if (input.objective?.trim()) {
+    promptMessages.push({
+      role: 'user',
+      content: [
+        `Select and call exactly one of the bound read tools to satisfy: ${input.objective.trim()}`,
+        'Do not answer in prose — emit a single tool_call.',
+      ].join(' '),
+    });
+  }
+  const { model, messages: fitted } =
+    await input.llmService.createLangChainChatModelForMessages(promptMessages, {
+      budgetHints: { callKind: 'decision' },
+    });
+  const bound = model.bindTools(bundle.tools);
+  const aiMessage = (await bound.invoke(fitted)) as AIMessage;
+  const calls = extractToolCalls(aiMessage);
+  const allowed = new Set(input.tools.map((tool) => tool.name));
+  const selected = calls.find((call) => allowed.has(call.name));
+  if (!selected) {
+    throw new BadRequestException({
+      code: 'FETCH_TOOL_CHOICE_FAILED',
+      message: 'LLM did not select a bound fetch_data tool',
+    });
+  }
+  const tool = input.tools.find((row) => row.name === selected.name);
+  if (!tool) {
+    throw new BadRequestException({
+      code: 'FETCH_TOOL_CHOICE_FAILED',
+      message: `Selected tool ${selected.name} not in candidates`,
+    });
+  }
+  return tool;
 }
 
 export async function executePageWorkflowFetchData(input: {
@@ -108,16 +195,41 @@ export async function executePageWorkflowFetchData(input: {
   stepRecorder?: PageActionRunStepRecorder;
   nodeId?: string;
   toolBundle?: PageWorkflowToolBundle | null;
+  /** 多 toolIds 时必填：用于 ReAct 选 tool */
+  llmService?: LlmService;
+  messages?: LlmChatMessage[];
+  nodeObjective?: string;
 }): Promise<PageWorkflowFetchObservation> {
-  const tool =
-    (input.nodeInput.toolId != null
-      ? input.toolBundle?.toolById.get(input.nodeInput.toolId)
-      : undefined) ??
-    (await resolveFetchDataTool(input.prisma, {
-      appClientId: input.appClientId,
-      toolId: input.nodeInput.toolId,
-      definitionKey: input.nodeInput.definitionKey,
-    }));
+  const tools = await resolveFetchToolsForNode({
+    prisma: input.prisma,
+    appClientId: input.appClientId,
+    nodeInput: input.nodeInput,
+    toolBundle: input.toolBundle,
+  });
+  let tool = tools[0];
+  if (!tool) {
+    throw new BadRequestException({
+      code: 'FETCH_TOOL_UNRESOLVED',
+      message: 'fetch_data node has no resolvable tools',
+    });
+  }
+  if (tools.length > 1) {
+    if (!input.llmService || !input.toolBundle) {
+      throw new BadRequestException({
+        code: 'FETCH_TOOL_CHOICE_UNAVAILABLE',
+        message: 'fetch_data with multiple toolIds requires LLM tool choice',
+      });
+    }
+    tool = await selectFetchToolViaLlm({
+      llmService: input.llmService,
+      toolEngine: input.toolEngine,
+      tools,
+      messages: input.messages ?? [],
+      toolBuildCtx: input.toolBundle.toolBuildCtx,
+      objective: input.nodeObjective,
+    });
+  }
+
   const args = buildReadToolInputFromPageContext(
     input.pageContext,
     tool.path,

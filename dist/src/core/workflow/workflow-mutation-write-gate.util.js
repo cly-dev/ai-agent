@@ -4,12 +4,33 @@ exports.shouldDeferPlanPresentWriteGate = exports.isWorkflowAwaitUserConfirmResu
 const risk_level_util_1 = require("../risk/risk-level.util");
 const plan_compose_write_util_1 = require("../agent-engine/engine/main/plan-present/plan-compose-write.util");
 const workflow_graph_routing_util_1 = require("./workflow-graph-routing.util");
-function workflowAwaitNodeId(defs) {
-    var _a, _b;
-    return (_b = (_a = defs.find((row) => row.action === 'await_user_confirm')) === null || _a === void 0 ? void 0 : _a.id) !== null && _b !== void 0 ? _b : null;
+function workflowAwaitNodeId(defs, run) {
+    const awaits = defs.filter((row) => row.action === 'await_user_confirm');
+    if (awaits.length === 0) {
+        return null;
+    }
+    if (run === null || run === void 0 ? void 0 : run.currentNodeId) {
+        const current = (0, workflow_graph_routing_util_1.getWorkflowNodeDef)(defs, run.currentNodeId);
+        if ((current === null || current === void 0 ? void 0 : current.action) === 'await_user_confirm') {
+            return run.currentNodeId;
+        }
+    }
+    if (awaits.length === 1) {
+        return awaits[0].id;
+    }
+    if (run) {
+        const active = awaits.find((row) => {
+            const node = run.nodes.find((n) => n.nodeId === row.id);
+            return (node === null || node === void 0 ? void 0 : node.status) === 'pending' || (node === null || node === void 0 ? void 0 : node.status) === 'running';
+        });
+        if (active) {
+            return active.id;
+        }
+    }
+    return awaits[0].id;
 }
 function workflowHasAwaitUserConfirmNode(defs) {
-    return workflowAwaitNodeId(defs !== null && defs !== void 0 ? defs : []) != null;
+    return (defs !== null && defs !== void 0 ? defs : []).some((row) => row.action === 'await_user_confirm');
 }
 exports.workflowHasAwaitUserConfirmNode = workflowHasAwaitUserConfirmNode;
 function isWorkflowNodeCompleted(run, nodeId) {
@@ -22,7 +43,7 @@ function resolveWriteConfirmationPolicy(input) {
     if (!(defs === null || defs === void 0 ? void 0 : defs.length) || !(run === null || run === void 0 ? void 0 : run.currentNodeId)) {
         return { kind: 'gate_now' };
     }
-    const awaitNodeId = workflowAwaitNodeId(defs);
+    const awaitNodeId = workflowAwaitNodeId(defs, run);
     if (!awaitNodeId) {
         return { kind: 'gate_now' };
     }

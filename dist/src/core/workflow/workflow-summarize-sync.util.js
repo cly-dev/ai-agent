@@ -4,6 +4,7 @@ exports.mergeWorkflowExecutorOutcome = exports.applyWorkflowAfterSummarize = voi
 const workflow_graph_routing_util_1 = require("./workflow-graph-routing.util");
 const workflow_plan_sync_util_1 = require("./workflow-plan-sync.util");
 const workflow_run_util_1 = require("./workflow-run.util");
+const workflow_edge_util_1 = require("./graph/workflow-edge.util");
 function summarizeCompletionOutputRef(action, nodeId) {
     if (action === 'present_mutation') {
         return `obs:present_mutation:${nodeId}`;
@@ -13,45 +14,79 @@ function summarizeCompletionOutputRef(action, nodeId) {
 function isWorkflowSummarizeCompletionAction(action) {
     return action === 'summarize' || action === 'present_mutation';
 }
-function shouldCompleteWorkflowNodeAfterSummarize(action, input) {
+function shouldCompleteWorkflowNodeAfterSummarize(action, run, input) {
+    var _a, _b, _c, _d;
     if (action === 'present_mutation') {
         return true;
     }
-    if (action === 'summarize') {
-        return input.finished || !input.continuePlan;
+    if (action !== 'summarize') {
+        return false;
     }
-    return false;
+    if (input.finished || !input.continuePlan) {
+        return true;
+    }
+    if (((_c = (_b = (_a = run.routing) === null || _a === void 0 ? void 0 : _a.pendingNodeIds) === null || _b === void 0 ? void 0 : _b.length) !== null && _c !== void 0 ? _c : 0) > 0) {
+        return true;
+    }
+    const currentId = run.currentNodeId;
+    if (!currentId || !((_d = run.edges) === null || _d === void 0 ? void 0 : _d.length)) {
+        return false;
+    }
+    return (0, workflow_edge_util_1.listAlwaysEdgesFrom)(run.edges, currentId).some((edge) => {
+        const target = run.nodes.find((row) => row.nodeId === edge.to);
+        return (target === null || target === void 0 ? void 0 : target.status) === 'pending';
+    });
 }
-function findWorkflowNodeIdByAction(defs, action) {
+function resolveWorkflowNodeIdByAction(defs, run, action, preferredId) {
     var _a;
-    const row = defs === null || defs === void 0 ? void 0 : defs.find((node) => node.action === action);
-    return (_a = row === null || row === void 0 ? void 0 : row.id) !== null && _a !== void 0 ? _a : null;
+    if (preferredId) {
+        const preferred = (0, workflow_graph_routing_util_1.getWorkflowNodeDef)(defs, preferredId);
+        if ((preferred === null || preferred === void 0 ? void 0 : preferred.action) === action) {
+            return preferredId;
+        }
+    }
+    const currentId = run.currentNodeId;
+    if (currentId) {
+        const current = (0, workflow_graph_routing_util_1.getWorkflowNodeDef)(defs, currentId);
+        if ((current === null || current === void 0 ? void 0 : current.action) === action) {
+            return currentId;
+        }
+    }
+    const candidates = (defs !== null && defs !== void 0 ? defs : []).filter((node) => node.action === action);
+    if (candidates.length === 0) {
+        return null;
+    }
+    if (candidates.length === 1) {
+        return candidates[0].id;
+    }
+    const active = candidates.find((node) => {
+        const row = run.nodes.find((n) => n.nodeId === node.id);
+        return (row === null || row === void 0 ? void 0 : row.status) === 'pending' || (row === null || row === void 0 ? void 0 : row.status) === 'running';
+    });
+    return (_a = active === null || active === void 0 ? void 0 : active.id) !== null && _a !== void 0 ? _a : candidates[0].id;
 }
 function isNodeTerminal(run, nodeId) {
     const node = run.nodes.find((row) => row.nodeId === nodeId);
     return (node === null || node === void 0 ? void 0 : node.status) === 'succeeded' || (node === null || node === void 0 ? void 0 : node.status) === 'skipped';
 }
 function alignWorkflowRunForPresentSummarize(state, input) {
-    var _a;
     const run = state.workflowRun;
     if (!run) {
         return null;
     }
-    const presentNodeId = input.summarizedPlanStepId &&
-        ((_a = (0, workflow_graph_routing_util_1.getWorkflowNodeDef)(state.workflowNodeDefs, input.summarizedPlanStepId)) === null || _a === void 0 ? void 0 : _a.action) === 'present_mutation'
-        ? input.summarizedPlanStepId
-        : findWorkflowNodeIdByAction(state.workflowNodeDefs, 'present_mutation');
+    const presentNodeId = resolveWorkflowNodeIdByAction(state.workflowNodeDefs, run, 'present_mutation', input.summarizedPlanStepId);
     if (!presentNodeId) {
         return run;
     }
-    const currentDef = (0, workflow_graph_routing_util_1.getWorkflowNodeDef)(state.workflowNodeDefs, run.currentNodeId);
-    if ((currentDef === null || currentDef === void 0 ? void 0 : currentDef.action) === 'present_mutation' && run.currentNodeId === presentNodeId) {
+    if (run.currentNodeId === presentNodeId) {
         return run;
     }
     let aligned = run;
-    const composeNodeId = findWorkflowNodeIdByAction(state.workflowNodeDefs, 'compose_mutation');
+    const composeNodeId = resolveWorkflowNodeIdByAction(state.workflowNodeDefs, aligned, 'compose_mutation');
     if (composeNodeId && !isNodeTerminal(aligned, composeNodeId)) {
-        aligned = (0, workflow_plan_sync_util_1.completeWorkflowNodeFromSummarize)(aligned, composeNodeId, `obs:step:${composeNodeId}`);
+        if (aligned.currentNodeId === composeNodeId) {
+            aligned = (0, workflow_plan_sync_util_1.completeWorkflowNodeFromSummarize)(aligned, composeNodeId, `obs:step:${composeNodeId}`);
+        }
     }
     return Object.assign(Object.assign({}, aligned), { currentNodeId: presentNodeId });
 }
@@ -76,14 +111,12 @@ function applyWorkflowAfterSummarize(state, input) {
     if (!isWorkflowSummarizeCompletionAction(action)) {
         return run !== state.workflowRun ? { workflowRun: run, workflowAwaitingReact: false } : {};
     }
-    if (!shouldCompleteWorkflowNodeAfterSummarize(action, input)) {
+    if (!shouldCompleteWorkflowNodeAfterSummarize(action, run, input)) {
         return run !== state.workflowRun ? { workflowRun: run, workflowAwaitingReact: false } : {};
     }
     let workflowRun = (0, workflow_plan_sync_util_1.completeWorkflowNodeFromSummarize)(run, nodeId, summarizeCompletionOutputRef(action, nodeId));
     workflowRun = (0, workflow_run_util_1.advanceWorkflowRun)(workflowRun);
-    if (workflowRun.currentNodeId == null && workflowRun.status === 'running') {
-        workflowRun = (0, workflow_run_util_1.finalizeWorkflowRun)(workflowRun, 'completed');
-    }
+    workflowRun = (0, workflow_run_util_1.finalizeWorkflowRunAfterAdvance)(workflowRun);
     return {
         workflowRun,
         workflowAwaitingReact: false,

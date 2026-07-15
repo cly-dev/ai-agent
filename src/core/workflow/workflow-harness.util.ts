@@ -2,6 +2,7 @@ import type { AgentGraphState } from '../agent-engine/engine/main/types/agent-en
 import type { WorkflowNodeDef } from './workflow.types';
 import type { EmptyFillSensorPayload } from '../harness/sensors/empty-fill.sensor';
 import type { ToolEmptySensorPayload } from '../harness/sensors/tool-empty.sensor';
+import { resolveFetchDataToolIds } from './resolve-workflow-node-tool-refs.util';
 
 export function buildHarnessSensorPayload(
   def: WorkflowNodeDef | undefined,
@@ -13,10 +14,10 @@ export function buildHarnessSensorPayload(
   }
   switch (def.action) {
     case 'fetch_data': {
-      const input = def.input as { toolId?: number };
+      const toolIds = resolveFetchDataToolIds(def.input);
       const payload: ToolEmptySensorPayload = {
         observations: state.toolObservations,
-        toolId: input.toolId,
+        toolId: toolIds[0],
       };
       return { ...payload, ...extra };
     }

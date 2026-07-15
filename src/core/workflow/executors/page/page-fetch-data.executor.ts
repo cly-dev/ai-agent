@@ -1,4 +1,7 @@
 import { executePageWorkflowFetchData } from '../../../page-action/page-workflow-fetch-data.util';
+import {
+  appendWorkflowNodeOutputsToMessages,
+} from '../../../page-action/page-workflow-messages.util';
 import { completeWorkflowNode } from '../../workflow-run.util';
 import { buildWorkflowNodeOutputRef } from '../../workflow-node-output.util';
 import type { FetchDataNodeInput } from '../../workflow-node-input.types';
@@ -21,6 +24,12 @@ export const pageFetchDataExecutor: WorkflowExecutor = {
       stepRecorder: runtime.stepRecorder,
       nodeId: ctx.nodeId,
       toolBundle: runtime.toolBundle,
+      llmService: runtime.llmService,
+      messages: appendWorkflowNodeOutputsToMessages(
+        runtime.messages,
+        runtime.nodeOutputs,
+      ),
+      nodeObjective: ctx.def.objective,
     });
 
     const outputRef = buildWorkflowNodeOutputRef(ctx.def.action, ctx.nodeId);

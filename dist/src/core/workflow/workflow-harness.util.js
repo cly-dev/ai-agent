@@ -1,16 +1,17 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildHarnessSensorPayload = void 0;
+const resolve_workflow_node_tool_refs_util_1 = require("./resolve-workflow-node-tool-refs.util");
 function buildHarnessSensorPayload(def, state, extra) {
     if (!def) {
         return extra !== null && extra !== void 0 ? extra : {};
     }
     switch (def.action) {
         case 'fetch_data': {
-            const input = def.input;
+            const toolIds = (0, resolve_workflow_node_tool_refs_util_1.resolveFetchDataToolIds)(def.input);
             const payload = {
                 observations: state.toolObservations,
-                toolId: input.toolId,
+                toolId: toolIds[0],
             };
             return Object.assign(Object.assign({}, payload), extra);
         }

@@ -1,8 +1,11 @@
-import type { WorkflowNodeDef, WorkflowRunCompiledFrom, WorkflowRunState, WorkflowRunStatus } from './workflow.types';
+import type { WorkflowEdge, WorkflowNodeDef, WorkflowRunCompiledFrom, WorkflowRunState, WorkflowRunStatus } from './workflow.types';
+export declare function cloneWorkflowRun(run: WorkflowRunState): WorkflowRunState;
 export declare function initWorkflowRun(input: {
     workflowId: number;
     version: number;
     nodes: WorkflowNodeDef[];
+    edges?: WorkflowEdge[] | null;
+    entryNodeId?: string | null;
     compiledFrom?: WorkflowRunCompiledFrom;
     now?: string;
 }): WorkflowRunState;
@@ -13,7 +16,8 @@ export declare function failWorkflowNode(run: WorkflowRunState, nodeId: string, 
     message: string;
 }, now?: string): WorkflowRunState;
 export declare function skipWorkflowNode(run: WorkflowRunState, nodeId: string, now?: string): WorkflowRunState;
-export declare function advanceWorkflowRun(run: WorkflowRunState): WorkflowRunState;
+export declare function advanceWorkflowRun(run: WorkflowRunState, edges?: WorkflowEdge[] | null): WorkflowRunState;
 export declare function finalizeWorkflowRun(run: WorkflowRunState, status: Extract<WorkflowRunStatus, 'completed' | 'failed' | 'cancelled'>): WorkflowRunState;
 export declare function getWorkflowRunNode(run: WorkflowRunState, nodeId: string): WorkflowRunState['nodes'][number] | null;
 export declare function allWorkflowNodesTerminal(run: WorkflowRunState): boolean;
+export declare function finalizeWorkflowRunAfterAdvance(run: WorkflowRunState): WorkflowRunState;

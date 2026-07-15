@@ -1,7 +1,11 @@
 import type { GraphToolCall } from '../types/agent-engine.types';
 import type { TaskPlanAdvanceResult, TaskPlanSnapshot, TaskPlanStep } from '../plan/task-plan.types';
 import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-tool-decision.types';
-export declare function filterHostToolsForPlanStep(hostTools: HostToolDecisionDefinition[], taskPlan: TaskPlanSnapshot | null | undefined): HostToolDecisionDefinition[];
+import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
+export declare function filterHostToolsForPlanStep(hostTools: HostToolDecisionDefinition[], taskPlan: TaskPlanSnapshot | null | undefined, options?: {
+    workflowRun?: WorkflowRunState | null;
+    workflowNodeDefs?: WorkflowNodeDef[] | null;
+}): HostToolDecisionDefinition[];
 export declare function collectRequiredHostToolNamesForPlanStep(pendingHostStep: TaskPlanStep | null, scopedHostTools: HostToolDecisionDefinition[]): Set<string>;
 export declare function enrichPlanStepsWithHostTools(plan: TaskPlanSnapshot, scopedHostTools: HostToolDecisionDefinition[]): {
     plan: TaskPlanSnapshot;

@@ -129,7 +129,10 @@ flowchart TB
 
 ### 3.1 节点通用结构
 
-每条 Workflow 是 **线性、有序** 的节点数组（V2 不支持 branch/parallel）。
+每条 Workflow 的 `nodes` Json：
+
+1. **遗留（只读兼容）**：`WorkflowNodeDef[]`
+2. **B 端写入默认**：`{ nodes: WorkflowNodeDef[]; edges: WorkflowEdge[]; entryNodeId?: string }` — **必须带 edges**（线性也要 always）
 
 ```typescript
 type WorkflowNodeDef = {
@@ -143,26 +146,30 @@ type WorkflowNodeDef = {
 
 节点生命周期（`workflowRun.nodes[].status`）：`pending` → `running` → `succeeded` | `failed` | `skipped`。
 
-### 3.2 八种 `action` 与 `input` 契约
+### 3.2 十种 `action` 与 `input` 契约
 
 | # | `action` | 中文 | 适用 profile | `input` 字段 | 必填绑定 |
 |---|----------|------|-------------|-------------|----------|
 | 1 | `load_page_context` | 加载页上下文 | A | `materialize?: boolean`（默认 true） | 无 |
-| 2 | `fetch_data` | 获取数据 | A | **`input.toolId`（必填）**；`completeWhen?: 'first_success' \| 'fetch_all_pages'` | 节点直绑 Tool ID；`WorkflowTool` 表由保存时自动推导 |
-| 3 | `generate_and_push` | 生成并推送 | A | **`input.hostToolId`（必填）**；`stream?: boolean` | 节点直绑 HostTool ID；`WorkflowHostTool` 表由保存时自动推导 |
-| 4 | `summarize` | 说明总结 | A | `mode?: 'brief' \| 'detailed' \| 'draft' \| 'final'`（默认 final） | 无 |
-| 5 | `compose_mutation` | 组装变更参数 | B（仅 chat） | `toolId: number` | `WorkflowTool` |
-| 6 | `present_mutation` | 展示变更草稿 | B | `mode?: 'brief' \| 'detailed'` | 无（读上游 outputRef） |
-| 7 | `write_data` | 提交变更 | B | `toolId: number`；`useComposedArgs?: boolean`（默认 true） | `WorkflowTool` |
-| 8 | `await_user_confirm` | 等待用户确认 | B | `confirmKind?: 'mutation' \| 'generic'` | 无（暂停 Graph） |
+| 2 | `detect_clues` | 识别线索 | A | `hint?: string`（线索定义在出边 `clue`） | 无 |
+| 3 | `fetch_data` | 获取数据 | A | **`input.toolIds`（或遗留 toolId）**；`completeWhen?` | 节点直绑 Tool；`WorkflowTool` 保存时推导 |
+| 4 | `summarize_images` | 图片识别 | A | `from?` / `maxCells?`（默认 6）/ `cellPx?` / `hint?` / `onFailure?` | 无；见 [b-end-workflow-summarize-images.md](./b-end-workflow-summarize-images.md) |
+| 5 | `generate_and_push` | 生成并推送 | A | **`input.hostToolIds`（或遗留 hostToolId）** | 节点直绑 HostTool；`WorkflowHostTool` 保存时推导 |
+| 6 | `summarize` | 说明总结 | A | `mode?: 'brief' \| 'detailed' \| 'draft' \| 'final'`（默认 final） | 无 |
+| 7 | `compose_mutation` | 组装变更参数 | B（仅 chat） | `toolId: number` | `WorkflowTool` |
+| 8 | `present_mutation` | 展示变更草稿 | B | `mode?: 'brief' \| 'detailed'` | 无（读上游 outputRef） |
+| 9 | `write_data` | 提交变更 | B | `toolId: number`；`useComposedArgs?: boolean`（默认 true） | `WorkflowTool` |
+| 10 | `await_user_confirm` | 等待用户确认 | B | `confirmKind?: 'mutation' \| 'generic'` | 无（暂停 Graph） |
 
 **保存期校验要点：**
 
+- B 端手配须传 `{ nodes, edges }`；禁止仅 `nodes[]`（`WORKFLOW_EDGES_REQUIRED`）。详见 [b-end-workflow-detect-clues-edges.md](./b-end-workflow-detect-clues-edges.md)。
 - 每个节点 `id` 非空且唯一；`action` 须在注册表中且 `implemented=true`。
+- 显式 `edges`：无环；`detect_clues` 出边仅 clue/default；有 clue 必须有 default；允许多个 detect（嵌套扇出靠 pending 合并）。
 - `fetch_data` / `compose_mutation` / `write_data`：节点 **`input.toolId` 必填**（B 端/前端直接在节点上绑 Tool ID）。
 - `generate_and_push`：节点 **`input.hostToolId` 必填**（直接在节点上绑 HostTool ID）。
 - 请求体里的 `tools` / `hostTools` **可选**：仅用于给已在 nodes 中出现的 ID 标记 `isRequired`；省略时服务端从 nodes 自动写入 `WorkflowTool` / `WorkflowHostTool`。
-- `profile=page_action` 的 Workflow **不得**包含 #5–8。
+- `profile=page_action` 的 Workflow **不得**包含 #7–10。
 
 ### 3.3 典型 Flow 模板
 
@@ -170,6 +177,12 @@ type WorkflowNodeDef = {
 
 ```text
 load_page_context → fetch_data → generate_and_push → summarize
+```
+
+**Chat 邮件/评论看图意图（Skill）**
+
+```text
+fetch_data → summarize_images → detect_clues → …
 ```
 
 **Chat 只读问答（Skill，2 步）**
@@ -254,7 +267,7 @@ load_page_context → generate_and_push
       "action": "generate_and_push",
       "name": "生成并推送草稿",
       "objective": "生成符合品牌语气的回复草稿并流式填入 Host 输入框",
-      "input": { "hostToolId": 12, "stream": true }
+      "input": { "hostToolId": 12 }
     },
     {
       "id": "brief_done",

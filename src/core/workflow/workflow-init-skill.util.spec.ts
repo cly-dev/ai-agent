@@ -139,7 +139,10 @@ describe('workflow-init-skill.util', () => {
       workflowId: 9,
       version: 1,
       compiledFrom: 'workflow_db' as const,
-      nodes: [],
+      nodes: [] as [],
+      edges: [] as [],
+      entryNodeId: null as string | null,
+      edgesDeclared: false,
       workflowRun: { workflowId: 9 } as never,
     };
     const prisma = {
@@ -153,11 +156,7 @@ describe('workflow-init-skill.util', () => {
     };
     jest.mocked(loadWorkflowForRunDetailed).mockResolvedValue({
       status: 'loaded',
-      workflowId: 9,
-      version: 1,
-      compiledFrom: 'workflow_db',
-      nodes: [],
-      workflowRun: { workflowId: 9 } as never,
+      ...workflow,
     });
     await expect(
       resolveSkillWorkflowForInit(prisma as never, {

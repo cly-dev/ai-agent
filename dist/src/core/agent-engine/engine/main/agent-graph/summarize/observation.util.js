@@ -7,6 +7,7 @@ const observation_format_util_1 = require("../../../observation-format.util");
 const agent_run_user_messages_util_1 = require("../../../agent-run-user-messages.util");
 const tool_observation_util_1 = require("../../../tool/tool-observation.util");
 const graph_tool_observations_util_1 = require("../../../graph-tool-observations.util");
+const workflow_node_outputs_summarize_util_1 = require("../../../../../workflow/workflow-node-outputs-summarize.util");
 const tool_execution_status_util_1 = require("../../../tool/tool-execution-status.util");
 const llm_output_sanitize_util_1 = require("../../../llm-output-sanitize.util");
 const task_plan_util_1 = require("../../plan/task-plan.util");
@@ -155,9 +156,13 @@ exports.filterUsableToolObservations = filterUsableToolObservations;
 function buildSummarizeObservationFromState(state, planContext) {
     var _a, _b, _c;
     const rawSplit = (0, graph_tool_observations_util_1.splitToolObservationsFromState)(state);
+    const fromWorkflow = (0, workflow_node_outputs_summarize_util_1.workflowNodeOutputsToSummarizeObservations)(state.workflowNodeOutputs);
     const usableSplit = {
         workingMemory: filterUsableToolObservations(rawSplit.workingMemory),
-        currentRun: filterUsableToolObservations(rawSplit.currentRun),
+        currentRun: [
+            ...filterUsableToolObservations(rawSplit.currentRun),
+            ...fromWorkflow,
+        ],
     };
     const memoryScope = (0, summarize_memory_scope_util_1.resolveSummarizeMemoryScope)({
         split: usableSplit,
