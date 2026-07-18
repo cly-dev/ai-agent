@@ -137,6 +137,10 @@ function createAgentGraphStateAnnotation() {
             default: () => null,
             reducer: (_state, update) => update,
         }),
+        materializedEntities: (0, langgraph_1.Annotation)({
+            default: () => undefined,
+            reducer: (_state, update) => update,
+        }),
         scopedHostTools: (0, langgraph_1.Annotation)({
             default: () => [],
             reducer: (_state, update) => update,
@@ -158,6 +162,14 @@ function createAgentGraphStateAnnotation() {
             reducer: (_state, update) => update,
         }),
         workflowNodeDefs: (0, langgraph_1.Annotation)({
+            default: () => undefined,
+            reducer: (_state, update) => update,
+        }),
+        workflowIr: (0, langgraph_1.Annotation)({
+            default: () => null,
+            reducer: (_state, update) => update,
+        }),
+        workflowExecutionMode: (0, langgraph_1.Annotation)({
             default: () => undefined,
             reducer: (_state, update) => update,
         }),

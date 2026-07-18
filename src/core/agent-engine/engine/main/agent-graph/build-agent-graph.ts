@@ -330,6 +330,8 @@ export async function buildAndRunAgentGraph(
     turnExecutionContract: skipTurnRouteContract,
     workflowRun: null,
     workflowNodeDefs: undefined,
+    workflowIr: null,
+    workflowExecutionMode: undefined,
     workflowNodeOutputs: undefined,
     workflowAwaitingReact: false,
   };

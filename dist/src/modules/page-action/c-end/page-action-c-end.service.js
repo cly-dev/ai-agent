@@ -150,6 +150,8 @@ let PageActionCEndService = class PageActionCEndService {
             actionKey: pageAction.actionKey,
             workflowId: pageAction.workflowId,
             workflowVersion: pageAction.workflowVersion,
+            flowId: pageAction.flowId,
+            flowVersion: pageAction.flowVersion,
             workflowOverrides: pageAction.workflowOverrides,
             systemPrompt: pageAction.systemPrompt,
             instruction,

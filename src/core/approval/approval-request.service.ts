@@ -25,6 +25,7 @@ export const APPROVAL_INBOX_SOURCES = [
 
 const APPROVAL_INBOX_INCLUDE = {
   workflow: { select: { workflowKey: true, name: true } },
+  flow: { select: { flowKey: true, name: true } },
   initiator: { select: { id: true, username: true, employeeId: true } },
 } satisfies Prisma.ApprovalRequestInclude;
 
@@ -39,6 +40,9 @@ export class ApprovalRequestService {
   async createPending(
     input: CreateApprovalRequestInput,
   ): Promise<ApprovalRequest> {
+    if (input.flowId == null || input.flowId <= 0) {
+      throw new Error('ApprovalRequest requires flowId');
+    }
     return this.prisma.approvalRequest.create({
       data: {
         appClientId: input.appClientId,
@@ -46,8 +50,11 @@ export class ApprovalRequestService {
         status: ApprovalStatus.pending,
         initiatorUserId: input.initiatorUserId,
         approverUserId: input.approverUserId,
-        workflowId: input.workflowId,
-        workflowVersion: input.workflowVersion,
+        // 新建只写 Flow；禁止把 Flow.id 冒充 Workflow FK。
+        workflowId: null,
+        workflowVersion: null,
+        flowId: input.flowId,
+        flowVersion: input.flowVersion ?? null,
         nodeId: input.nodeId,
         title: input.title,
         summary: input.summary ?? null,

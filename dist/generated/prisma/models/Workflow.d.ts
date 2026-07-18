@@ -454,10 +454,6 @@ export type WorkflowNullableScalarRelationFilter = {
     is?: Prisma.WorkflowWhereInput | null;
     isNot?: Prisma.WorkflowWhereInput | null;
 };
-export type WorkflowScalarRelationFilter = {
-    is?: Prisma.WorkflowWhereInput;
-    isNot?: Prisma.WorkflowWhereInput;
-};
 export type WorkflowAppClientIdWorkflowKeyCompoundUniqueInput = {
     appClientId: number;
     workflowKey: string;
@@ -520,6 +516,10 @@ export type WorkflowSumOrderByAggregateInput = {
     appClientId?: Prisma.SortOrder;
     version?: Prisma.SortOrder;
     sortOrder?: Prisma.SortOrder;
+};
+export type WorkflowScalarRelationFilter = {
+    is?: Prisma.WorkflowWhereInput;
+    isNot?: Prisma.WorkflowWhereInput;
 };
 export type WorkflowCreateNestedManyWithoutAppClientInput = {
     create?: Prisma.XOR<Prisma.WorkflowCreateWithoutAppClientInput, Prisma.WorkflowUncheckedCreateWithoutAppClientInput> | Prisma.WorkflowCreateWithoutAppClientInput[] | Prisma.WorkflowUncheckedCreateWithoutAppClientInput[];
@@ -592,10 +592,12 @@ export type WorkflowCreateNestedOneWithoutApprovalRequestsInput = {
     connectOrCreate?: Prisma.WorkflowCreateOrConnectWithoutApprovalRequestsInput;
     connect?: Prisma.WorkflowWhereUniqueInput;
 };
-export type WorkflowUpdateOneRequiredWithoutApprovalRequestsNestedInput = {
+export type WorkflowUpdateOneWithoutApprovalRequestsNestedInput = {
     create?: Prisma.XOR<Prisma.WorkflowCreateWithoutApprovalRequestsInput, Prisma.WorkflowUncheckedCreateWithoutApprovalRequestsInput>;
     connectOrCreate?: Prisma.WorkflowCreateOrConnectWithoutApprovalRequestsInput;
     upsert?: Prisma.WorkflowUpsertWithoutApprovalRequestsInput;
+    disconnect?: Prisma.WorkflowWhereInput | boolean;
+    delete?: Prisma.WorkflowWhereInput | boolean;
     connect?: Prisma.WorkflowWhereUniqueInput;
     update?: Prisma.XOR<Prisma.XOR<Prisma.WorkflowUpdateToOneWithWhereWithoutApprovalRequestsInput, Prisma.WorkflowUpdateWithoutApprovalRequestsInput>, Prisma.WorkflowUncheckedUpdateWithoutApprovalRequestsInput>;
 };

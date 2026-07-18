@@ -1,3 +1,4 @@
+import type { MaterializedEntity } from '../../../../entity-materialization/entity-materialization.types';
 import type { DynamicStructuredTool } from '@langchain/core/tools';
 import type { AgentRunStatus, ToolLevel } from '../../../../../../generated/prisma/client';
 import type { ToolExecutionDefinition } from '../../../../tool-engine/tool-engine.service';
@@ -19,6 +20,8 @@ import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-to
 import type { AgentChatPageContext } from '../../../../host-bridge/page-context.types';
 import type { DraftReviewDecision } from '../../../../draft-review';
 import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
+import type { WorkflowIrDocument } from '../../../../workflow/workflow-ir.types';
+import type { WorkflowExecutionMode } from '../../../../workflow/workflow-ir-native-direct.util';
 import type { PlanToolCandidateStrategy } from '../plan/plan-tool-candidates.util';
 export type AgentRunInput = {
     userId: number;
@@ -37,7 +40,7 @@ export type ResumeAfterWriteConfirmInput = {
 export type ResumeAfterWriteGateInput = ResumeAfterWriteConfirmInput & {
     decision: DraftReviewDecision;
 };
-export type AgentRunStepType = 'skill' | 'plan' | 'plan_sync' | 'workflow' | 'route_plan' | 'intent' | 'readiness' | 'tool_resolve' | 'param_gate' | 'llm' | 'tool' | 'write_confirmation_gate' | 'gather' | 'result_check' | 'summarize' | 'host_tool' | 'gather_pipeline';
+export type AgentRunStepType = 'skill' | 'plan' | 'plan_sync' | 'workflow' | 'route_plan' | 'intent' | 'readiness' | 'tool_resolve' | 'param_gate' | 'llm' | 'tool' | 'write_confirmation_gate' | 'gather' | 'result_check' | 'summarize' | 'host_tool' | 'gather_pipeline' | 'entity';
 export type AgentRunStep = {
     step: number;
     type: AgentRunStepType;
@@ -152,6 +155,7 @@ export type AgentGraphState = {
     planRunContext?: PlanRunContext;
     confirmedPreviewSerialized?: string | null;
     pageContext?: AgentChatPageContext | null;
+    materializedEntities?: MaterializedEntity[];
     scopedHostTools?: HostToolDecisionDefinition[];
     scopedHostLangChainTools?: DynamicStructuredTool[];
     turnExecutionContract?: TurnExecutionContract | null;
@@ -159,6 +163,8 @@ export type AgentGraphState = {
     planStepToolCandidateStrategy?: PlanToolCandidateStrategy | null;
     workflowRun?: WorkflowRunState | null;
     workflowNodeDefs?: WorkflowNodeDef[];
+    workflowIr?: WorkflowIrDocument | null;
+    workflowExecutionMode?: WorkflowExecutionMode;
     workflowNodeOutputs?: Record<string, unknown>;
     workflowAwaitingReact?: boolean;
     draftRetryCount?: number;

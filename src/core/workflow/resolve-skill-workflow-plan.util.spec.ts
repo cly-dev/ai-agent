@@ -1,18 +1,26 @@
 import { tryBuildTaskPlanFromSkillWorkflow } from './resolve-skill-workflow-plan.util';
 
 jest.mock('./load-workflow-definition.util', () => ({
-  loadWorkflowForRun: jest.fn(),
   parseWorkflowOverridesJson: jest.fn(() => null),
 }));
 
-import { loadWorkflowForRun } from './load-workflow-definition.util';
+jest.mock('./load-flow-for-run.util', () => ({
+  loadFlowForRunDetailed: jest.fn(),
+}));
+
+import { loadFlowForRunDetailed } from './load-flow-for-run.util';
 
 describe('resolve-skill-workflow-plan.util', () => {
-  it('compiles loaded workflow nodes into TaskPlanSnapshot', async () => {
-    jest.mocked(loadWorkflowForRun).mockResolvedValue({
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('compiles loaded Flow nodes into TaskPlanSnapshot', async () => {
+    jest.mocked(loadFlowForRunDetailed).mockResolvedValue({
+      status: 'loaded',
       workflowId: 5,
       version: 2,
-      compiledFrom: 'workflow_db',
+      compiledFrom: 'flow_db',
       nodes: [
         {
           id: 'fetch',
@@ -38,7 +46,7 @@ describe('resolve-skill-workflow-plan.util', () => {
     const plan = await tryBuildTaskPlanFromSkillWorkflow({} as never, {
       appClientId: 3,
       userMessage: 'Explain review',
-      binding: { workflowId: 5, workflowVersion: 2 },
+      binding: { flowId: 5, flowVersion: 2 },
       allowedToolIds: [1],
       allowedHostToolIds: [],
     });
@@ -48,12 +56,28 @@ describe('resolve-skill-workflow-plan.util', () => {
     expect(plan?.pendingStepIds).toEqual(['fetch', 'answer']);
   });
 
-  it('returns null when workflow cannot be loaded', async () => {
-    jest.mocked(loadWorkflowForRun).mockResolvedValue(null);
+  it('returns null when only legacy workflowId is bound', async () => {
     const plan = await tryBuildTaskPlanFromSkillWorkflow({} as never, {
       appClientId: 3,
       userMessage: 'x',
       binding: { workflowId: 99 },
+      allowedToolIds: [],
+      allowedHostToolIds: [],
+    });
+    expect(plan).toBeNull();
+    expect(loadFlowForRunDetailed).not.toHaveBeenCalled();
+  });
+
+  it('returns null when Flow cannot be loaded', async () => {
+    jest.mocked(loadFlowForRunDetailed).mockResolvedValue({
+      status: 'failed',
+      reason: 'asset_missing',
+      workflowId: 99,
+    });
+    const plan = await tryBuildTaskPlanFromSkillWorkflow({} as never, {
+      appClientId: 3,
+      userMessage: 'x',
+      binding: { flowId: 99 },
       allowedToolIds: [],
       allowedHostToolIds: [],
     });

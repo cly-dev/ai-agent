@@ -12,7 +12,7 @@ const skill_module_1 = require("../../core/skill/skill.module");
 const runtime_cache_module_1 = require("../../core/runtime-cache/runtime-cache.module");
 const prisma_module_1 = require("../../prisma/prisma.module");
 const agent_module_1 = require("../agent/agent.module");
-const workflow_module_1 = require("../workflow/workflow.module");
+const flow_module_1 = require("../flow/flow.module");
 const skill_service_1 = require("./skill.service");
 const skill_controller_1 = require("./skill.controller");
 let SkillModule = class SkillModule {
@@ -23,7 +23,7 @@ SkillModule = __decorate([
             prisma_module_1.PrismaModule,
             skill_module_1.SkillModule,
             runtime_cache_module_1.RuntimeCacheModule,
-            workflow_module_1.WorkflowModule,
+            flow_module_1.FlowModule,
             (0, common_1.forwardRef)(() => agent_module_1.AgentModule),
         ],
         providers: [skill_service_1.SkillService],

@@ -47,6 +47,7 @@ const page_agent_module_1 = require("./modules/page-agent/page-agent.module");
 const approval_module_1 = require("./core/approval/approval.module");
 const approval_module_2 = require("./modules/approval/approval.module");
 const workflow_module_1 = require("./modules/workflow/workflow.module");
+const flow_module_1 = require("./modules/flow/flow.module");
 const connectivity_module_1 = require("./modules/connectivity/connectivity.module");
 let AppModule = class AppModule {
 };
@@ -80,6 +81,7 @@ AppModule = __decorate([
             approval_module_1.ApprovalModule,
             approval_module_2.ApprovalModule,
             workflow_module_1.WorkflowModule,
+            flow_module_1.FlowModule,
             agent_module_1.AgentModule,
             chat_module_1.ChatModule,
             message_module_1.MessageModule,

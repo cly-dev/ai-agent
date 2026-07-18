@@ -25,8 +25,12 @@ export declare class ApprovalController {
             summary: string;
             workflowId: number;
             workflowVersion: number;
+            flowId: number;
+            flowVersion: number;
             workflowKey: string;
             workflowName: string;
+            flowKey: string;
+            flowName: string;
             nodeId: string;
             sessionId: string;
             pageActionRunId: number;
@@ -60,8 +64,12 @@ export declare class ApprovalController {
         summary: string;
         workflowId: number;
         workflowVersion: number;
+        flowId: number;
+        flowVersion: number;
         workflowKey: string;
         workflowName: string;
+        flowKey: string;
+        flowName: string;
         nodeId: string;
         sessionId: string;
         pageActionRunId: number;

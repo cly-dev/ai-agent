@@ -18,6 +18,9 @@ import type { TaskPlanSnapshot } from '../../plan/task-plan.types';
 import type { TurnExecutionContract } from '../../../turn/turn-execution-contract.types';
 import type { TurnScopedToolsBundle } from '../../../turn/turn-scoped-tools.util';
 import type { WorkflowNodeDef, WorkflowRunState } from '../../../../../workflow/workflow.types';
+import type { WorkflowIrDocument } from '../../../../../workflow/workflow-ir.types';
+import type { WorkflowExecutionMode } from '../../../../../workflow/workflow-ir-native-direct.util';
+import type { MaterializedEntity } from '../../../../../entity-materialization/entity-materialization.types';
 
 export function createAgentGraphStateAnnotation() {
   const State = Annotation.Root({
@@ -162,6 +165,10 @@ export function createAgentGraphStateAnnotation() {
         default: () => null,
         reducer: (_state, update) => update,
       }),
+      materializedEntities: Annotation<MaterializedEntity[] | undefined>({
+        default: () => undefined,
+        reducer: (_state, update) => update,
+      }),
       scopedHostTools: Annotation<HostToolDecisionDefinition[]>({
         default: () => [],
         reducer: (_state, update) => update,
@@ -183,6 +190,16 @@ export function createAgentGraphStateAnnotation() {
         reducer: (_state, update) => update,
       }),
       workflowNodeDefs: Annotation<WorkflowNodeDef[] | undefined>({
+        default: () => undefined,
+        reducer: (_state, update) => update,
+      }),
+      workflowIr: Annotation<WorkflowIrDocument | null | undefined>({
+        default: () => null,
+        reducer: (_state, update) => update,
+      }),
+      workflowExecutionMode: Annotation<
+        WorkflowExecutionMode | undefined
+      >({
         default: () => undefined,
         reducer: (_state, update) => update,
       }),

@@ -36,6 +36,8 @@ type SkillDbRow = {
   capabilityKey: string | null;
   workflowId: number | null;
   workflowVersion: number | null;
+  flowId: number | null;
+  flowVersion: number | null;
   workflowOverrides: unknown;
   skillTools: Array<{ toolId: number }>;
   skillHostTools: Array<{ hostToolId: number }>;
@@ -255,17 +257,23 @@ export class SkillService {
     userMessage: string;
     skill: Pick<
       AvailableSkillRow,
-      'workflowId' | 'workflowVersion' | 'workflowOverrides'
+      | 'flowId'
+      | 'flowVersion'
+      | 'workflowId'
+      | 'workflowVersion'
+      | 'workflowOverrides'
     >;
     goal?: string;
   }): Promise<TaskPlanSnapshot | null> {
-    if (input.skill.workflowId == null || input.skill.workflowId <= 0) {
+    if (!skillIsWorkflowBound(input.skill)) {
       return null;
     }
     return tryBuildTaskPlanFromSkillWorkflow(this.prisma, {
       appClientId: input.appClientId,
       userMessage: input.userMessage,
       binding: {
+        flowId: input.skill.flowId,
+        flowVersion: input.skill.flowVersion,
         workflowId: input.skill.workflowId,
         workflowVersion: input.skill.workflowVersion,
         workflowOverrides: input.skill.workflowOverrides,
@@ -374,6 +382,7 @@ export class SkillService {
       skillToolIds,
       hostToolIds,
       workflowId: row.workflowId,
+      flowId: row.flowId,
     };
     const resolvable = forRequestedSkill
       ? skillIsResolvableForRequested(caps)
@@ -457,8 +466,16 @@ export class SkillService {
         ...(input.skillId != null ? { id: input.skillId } : {}),
         ...(input.workflowBoundOnly
           ? {
-              workflowId: { not: null },
-              workflow: { is: { isActive: true } },
+              OR: [
+                {
+                  flowId: { not: null },
+                  flow: { is: { isActive: true } },
+                },
+                {
+                  workflowId: { not: null },
+                  workflow: { is: { isActive: true } },
+                },
+              ],
             }
           : input.pureHostOnly
           ? {
@@ -495,6 +512,8 @@ export class SkillService {
         capabilityKey: true,
         workflowId: true,
         workflowVersion: true,
+        flowId: true,
+        flowVersion: true,
         workflowOverrides: true,
         skillTools: { select: { toolId: true } },
         skillHostTools: { select: { hostToolId: true } },
@@ -526,6 +545,8 @@ export class SkillService {
       runnableKind: deriveSkillRunnableKind({ skillToolIds, hostToolIds }),
       workflowId: row.workflowId,
       workflowVersion: row.workflowVersion,
+      flowId: row.flowId,
+      flowVersion: row.flowVersion,
       workflowOverrides: row.workflowOverrides,
     };
   }

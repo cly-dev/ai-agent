@@ -12,9 +12,9 @@ import { ApprovalGateService } from '../../approval/approval-gate.service';
 import { ApprovalTriggerPermissionService } from '../../approval/approval-trigger-permission.service';
 import { parseApprovalTriggerBinding } from '../../approval/resolve-approval-parties.util';
 import {
-  loadWorkflowForRunDetailed,
   parseWorkflowOverridesJson,
 } from '../../workflow/load-workflow-definition.util';
+import { loadFlowForRunDetailed } from '../../workflow/load-flow-for-run.util';
 import { ToolEngineService } from '../../tool-engine/tool-engine.service';
 import { LlmService } from '../../llm/llm.service';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -91,7 +91,9 @@ export class PageActionRunExecutor {
     };
 
     const emitInitialStarted =
-      Boolean(input.workflowId) || !input.hostToolResolved;
+      Boolean(input.flowId) ||
+      Boolean(input.workflowId) ||
+      !input.hostToolResolved;
     if (emitInitialStarted) {
       writePageActionLifecycle(
         sseSink,
@@ -112,6 +114,7 @@ export class PageActionRunExecutor {
       actionKey: input.actionKey,
       generation: input.generation,
       workflowId: input.workflowId,
+      flowId: input.flowId,
       hostTool: input.hostToolResolved
         ? {
             id: input.hostToolResolved.definition.id,
@@ -132,13 +135,13 @@ export class PageActionRunExecutor {
       phase: 'initial_messages',
       messages,
       meta: {
-        hasWorkflow: Boolean(input.workflowId),
+        hasWorkflow: Boolean(input.workflowId || input.flowId),
         hasHostTool: Boolean(input.hostToolResolved),
       },
     });
 
     try {
-      if (input.workflowId) {
+      if (input.flowId) {
         await this.executeWorkflow({
           input,
           messages,
@@ -146,6 +149,35 @@ export class PageActionRunExecutor {
           stepRecorder,
           startedAt,
           lifecycleBase,
+        });
+        return;
+      }
+
+      // 存量仅绑 workflowId：运行时已移除，须 migrate 后再 invoke。
+      if (input.workflowId) {
+        const errorCode = 'FLOW_REQUIRED';
+        const errorMessage =
+          'PageAction 编排须绑定 flowId；存量 Workflow 请先 POST /admin/flow/migrate-from-workflow/:workflowId';
+        writePageActionLifecycle(
+          sseSink,
+          {
+            phase: 'failed',
+            ...lifecycleBase,
+            errorCode,
+            errorMessage,
+          },
+          stepRecorder,
+        );
+        await this.prisma.pageActionRun.update({
+          where: { id: input.runId },
+          data: {
+            status: PageActionRunStatus.failed,
+            errorCode,
+            errorMessage,
+            durationMs: Date.now() - startedAt,
+            finishedAt: new Date(),
+            steps: stepRecorder.toJson() as Prisma.InputJsonValue,
+          },
         });
         return;
       }
@@ -337,12 +369,40 @@ export class PageActionRunExecutor {
   }): Promise<void> {
     const { input: run, messages, sseSink, stepRecorder, startedAt, lifecycleBase } =
       input;
+    const overrides = parseWorkflowOverridesJson(run.workflowOverrides);
+    if (run.flowId == null || run.flowId <= 0) {
+      const errorCode = 'FLOW_REQUIRED';
+      const errorMessage =
+        'PageAction 编排须绑定 flowId；存量 Workflow 请先 migrate';
+      writePageActionLifecycle(
+        sseSink,
+        {
+          phase: 'failed',
+          ...lifecycleBase,
+          errorCode,
+          errorMessage,
+        },
+        stepRecorder,
+      );
+      await this.prisma.pageActionRun.update({
+        where: { id: run.runId },
+        data: {
+          status: PageActionRunStatus.failed,
+          errorCode,
+          errorMessage,
+          durationMs: Date.now() - startedAt,
+          finishedAt: new Date(),
+          steps: stepRecorder.toJson() as Prisma.InputJsonValue,
+        },
+      });
+      return;
+    }
     const [loadResult, allowedToolIds] = await Promise.all([
-      loadWorkflowForRunDetailed(this.prisma, {
-        workflowId: run.workflowId!,
+      loadFlowForRunDetailed(this.prisma, {
+        flowId: run.flowId,
         appClientId: run.appClientId,
-        workflowVersion: run.workflowVersion,
-        workflowOverrides: parseWorkflowOverridesJson(run.workflowOverrides),
+        flowVersion: run.flowVersion,
+        workflowOverrides: overrides,
       }),
       this.triggerPermission.resolveUserAllowedToolIdsForApp({
         userId: run.userId,
@@ -367,7 +427,7 @@ export class PageActionRunExecutor {
         where: { id: run.runId },
         data: {
           status: PageActionRunStatus.failed,
-          workflowId: loadResult.workflowId,
+          ...pageActionRunAssetWrite(run, loadResult),
           errorCode,
           errorMessage,
           durationMs: Date.now() - startedAt,
@@ -399,7 +459,7 @@ export class PageActionRunExecutor {
         where: { id: run.runId },
         data: {
           status: PageActionRunStatus.failed,
-          workflowId: loadResult.workflowId,
+          ...pageActionRunAssetWrite(run, loadResult),
           errorCode,
           errorMessage,
           durationMs: Date.now() - startedAt,
@@ -421,9 +481,13 @@ export class PageActionRunExecutor {
     const result = await orchestratePageWorkflow({
       workflowId: loadResult.workflowId,
       version: loadResult.version,
+      flowId: run.flowId,
+      flowVersion: run.flowVersion ?? loadResult.version,
       nodes: loadResult.nodes,
       edges: loadResult.edges,
       entryNodeId: loadResult.entryNodeId,
+      ir: loadResult.ir,
+      executionMode: loadResult.executionMode,
       systemPrompt: run.systemPrompt,
       objectivePrefix: run.instruction,
       messages,
@@ -474,8 +538,7 @@ export class PageActionRunExecutor {
     await this.prisma.pageActionRun.update({
       where: { id: run.runId },
       data: {
-        workflowId: loadResult.workflowId,
-        workflowVersion: loadResult.version,
+        ...pageActionRunAssetWrite(run, loadResult),
         workflowRun: result.workflowRun as Prisma.InputJsonValue,
         status: mapTerminalPhaseToRunStatus(terminalOutcome.phase),
         fillText: persistedFillText,
@@ -493,20 +556,28 @@ export class PageActionRunExecutor {
     logPageActionRunDebug('result', {
       actionRunId: run.runId,
       actionKey: run.actionKey,
-      path: 'workflow',
-      workflowId: loadResult.workflowId,
-      workflowVersion: loadResult.version,
-      terminalPhase: terminalOutcome.phase,
-      dslOutcome: result.dslOutcome,
-      model: result.model,
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      fillText: persistedFillText,
-      errorCode: terminalOutcome.errorCode,
-      errorMessage: terminalOutcome.errorMessage,
-      durationMs: Date.now() - startedAt,
-      steps: result.steps,
-      workflowRun: result.workflowRun,
+      path: 'flow',
+      workflowId: null,
+      flowId: run.flowId,
+      phase: terminalOutcome.phase,
     });
   }
+}
+
+/** Flow 跑只写 flowId；禁止把 Flow 资产 ID 冒充 Workflow FK。 */
+function pageActionRunAssetWrite(
+  run: { flowId: number | null; flowVersion?: number | null },
+  loadResult: { workflowId: number; version?: number },
+): {
+  flowId: number | null;
+  flowVersion: number | null;
+  workflowId: number | null;
+  workflowVersion: number | null;
+} {
+  return {
+    flowId: run.flowId,
+    flowVersion: loadResult.version ?? run.flowVersion ?? null,
+    workflowId: null,
+    workflowVersion: null,
+  };
 }

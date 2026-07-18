@@ -45,11 +45,13 @@ export type LlmChatResult = {
     streamMeta?: {
         emittedDeltaCount: number;
         fellBackToInvoke: boolean;
+        reasoningDeltaCount?: number;
     };
 };
 export type LlmStreamDelta = {
     model: string;
     contentDelta: string;
+    reasoningDelta?: string;
     toolCalls: LlmToolCall[];
     done: boolean;
     raw: unknown;

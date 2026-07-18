@@ -2,16 +2,17 @@ import type { AgentGraphNodeBundle, AgentGraphNodeFn } from '../types/graph.type
 import { AgentRunStatus } from '../../../../../../../generated/prisma/client';
 import { createChatHarnessRunner } from '../../../../../harness/harness-runner';
 import { harnessTraceToAgentStepOutput } from '../../../../../harness/trace/harness-trace.util';
-import { getWorkflowExecutor } from '../../../../../workflow/executors/executor-registry';
+import { resolveWorkflowNodeExecutor } from '../../../../../workflow/executors/resolve-workflow-node-executor.util';
 import { chatExecutorContext } from '../../../../../workflow/executors/executor-host.util';
 import { ensureWorkflowNodeStarted, applyWorkflowTaskPlanProjection, deriveWorkflowAwaitingReact } from '../../../../../workflow/workflow-plan-sync.util';
 import { failWorkflowNode } from '../../../../../workflow/workflow-run.util';
-import { getWorkflowNodeDef } from '../../../../../workflow/workflow-graph-routing.util';
+import { resolveWorkflowNodeDefForExecute, getWorkflowNodeDef } from '../../../../../workflow/workflow-graph-routing.util';
 import { mergeWorkflowExecutorOutcome } from '../../../../../workflow/workflow-summarize-sync.util';
 import { applyWorkflowAwaitUserConfirmGate } from '../../../../../workflow/workflow-await-user-confirm-gate.util';
 import { logWorkflowDebug } from '../../../../../workflow/trace/workflow-debug.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import type { WorkflowNodeDef } from '../../../../../workflow/workflow.types';
+import { resolveCurrentIrNodeId } from '../../../../../workflow/project-ir-run-status.util';
 
 const chatHarness = createChatHarnessRunner();
 
@@ -45,7 +46,13 @@ export function createExecuteNodeNode(
       return state;
     }
 
-    const def = getWorkflowNodeDef(state.workflowNodeDefs, nodeId);
+    const def = resolveWorkflowNodeDefForExecute({
+      nodeId,
+      defs: state.workflowNodeDefs,
+      ir: state.workflowIr,
+      executionMode: state.workflowExecutionMode,
+      phase: run.nodes.find((n) => n.nodeId === nodeId)?.phase,
+    });
     if (!def) {
       return state;
     }
@@ -59,6 +66,9 @@ export function createExecuteNodeNode(
       output: runHelpers.normalizeJsonLike({
         nodeId,
         action: def.action,
+        irNodeId: def.irNodeId ?? null,
+        irType: def.irType ?? null,
+        executionMode: state.workflowExecutionMode ?? null,
         nodeStatus: 'running',
         event: 'node_start',
       }),
@@ -77,16 +87,19 @@ export function createExecuteNodeNode(
       'delta',
     );
 
-    const executor = getWorkflowExecutor(def.action, 'chat');
+    const resolved = resolveWorkflowNodeExecutor(def, 'chat');
+    const executor = resolved.executor;
     if (!executor) {
       const failedRun = failWorkflowNode(workflowRun, nodeId, {
         code: 'action_not_implemented',
-        message: `Workflow action not implemented: ${def.action}`,
+        message: `Workflow action not implemented: ${resolved.action}`,
       });
       logWorkflowDebug('execute_node', {
         ...debugBase,
         nodeId,
-        action: def.action,
+        action: resolved.action,
+        irType: resolved.irType,
+        dispatchKind: resolved.dispatchKind,
         outcome: 'not_implemented',
         workflowRun: failedRun,
       });
@@ -98,10 +111,20 @@ export function createExecuteNodeNode(
       };
     }
 
+    logWorkflowDebug('execute_node_dispatch', {
+      ...debugBase,
+      nodeId,
+      action: resolved.action,
+      irType: resolved.irType,
+      irNodeId: resolved.irNodeId,
+      dispatchKind: resolved.dispatchKind,
+      executionMode: state.workflowExecutionMode ?? null,
+      currentIrNodeId: resolveCurrentIrNodeId(workflowRun),
+    });
     const harnessResult = await chatHarness.runNode({
       ctx: {
         nodeId,
-        action: def.action,
+        action: resolved.action,
         profile: 'chat',
       },
       execute: () =>
@@ -132,7 +155,9 @@ export function createExecuteNodeNode(
       logWorkflowDebug('execute_node', {
         ...debugBase,
         nodeId,
-        action: def.action,
+        action: resolved.action,
+        irType: resolved.irType,
+        dispatchKind: resolved.dispatchKind,
         outcome: 'failed',
         error: outcome.error,
         workflowRun: outcome.workflowRun,
@@ -150,7 +175,9 @@ export function createExecuteNodeNode(
       logWorkflowDebug('execute_node', {
         ...debugBase,
         nodeId,
-        action: def.action,
+        action: resolved.action,
+        irType: resolved.irType,
+        dispatchKind: resolved.dispatchKind,
         outcome: 'completed',
         outputRef: outcome.outputRef ?? null,
         workflowRun: outcome.workflowRun,
@@ -175,7 +202,9 @@ export function createExecuteNodeNode(
       logWorkflowDebug('execute_node', {
         ...debugBase,
         nodeId,
-        action: def.action,
+        action: resolved.action,
+        irType: resolved.irType,
+        dispatchKind: resolved.dispatchKind,
         outcome: 'pending_summarize',
         workflowRun: outcome.workflowRun,
       });
@@ -193,7 +222,9 @@ export function createExecuteNodeNode(
       logWorkflowDebug('execute_node', {
         ...debugBase,
         nodeId,
-        action: def.action,
+        action: resolved.action,
+        irType: resolved.irType,
+        dispatchKind: resolved.dispatchKind,
         outcome: 'awaiting_user_confirm',
         workflowRun: outcome.workflowRun,
       });
@@ -215,7 +246,9 @@ export function createExecuteNodeNode(
     logWorkflowDebug('execute_node', {
       ...debugBase,
       nodeId,
-      action: def.action,
+      action: resolved.action,
+      irType: resolved.irType,
+      dispatchKind: resolved.dispatchKind,
       outcome: 'delegate_react',
       workflowAwaitingReact: outcome.workflowAwaitingReact,
       workflowRun: outcome.workflowRun,

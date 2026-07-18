@@ -1,4 +1,5 @@
 import type { WorkflowEdge, WorkflowNodeDef, WorkflowRunCompiledFrom, WorkflowRunState, WorkflowRunStatus } from './workflow.types';
+import type { WorkflowIrNode } from './workflow-ir.types';
 export declare function cloneWorkflowRun(run: WorkflowRunState): WorkflowRunState;
 export declare function initWorkflowRun(input: {
     workflowId: number;
@@ -8,9 +9,28 @@ export declare function initWorkflowRun(input: {
     entryNodeId?: string | null;
     compiledFrom?: WorkflowRunCompiledFrom;
     now?: string;
+    phasesByNodeId?: Record<string, import('./workflow-ir-native-phase.util').WorkflowIrNativePhase>;
 }): WorkflowRunState;
 export declare function startWorkflowNode(run: WorkflowRunState, nodeId: string, now?: string): WorkflowRunState;
 export declare function completeWorkflowNode(run: WorkflowRunState, nodeId: string, outputRef?: string, now?: string): WorkflowRunState;
+export declare function completeWorkflowNodeOrAdvancePhase(input: {
+    run: WorkflowRunState;
+    nodeId: string;
+    irNode: WorkflowIrNode;
+    outputRef?: string;
+    now?: string;
+}): {
+    workflowRun: WorkflowRunState;
+    advancedPhase: boolean;
+};
+export declare function tryAdvanceNativePhaseAfterNodeSuccess(input: {
+    run: WorkflowRunState;
+    nodeId: string;
+    irNode: WorkflowIrNode;
+}): {
+    workflowRun: WorkflowRunState;
+    advancedPhase: boolean;
+};
 export declare function failWorkflowNode(run: WorkflowRunState, nodeId: string, error: {
     code: string;
     message: string;

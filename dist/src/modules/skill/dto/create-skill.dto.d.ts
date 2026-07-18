@@ -11,6 +11,8 @@ export declare class CreateSkillDto {
     tools?: SkillToolBindingItemDto[];
     workflowId?: number | null;
     workflowVersion?: number | null;
+    flowId?: number | null;
+    flowVersion?: number | null;
     workflowOverrides?: Record<string, {
         objective?: string;
     }> | null;

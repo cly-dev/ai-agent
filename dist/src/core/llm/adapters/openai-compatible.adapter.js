@@ -110,13 +110,9 @@ let OpenAiCompatibleAdapter = OpenAiCompatibleAdapter_1 = class OpenAiCompatible
                     }
                     model = (_d = data.model) !== null && _d !== void 0 ? _d : model;
                     done = data.done === true;
-                    (_e = handlers === null || handlers === void 0 ? void 0 : handlers.onDelta) === null || _e === void 0 ? void 0 : _e.call(handlers, {
-                        model,
-                        contentDelta: extracted.content,
-                        toolCalls: extracted.toolCalls,
-                        done,
-                        raw: data,
-                    });
+                    (_e = handlers === null || handlers === void 0 ? void 0 : handlers.onDelta) === null || _e === void 0 ? void 0 : _e.call(handlers, Object.assign(Object.assign({ model, contentDelta: extracted.content }, (extracted.reasoning
+                        ? { reasoningDelta: extracted.reasoning }
+                        : {})), { toolCalls: extracted.toolCalls, done, raw: data }));
                 }
             }
             if (buffer.trim()) {
@@ -130,13 +126,9 @@ let OpenAiCompatibleAdapter = OpenAiCompatibleAdapter_1 = class OpenAiCompatible
                     }
                     model = (_f = data.model) !== null && _f !== void 0 ? _f : model;
                     done = done || data.done === true;
-                    (_g = handlers === null || handlers === void 0 ? void 0 : handlers.onDelta) === null || _g === void 0 ? void 0 : _g.call(handlers, {
-                        model,
-                        contentDelta: extracted.content,
-                        toolCalls: extracted.toolCalls,
-                        done,
-                        raw: data,
-                    });
+                    (_g = handlers === null || handlers === void 0 ? void 0 : handlers.onDelta) === null || _g === void 0 ? void 0 : _g.call(handlers, Object.assign(Object.assign({ model, contentDelta: extracted.content }, (extracted.reasoning
+                        ? { reasoningDelta: extracted.reasoning }
+                        : {})), { toolCalls: extracted.toolCalls, done, raw: data }));
                 }
             }
             if (!content && toolCalls.length === 0) {
@@ -187,18 +179,16 @@ let OpenAiCompatibleAdapter = OpenAiCompatibleAdapter_1 = class OpenAiCompatible
         this.logger.log(line);
     }
     extractContent(data) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        var _a, _b, _c, _d, _e, _f;
         const choice = (_a = data.choices) === null || _a === void 0 ? void 0 : _a[0];
         const text = (_e = (_c = (_b = data.message) === null || _b === void 0 ? void 0 : _b.content) !== null && _c !== void 0 ? _c : (_d = choice === null || choice === void 0 ? void 0 : choice.message) === null || _d === void 0 ? void 0 : _d.content) !== null && _e !== void 0 ? _e : (_f = choice === null || choice === void 0 ? void 0 : choice.delta) === null || _f === void 0 ? void 0 : _f.content;
-        if (typeof text === 'string' && text.length > 0) {
-            return text;
-        }
-        const reasoning = (_h = (_g = choice === null || choice === void 0 ? void 0 : choice.delta) === null || _g === void 0 ? void 0 : _g.reasoning_content) !== null && _h !== void 0 ? _h : (_j = choice === null || choice === void 0 ? void 0 : choice.message) === null || _j === void 0 ? void 0 : _j.reasoning_content;
-        if (typeof reasoning === 'string' && reasoning.length > 0) {
-            this.logger.warn(`[OpenAiCompatibleAdapter] using reasoning_content as content fallback (${reasoning.length} chars)`);
-            return reasoning;
-        }
         return typeof text === 'string' ? text : '';
+    }
+    extractReasoning(data) {
+        var _a, _b, _c, _d;
+        const choice = (_a = data.choices) === null || _a === void 0 ? void 0 : _a[0];
+        const reasoning = (_c = (_b = choice === null || choice === void 0 ? void 0 : choice.delta) === null || _b === void 0 ? void 0 : _b.reasoning_content) !== null && _c !== void 0 ? _c : (_d = choice === null || choice === void 0 ? void 0 : choice.message) === null || _d === void 0 ? void 0 : _d.reasoning_content;
+        return typeof reasoning === 'string' ? reasoning : '';
     }
     noteStreamChunk(data) {
         var _a, _b, _c, _d, _e, _f, _g;
@@ -237,6 +227,7 @@ let OpenAiCompatibleAdapter = OpenAiCompatibleAdapter_1 = class OpenAiCompatible
     extractMessage(data) {
         return {
             content: this.extractContent(data),
+            reasoning: this.extractReasoning(data),
             toolCalls: this.extractToolCalls(data),
         };
     }

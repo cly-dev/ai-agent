@@ -19,7 +19,7 @@ let ApprovalGateService = class ApprovalGateService {
         this.approvalRequests = approvalRequests;
     }
     async suspend(input) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
         const isRefresh = input.existingApprovalRequestId != null;
         let previousSnapshot = null;
         if (isRefresh) {
@@ -35,9 +35,8 @@ let ApprovalGateService = class ApprovalGateService {
         const previewBlocks = writeDraft.presentation.previewBlocks;
         const summary = (_c = writeDraft.presentation.summaryText) !== null && _c !== void 0 ? _c : null;
         let resumeSnapshot = {
-            version: 1,
+            version: 2,
             workflowRun: input.workflowRun,
-            workflowNodeDefs: input.workflowNodeDefs,
             workflowNodeOutputs: input.workflowNodeOutputs,
             pendingWrite,
             writeDraft,
@@ -45,10 +44,19 @@ let ApprovalGateService = class ApprovalGateService {
             pageContext: (_d = input.pageContext) !== null && _d !== void 0 ? _d : null,
             channel: input.channel,
             draftRetryCount: writeDraft.provenance.draftRetryCount,
+            flow: {
+                id: input.flowId,
+                version: (_e = input.flowVersion) !== null && _e !== void 0 ? _e : input.workflowRun.version,
+            },
+            suspended: {
+                irNodeId: (_g = (_f = input.workflowRun.nodes.find((n) => n.nodeId === input.nodeId)) === null || _f === void 0 ? void 0 : _f.irNodeId) !== null && _g !== void 0 ? _g : input.nodeId,
+                phase: (_j = (_h = input.workflowRun.nodes.find((n) => n.nodeId === input.nodeId)) === null || _h === void 0 ? void 0 : _h.phase) !== null && _j !== void 0 ? _j : null,
+            },
+            workflowNodeDefs: input.workflowNodeDefs,
         };
         if (input.existingApprovalRequestId != null) {
-            const previousRetry = (_e = previousSnapshot === null || previousSnapshot === void 0 ? void 0 : previousSnapshot.draftRetryCount) !== null && _e !== void 0 ? _e : 0;
-            const mergedRetryCount = Math.max(previousRetry, (_f = writeDraft.provenance.draftRetryCount) !== null && _f !== void 0 ? _f : 0);
+            const previousRetry = (_k = previousSnapshot === null || previousSnapshot === void 0 ? void 0 : previousSnapshot.draftRetryCount) !== null && _k !== void 0 ? _k : 0;
+            const mergedRetryCount = Math.max(previousRetry, (_l = writeDraft.provenance.draftRetryCount) !== null && _l !== void 0 ? _l : 0);
             resumeSnapshot = (0, write_draft_util_1.attachWriteDraftToApprovalSnapshot)(Object.assign(Object.assign({}, resumeSnapshot), { draftRetryCount: mergedRetryCount }), Object.assign(Object.assign({}, writeDraft), { provenance: Object.assign(Object.assign({}, writeDraft.provenance), { draftRetryCount: mergedRetryCount, lastEvent: 'retry' }) }));
             const updated = await this.approvalRequests.updatePendingSnapshot({
                 approvalRequestId: input.existingApprovalRequestId,
@@ -64,10 +72,10 @@ let ApprovalGateService = class ApprovalGateService {
             if (!approval) {
                 throw new Error(`approval request not found after refresh: ${input.existingApprovalRequestId}`);
             }
-            (_g = input.stepRecorder) === null || _g === void 0 ? void 0 : _g.record({
+            (_m = input.stepRecorder) === null || _m === void 0 ? void 0 : _m.record({
                 type: 'lifecycle',
                 name: 'awaiting_approval',
-                detail: Object.assign({ approvalRequestId: approval.id, nodeId: input.nodeId, workflowId: input.workflowId, refreshed: true }, (0, page_action_run_audit_util_1.buildWriteDraftStepDetail)(writeDraft)),
+                detail: Object.assign({ approvalRequestId: approval.id, nodeId: input.nodeId, flowId: input.flowId, refreshed: true }, (0, page_action_run_audit_util_1.buildWriteDraftStepDetail)(writeDraft)),
             });
             return approval;
         }
@@ -76,21 +84,21 @@ let ApprovalGateService = class ApprovalGateService {
             source: input.source,
             initiatorUserId: input.initiatorUserId,
             approverUserId: input.approverUserId,
-            workflowId: input.workflowId,
-            workflowVersion: input.workflowVersion,
+            flowId: input.flowId,
+            flowVersion: (_o = input.flowVersion) !== null && _o !== void 0 ? _o : null,
             nodeId: input.nodeId,
             title: input.title,
             summary,
             previewBlocks,
             resumeSnapshot,
-            pageActionRunId: (_h = input.pageActionRunId) !== null && _h !== void 0 ? _h : null,
-            sessionId: (_j = input.sessionId) !== null && _j !== void 0 ? _j : null,
-            idempotencyKey: (_k = input.idempotencyKey) !== null && _k !== void 0 ? _k : null,
+            pageActionRunId: (_p = input.pageActionRunId) !== null && _p !== void 0 ? _p : null,
+            sessionId: (_q = input.sessionId) !== null && _q !== void 0 ? _q : null,
+            idempotencyKey: (_r = input.idempotencyKey) !== null && _r !== void 0 ? _r : null,
         });
-        (_l = input.stepRecorder) === null || _l === void 0 ? void 0 : _l.record({
+        (_s = input.stepRecorder) === null || _s === void 0 ? void 0 : _s.record({
             type: 'lifecycle',
             name: 'awaiting_approval',
-            detail: Object.assign({ approvalRequestId: approval.id, nodeId: input.nodeId, workflowId: input.workflowId }, (0, page_action_run_audit_util_1.buildWriteDraftStepDetail)(writeDraft)),
+            detail: Object.assign({ approvalRequestId: approval.id, nodeId: input.nodeId, flowId: input.flowId }, (0, page_action_run_audit_util_1.buildWriteDraftStepDetail)(writeDraft)),
         });
         return approval;
     }

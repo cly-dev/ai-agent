@@ -137,14 +137,14 @@ export function createMinimalAgentGraphBundle(
 
 export const workflowGraphFixtureNodes: WorkflowNodeDef[] = [
   {
-    id: 'load',
-    action: 'load_page_context',
-    name: 'Load',
-    objective: 'Load page',
-    input: {},
+    id: 'read__fetch',
+    action: 'fetch_data',
+    name: 'Fetch',
+    objective: 'Fetch detail',
+    input: { toolIds: [1] },
   },
   {
-    id: 'answer',
+    id: 'speak__speak',
     action: 'summarize',
     name: 'Answer',
     objective: 'Explain page',
@@ -161,23 +161,23 @@ export function workflowGraphFixtureTaskPlan(): TaskPlanSnapshot {
     constraints: [],
     steps: [
       {
-        id: 'load',
+        id: 'read__fetch',
         phase: 'gather',
         kind: 'tool',
-        objective: 'Load page',
+        objective: 'Fetch detail',
       },
       {
-        id: 'answer',
+        id: 'speak__speak',
         phase: 'answer',
         kind: 'summarize',
         objective: 'Explain page',
       },
     ],
-    pendingStepIds: ['load', 'answer'],
+    pendingStepIds: ['read__fetch', 'speak__speak'],
     completedStepIds: [],
     taskPhase: 'gather',
-    currentObjective: 'Load page',
-    currentStepId: 'load',
+    currentObjective: 'Fetch detail',
+    currentStepId: 'read__fetch',
     frames: [],
     activeFrameIndex: 0,
   };

@@ -4,13 +4,9 @@ export type WorkflowFetchCompleteWhen = 'first_success' | 'fetch_all_pages';
 
 export type WorkflowSummarizeMode = 'brief' | 'detailed' | 'draft' | 'final';
 
-export type LoadPageContextNodeInput = {
-  materialize?: boolean;
-};
-
 /**
  * 状态识别节点 input：状态目录在出边 clue（key+description）上；
- * hint 仅补充判定口径（如 spam 与业务意图互斥）。
+ * hint 仅补充判定口径（薄 Policy）。
  */
 export type DetectCluesNodeInput = {
   hint?: string;
@@ -23,7 +19,7 @@ export type SummarizeImagesOnFailure = 'degrade' | 'fail';
 
 /**
  * 图片识别节点：显式 opt-in；按实体组识图（文+图绑定），非整包摊平 URL。
- * @see v2/docs/b-end-workflow-summarize-images.md
+ * @see lower / Intent images capability（B 端见 v2/docs/b-end-flow-admin-guide.md）
  */
 export type SummarizeImagesNodeInput = {
   /** URL 扫描范围；默认 upstream */
@@ -94,7 +90,6 @@ export type AwaitUserConfirmNodeInput = {
 };
 
 export type WorkflowNodeInputByAction = {
-  load_page_context: LoadPageContextNodeInput;
   detect_clues: DetectCluesNodeInput;
   fetch_data: FetchDataNodeInput;
   summarize_images: SummarizeImagesNodeInput;

@@ -1,12 +1,12 @@
 import type { WorkflowNodeInputByAction } from './workflow-node-input.types';
 export type { WorkflowNodeInput, WorkflowNodeInputByAction } from './workflow-node-input.types';
 export type WorkflowProfile = 'chat_skill' | 'page_action' | 'shared';
-export type WorkflowActionKind = 'load_page_context' | 'detect_clues' | 'fetch_data' | 'summarize_images' | 'generate_and_push' | 'summarize' | 'compose_mutation' | 'present_mutation' | 'write_data' | 'await_user_confirm';
+export type WorkflowActionKind = 'detect_clues' | 'fetch_data' | 'summarize_images' | 'generate_and_push' | 'summarize' | 'compose_mutation' | 'present_mutation' | 'write_data' | 'await_user_confirm';
 export type WorkflowNodeStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
 export declare const WORKFLOW_NODE_STATUSES: readonly WorkflowNodeStatus[];
 export type WorkflowNodeTerminalStatus = Extract<WorkflowNodeStatus, 'succeeded' | 'failed' | 'skipped'>;
 export type WorkflowRunStatus = 'running' | 'completed' | 'failed' | 'cancelled';
-export type WorkflowRunCompiledFrom = 'workflow_db' | 'plan_llm' | 'template' | 'minimal' | 'resume' | 'legacy_config';
+export type WorkflowRunCompiledFrom = 'workflow_db' | 'flow_db' | 'plan_llm' | 'template' | 'minimal' | 'resume' | 'legacy_config';
 export type WorkflowEdgeKind = 'always' | 'clue' | 'default';
 export type WorkflowClueDef = {
     key: string;
@@ -25,6 +25,9 @@ export type WorkflowNodeDef<A extends WorkflowActionKind = WorkflowActionKind> =
     name: string;
     objective: string;
     input: WorkflowNodeInputByAction[A];
+    irType?: import('./workflow-ir.types').WorkflowIrNodeType;
+    irNodeId?: string;
+    irConfig?: Record<string, unknown>;
 };
 export type DetectClueItemResult = {
     key: string;
@@ -66,6 +69,9 @@ export type WorkflowRunNodeState = {
         code: string;
         message: string;
     };
+    irNodeId?: string;
+    irType?: import('./workflow-ir.types').WorkflowIrNodeType;
+    phase?: import('./workflow-ir-native-phase.util').WorkflowIrNativePhase;
 };
 export type WorkflowRunState = {
     workflowId: number;

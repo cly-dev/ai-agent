@@ -377,6 +377,9 @@ let AgentRunSseEmitter = AgentRunSseEmitter_1 = class AgentRunSseEmitter {
                     if (!this.shouldEmitForRun(sessionId, runId)) {
                         return;
                     }
+                    if (delta.reasoningDelta) {
+                        proseSession.ingestReasoningDelta(delta.reasoningDelta);
+                    }
                     if (!delta.contentDelta) {
                         return;
                     }

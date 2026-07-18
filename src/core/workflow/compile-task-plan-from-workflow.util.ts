@@ -51,8 +51,6 @@ function mapSummarizeToPlanStep(node: WorkflowNodeDef): TaskPlanStep {
 
 function mapWorkflowNodeToPlanSteps(node: WorkflowNodeDef): TaskPlanStep[] {
   switch (node.action) {
-    case 'load_page_context':
-      return [];
     case 'detect_clues':
       return [];
     case 'summarize_images':
@@ -111,7 +109,7 @@ function mapWorkflowNodeToPlanSteps(node: WorkflowNodeDef): TaskPlanStep[] {
   }
 }
 
-/** Workflow DB nodes → TaskPlanStep[]（Skill.workflowId 内层帧展开用）。 */
+/** Flow / legacy nodes → TaskPlanStep[]（Skill.flowId 内层帧展开用）。 */
 export function compileTaskPlanFromWorkflowNodes(
   nodes: WorkflowNodeDef[],
 ): TaskPlanStep[] {

@@ -33,7 +33,9 @@ export class QueryAutomationTaskDto {
   @IsString()
   actionKey?: string;
 
-  @ApiPropertyOptional({ description: '按 workflowKey 过滤' })
+  @ApiPropertyOptional({
+    description: '按编排 key 过滤（legacy workflowKey 或 flow.flowKey）',
+  })
   @IsOptional()
   @IsString()
   workflowKey?: string;

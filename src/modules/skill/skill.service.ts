@@ -24,7 +24,8 @@ import { loadAgentSkillVisibilityContext } from '../../core/runtime-cache/agent-
 import { AgentHostToolCatalogService } from '../../core/runtime-cache/agent-host-tool-catalog.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentService } from '../agent/agent.service';
-import { WorkflowService } from '../workflow/workflow.service';
+import { FlowService } from '../flow/flow.service';
+import { assertNoNewLegacyWorkflowBinding } from '../../core/workflow/assert-no-new-legacy-workflow-binding.util';
 import { normalizeCapabilityKey } from './util/skill-capability-key.util';
 import { CreateSkillDto } from './dto/create-skill.dto';
 import { QueryClientSkillByAgentDto } from './dto/query-client-skill-by-agent.dto';
@@ -54,7 +55,7 @@ export class SkillService {
     private readonly agentService: AgentService,
     private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
     private readonly hostToolCatalogService: AgentHostToolCatalogService,
-    private readonly workflowService: WorkflowService,
+    private readonly flowService: FlowService,
   ) {}
 
   async create(
@@ -92,18 +93,14 @@ export class SkillService {
         toolBindings.map((item) => item.toolId),
       ),
     });
-    if (dto.workflowId != null) {
-      await this.workflowService.assertWorkflowReferenceCompatible({
-        workflowId: dto.workflowId,
+    if (dto.workflowId !== undefined) {
+      assertNoNewLegacyWorkflowBinding(dto.workflowId, 'skill');
+    }
+    if (dto.flowId != null && dto.flowId > 0) {
+      await this.flowService.assertSkillFlowBindingsCompatible({
+        flowId: dto.flowId,
         appClientId,
-        entry: 'skill',
-      });
-      await this.assertSkillWorkflowBindingsIfNeeded({
-        workflowId: dto.workflowId,
-        workflowVersion: dto.workflowVersion,
-        appClientId,
-        skillToolIds: toolBindings.map((item) => item.toolId),
-        skillHostToolIds: [],
+        flowVersion: dto.flowVersion,
       });
     }
 
@@ -120,8 +117,20 @@ export class SkillService {
             ? undefined
             : (dto.config as Prisma.InputJsonValue),
         isActive: dto.isActive ?? true,
-        workflowId: dto.workflowId ?? undefined,
-        workflowVersion: dto.workflowVersion ?? undefined,
+        // 配置面只写 Flow；禁止落 legacy workflowId。
+        ...(dto.flowId != null && dto.flowId > 0
+          ? {
+              flowId: dto.flowId,
+              flowVersion: dto.flowVersion ?? undefined,
+              workflowId: null,
+              workflowVersion: null,
+            }
+          : {
+              flowId: null,
+              flowVersion: null,
+              workflowId: null,
+              workflowVersion: null,
+            }),
         workflowOverrides:
           dto.workflowOverrides === undefined
             ? undefined
@@ -242,6 +251,7 @@ export class SkillService {
               {
                 ...normalizeSkillRunnableCapabilities(row),
                 workflowId: row.workflowId,
+                flowId: row.flowId,
               },
               pageHostToolIds,
             ),
@@ -334,27 +344,28 @@ export class SkillService {
       dto.capabilityKey === undefined
         ? undefined
         : normalizeCapabilityKey(dto.capabilityKey);
-    if (dto.workflowId != null) {
-      await this.workflowService.assertWorkflowReferenceCompatible({
-        workflowId: dto.workflowId,
-        appClientId: existing.appClientId,
-        entry: 'skill',
-      });
+    // flowId 优先；禁止通过 API 新绑 / 改绑到 legacy workflowId（仅允许 null 清空）。
+    if (dto.workflowId !== undefined) {
+      assertNoNewLegacyWorkflowBinding(dto.workflowId, 'skill');
     }
-
+    const nextFlowId =
+      dto.flowId !== undefined ? dto.flowId : existing.flowId;
+    const nextFlowVersion =
+      dto.flowVersion !== undefined ? dto.flowVersion : existing.flowVersion;
+    // assert 后 dto.workflowId 若出现则只能是 null（清空）；未传则保留存量。
     const nextWorkflowId =
       dto.workflowId !== undefined ? dto.workflowId : existing.workflowId;
     const nextWorkflowVersion =
-      dto.workflowVersion !== undefined
-        ? dto.workflowVersion
-        : existing.workflowVersion;
-    if (nextWorkflowId != null && nextWorkflowId > 0) {
-      await this.assertSkillWorkflowBindingsIfNeeded({
-        workflowId: nextWorkflowId,
-        workflowVersion: nextWorkflowVersion,
+      nextWorkflowId == null
+        ? null
+        : dto.workflowVersion !== undefined
+          ? dto.workflowVersion
+          : existing.workflowVersion;
+    if (nextFlowId != null && nextFlowId > 0) {
+      await this.flowService.assertSkillFlowBindingsCompatible({
+        flowId: nextFlowId,
         appClientId: existing.appClientId,
-        skillToolIds: existing.skillTools.map((row) => row.toolId),
-        skillHostToolIds: existing.skillHostTools.map((row) => row.hostToolId),
+        flowVersion: nextFlowVersion,
       });
     }
     const row = await this.prisma.skill.update({
@@ -375,11 +386,24 @@ export class SkillService {
               : (dto.config as Prisma.InputJsonValue),
         isActive: dto.isActive,
         riskLevel: dto.riskLevel,
-        ...(dto.workflowId !== undefined
-          ? { workflowId: dto.workflowId }
-          : {}),
-        ...(dto.workflowVersion !== undefined
-          ? { workflowVersion: dto.workflowVersion }
+        // 任一编排字段变更时写回互斥绑定：flow 优先于 workflow。
+        ...(dto.flowId !== undefined ||
+        dto.flowVersion !== undefined ||
+        dto.workflowId !== undefined ||
+        dto.workflowVersion !== undefined
+          ? nextFlowId != null && nextFlowId > 0
+            ? {
+                flowId: nextFlowId,
+                flowVersion: nextFlowVersion,
+                workflowId: null,
+                workflowVersion: null,
+              }
+            : {
+                workflowId: nextWorkflowId,
+                workflowVersion: nextWorkflowVersion,
+                flowId: null,
+                flowVersion: null,
+              }
           : {}),
         ...(dto.workflowOverrides !== undefined
           ? {
@@ -404,13 +428,11 @@ export class SkillService {
     const toolBindings = this.normalizeToolBindings(dto.tools);
     await this.assertToolsInApp(existing.appClientId, toolBindings);
 
-    if (existing.workflowId != null && existing.workflowId > 0) {
-      await this.assertSkillWorkflowBindingsIfNeeded({
-        workflowId: existing.workflowId,
-        workflowVersion: existing.workflowVersion,
+    if (existing.flowId != null && existing.flowId > 0) {
+      await this.flowService.assertSkillFlowBindingsCompatible({
+        flowId: existing.flowId,
         appClientId: existing.appClientId,
-        skillToolIds: toolBindings.map((item) => item.toolId),
-        skillHostToolIds: existing.skillHostTools.map((row) => row.hostToolId),
+        flowVersion: existing.flowVersion,
       });
     }
 
@@ -600,15 +622,5 @@ export class SkillService {
     }
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
-  }
-
-  private async assertSkillWorkflowBindingsIfNeeded(input: {
-    workflowId: number;
-    workflowVersion?: number | null;
-    appClientId: number;
-    skillToolIds: number[];
-    skillHostToolIds: number[];
-  }): Promise<void> {
-    await this.workflowService.assertSkillWorkflowBindingsCompatible(input);
   }
 }

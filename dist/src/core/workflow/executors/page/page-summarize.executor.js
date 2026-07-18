@@ -7,6 +7,7 @@ const page_workflow_messages_util_1 = require("../../../page-action/page-workflo
 const page_workflow_node_util_1 = require("../../../page-action/page-workflow-node.util");
 const workflow_run_util_1 = require("../../workflow-run.util");
 const workflow_node_output_util_1 = require("../../workflow-node-output.util");
+const resolve_workflow_node_runtime_input_util_1 = require("../../resolve-workflow-node-runtime-input.util");
 const executor_host_util_1 = require("../executor-host.util");
 const logger = new common_1.Logger('PageSummarizeExecutor');
 function warnDeprecatedSummarizeHostToolId(nodeId, hostToolId) {
@@ -22,7 +23,7 @@ exports.pageSummarizeExecutor = {
     async run(ctx) {
         var _a, _b;
         const { runtime } = (0, executor_host_util_1.requirePageExecutorHost)(ctx.host);
-        const nodeInput = ctx.def.input;
+        const nodeInput = (0, resolve_workflow_node_runtime_input_util_1.resolveWorkflowNodeRuntimeInput)(ctx.def);
         warnDeprecatedSummarizeHostToolId(ctx.nodeId, nodeInput.hostToolId);
         const mode = (_a = nodeInput.mode) !== null && _a !== void 0 ? _a : 'final';
         const messages = (0, page_workflow_messages_util_1.injectWorkflowNodeObjective)((0, page_workflow_messages_util_1.appendWorkflowNodeOutputsToMessages)(runtime.messages, runtime.nodeOutputs), ctx.def.objective, runtime.objectivePrefix);

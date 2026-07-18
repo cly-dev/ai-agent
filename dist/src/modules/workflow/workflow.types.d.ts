@@ -136,6 +136,8 @@ export type WorkflowResponse = {
     skillRefCount: number;
     pageActionRefCount: number;
     revisionCount: number;
+    configWritable: false;
+    deprecated: true;
 };
 export type WorkflowListItem = Omit<WorkflowResponse, 'workflowTools' | 'workflowHostTools' | 'revisionCount' | 'nodes' | 'constraints' | 'goal'> & {
     nodeCount: number;

@@ -1,4 +1,9 @@
+import type { WorkflowIrDocument } from '../workflow/workflow-ir.types';
 import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
+import {
+  materializeWorkflowIrNodeForPhase,
+  resolveWorkflowIrNativePhases,
+} from '../workflow/workflow-ir-native-phase.util';
 import { startWorkflowNode } from '../workflow/workflow-run.util';
 
 function cloneRun(run: WorkflowRunState): WorkflowRunState {
@@ -39,6 +44,8 @@ export function rewindWorkflowForDraftRetry(input: {
   workflowRun: WorkflowRunState;
   workflowNodeDefs: WorkflowNodeDef[];
   nodeOutputs: Record<string, unknown>;
+  /** Plan A：native 多相位时用于恢复入口 phase（避免卡在 await 跳过 re-present） */
+  ir?: WorkflowIrDocument | null;
 }): RewindWorkflowForRetryResult {
   const retryNodeId = findRetryTargetNodeId(
     input.workflowNodeDefs,
@@ -68,6 +75,25 @@ export function rewindWorkflowForDraftRetry(input: {
     delete node.finishedAt;
     delete node.outputRef;
     delete node.error;
+
+    const def = input.workflowNodeDefs.find((row) => row.id === node.nodeId);
+    if (def) {
+      node.action = def.action;
+      node.name = def.name;
+    }
+    // native present→await：挂起时 phase=await；retry 须回到入口 present，否则跳过草稿再生。
+    if (node.phase != null && input.ir) {
+      const irNode = input.ir.nodes.find((n) => n.id === node.nodeId);
+      if (irNode) {
+        const entry = resolveWorkflowIrNativePhases(irNode)[0]!;
+        const phaseDef = materializeWorkflowIrNodeForPhase(irNode, entry);
+        node.phase = entry;
+        node.action = phaseDef.action;
+        node.name = phaseDef.name;
+      }
+    } else if (node.phase === 'await' && def?.action === 'present_mutation') {
+      node.phase = 'present';
+    }
   }
 
   const started = startWorkflowNode(next, retryNodeId);

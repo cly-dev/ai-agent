@@ -240,6 +240,7 @@ export async function runHostFillLlmStream(input: {
           model: delta.model,
           done: delta.done,
         });
+        // host fill 只吃 content 通道；reasoningDelta 丢弃，避免思考进 fillText
         if (delta.contentDelta) {
           input.textSession.ingestLlmDelta(delta.contentDelta);
         }

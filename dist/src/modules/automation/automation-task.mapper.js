@@ -12,7 +12,9 @@ exports.AUTOMATION_PAGE_ACTION_RUN_INCLUDE = {
             actionKey: true,
             name: true,
             workflowId: true,
+            flowId: true,
             workflow: { select: { workflowKey: true, name: true } },
+            flow: { select: { flowKey: true, name: true } },
         },
     },
     approvalRequest: { select: { id: true, status: true } },
@@ -64,8 +66,9 @@ function toTimeline(steps) {
     return (0, page_action_run_steps_util_1.toPublicPageActionRunTimeline)(steps);
 }
 function toAutomationTaskFromPageActionRun(row) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f;
     const workflow = row.pageAction.workflow;
+    const flow = row.pageAction.flow;
     const outcome = (0, page_action_task_status_util_1.resolvePageActionRunOutcome)({
         status: row.status,
         errorCode: row.errorCode,
@@ -78,10 +81,10 @@ function toAutomationTaskFromPageActionRun(row) {
         title: row.pageAction.name,
         subtitle: buildAutomationTaskSubtitle(row.pageContext),
         pageActionKey: row.pageActionKey,
-        workflowKey: (_a = workflow === null || workflow === void 0 ? void 0 : workflow.workflowKey) !== null && _a !== void 0 ? _a : null,
-        workflowName: (_b = workflow === null || workflow === void 0 ? void 0 : workflow.name) !== null && _b !== void 0 ? _b : null,
+        workflowKey: (_b = (_a = workflow === null || workflow === void 0 ? void 0 : workflow.workflowKey) !== null && _a !== void 0 ? _a : flow === null || flow === void 0 ? void 0 : flow.flowKey) !== null && _b !== void 0 ? _b : null,
+        workflowName: (_d = (_c = workflow === null || workflow === void 0 ? void 0 : workflow.name) !== null && _c !== void 0 ? _c : flow === null || flow === void 0 ? void 0 : flow.name) !== null && _d !== void 0 ? _d : null,
         createdAt: row.createdAt.toISOString(),
-        finishedAt: (_d = (_c = row.finishedAt) === null || _c === void 0 ? void 0 : _c.toISOString()) !== null && _d !== void 0 ? _d : null,
+        finishedAt: (_f = (_e = row.finishedAt) === null || _e === void 0 ? void 0 : _e.toISOString()) !== null && _f !== void 0 ? _f : null,
         durationMs: row.durationMs,
         errorCode: row.errorCode,
         errorMessage: row.errorMessage,

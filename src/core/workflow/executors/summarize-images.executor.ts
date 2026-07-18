@@ -1,12 +1,13 @@
 import { completeWorkflowNode, failWorkflowNode } from '../workflow-run.util';
 import { buildWorkflowNodeOutputRef } from '../workflow-node-output.util';
 import type { SummarizeImagesNodeInput } from '../workflow-node-input.types';
+import { resolveWorkflowNodeRuntimeInput } from '../resolve-workflow-node-runtime-input.util';
 import { resolveExecutorPageContext } from '../executors/executor-host.util';
 import type {
   WorkflowExecutor,
   WorkflowExecutorContext,
 } from '../executors/workflow-executor.types';
-import { collectImageUrlsFromSources } from '../../image-panel/collect-image-urls.util';
+import { resolveImageUrlsForVision } from '../../entity-materialization';
 import { isImagePanelVisionEnabled } from '../../image-panel/image-panel-env.util';
 import { getImagePanelService } from '../../image-panel/image-panel.service';
 
@@ -17,6 +18,15 @@ function resolvePriorOutputs(host: Parameters<
     return host.runtime.nodeOutputs;
   }
   return host.state.workflowNodeOutputs ?? {};
+}
+
+function resolveMaterializedEntities(
+  host: Parameters<WorkflowExecutor['run']>[0]['host'],
+) {
+  if (host.profile === 'page') {
+    return host.runtime.materializedEntities;
+  }
+  return host.state.materializedEntities ?? [];
 }
 
 function parseInput(raw: unknown): Required<
@@ -95,7 +105,7 @@ function emptyDisabledOutput(reason: string): Record<string, unknown> {
 export const summarizeImagesExecutor: WorkflowExecutor = {
   action: 'summarize_images',
   async run(ctx) {
-    const parsed = parseInput(ctx.def.input);
+    const parsed = parseInput(resolveWorkflowNodeRuntimeInput(ctx.def));
     const outputRef = buildWorkflowNodeOutputRef(ctx.def.action, ctx.nodeId);
 
     const service = getImagePanelService();
@@ -124,8 +134,9 @@ export const summarizeImagesExecutor: WorkflowExecutor = {
       };
     }
 
-    const urls = collectImageUrlsFromSources({
+    const urls = resolveImageUrlsForVision({
       from: parsed.from,
+      entities: resolveMaterializedEntities(ctx.host),
       upstreamOutputs: resolvePriorOutputs(ctx.host),
       pageContext: resolveExecutorPageContext(ctx.host),
     });

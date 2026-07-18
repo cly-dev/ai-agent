@@ -1,3 +1,4 @@
+import type { MaterializedEntity } from '../../../../entity-materialization/entity-materialization.types';
 import type { DynamicStructuredTool } from '@langchain/core/tools';
 import type { AgentRunStatus, ToolLevel } from '../../../../../../generated/prisma/client';
 import type { ToolExecutionDefinition } from '../../../../tool-engine/tool-engine.service';
@@ -19,6 +20,8 @@ import type { HostToolDecisionDefinition } from '../../../../host-bridge/host-to
 import type { AgentChatPageContext } from '../../../../host-bridge/page-context.types';
 import type { DraftReviewDecision } from '../../../../draft-review';
 import type { WorkflowNodeDef, WorkflowRunState } from '../../../../workflow/workflow.types';
+import type { WorkflowIrDocument } from '../../../../workflow/workflow-ir.types';
+import type { WorkflowExecutionMode } from '../../../../workflow/workflow-ir-native-direct.util';
 import type { PlanToolCandidateStrategy } from '../plan/plan-tool-candidates.util';
 
 export type AgentRunInput = {
@@ -61,7 +64,8 @@ export type AgentRunStepType =
   | 'result_check'
   | 'summarize'
   | 'host_tool'
-  | 'gather_pipeline';
+  | 'gather_pipeline'
+  | 'entity';
 
 export type AgentRunStep = {
   step: number;
@@ -207,6 +211,8 @@ export type AgentGraphState = {
   confirmedPreviewSerialized?: string | null;
   /** 本 turn 用户消息附带的宿主页面上下文。 */
   pageContext?: AgentChatPageContext | null;
+  /** 本 run 物化的实体快照（pageContext / actionContext / upstream 合并）。 */
+  materializedEntities?: MaterializedEntity[];
   /** 当前 page scope 下可供 Plan/决策 LLM 使用的 Host Tool 元数据。 */
   scopedHostTools?: HostToolDecisionDefinition[];
   /** bindTools 用 Host Tool stub（执行在浏览器）。 */
@@ -221,6 +227,12 @@ export type AgentGraphState = {
   workflowRun?: WorkflowRunState | null;
   /** 与 workflowRun 对应的节点定义（compile / DB load）。 */
   workflowNodeDefs?: WorkflowNodeDef[];
+  /**
+   * Plan A：Flow.ir 快照；`workflowExecutionMode=ir_native_direct` 时为图真源。
+   */
+  workflowIr?: WorkflowIrDocument | null;
+  /** Plan A：`ir_native_direct` | `materialized_expand` */
+  workflowExecutionMode?: WorkflowExecutionMode;
   /** 节点产出归档（outputRef → payload）。 */
   workflowNodeOutputs?: Record<string, unknown>;
   /** 当前节点委托旧 ReAct 环（readiness → llm → tools → resultCheck）。 */

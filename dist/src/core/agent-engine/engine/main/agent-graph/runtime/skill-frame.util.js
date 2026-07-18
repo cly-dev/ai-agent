@@ -11,11 +11,12 @@ const skill_intent_alignment_util_1 = require("../../../turn/skill-intent-alignm
 const page_context_execution_policy_util_1 = require("../../../../../host-bridge/page-context-execution-policy.util");
 const plan_sync_util_1 = require("../../plan/plan-sync.util");
 const workflow_plan_transition_util_1 = require("../../../../../workflow/workflow-plan-transition.util");
+const skill_runnable_util_1 = require("../../../../../skill/skill-runnable.util");
 const plan_observation_scope_util_1 = require("../../plan/plan-observation-scope.util");
 const agent_run_steps_util_1 = require("../../run/agent-run-steps.util");
 function createAgentGraphSkillFrameHelpers(deps, ctx, runHelpers) {
     const applySkillFrameContext = async (state) => {
-        var _a, _b, _c, _d, _e, _f, _g;
+        var _a, _b, _c, _d, _e, _f;
         if (!state.taskPlan) {
             return state;
         }
@@ -55,7 +56,7 @@ function createAgentGraphSkillFrameHelpers(deps, ctx, runHelpers) {
             availableHostTools,
             scopedHostToolIds: hostBundle.scopedHostTools.map((tool) => tool.id),
         });
-        const effectiveHostBundle = ((_g = expanded.skill) === null || _g === void 0 ? void 0 : _g.workflowId) != null && expanded.skill.workflowId > 0
+        const effectiveHostBundle = expanded.skill != null && (0, skill_runnable_util_1.skillIsWorkflowBound)(expanded.skill)
             ? await runHelpers.loadScopedHostTools(ctx.input, pageContext, null)
             : hostBundle;
         const narrowedHostTools = (0, skill_frame_expand_util_1.filterDecisionHostToolsForSkill)(effectiveHostBundle.scopedHostTools, expanded.skill);

@@ -50,6 +50,10 @@ export declare const ModelName: {
     readonly WorkflowRevision: "WorkflowRevision";
     readonly WorkflowTool: "WorkflowTool";
     readonly WorkflowHostTool: "WorkflowHostTool";
+    readonly Flow: "Flow";
+    readonly FlowRevision: "FlowRevision";
+    readonly FlowTool: "FlowTool";
+    readonly FlowHostTool: "FlowHostTool";
 };
 export type ModelName = (typeof ModelName)[keyof typeof ModelName];
 export declare const TransactionIsolationLevel: {
@@ -276,6 +280,8 @@ export declare const SkillScalarFieldEnum: {
     readonly workflowId: "workflowId";
     readonly workflowVersion: "workflowVersion";
     readonly workflowOverrides: "workflowOverrides";
+    readonly flowId: "flowId";
+    readonly flowVersion: "flowVersion";
 };
 export type SkillScalarFieldEnum = (typeof SkillScalarFieldEnum)[keyof typeof SkillScalarFieldEnum];
 export declare const AgentSkillScalarFieldEnum: {
@@ -488,6 +494,8 @@ export declare const PageActionScalarFieldEnum: {
     readonly workflowId: "workflowId";
     readonly workflowVersion: "workflowVersion";
     readonly workflowOverrides: "workflowOverrides";
+    readonly flowId: "flowId";
+    readonly flowVersion: "flowVersion";
     readonly createdAt: "createdAt";
     readonly updatedAt: "updatedAt";
 };
@@ -517,6 +525,8 @@ export declare const PageActionRunScalarFieldEnum: {
     readonly steps: "steps";
     readonly workflowId: "workflowId";
     readonly workflowVersion: "workflowVersion";
+    readonly flowId: "flowId";
+    readonly flowVersion: "flowVersion";
     readonly workflowRun: "workflowRun";
     readonly generation: "generation";
     readonly createdAt: "createdAt";
@@ -532,6 +542,8 @@ export declare const ApprovalRequestScalarFieldEnum: {
     readonly approverUserId: "approverUserId";
     readonly workflowId: "workflowId";
     readonly workflowVersion: "workflowVersion";
+    readonly flowId: "flowId";
+    readonly flowVersion: "flowVersion";
     readonly nodeId: "nodeId";
     readonly title: "title";
     readonly summary: "summary";
@@ -591,6 +603,51 @@ export declare const WorkflowHostToolScalarFieldEnum: {
     readonly isRequired: "isRequired";
 };
 export type WorkflowHostToolScalarFieldEnum = (typeof WorkflowHostToolScalarFieldEnum)[keyof typeof WorkflowHostToolScalarFieldEnum];
+export declare const FlowScalarFieldEnum: {
+    readonly id: "id";
+    readonly appClientId: "appClientId";
+    readonly flowKey: "flowKey";
+    readonly name: "name";
+    readonly description: "description";
+    readonly goal: "goal";
+    readonly profile: "profile";
+    readonly deliverable: "deliverable";
+    readonly intent: "intent";
+    readonly ir: "ir";
+    readonly version: "version";
+    readonly constraints: "constraints";
+    readonly isActive: "isActive";
+    readonly sortOrder: "sortOrder";
+    readonly createdAt: "createdAt";
+    readonly updatedAt: "updatedAt";
+};
+export type FlowScalarFieldEnum = (typeof FlowScalarFieldEnum)[keyof typeof FlowScalarFieldEnum];
+export declare const FlowRevisionScalarFieldEnum: {
+    readonly id: "id";
+    readonly flowId: "flowId";
+    readonly version: "version";
+    readonly intent: "intent";
+    readonly ir: "ir";
+    readonly deliverable: "deliverable";
+    readonly constraints: "constraints";
+    readonly changeNote: "changeNote";
+    readonly createdAt: "createdAt";
+};
+export type FlowRevisionScalarFieldEnum = (typeof FlowRevisionScalarFieldEnum)[keyof typeof FlowRevisionScalarFieldEnum];
+export declare const FlowToolScalarFieldEnum: {
+    readonly id: "id";
+    readonly flowId: "flowId";
+    readonly toolId: "toolId";
+    readonly isRequired: "isRequired";
+};
+export type FlowToolScalarFieldEnum = (typeof FlowToolScalarFieldEnum)[keyof typeof FlowToolScalarFieldEnum];
+export declare const FlowHostToolScalarFieldEnum: {
+    readonly id: "id";
+    readonly flowId: "flowId";
+    readonly hostToolId: "hostToolId";
+    readonly isRequired: "isRequired";
+};
+export type FlowHostToolScalarFieldEnum = (typeof FlowHostToolScalarFieldEnum)[keyof typeof FlowHostToolScalarFieldEnum];
 export declare const SortOrder: {
     readonly asc: "asc";
     readonly desc: "desc";

@@ -1,7 +1,7 @@
 import type { HostActionSsePayload } from '../host-bridge/host-action.types';
 import { isHostActionStreamPayload } from '../host-bridge/host-tool-stream.types';
 
-export type PageActionRunStepType = 'lifecycle' | 'llm' | 'dsl' | 'workflow' | 'harness';
+export type PageActionRunStepType = 'lifecycle' | 'llm' | 'dsl' | 'workflow' | 'harness' | 'entity';
 
 export type PageActionRunStep = {
   step: number;

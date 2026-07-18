@@ -1,11 +1,15 @@
 import type { AgentGraphState } from '../agent-engine/engine/main/types/agent-engine.types';
-import { getWorkflowNodeDef } from './workflow-graph-routing.util';
+import {
+  getWorkflowNodeDef,
+  resolveWorkflowNodeDefForExecute,
+} from './workflow-graph-routing.util';
 import {
   completeWorkflowNodeFromSummarize,
 } from './workflow-plan-sync.util';
 import {
   advanceWorkflowRun,
   finalizeWorkflowRunAfterAdvance,
+  tryAdvanceNativePhaseAfterNodeSuccess,
 } from './workflow-run.util';
 import { listAlwaysEdgesFrom } from './graph/workflow-edge.util';
 import type { WorkflowActionKind, WorkflowRunState } from './workflow.types';
@@ -172,7 +176,14 @@ export function applyWorkflowAfterSummarize(
     return { workflowRun: run };
   }
 
-  const def = getWorkflowNodeDef(state.workflowNodeDefs, nodeId);
+  const def =
+    resolveWorkflowNodeDefForExecute({
+      nodeId,
+      defs: state.workflowNodeDefs,
+      ir: state.workflowIr,
+      executionMode: state.workflowExecutionMode,
+      phase: run.nodes.find((n) => n.nodeId === nodeId)?.phase,
+    }) ?? getWorkflowNodeDef(state.workflowNodeDefs, nodeId);
   const action = def?.action;
   if (!isWorkflowSummarizeCompletionAction(action)) {
     return run !== state.workflowRun ? { workflowRun: run, workflowAwaitingReact: false } : {};
@@ -186,6 +197,25 @@ export function applyWorkflowAfterSummarize(
     nodeId,
     summarizeCompletionOutputRef(action, nodeId),
   );
+
+  // Plan A：present/draft 完成后先推相位，再跟 IR 边
+  if (state.workflowExecutionMode === 'ir_native_direct' && state.workflowIr) {
+    const irNode = state.workflowIr.nodes.find((row) => row.id === nodeId);
+    if (irNode) {
+      const phaseStep = tryAdvanceNativePhaseAfterNodeSuccess({
+        run: workflowRun,
+        nodeId,
+        irNode,
+      });
+      if (phaseStep.advancedPhase) {
+        return {
+          workflowRun: phaseStep.workflowRun,
+          workflowAwaitingReact: false,
+        };
+      }
+    }
+  }
+
   workflowRun = advanceWorkflowRun(workflowRun);
   workflowRun = finalizeWorkflowRunAfterAdvance(workflowRun);
   return {

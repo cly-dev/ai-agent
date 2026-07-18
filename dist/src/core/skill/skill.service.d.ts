@@ -15,6 +15,8 @@ type SkillDbRow = {
     capabilityKey: string | null;
     workflowId: number | null;
     workflowVersion: number | null;
+    flowId: number | null;
+    flowVersion: number | null;
     workflowOverrides: unknown;
     skillTools: Array<{
         toolId: number;
@@ -47,7 +49,7 @@ export declare class SkillService {
     tryBuildTaskPlanFromSkillWorkflow(input: {
         appClientId: number;
         userMessage: string;
-        skill: Pick<AvailableSkillRow, 'workflowId' | 'workflowVersion' | 'workflowOverrides'>;
+        skill: Pick<AvailableSkillRow, 'flowId' | 'flowVersion' | 'workflowId' | 'workflowVersion' | 'workflowOverrides'>;
         goal?: string;
     }): Promise<TaskPlanSnapshot | null>;
     private queryHostBoundSkills;

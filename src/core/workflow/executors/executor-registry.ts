@@ -1,8 +1,9 @@
 import { getWorkflowActionRegistryEntry } from '../workflow-action-registry';
+import { legacyActionForDirectIrType } from '../map-ir-type-to-legacy-action.util';
+import type { WorkflowIrNodeType } from '../workflow-ir.types';
 import type { WorkflowActionKind } from '../workflow.types';
 import { detectCluesExecutor } from '../detect-clues';
 import { fetchDataExecutor, generateAndPushExecutor } from './delegate-react.executor';
-import { loadPageContextExecutor } from './load-page-context.executor';
 import { summarizeImagesExecutor } from './summarize-images.executor';
 import {
   awaitUserConfirmExecutor,
@@ -23,7 +24,6 @@ import { summarizeActionExecutor } from './summarize-action.executor';
 import type { WorkflowExecutor } from './workflow-executor.types';
 
 const CHAT_EXECUTORS: WorkflowExecutor[] = [
-  loadPageContextExecutor,
   detectCluesExecutor,
   fetchDataExecutor,
   summarizeImagesExecutor,
@@ -36,7 +36,6 @@ const CHAT_EXECUTORS: WorkflowExecutor[] = [
 ];
 
 const PAGE_EXECUTORS: WorkflowExecutor[] = [
-  loadPageContextExecutor,
   detectCluesExecutor,
   pageFetchDataExecutor,
   summarizeImagesExecutor,
@@ -67,6 +66,18 @@ export function getWorkflowExecutor(
   const registry =
     profile === 'page' ? PAGE_EXECUTOR_BY_ACTION : CHAT_EXECUTOR_BY_ACTION;
   return registry.get(action) ?? null;
+}
+
+/** §4.1d：按 IR type 解析 executor（direct 1:1；expand 经 ir_expand_adapter）。 */
+export function getWorkflowExecutorByIrType(
+  type: WorkflowIrNodeType,
+  profile: 'chat' | 'page' = 'chat',
+): WorkflowExecutor | null {
+  const action = legacyActionForDirectIrType(type);
+  if (!action) {
+    return null;
+  }
+  return getWorkflowExecutor(action, profile);
 }
 
 export function listWorkflowExecutors(

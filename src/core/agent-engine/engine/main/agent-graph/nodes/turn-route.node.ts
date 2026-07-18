@@ -40,6 +40,10 @@ import type {
 } from '../../types/agent-engine.types';
 import { detectIntentKind as classifyIntentKind } from '../../../../intent-kind.util';
 import { loadSmallTalkHints } from '../../../../../intent/smalltalk-hints.util';
+import {
+  buildAgentEntityMaterializationStep,
+  materializeEntitiesFromRuntimeContext,
+} from '../../../../../entity-materialization';
 
 /** 从 outerPlan 可用 Skill 列表查找 UI 显式点选的 requestedSkill；未命中时由 resolveRequestedSkillForContract 走 ctx 兜底。 */
 function resolveRequestedSkillRowForTurnRoute(input: {
@@ -78,6 +82,8 @@ function resolveRequestedSkillForContract(input: {
       runnableKind: input.requestedSkillRow.runnableKind,
       workflowId: input.requestedSkillRow.workflowId,
       workflowVersion: input.requestedSkillRow.workflowVersion,
+      flowId: input.requestedSkillRow.flowId,
+      flowVersion: input.requestedSkillRow.flowVersion,
       riskLevel: input.requestedSkillRow.riskLevel,
       config: input.requestedSkillRow.config,
     };
@@ -95,6 +101,10 @@ function resolveRequestedSkillForContract(input: {
       skillToolIds: caps.skillToolIds,
       hostToolIds: caps.hostToolIds,
       runnableKind: deriveSkillRunnableKind(caps),
+      workflowId: input.requestedSkillCtx.skill.workflowId,
+      workflowVersion: input.requestedSkillCtx.skill.workflowVersion,
+      flowId: input.requestedSkillCtx.skill.flowId,
+      flowVersion: input.requestedSkillCtx.skill.flowVersion,
     };
   }
   return null;
@@ -113,20 +123,23 @@ async function resolveRequestedSkillExecutionChannels(
   if (!requestedSkill) {
     return EMPTY_SKILL_EXECUTION_CHANNELS;
   }
-  let workflowId = requestedSkill.workflowId ?? null;
-  let workflowVersion = requestedSkill.workflowVersion ?? null;
-  if (workflowId == null || workflowId <= 0) {
+  let flowId = requestedSkill.flowId ?? null;
+  let flowVersion = requestedSkill.flowVersion ?? null;
+  if (flowId == null || flowId <= 0) {
     const skillRow = await prisma.skill.findUnique({
       where: { id: requestedSkill.id },
-      select: { workflowId: true, workflowVersion: true },
+      select: {
+        flowId: true,
+        flowVersion: true,
+      },
     });
-    workflowId = skillRow?.workflowId ?? null;
-    workflowVersion = skillRow?.workflowVersion ?? workflowVersion;
+    flowId = skillRow?.flowId ?? null;
+    flowVersion = skillRow?.flowVersion ?? flowVersion;
   }
-  if (workflowId != null && workflowId > 0) {
+  if (flowId != null && flowId > 0) {
     return loadSkillExecutionChannels(prisma, {
-      workflowId,
-      workflowVersion,
+      flowId,
+      flowVersion,
       skillToolIds: requestedSkill.skillToolIds,
       hostToolIds: requestedSkill.hostToolIds,
     });
@@ -448,7 +461,20 @@ export function createTurnRouteNode(
         skillAlignment: turnExecutionContract.skillAlignment,
       }),
     };
+    const materializedEntities = pageContextForRoute
+      ? materializeEntitiesFromRuntimeContext({
+          pageContext: pageContextForRoute,
+        })
+      : [];
     const stepsWithRoute = [...state.steps, routeStep];
+    if (pageContextForRoute) {
+      stepsWithRoute.push(
+        buildAgentEntityMaterializationStep({
+          step: nextRunStepNumber(stepsWithRoute),
+          entities: materializedEntities,
+        }),
+      );
+    }
 
     // direct_answer 等终端路径：放弃进行中的 GOA 任务后直接 respond，不再进入 plan。
     if (turnExecutionContract.terminalRespond) {
@@ -509,6 +535,7 @@ export function createTurnRouteNode(
       steps: stepsWithRoute,
       turnExecutionContract,
       pageContext: pageContextForRoute,
+      materializedEntities,
       preloadedToolObservations: preloadedFromPageContext,
       scopedHostTools:
         route === 'direct_answer' ? [] : hostBundle.scopedHostTools,

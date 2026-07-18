@@ -1,7 +1,9 @@
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { TaskPlanSnapshot } from '../agent-engine/engine/main/plan/task-plan.types';
 export type SkillWorkflowBinding = {
-    workflowId: number;
+    flowId?: number | null;
+    flowVersion?: number | null;
+    workflowId?: number | null;
     workflowVersion?: number | null;
     workflowOverrides?: unknown;
 };

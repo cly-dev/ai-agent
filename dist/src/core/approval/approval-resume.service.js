@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("../../../generated/prisma/client");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const page_action_run_steps_util_1 = require("../page-action/page-action-run-steps.util");
+const approval_resume_snapshot_types_1 = require("./approval-resume-snapshot.types");
 const approval_gate_service_1 = require("./approval-gate.service");
 const approval_request_service_1 = require("./approval-request.service");
 const approval_trigger_permission_service_1 = require("./approval-trigger-permission.service");
@@ -222,7 +223,7 @@ let ApprovalResumeService = class ApprovalResumeService {
             triggerPermission: this.triggerPermission,
         });
         const decision = this.triggerPermission.evaluateForNodes({
-            nodes: snapshot.workflowNodeDefs,
+            nodes: (0, approval_resume_snapshot_types_1.resolveApprovalResumeNodeDefs)(snapshot, null),
             allowedToolIds,
         });
         if (!decision.allowed) {

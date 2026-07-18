@@ -36,8 +36,20 @@ export class PageActionRunTaskProvider implements AutomationTaskSourceProvider {
               ...(filter.actionKey?.trim()
                 ? { actionKey: { contains: filter.actionKey.trim() } }
                 : {}),
+              // 查询参数仍叫 workflowKey：同时匹配 legacy Workflow 与新 Flow。
               ...(filter.workflowKey?.trim()
-                ? { workflow: { workflowKey: filter.workflowKey.trim() } }
+                ? {
+                    OR: [
+                      {
+                        workflow: {
+                          workflowKey: filter.workflowKey.trim(),
+                        },
+                      },
+                      {
+                        flow: { flowKey: filter.workflowKey.trim() },
+                      },
+                    ],
+                  }
                 : {}),
             },
           }

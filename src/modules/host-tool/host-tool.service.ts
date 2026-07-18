@@ -33,7 +33,7 @@ import { AgentHostToolCatalogService } from '../../core/runtime-cache/agent-host
 import { loadAgentHostToolCandidateIds } from '../../core/runtime-cache/agent-capability-load.util';
 import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { WorkflowService } from '../workflow/workflow.service';
+import { FlowService } from '../flow/flow.service';
 import { findWorkflowNodeReferences } from '../../core/workflow/workflow-node-reference-guard.util';
 import {
   CreateHostPageDto,
@@ -101,7 +101,7 @@ export class HostToolService {
     private readonly prisma: PrismaService,
     private readonly hostToolCatalogService: AgentHostToolCatalogService,
     private readonly runtimeCacheInvalidator: RuntimeCacheInvalidator,
-    private readonly workflowService: WorkflowService,
+    private readonly flowService: FlowService,
   ) {}
 
   // ── HostPage ─────────────────────────────────────────────────────────────
@@ -535,17 +535,11 @@ export class HostToolService {
     const hostToolIds = dto.tools.map((item) => item.hostToolId);
     await this.assertHostToolsInApp(skill.appClientId, hostToolIds);
 
-    if (skill.workflowId != null && skill.workflowId > 0) {
-      const skillTools = await this.prisma.skillTool.findMany({
-        where: { skillId },
-        select: { toolId: true },
-      });
-      await this.workflowService.assertSkillWorkflowBindingsCompatible({
-        workflowId: skill.workflowId,
+    if (skill.flowId != null && skill.flowId > 0) {
+      await this.flowService.assertSkillFlowBindingsCompatible({
+        flowId: skill.flowId,
         appClientId: skill.appClientId,
-        workflowVersion: skill.workflowVersion,
-        skillToolIds: skillTools.map((row) => row.toolId),
-        skillHostToolIds: hostToolIds,
+        flowVersion: skill.flowVersion,
       });
     }
 
@@ -1223,6 +1217,8 @@ export class HostToolService {
         appClientId: true,
         workflowId: true,
         workflowVersion: true,
+        flowId: true,
+        flowVersion: true,
       },
     });
     if (!row) {

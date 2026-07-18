@@ -51,6 +51,7 @@ import {
   isWorkflowBoundRun,
 } from '../../../../../workflow/workflow-plan-transition.util';
 import { maybeTagWorkflowReactInternalStep } from '../../run/agent-run-audit.util';
+import { patchUpstreamEntitiesAfterFetchRound } from '../../../../../entity-materialization/patch-upstream-from-fetch-round.util';
 
 function workflowProgressPatch(
   state: AgentGraphState,
@@ -316,6 +317,21 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
           );
           let steps = [...state.steps, ...skipSteps, ...planSyncSteps, resultCheckStep];
 
+          const upstreamEntityPatch =
+            phase === 'post_tools' && savedRoundMeta && taskPlanNext
+              ? patchUpstreamEntitiesAfterFetchRound({
+                  state: { ...state, ...workflowPatch },
+                  steps,
+                  planBefore: planBeforeReact,
+                  planAfter: taskPlanNext,
+                  roundObservationIndices: savedRoundMeta.roundObservationIndices,
+                  allObservations: allToolObservations(state),
+                })
+              : null;
+          if (upstreamEntityPatch) {
+            steps = upstreamEntityPatch.steps;
+          }
+
           const emitRouteThink = (message: string): void => {
             deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, message, 'delta');
           };
@@ -354,6 +370,7 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
             return {
               ...state,
               ...workflowPatch,
+              ...(upstreamEntityPatch ?? {}),
               steps,
               taskPlan: effectiveTaskPlanNext,
               pendingToolCalls: [],
@@ -372,6 +389,7 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
             return skillFrame.applySkillFrameContext({
               ...state,
               ...workflowPatch,
+              ...(upstreamEntityPatch ?? {}),
               steps,
               taskPlan: effectiveTaskPlanNext,
               pendingToolCalls: resolveSkillStepPendingToolCalls({
@@ -396,6 +414,7 @@ export function createResultCheckNode(bundle: AgentGraphNodeBundle): AgentGraphN
             return {
               ...state,
               ...workflowPatch,
+              ...(upstreamEntityPatch ?? {}),
               steps,
               taskPlan: effectiveTaskPlanNext,
               pendingToolCalls: planFallback.clearPendingToolCalls

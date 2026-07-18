@@ -9,6 +9,10 @@ import type {
   WorkflowNodeStatus,
   WorkflowRunState,
 } from './workflow.types';
+import {
+  projectIrRunNodeStatuses,
+  resolveCurrentIrNodeId,
+} from './project-ir-run-status.util';
 
 function mapWorkflowNodeStatus(
   status: WorkflowNodeStatus,
@@ -40,12 +44,12 @@ function workflowActionToKind(action: WorkflowActionKind): string {
     case 'summarize':
     case 'present_mutation':
       return 'summarize';
-    case 'load_page_context':
-      return 'context';
     case 'summarize_images':
       return 'image_context';
     case 'await_user_confirm':
       return 'confirm';
+    case 'detect_clues':
+      return 'judge';
     default:
       return action;
   }
@@ -53,9 +57,9 @@ function workflowActionToKind(action: WorkflowActionKind): string {
 
 function workflowActionToPhase(action: WorkflowActionKind): string {
   switch (action) {
-    case 'load_page_context':
     case 'fetch_data':
     case 'summarize_images':
+    case 'detect_clues':
       return 'gather';
     case 'compose_mutation':
       return 'analyze';
@@ -128,5 +132,17 @@ export function formatWorkflowRunPendingSummary(
   const current = workflowRun.currentNodeId
     ? `current=${workflowRun.currentNodeId}`
     : 'current=none';
-  return `workflowStatus=${workflowRun.status}; ${current}; pending=${pending.join(', ') || 'none'}`;
+  const currentIr = resolveCurrentIrNodeId(workflowRun);
+  const irPart =
+    currentIr != null && currentIr !== workflowRun.currentNodeId
+      ? ` currentIr=${currentIr}`
+      : '';
+  const irProj = projectIrRunNodeStatuses(workflowRun)
+    .filter((row) => row.status === 'pending' || row.status === 'running')
+    .map((row) => `${row.irNodeId}(${row.irType ?? '?'}/${row.status})`);
+  const irPending =
+    irProj.length > 0 && irProj.join(',') !== pending.join(',')
+      ? `; irPending=${irProj.join(', ') || 'none'}`
+      : '';
+  return `workflowStatus=${workflowRun.status}; ${current}${irPart}; pending=${pending.join(', ') || 'none'}${irPending}`;
 }

@@ -2,6 +2,7 @@ import type { LlmService } from '../../../../llm/llm.service';
 import type { PromptRegistryService } from '../../../../prompt/prompt-registry.service';
 import type { SkillService } from '../../../../skill/skill.service';
 import type { AvailableSkillRow } from '../../../../skill/skill.types';
+import { skillIsWorkflowBound } from '../../../../skill/skill-runnable.util';
 import { RequestedSkillRunError } from './requested-skill-run.error';
 import type { ToolBuildContext } from '../../../../tool-engine/tool-engine.service';
 import type { AgentEngineTool } from '../types/agent-engine.types';
@@ -29,7 +30,7 @@ export type SkillFrameExpandResult = {
 function filterHostToolSummariesForSkill<
   T extends { id?: number; name: string; description: string },
 >(hostTools: T[] | undefined, skill: AvailableSkillRow): T[] | undefined {
-  if (!hostTools || (skill.workflowId ?? 0) > 0 || skill.hostToolIds.length === 0) {
+  if (!hostTools || skillIsWorkflowBound(skill) || skill.hostToolIds.length === 0) {
     return hostTools;
   }
   const allowedIds = new Set(skill.hostToolIds);
@@ -40,7 +41,7 @@ export function filterDecisionHostToolsForSkill(
   hostTools: HostToolDecisionDefinition[],
   skill: AvailableSkillRow | null,
 ): HostToolDecisionDefinition[] {
-  if (!skill || (skill.workflowId ?? 0) > 0 || skill.hostToolIds.length === 0) {
+  if (!skill || skillIsWorkflowBound(skill) || skill.hostToolIds.length === 0) {
     return hostTools;
   }
   const allowedIds = new Set(skill.hostToolIds);

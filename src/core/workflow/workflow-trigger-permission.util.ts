@@ -1,5 +1,6 @@
 import type { WorkflowNodeDef } from './workflow.types';
 import type { WriteDataNodeInput } from './workflow-node-input.types';
+import { resolveWorkflowNodeRuntimeInput } from './resolve-workflow-node-runtime-input.util';
 
 /**
  * Workflow 触发权限（派生自 RoleTool，不新增授权表）。
@@ -27,7 +28,7 @@ export function extractWorkflowWriteToolIds(
     if (node.action !== 'write_data') {
       continue;
     }
-    const input = node.input as WriteDataNodeInput | undefined;
+    const input = resolveWorkflowNodeRuntimeInput(node) as WriteDataNodeInput;
     const toolId = input?.toolId;
     if (typeof toolId === 'number' && Number.isInteger(toolId) && toolId > 0) {
       ids.add(toolId);

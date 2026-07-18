@@ -12,11 +12,11 @@ export declare class AgentController {
     create(body: CreateAgentDto): Promise<import("./types/agent.types").AgentWithToolsResponse>;
     findAll(): Promise<import("./types/agent.types").AgentWithToolsResponse[]>;
     findByAppClient(appClientId: number): Promise<{
-        id: number;
         name: string;
-        appClientId: number;
-        description: string;
+        id: number;
         createdAt: Date;
+        description: string;
+        appClientId: number;
         config: import("@prisma/client/runtime/client").JsonValue;
         systemPrompt: string;
         maxSteps: number;
@@ -39,30 +39,30 @@ export declare class AgentController {
     remove(id: number): Promise<import("./types/agent.types").AgentWithToolsResponse>;
     getAllowedTools(req: Request, agentId: number, userId: number): Promise<({
         integration: {
-            id: number;
             name: string;
+            id: number;
             updatedAt: Date;
-            baseUrl: string;
             apiKey: string;
+            baseUrl: string;
             authMode: import("../../../generated/prisma/enums").IntegrationAuthMode;
         };
     } & {
-        definitionKey: string;
-        id: number;
+        path: string;
         name: string;
-        appClientId: number;
+        schema: import("@prisma/client/runtime/client").JsonValue;
+        id: number;
+        createdAt: Date;
         description: string;
         isActive: boolean;
-        createdAt: Date;
         updatedAt: Date;
+        appClientId: number;
+        definitionKey: string;
         riskLevel: import("../../../generated/prisma/enums").ToolLevel;
-        schema: import("@prisma/client/runtime/client").JsonValue;
         inputSchema: import("@prisma/client/runtime/client").JsonValue;
         outputSchema: import("@prisma/client/runtime/client").JsonValue;
         responseProfile: import("@prisma/client/runtime/client").JsonValue;
         agentMetadata: import("@prisma/client/runtime/client").JsonValue;
         method: import("../../../generated/prisma/enums").HttpMethod;
-        path: string;
         integrationId: number;
         toolCategoryId: number;
         timeout: number;

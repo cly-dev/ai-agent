@@ -45,3 +45,7 @@ export type Workflow = Prisma.WorkflowModel;
 export type WorkflowRevision = Prisma.WorkflowRevisionModel;
 export type WorkflowTool = Prisma.WorkflowToolModel;
 export type WorkflowHostTool = Prisma.WorkflowHostToolModel;
+export type Flow = Prisma.FlowModel;
+export type FlowRevision = Prisma.FlowRevisionModel;
+export type FlowTool = Prisma.FlowToolModel;
+export type FlowHostTool = Prisma.FlowHostToolModel;

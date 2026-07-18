@@ -3,7 +3,7 @@ import { type AgentChatPageContext, type HostActionHostToolInvocation, type Host
 import { AgentHostToolCatalogService } from '../../core/runtime-cache/agent-host-tool-catalog.service';
 import { RuntimeCacheInvalidator } from '../../core/runtime-cache/runtime-cache-invalidator.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { WorkflowService } from '../workflow/workflow.service';
+import { FlowService } from '../flow/flow.service';
 import { CreateHostPageDto, UpdateHostPageDto } from './dto/host-page.dto';
 import { CreateHostToolDto, QueryClientHostToolDto, QueryHostPageDto, QueryHostToolDto, RegisterClientHostToolsDto, UpdateHostToolDto } from './dto/host-tool.dto';
 import { BindAgentHostToolsDto, ReplaceSkillHostToolsDto } from './dto/host-tool-binding.dto';
@@ -28,9 +28,9 @@ export declare class HostToolService {
     private readonly prisma;
     private readonly hostToolCatalogService;
     private readonly runtimeCacheInvalidator;
-    private readonly workflowService;
+    private readonly flowService;
     private readonly logger;
-    constructor(prisma: PrismaService, hostToolCatalogService: AgentHostToolCatalogService, runtimeCacheInvalidator: RuntimeCacheInvalidator, workflowService: WorkflowService);
+    constructor(prisma: PrismaService, hostToolCatalogService: AgentHostToolCatalogService, runtimeCacheInvalidator: RuntimeCacheInvalidator, flowService: FlowService);
     createHostPage(dto: CreateHostPageDto): Promise<HostPageResponse>;
     findHostPagePage(appClientId: number, query: QueryHostPageDto): Promise<PaginatedResult<HostPageResponse>>;
     findHostPageOne(id: number): Promise<HostPageResponse>;

@@ -24,6 +24,11 @@ export type SummarizeProseStreamCallbacks = {
 /** summarize / plan present 共用的用户正文流式会话（think 路由 + sanitize delta/full）。 */
 export type SummarizeProseStreamSession = {
   ingestLlmDelta: (contentDelta: string) => void;
+  /**
+   * reasoning_content 通道（DashScope thinking 等）：直通 think 出口，
+   * 不进正文 sanitize / prose 流。与 content 内 <think> 标签路由互补。
+   */
+  ingestReasoningDelta: (reasoningDelta: string) => void;
   replayRoutedMessage: (routedMessage: string) => void;
   resolveUserMarkdown: (input: {
     llmFinal?: string;
@@ -126,6 +131,12 @@ export function createSummarizeProseStreamSession(
     },
     get proseStreamSuperseded() {
       return proseStreamSuperseded;
+    },
+    ingestReasoningDelta(reasoningDelta: string) {
+      if (!reasoningDelta) {
+        return;
+      }
+      callbacks.onThinkDelta?.(reasoningDelta);
     },
     ingestLlmDelta(contentDelta: string) {
       if (!contentDelta || proseStreamSuperseded) {

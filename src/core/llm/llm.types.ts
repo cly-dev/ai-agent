@@ -48,6 +48,7 @@ export type LlmAdapterConfig = {
 };
 
 export type LlmChatResult = {
+  /** 用户可见正文（仅 content 通道；reasoning_content 不并入）。 */
   content: string;
   toolCalls: LlmToolCall[];
   model: string;
@@ -55,12 +56,21 @@ export type LlmChatResult = {
   streamMeta?: {
     emittedDeltaCount: number;
     fellBackToInvoke: boolean;
+    /** thinking 模型（如 qwen3.x-plus）流式期间收到的 reasoning-only chunk 数；排查思考泄露用。 */
+    reasoningDeltaCount?: number;
   };
 };
 
+/**
+ * content / reasoning 双通道协议：
+ * - contentDelta：用户可见正文，进 fill / prose / summary；
+ * - reasoningDelta：模型思考（reasoning_content 字段），只进 think SSE 或丢弃，
+ *   永不并入正文。<think> 标签内联思考由 llm-stream-router 在 content 通道内处理。
+ */
 export type LlmStreamDelta = {
   model: string;
   contentDelta: string;
+  reasoningDelta?: string;
   toolCalls: LlmToolCall[];
   done: boolean;
   raw: unknown;

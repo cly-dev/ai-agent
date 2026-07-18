@@ -22,27 +22,28 @@ const agent_capability_load_util_1 = require("../../core/runtime-cache/agent-cap
 const agent_host_tool_catalog_service_1 = require("../../core/runtime-cache/agent-host-tool-catalog.service");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const agent_service_1 = require("../agent/agent.service");
-const workflow_service_1 = require("../workflow/workflow.service");
+const flow_service_1 = require("../flow/flow.service");
+const assert_no_new_legacy_workflow_binding_util_1 = require("../../core/workflow/assert-no-new-legacy-workflow-binding.util");
 const skill_capability_key_util_1 = require("./util/skill-capability-key.util");
 const skill_mapper_1 = require("./mapper/skill.mapper");
 const skill_risk_util_1 = require("./util/skill-risk.util");
 const skill_query_util_1 = require("./util/skill-query.util");
 const skill_types_1 = require("./types/skill.types");
 let SkillService = class SkillService {
-    constructor(prisma, skillRuntime, agentService, runtimeCacheInvalidator, hostToolCatalogService, workflowService) {
+    constructor(prisma, skillRuntime, agentService, runtimeCacheInvalidator, hostToolCatalogService, flowService) {
         this.prisma = prisma;
         this.skillRuntime = skillRuntime;
         this.agentService = agentService;
         this.runtimeCacheInvalidator = runtimeCacheInvalidator;
         this.hostToolCatalogService = hostToolCatalogService;
-        this.workflowService = workflowService;
+        this.flowService = flowService;
     }
     async create(agentId, appClientId, dto) {
         await this.assertAgentInAppClient(agentId, appClientId);
         return this.createForAppClient(appClientId, dto, agentId);
     }
     async createForAppClient(appClientId, dto, linkAgentId) {
-        var _a, _b, _c;
+        var _a, _b;
         await this.assertAppClientExists(appClientId);
         if (linkAgentId != null) {
             await this.assertAgentInAppClient(linkAgentId, appClientId);
@@ -62,27 +63,35 @@ let SkillService = class SkillService {
             explicit: dto.riskLevel,
             toolRiskLevels: await this.fetchToolRiskLevels(toolBindings.map((item) => item.toolId)),
         });
-        if (dto.workflowId != null) {
-            await this.workflowService.assertWorkflowReferenceCompatible({
-                workflowId: dto.workflowId,
+        if (dto.workflowId !== undefined) {
+            (0, assert_no_new_legacy_workflow_binding_util_1.assertNoNewLegacyWorkflowBinding)(dto.workflowId, 'skill');
+        }
+        if (dto.flowId != null && dto.flowId > 0) {
+            await this.flowService.assertSkillFlowBindingsCompatible({
+                flowId: dto.flowId,
                 appClientId,
-                entry: 'skill',
-            });
-            await this.assertSkillWorkflowBindingsIfNeeded({
-                workflowId: dto.workflowId,
-                workflowVersion: dto.workflowVersion,
-                appClientId,
-                skillToolIds: toolBindings.map((item) => item.toolId),
-                skillHostToolIds: [],
+                flowVersion: dto.flowVersion,
             });
         }
         const row = await this.prisma.skill.create({
-            data: Object.assign({ appClientId,
+            data: Object.assign(Object.assign(Object.assign({ appClientId,
                 name,
                 capabilityKey, description: this.normalizeOptionalText(dto.description), prompt,
                 riskLevel, config: dto.config === undefined
                     ? undefined
-                    : dto.config, isActive: (_a = dto.isActive) !== null && _a !== void 0 ? _a : true, workflowId: (_b = dto.workflowId) !== null && _b !== void 0 ? _b : undefined, workflowVersion: (_c = dto.workflowVersion) !== null && _c !== void 0 ? _c : undefined, workflowOverrides: dto.workflowOverrides === undefined
+                    : dto.config, isActive: (_a = dto.isActive) !== null && _a !== void 0 ? _a : true }, (dto.flowId != null && dto.flowId > 0
+                ? {
+                    flowId: dto.flowId,
+                    flowVersion: (_b = dto.flowVersion) !== null && _b !== void 0 ? _b : undefined,
+                    workflowId: null,
+                    workflowVersion: null,
+                }
+                : {
+                    flowId: null,
+                    flowVersion: null,
+                    workflowId: null,
+                    workflowVersion: null,
+                })), { workflowOverrides: dto.workflowOverrides === undefined
                     ? undefined
                     : dto.workflowOverrides === null
                         ? client_1.Prisma.JsonNull
@@ -93,7 +102,7 @@ let SkillService = class SkillService {
                             isRequired: item.isRequired,
                         })),
                     }
-                    : undefined }, (linkAgentId != null
+                    : undefined }), (linkAgentId != null
                 ? {
                     agentSkills: {
                         create: [{ agentId: linkAgentId }],
@@ -145,7 +154,7 @@ let SkillService = class SkillService {
             ? await this.resolvePageScopedHostToolIds(appClientId, agentId, pageScope)
             : null;
         const pageFiltered = pageHostToolIds != null
-            ? filtered.filter((row) => (0, skill_runnable_util_1.skillIsVisibleOnClientPage)(Object.assign(Object.assign({}, (0, skill_runnable_util_1.normalizeSkillRunnableCapabilities)(row)), { workflowId: row.workflowId }), pageHostToolIds))
+            ? filtered.filter((row) => (0, skill_runnable_util_1.skillIsVisibleOnClientPage)(Object.assign(Object.assign({}, (0, skill_runnable_util_1.normalizeSkillRunnableCapabilities)(row)), { workflowId: row.workflowId, flowId: row.flowId }), pageHostToolIds))
             : filtered;
         return pageFiltered.map((row) => {
             const item = {
@@ -208,38 +217,49 @@ let SkillService = class SkillService {
         const capabilityKey = dto.capabilityKey === undefined
             ? undefined
             : (0, skill_capability_key_util_1.normalizeCapabilityKey)(dto.capabilityKey);
-        if (dto.workflowId != null) {
-            await this.workflowService.assertWorkflowReferenceCompatible({
-                workflowId: dto.workflowId,
-                appClientId: existing.appClientId,
-                entry: 'skill',
-            });
+        if (dto.workflowId !== undefined) {
+            (0, assert_no_new_legacy_workflow_binding_util_1.assertNoNewLegacyWorkflowBinding)(dto.workflowId, 'skill');
         }
+        const nextFlowId = dto.flowId !== undefined ? dto.flowId : existing.flowId;
+        const nextFlowVersion = dto.flowVersion !== undefined ? dto.flowVersion : existing.flowVersion;
         const nextWorkflowId = dto.workflowId !== undefined ? dto.workflowId : existing.workflowId;
-        const nextWorkflowVersion = dto.workflowVersion !== undefined
-            ? dto.workflowVersion
-            : existing.workflowVersion;
-        if (nextWorkflowId != null && nextWorkflowId > 0) {
-            await this.assertSkillWorkflowBindingsIfNeeded({
-                workflowId: nextWorkflowId,
-                workflowVersion: nextWorkflowVersion,
+        const nextWorkflowVersion = nextWorkflowId == null
+            ? null
+            : dto.workflowVersion !== undefined
+                ? dto.workflowVersion
+                : existing.workflowVersion;
+        if (nextFlowId != null && nextFlowId > 0) {
+            await this.flowService.assertSkillFlowBindingsCompatible({
+                flowId: nextFlowId,
                 appClientId: existing.appClientId,
-                skillToolIds: existing.skillTools.map((row) => row.toolId),
-                skillHostToolIds: existing.skillHostTools.map((row) => row.hostToolId),
+                flowVersion: nextFlowVersion,
             });
         }
         const row = await this.prisma.skill.update({
             where: { id: skillId },
-            data: Object.assign(Object.assign(Object.assign({ name: (_a = dto.name) === null || _a === void 0 ? void 0 : _a.trim(), prompt: (_b = dto.prompt) === null || _b === void 0 ? void 0 : _b.trim(), capabilityKey, description: dto.description === undefined
+            data: Object.assign(Object.assign({ name: (_a = dto.name) === null || _a === void 0 ? void 0 : _a.trim(), prompt: (_b = dto.prompt) === null || _b === void 0 ? void 0 : _b.trim(), capabilityKey, description: dto.description === undefined
                     ? undefined
                     : this.normalizeOptionalText(dto.description), config: dto.config === undefined
                     ? undefined
                     : dto.config === null
                         ? client_1.Prisma.JsonNull
-                        : dto.config, isActive: dto.isActive, riskLevel: dto.riskLevel }, (dto.workflowId !== undefined
-                ? { workflowId: dto.workflowId }
-                : {})), (dto.workflowVersion !== undefined
-                ? { workflowVersion: dto.workflowVersion }
+                        : dto.config, isActive: dto.isActive, riskLevel: dto.riskLevel }, (dto.flowId !== undefined ||
+                dto.flowVersion !== undefined ||
+                dto.workflowId !== undefined ||
+                dto.workflowVersion !== undefined
+                ? nextFlowId != null && nextFlowId > 0
+                    ? {
+                        flowId: nextFlowId,
+                        flowVersion: nextFlowVersion,
+                        workflowId: null,
+                        workflowVersion: null,
+                    }
+                    : {
+                        workflowId: nextWorkflowId,
+                        workflowVersion: nextWorkflowVersion,
+                        flowId: null,
+                        flowVersion: null,
+                    }
                 : {})), (dto.workflowOverrides !== undefined
                 ? {
                     workflowOverrides: dto.workflowOverrides === null
@@ -256,13 +276,11 @@ let SkillService = class SkillService {
         const existing = await this.getSkillOrThrow(skillId);
         const toolBindings = this.normalizeToolBindings(dto.tools);
         await this.assertToolsInApp(existing.appClientId, toolBindings);
-        if (existing.workflowId != null && existing.workflowId > 0) {
-            await this.assertSkillWorkflowBindingsIfNeeded({
-                workflowId: existing.workflowId,
-                workflowVersion: existing.workflowVersion,
+        if (existing.flowId != null && existing.flowId > 0) {
+            await this.flowService.assertSkillFlowBindingsCompatible({
+                flowId: existing.flowId,
                 appClientId: existing.appClientId,
-                skillToolIds: toolBindings.map((item) => item.toolId),
-                skillHostToolIds: existing.skillHostTools.map((row) => row.hostToolId),
+                flowVersion: existing.flowVersion,
             });
         }
         const riskLevel = (0, skill_risk_util_1.resolveSkillRiskLevel)({
@@ -412,9 +430,6 @@ let SkillService = class SkillService {
         const trimmed = value.trim();
         return trimmed.length > 0 ? trimmed : null;
     }
-    async assertSkillWorkflowBindingsIfNeeded(input) {
-        await this.workflowService.assertSkillWorkflowBindingsCompatible(input);
-    }
 };
 SkillService = __decorate([
     (0, common_1.Injectable)(),
@@ -423,7 +438,7 @@ SkillService = __decorate([
         agent_service_1.AgentService,
         runtime_cache_invalidator_service_1.RuntimeCacheInvalidator,
         agent_host_tool_catalog_service_1.AgentHostToolCatalogService,
-        workflow_service_1.WorkflowService])
+        flow_service_1.FlowService])
 ], SkillService);
 exports.SkillService = SkillService;
 //# sourceMappingURL=skill.service.js.map

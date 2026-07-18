@@ -52,6 +52,12 @@ export type ToolResponseProfile = {
    * 未配置时 compact 清单中 role=unknown。
    */
   decisionRole?: ToolDecisionRole;
+  /**
+   * 列表/详情响应物化成的实体类型（如 review、product）。
+   * 供 Entity Materializer 使用；字符串由 B 端 Tool 配置，引擎不写死垂直分支。
+   * @see v2/docs/entity-materialization-architecture.md
+   */
+  entityType?: string;
 };
 
 export type ProjectedToolOutput = {

@@ -43,7 +43,9 @@ __decorate([
     __metadata("design:type", String)
 ], QueryAutomationTaskDto.prototype, "actionKey", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: '按 workflowKey 过滤' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: '按编排 key 过滤（legacy workflowKey 或 flow.flowKey）',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)

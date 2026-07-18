@@ -1,19 +1,22 @@
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { AgentGraphNodeBundle } from '../agent-engine/engine/main/agent-graph/types/graph.types';
 import type { AgentGraphState } from '../agent-engine/engine/main/types/agent-engine.types';
-import { type LoadedWorkflowForRun, type WorkflowLoadFailureReason } from './load-workflow-definition.util';
+import type { LoadedWorkflowForRun, WorkflowLoadFailureReason } from './load-workflow-definition.util';
 export type SkillWorkflowInitResolution = {
     kind: 'no_workflow_binding';
 } | {
     kind: 'loaded';
     workflow: LoadedWorkflowForRun;
+    source: 'flow';
 } | {
     kind: 'scope_incompatible';
     workflowId: number;
+    source: 'flow';
 } | {
     kind: 'load_failed';
     workflowId: number;
     reason: Exclude<WorkflowLoadFailureReason, 'scope_incompatible'>;
+    source: 'flow';
 };
 export declare function resolveWorkflowBoundSkillId(bundle: AgentGraphNodeBundle, state: AgentGraphState): number | null;
 export declare function resolveSkillWorkflowForInit(prisma: PrismaService, input: {

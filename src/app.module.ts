@@ -38,6 +38,7 @@ import { PageAgentModule } from './modules/page-agent/page-agent.module';
 import { ApprovalModule } from './core/approval/approval.module';
 import { ApprovalModule as ApprovalInboxModule } from './modules/approval/approval.module';
 import { WorkflowModule } from './modules/workflow/workflow.module';
+import { FlowModule } from './modules/flow/flow.module';
 import { ConnectivityModule } from './modules/connectivity/connectivity.module';
 
 @Module({
@@ -69,6 +70,7 @@ import { ConnectivityModule } from './modules/connectivity/connectivity.module';
     ApprovalModule,
     ApprovalInboxModule,
     WorkflowModule,
+    FlowModule,
     AgentModule,
     ChatModule,
     MessageModule,

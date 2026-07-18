@@ -18,30 +18,30 @@ export declare class AgentSessionScopeService implements OnModuleInit {
     fetchToolCategoriesForAllowedTools(toolCategoryIds: number[]): Promise<import("../../../../runtime-cache/tool-category-cache.service").ToolCategoryCacheRow[]>;
     getSessionAllowedTools(sessionId: string, agentId: number, userId: number, appClientId: number): Promise<({
         integration: {
-            id: number;
             name: string;
+            id: number;
             updatedAt: Date;
-            baseUrl: string;
             apiKey: string;
+            baseUrl: string;
             authMode: import("../../../../../../generated/prisma/enums").IntegrationAuthMode;
         };
     } & {
-        definitionKey: string;
-        id: number;
+        path: string;
         name: string;
-        appClientId: number;
+        schema: import("@prisma/client/runtime/client").JsonValue;
+        id: number;
+        createdAt: Date;
         description: string;
         isActive: boolean;
-        createdAt: Date;
         updatedAt: Date;
+        appClientId: number;
+        definitionKey: string;
         riskLevel: import("../../../../../../generated/prisma/enums").ToolLevel;
-        schema: import("@prisma/client/runtime/client").JsonValue;
         inputSchema: import("@prisma/client/runtime/client").JsonValue;
         outputSchema: import("@prisma/client/runtime/client").JsonValue;
         responseProfile: import("@prisma/client/runtime/client").JsonValue;
         agentMetadata: import("@prisma/client/runtime/client").JsonValue;
         method: import("../../../../../../generated/prisma/enums").HttpMethod;
-        path: string;
         integrationId: number;
         toolCategoryId: number;
         timeout: number;

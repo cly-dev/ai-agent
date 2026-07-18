@@ -38,6 +38,8 @@ export type BuildTurnExecutionContractRequestedSkill = {
     runnableKind: 'http' | 'host' | 'both';
     workflowId?: number | null;
     workflowVersion?: number | null;
+    flowId?: number | null;
+    flowVersion?: number | null;
     riskLevel?: ToolLevel;
     executionChannels: SkillExecutionChannels;
     config?: unknown;

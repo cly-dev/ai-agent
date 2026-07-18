@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.stripNodeOutputsForRetry = exports.rewindWorkflowForDraftRetry = void 0;
+const workflow_ir_native_phase_util_1 = require("../workflow/workflow-ir-native-phase.util");
 const workflow_run_util_1 = require("../workflow/workflow-run.util");
 function cloneRun(run) {
     return Object.assign(Object.assign({}, run), { nodes: run.nodes.map((node) => (Object.assign({}, node))) });
@@ -43,6 +44,24 @@ function rewindWorkflowForDraftRetry(input) {
         delete node.finishedAt;
         delete node.outputRef;
         delete node.error;
+        const def = input.workflowNodeDefs.find((row) => row.id === node.nodeId);
+        if (def) {
+            node.action = def.action;
+            node.name = def.name;
+        }
+        if (node.phase != null && input.ir) {
+            const irNode = input.ir.nodes.find((n) => n.id === node.nodeId);
+            if (irNode) {
+                const entry = (0, workflow_ir_native_phase_util_1.resolveWorkflowIrNativePhases)(irNode)[0];
+                const phaseDef = (0, workflow_ir_native_phase_util_1.materializeWorkflowIrNodeForPhase)(irNode, entry);
+                node.phase = entry;
+                node.action = phaseDef.action;
+                node.name = phaseDef.name;
+            }
+        }
+        else if (node.phase === 'await' && (def === null || def === void 0 ? void 0 : def.action) === 'present_mutation') {
+            node.phase = 'present';
+        }
     }
     const started = (0, workflow_run_util_1.startWorkflowNode)(next, retryNodeId);
     const clearedOutputKeys = [];

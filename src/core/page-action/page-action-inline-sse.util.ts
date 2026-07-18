@@ -31,8 +31,13 @@ export type PageWorkflowNodeSsePayload = {
   clientActionId?: string | null;
   nodeId: string;
   action: WorkflowActionKind;
+  /** Flow IR 来源节点（expand 子步与 nodeId 不同） */
+  irNodeId?: string | null;
+  irType?: string | null;
   workflowStatus?: string;
   currentNodeId?: string | null;
+  /** IR 粒度当前节点（与 currentNodeId 可能不同） */
+  currentIrNodeId?: string | null;
   outputRef?: string | null;
   errorCode?: string | null;
   errorMessage?: string | null;

@@ -44,6 +44,9 @@ function mapWorkflowCore(row: WorkflowDetailRow | WorkflowListRow) {
     updatedAt: row.updatedAt,
     skillRefCount: row._count.skills,
     pageActionRefCount: row._count.pageActions,
+    // B 端只读：新建/改 Intent 请走 /admin/flow；存量用 migrate-from-workflow。
+    configWritable: false as const,
+    deprecated: true as const,
   };
 }
 

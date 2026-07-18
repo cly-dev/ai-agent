@@ -11,7 +11,7 @@ const common_1 = require("@nestjs/common");
 const page_action_execution_module_1 = require("../../core/page-action/execution/page-action-execution.module");
 const auth_module_1 = require("../../auth/auth.module");
 const prisma_module_1 = require("../../prisma/prisma.module");
-const workflow_module_1 = require("../workflow/workflow.module");
+const flow_module_1 = require("../flow/flow.module");
 const automation_module_1 = require("../automation/automation.module");
 const page_action_c_end_controller_1 = require("./c-end/page-action-c-end.controller");
 const page_action_c_end_service_1 = require("./c-end/page-action-c-end.service");
@@ -24,7 +24,7 @@ PageActionModule = __decorate([
         imports: [
             prisma_module_1.PrismaModule,
             auth_module_1.AuthModule,
-            workflow_module_1.WorkflowModule,
+            flow_module_1.FlowModule,
             page_action_execution_module_1.PageActionExecutionModule,
             automation_module_1.AutomationModule,
         ],

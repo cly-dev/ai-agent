@@ -19,6 +19,8 @@ export type AvailableSkillRow = ActiveSkillSnapshot & {
   runnableKind: 'http' | 'host' | 'both';
   workflowId?: number | null;
   workflowVersion?: number | null;
+  flowId?: number | null;
+  flowVersion?: number | null;
   workflowOverrides?: unknown;
 };
 
@@ -65,6 +67,8 @@ export type AgentSkillWarmupRow = {
   hostToolIds: number[];
   workflowId?: number | null;
   workflowVersion?: number | null;
+  flowId?: number | null;
+  flowVersion?: number | null;
   workflowOverrides?: unknown;
 };
 

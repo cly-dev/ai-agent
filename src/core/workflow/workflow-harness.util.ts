@@ -3,6 +3,7 @@ import type { WorkflowNodeDef } from './workflow.types';
 import type { EmptyFillSensorPayload } from '../harness/sensors/empty-fill.sensor';
 import type { ToolEmptySensorPayload } from '../harness/sensors/tool-empty.sensor';
 import { resolveFetchDataToolIds } from './resolve-workflow-node-tool-refs.util';
+import { resolveWorkflowNodeRuntimeInput } from './resolve-workflow-node-runtime-input.util';
 
 export function buildHarnessSensorPayload(
   def: WorkflowNodeDef | undefined,
@@ -14,7 +15,9 @@ export function buildHarnessSensorPayload(
   }
   switch (def.action) {
     case 'fetch_data': {
-      const toolIds = resolveFetchDataToolIds(def.input);
+      const toolIds = resolveFetchDataToolIds(
+        resolveWorkflowNodeRuntimeInput(def),
+      );
       const payload: ToolEmptySensorPayload = {
         observations: state.toolObservations,
         toolId: toolIds[0],

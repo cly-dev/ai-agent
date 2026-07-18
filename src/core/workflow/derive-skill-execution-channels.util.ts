@@ -20,6 +20,7 @@ export const EMPTY_SKILL_EXECUTION_CHANNELS: SkillExecutionChannels = {
 /**
  * 从 Workflow 节点 + deliverable 推导 Skill 执行通道（SSOT）。
  * 无 Workflow 节点时，仅根据 SkillTool / SkillHostTool 做最小推断（无 httpMutation）。
+ * 优先认 `irType`（Flow IR 双分发）；无标时回退 legacy `action`。
  */
 export function deriveSkillExecutionChannels(input: {
   nodes?: WorkflowNodeDef[];
@@ -29,12 +30,25 @@ export function deriveSkillExecutionChannels(input: {
 }): SkillExecutionChannels {
   const nodes = input.nodes ?? [];
   if (nodes.length > 0) {
-    const actions = new Set(nodes.map((node) => node.action));
+    const httpRead = nodes.some(
+      (n) => n.irType === 'data_query' || n.action === 'fetch_data',
+    );
+    const hostPush = nodes.some(
+      (n) => n.irType === 'host_effect' || n.action === 'generate_and_push',
+    );
     const httpMutation =
       input.deliverable === 'mutation' ||
-      actions.has('write_data') ||
-      (actions.has('compose_mutation') && actions.has('await_user_confirm'));
-    const hostPush = actions.has('generate_and_push');
+      nodes.some(
+        (n) => n.irType === 'tool_call' || n.action === 'write_data',
+      ) ||
+      (nodes.some(
+        (n) =>
+          n.irType === 'data_transform' || n.action === 'compose_mutation',
+      ) &&
+        nodes.some(
+          (n) =>
+            n.irType === 'human_task' || n.action === 'await_user_confirm',
+        ));
     const primaryWriteChannel = ((): SkillExecutionChannels['primaryWriteChannel'] => {
       if (input.deliverable === 'mutation' || httpMutation) {
         return 'http';
@@ -45,8 +59,7 @@ export function deriveSkillExecutionChannels(input: {
       return null;
     })();
     return {
-      httpRead:
-        actions.has('fetch_data') || actions.has('load_page_context'),
+      httpRead,
       httpMutation,
       hostPush,
       primaryWriteChannel,

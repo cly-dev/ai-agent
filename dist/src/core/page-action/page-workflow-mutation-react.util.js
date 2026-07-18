@@ -5,6 +5,7 @@ const common_1 = require("@nestjs/common");
 const page_workflow_tool_bundle_util_1 = require("./page-workflow-tool-bundle.util");
 const workflow_run_util_1 = require("../workflow/workflow-run.util");
 const workflow_node_output_util_1 = require("../workflow/workflow-node-output.util");
+const resolve_workflow_node_runtime_input_util_1 = require("../workflow/resolve-workflow-node-runtime-input.util");
 const page_workflow_pending_write_util_1 = require("./page-workflow-pending-write.util");
 const page_workflow_compose_mutation_util_1 = require("./page-workflow-compose-mutation.util");
 const page_action_run_audit_util_1 = require("./page-action-run-audit.util");
@@ -30,7 +31,7 @@ async function runPageWorkflowMutationReact(input) {
     var _a, _b, _c, _d, _e, _f, _g, _h;
     const { def, nodeId, runtime } = input;
     if (def.action === 'compose_mutation') {
-        const nodeInput = def.input;
+        const nodeInput = (0, resolve_workflow_node_runtime_input_util_1.resolveWorkflowNodeRuntimeInput)(def);
         const toolId = (0, page_workflow_pending_write_util_1.readComposeMutationToolId)(nodeInput);
         if (toolId == null) {
             const failed = (0, workflow_run_util_1.failWorkflowNode)(input.workflowRun, nodeId, {
@@ -107,7 +108,7 @@ async function runPageWorkflowMutationReact(input) {
         }
     }
     if (def.action === 'write_data') {
-        const nodeInput = def.input;
+        const nodeInput = (0, resolve_workflow_node_runtime_input_util_1.resolveWorkflowNodeRuntimeInput)(def);
         const toolId = (0, page_workflow_pending_write_util_1.readWriteDataToolId)(nodeInput);
         const pending = (_c = input.pendingWrite) !== null && _c !== void 0 ? _c : resolvePendingWriteFromRuntime(runtime, input.allowedToolIds);
         if (!pending) {

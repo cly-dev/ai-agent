@@ -74,23 +74,43 @@ let ChatEventsService = ChatEventsService_1 = class ChatEventsService {
         const subject = this.getSubject(normalized);
         return new rxjs_1.Observable((subscriber) => {
             let inner = null;
+            inner = subject.subscribe({
+                next: (evt) => subscriber.next(evt),
+                error: (err) => subscriber.error(err),
+                complete: () => subscriber.complete(),
+            });
             for (const evt of this.getReplayEvents(normalized)) {
                 subscriber.next(evt);
             }
+            const heartbeat = setInterval(() => {
+                if (subscriber.closed) {
+                    clearInterval(heartbeat);
+                    return;
+                }
+                subscriber.next({
+                    event: 'think',
+                    payload: { content: '', mode: 'delta' },
+                });
+            }, ChatEventsService_1.SSE_HEARTBEAT_MS);
             void this.pendingWriteConfirmationStore
                 .get(normalized, userId)
                 .then(async (pending) => {
+                if (subscriber.closed) {
+                    return;
+                }
                 if (pending) {
                     subscriber.next(await this.buildPendingWriteConfirmationEvent(pending));
                 }
-                inner = subject.subscribe({
-                    next: (evt) => subscriber.next(evt),
-                    error: (err) => subscriber.error(err),
-                    complete: () => subscriber.complete(),
-                });
             })
-                .catch((err) => subscriber.error(err));
-            return () => inner === null || inner === void 0 ? void 0 : inner.unsubscribe();
+                .catch((err) => {
+                if (!subscriber.closed) {
+                    subscriber.error(err);
+                }
+            });
+            return () => {
+                clearInterval(heartbeat);
+                inner === null || inner === void 0 ? void 0 : inner.unsubscribe();
+            };
         });
     }
     emit(sessionId, evt, options) {
@@ -268,6 +288,7 @@ let ChatEventsService = ChatEventsService_1 = class ChatEventsService {
     }
 };
 ChatEventsService.REPLAY_BUFFER = 8;
+ChatEventsService.SSE_HEARTBEAT_MS = 15000;
 ChatEventsService = ChatEventsService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [pending_write_confirmation_store_1.PendingWriteConfirmationStore,

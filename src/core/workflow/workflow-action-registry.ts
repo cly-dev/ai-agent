@@ -8,13 +8,8 @@ export type WorkflowActionRegistryEntry = {
   batch: 'A' | 'B';
 };
 
+/** IR 内部 action 注册表（配置面勿直接绑定）。 */
 export const WORKFLOW_ACTION_REGISTRY: readonly WorkflowActionRegistryEntry[] = [
-  {
-    kind: 'load_page_context',
-    implemented: true,
-    allowedProfiles: ['page_action', 'chat_skill', 'shared'],
-    batch: 'A',
-  },
   {
     kind: 'detect_clues',
     implemented: true,

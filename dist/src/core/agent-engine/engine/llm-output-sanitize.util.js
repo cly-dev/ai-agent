@@ -34,56 +34,20 @@ function tailAfterLastConfiguredThinkClose(text, patterns) {
     }
     return lastEnd >= 0 ? text.slice(lastEnd).trim() : '';
 }
-function recoverUserFacingWhenStrippedEmpty(raw) {
-    var _a;
+function recoverWhenThinkStripEmptied(raw) {
     const trimmed = raw.trim();
     if (!trimmed) {
         return '';
     }
-    const genericCloseTagRe = /<\/([a-zA-Z][\w-]*)\s*>/g;
-    let lastGenericEnd = -1;
-    for (const match of trimmed.matchAll(genericCloseTagRe)) {
-        lastGenericEnd = ((_a = match.index) !== null && _a !== void 0 ? _a : 0) + match[0].length;
+    const patterns = getReasoningStripPatterns();
+    const afterThinkClose = tailAfterLastConfiguredThinkClose(trimmed, patterns);
+    if (afterThinkClose.length > 0) {
+        return afterThinkClose;
     }
-    if (lastGenericEnd >= 0) {
-        const tail = trimmed.slice(lastGenericEnd).trim();
-        if (tail.length >= 8 && !/^<[a-zA-Z]/.test(tail)) {
-            return tail;
-        }
-    }
-    const paragraphs = trimmed
-        .split(/\n{2,}/)
-        .map((part) => part.trim())
-        .filter((part) => part.length > 0);
-    if (paragraphs.length >= 2) {
-        const last = paragraphs[paragraphs.length - 1];
-        if (last.length >= 8) {
-            return last;
-        }
+    if (patterns.thinkOpen.test(trimmed)) {
+        return '';
     }
     return '';
-}
-function recoverUserFacingTail(raw) {
-    const trimmed = raw.trim();
-    if (!trimmed) {
-        return '';
-    }
-    const patterns = getReasoningStripPatterns();
-    const afterKnownClose = tailAfterLastConfiguredThinkClose(trimmed, patterns);
-    if (afterKnownClose.length >= 8 && !/^<[a-zA-Z]/.test(afterKnownClose)) {
-        return afterKnownClose;
-    }
-    return recoverUserFacingWhenStrippedEmpty(raw);
-}
-function looksLikeInlineScaffolding(text) {
-    const trimmed = text.trim();
-    if (!trimmed) {
-        return false;
-    }
-    const patterns = getReasoningStripPatterns();
-    return (patterns.thinkOpen.test(trimmed) ||
-        patterns.thinkCloseTest.test(trimmed) ||
-        /^<[a-zA-Z][\w-]*\s*>/.test(trimmed));
 }
 function stripLlmThinkBlocks(text) {
     const patterns = getReasoningStripPatterns();
@@ -100,12 +64,8 @@ function resolveUserFacingBody(source, options) {
         return '';
     }
     let body = stripLlmThinkBlocks(raw);
-    const recovered = recoverUserFacingTail(raw);
     if (!body.trim()) {
-        body = recovered;
-    }
-    else if (looksLikeInlineScaffolding(body) && recovered.length >= 8) {
-        body = recovered;
+        body = recoverWhenThinkStripEmptied(raw);
     }
     if ((options === null || options === void 0 ? void 0 : options.stripToolCalls) !== false) {
         body = body.replace(TOOL_CALLS_BLOCK_RE, '').trim();

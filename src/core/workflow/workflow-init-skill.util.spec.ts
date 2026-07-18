@@ -2,11 +2,14 @@ import type { AgentGraphNodeBundle } from '../agent-engine/engine/main/agent-gra
 import type { AgentGraphState } from '../agent-engine/engine/main/types/agent-engine.types';
 
 jest.mock('./load-workflow-definition.util', () => ({
-  loadWorkflowForRunDetailed: jest.fn(),
   parseWorkflowOverridesJson: jest.fn(() => null),
 }));
 
-import { loadWorkflowForRunDetailed } from './load-workflow-definition.util';
+jest.mock('./load-flow-for-run.util', () => ({
+  loadFlowForRunDetailed: jest.fn(),
+}));
+
+import { loadFlowForRunDetailed } from './load-flow-for-run.util';
 import {
   resolveSkillWorkflowForInit,
   resolveWorkflowBoundSkillId,
@@ -26,6 +29,10 @@ function mockState(input: Partial<AgentGraphState>): AgentGraphState {
 }
 
 describe('workflow-init-skill.util', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('resolveWorkflowBoundSkillId returns null on intent_first', () => {
     expect(
       resolveWorkflowBoundSkillId(
@@ -62,12 +69,12 @@ describe('workflow-init-skill.util', () => {
     ).toBe(12);
   });
 
-  it('resolveSkillWorkflowForInit returns no_workflow_binding when skill has no workflowId', async () => {
+  it('resolveSkillWorkflowForInit returns no_workflow_binding when skill has no flowId', async () => {
     const prisma = {
       skill: {
         findUnique: jest.fn().mockResolvedValue({
-          workflowId: null,
-          workflowVersion: null,
+          flowId: null,
+          flowVersion: null,
           workflowOverrides: null,
         }),
       },
@@ -79,20 +86,73 @@ describe('workflow-init-skill.util', () => {
         scope: { allowedToolIds: [1], allowedHostToolIds: [] },
       }),
     ).resolves.toEqual({ kind: 'no_workflow_binding' });
-    expect(loadWorkflowForRunDetailed).not.toHaveBeenCalled();
+    expect(loadFlowForRunDetailed).not.toHaveBeenCalled();
   });
 
-  it('resolveSkillWorkflowForInit returns load_failed when workflow asset is missing', async () => {
+  it('resolveSkillWorkflowForInit ignores legacy workflowId-only binding', async () => {
     const prisma = {
       skill: {
         findUnique: jest.fn().mockResolvedValue({
+          flowId: null,
+          flowVersion: null,
           workflowId: 9,
           workflowVersion: 1,
           workflowOverrides: null,
         }),
       },
     };
-    jest.mocked(loadWorkflowForRunDetailed).mockResolvedValue({
+    await expect(
+      resolveSkillWorkflowForInit(prisma as never, {
+        skillId: 2,
+        appClientId: 1,
+      }),
+    ).resolves.toEqual({ kind: 'no_workflow_binding' });
+    expect(loadFlowForRunDetailed).not.toHaveBeenCalled();
+  });
+
+  it('resolveSkillWorkflowForInit loads Flow when flowId present', async () => {
+    const prisma = {
+      skill: {
+        findUnique: jest.fn().mockResolvedValue({
+          flowId: 4,
+          flowVersion: 1,
+          workflowOverrides: null,
+        }),
+      },
+    };
+    const workflow = {
+      workflowId: 4,
+      version: 1,
+      compiledFrom: 'flow_db' as const,
+      nodes: [] as [],
+      edges: [] as [],
+      entryNodeId: null as string | null,
+      edgesDeclared: false,
+      workflowRun: { workflowId: 4 } as never,
+    };
+    jest.mocked(loadFlowForRunDetailed).mockResolvedValue({
+      status: 'loaded',
+      ...workflow,
+    });
+    await expect(
+      resolveSkillWorkflowForInit(prisma as never, {
+        skillId: 2,
+        appClientId: 1,
+      }),
+    ).resolves.toEqual({ kind: 'loaded', workflow, source: 'flow' });
+  });
+
+  it('resolveSkillWorkflowForInit returns load_failed when flow asset is missing', async () => {
+    const prisma = {
+      skill: {
+        findUnique: jest.fn().mockResolvedValue({
+          flowId: 9,
+          flowVersion: 1,
+          workflowOverrides: null,
+        }),
+      },
+    };
+    jest.mocked(loadFlowForRunDetailed).mockResolvedValue({
       status: 'failed',
       reason: 'asset_missing',
       workflowId: 9,
@@ -107,20 +167,21 @@ describe('workflow-init-skill.util', () => {
       kind: 'load_failed',
       workflowId: 9,
       reason: 'asset_missing',
+      source: 'flow',
     });
   });
 
-  it('resolveSkillWorkflowForInit returns scope_incompatible when workflow scope mismatches', async () => {
+  it('resolveSkillWorkflowForInit returns scope_incompatible when flow scope mismatches', async () => {
     const prisma = {
       skill: {
         findUnique: jest.fn().mockResolvedValue({
-          workflowId: 1,
-          workflowVersion: 1,
+          flowId: 1,
+          flowVersion: 1,
           workflowOverrides: null,
         }),
       },
     };
-    jest.mocked(loadWorkflowForRunDetailed).mockResolvedValue({
+    jest.mocked(loadFlowForRunDetailed).mockResolvedValue({
       status: 'failed',
       reason: 'scope_incompatible',
       workflowId: 1,
@@ -131,39 +192,10 @@ describe('workflow-init-skill.util', () => {
         appClientId: 1,
         scope: { allowedToolIds: [1], allowedHostToolIds: [3] },
       }),
-    ).resolves.toEqual({ kind: 'scope_incompatible', workflowId: 1 });
-  });
-
-  it('resolveSkillWorkflowForInit returns loaded when workflow asset resolves', async () => {
-    const workflow = {
-      workflowId: 9,
-      version: 1,
-      compiledFrom: 'workflow_db' as const,
-      nodes: [] as [],
-      edges: [] as [],
-      entryNodeId: null as string | null,
-      edgesDeclared: false,
-      workflowRun: { workflowId: 9 } as never,
-    };
-    const prisma = {
-      skill: {
-        findUnique: jest.fn().mockResolvedValue({
-          workflowId: 9,
-          workflowVersion: 1,
-          workflowOverrides: null,
-        }),
-      },
-    };
-    jest.mocked(loadWorkflowForRunDetailed).mockResolvedValue({
-      status: 'loaded',
-      ...workflow,
+    ).resolves.toEqual({
+      kind: 'scope_incompatible',
+      workflowId: 1,
+      source: 'flow',
     });
-    await expect(
-      resolveSkillWorkflowForInit(prisma as never, {
-        skillId: 2,
-        appClientId: 1,
-        scope: { allowedToolIds: [1], allowedHostToolIds: [] },
-      }),
-    ).resolves.toEqual({ kind: 'loaded', workflow });
   });
 });

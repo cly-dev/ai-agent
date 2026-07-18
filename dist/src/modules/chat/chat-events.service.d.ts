@@ -77,6 +77,7 @@ export declare class ChatEventsService implements OnApplicationBootstrap, OnModu
     private readonly redis;
     private readonly prisma;
     private static readonly REPLAY_BUFFER;
+    private static readonly SSE_HEARTBEAT_MS;
     private readonly logger;
     private readonly instanceId;
     private readonly subjects;

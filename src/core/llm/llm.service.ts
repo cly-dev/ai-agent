@@ -627,30 +627,32 @@ export class LlmService implements OnApplicationBootstrap {
         }
         const row = chunk as AIMessageChunk;
         streamChunkCount += 1;
-        let delta = this.extractAiMessageContent(row.content);
-        if (!delta) {
-          const reasoningDelta = this.extractAiMessageReasoning(row);
-          if (reasoningDelta) {
-            reasoningOnlyChunkCount += 1;
-            delta = reasoningDelta;
-            if (emittedDeltaCount === 0 && reasoningOnlyChunkCount === 1) {
-              this.logger.warn(
-                `[LlmService] stream using reasoning_content fallback (model=${modelFallback})`,
-              );
-            }
-          } else {
-            emptyStreamChunkCount += 1;
+        const delta = this.extractAiMessageContent(row.content);
+        // reasoning_content（DashScope thinking 等）与 content 分通道下发，
+        // 永不并入正文；消费方决定走 think SSE 还是丢弃。
+        const reasoningDelta = this.extractAiMessageReasoning(row);
+        if (!delta && reasoningDelta) {
+          reasoningOnlyChunkCount += 1;
+          if (reasoningOnlyChunkCount === 1) {
+            this.logger.log(
+              `[LlmService] stream emitting reasoning_content on separate channel (model=${modelFallback})`,
+            );
           }
+        } else if (!delta) {
+          emptyStreamChunkCount += 1;
         }
-        if (delta) {
-          content += delta;
-          emittedDeltaCount += 1;
+        if (delta || reasoningDelta) {
+          if (delta) {
+            content += delta;
+            emittedDeltaCount += 1;
+          }
           handlers.onDelta?.({
             model: this.extractModelName(
               row.response_metadata as Record<string, unknown> | undefined,
               modelFallback,
             ),
             contentDelta: delta,
+            ...(reasoningDelta ? { reasoningDelta } : {}),
             toolCalls: [],
             done: false,
             raw: row,
@@ -668,13 +670,17 @@ export class LlmService implements OnApplicationBootstrap {
         }`,
       );
       const response = await runnable.invoke(messages);
-      content =
-        this.extractAiMessageContent(response.content) ||
-        this.extractAiMessageReasoning(response);
+      // 只取 content 通道；thinking-only 响应宁可为空也不把思考当正文。
+      content = this.extractAiMessageContent(response.content);
       merged = undefined;
       if (emittedDeltaCount === 0 && content) {
         this.logger.warn(
           `[LlmService] stream fellBackToInvoke with contentLen=${content.length} (model=${modelFallback})`,
+        );
+      }
+      if (!content && this.extractAiMessageReasoning(response)) {
+        this.logger.warn(
+          `[LlmService] invoke fallback returned reasoning_content only; content left empty (model=${modelFallback})`,
         );
       }
       return {
@@ -688,6 +694,7 @@ export class LlmService implements OnApplicationBootstrap {
         streamMeta: {
           emittedDeltaCount,
           fellBackToInvoke: true,
+          reasoningDeltaCount: reasoningOnlyChunkCount,
         },
       };
     }
@@ -705,10 +712,9 @@ export class LlmService implements OnApplicationBootstrap {
       response.response_metadata as Record<string, unknown> | undefined,
       modelFallback,
     );
+    // 终态同样只认 content 通道；reasoning-only 流正文为空（可观测，不降级）。
     const mergedContent =
-      content ||
-      this.extractAiMessageContent(response.content) ||
-      (merged ? this.extractAiMessageReasoning(merged) : '');
+      content || this.extractAiMessageContent(response.content);
     if (emittedDeltaCount === 0 && streamChunkCount > 0) {
       this.logger.warn(
         `[LlmService] stream ended with zero content deltas model=${modelName}` +
@@ -732,6 +738,7 @@ export class LlmService implements OnApplicationBootstrap {
       streamMeta: {
         emittedDeltaCount,
         fellBackToInvoke: false,
+        reasoningDeltaCount: reasoningOnlyChunkCount,
       },
     };
   }

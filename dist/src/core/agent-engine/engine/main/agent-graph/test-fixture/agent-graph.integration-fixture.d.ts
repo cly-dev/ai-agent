@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import type { AgentGraphDeps } from '../types/graph.types';
 import type { AgentGraphNodeBundle } from '../types/graph.types';
 import { createMinimalAgentGraphBundle } from '../../../../../workflow/workflow-graph-fixture.util';

@@ -8,6 +8,7 @@ const workflow_edge_util_1 = require("../graph/workflow-edge.util");
 const executor_host_util_1 = require("../executors/executor-host.util");
 const detect_clues_llm_util_1 = require("./detect-clues-llm.util");
 const workflow_node_outputs_summarize_util_1 = require("../workflow-node-outputs-summarize.util");
+const resolve_workflow_node_runtime_input_util_1 = require("../resolve-workflow-node-runtime-input.util");
 function resolveDetectHint(input) {
     if (input == null || typeof input !== 'object') {
         return undefined;
@@ -64,7 +65,7 @@ exports.detectCluesExecutor = {
         const output = await (0, detect_clues_llm_util_1.invokeDetectCluesLlm)({
             llmService,
             objective: ctx.def.objective,
-            hint: resolveDetectHint(ctx.def.input),
+            hint: resolveDetectHint((0, resolve_workflow_node_runtime_input_util_1.resolveWorkflowNodeRuntimeInput)(ctx.def)),
             clues,
             userMessage: resolveUserMessage(ctx.host),
             pageContextSummary: summarizeForDetect(pageContext !== null && pageContext !== void 0 ? pageContext : null),

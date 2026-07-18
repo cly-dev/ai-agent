@@ -21,7 +21,7 @@ const agent_host_tool_catalog_service_1 = require("../../core/runtime-cache/agen
 const agent_capability_load_util_1 = require("../../core/runtime-cache/agent-capability-load.util");
 const runtime_cache_invalidator_service_1 = require("../../core/runtime-cache/runtime-cache-invalidator.service");
 const prisma_service_1 = require("../../prisma/prisma.service");
-const workflow_service_1 = require("../workflow/workflow.service");
+const flow_service_1 = require("../flow/flow.service");
 const workflow_node_reference_guard_util_1 = require("../../core/workflow/workflow-node-reference-guard.util");
 const host_tool_mapper_1 = require("./host-tool.mapper");
 const host_tool_types_1 = require("./host-tool.types");
@@ -30,11 +30,11 @@ const LLM_SKILL_TRIGGERS = [
     client_1.HostToolSkillTrigger.ON_PLAN_STEP,
 ];
 let HostToolService = HostToolService_1 = class HostToolService {
-    constructor(prisma, hostToolCatalogService, runtimeCacheInvalidator, workflowService) {
+    constructor(prisma, hostToolCatalogService, runtimeCacheInvalidator, flowService) {
         this.prisma = prisma;
         this.hostToolCatalogService = hostToolCatalogService;
         this.runtimeCacheInvalidator = runtimeCacheInvalidator;
-        this.workflowService = workflowService;
+        this.flowService = flowService;
         this.logger = new common_1.Logger(HostToolService_1.name);
     }
     async createHostPage(dto) {
@@ -346,17 +346,11 @@ let HostToolService = HostToolService_1 = class HostToolService {
         const skill = await this.getSkillOrThrow(skillId);
         const hostToolIds = dto.tools.map((item) => item.hostToolId);
         await this.assertHostToolsInApp(skill.appClientId, hostToolIds);
-        if (skill.workflowId != null && skill.workflowId > 0) {
-            const skillTools = await this.prisma.skillTool.findMany({
-                where: { skillId },
-                select: { toolId: true },
-            });
-            await this.workflowService.assertSkillWorkflowBindingsCompatible({
-                workflowId: skill.workflowId,
+        if (skill.flowId != null && skill.flowId > 0) {
+            await this.flowService.assertSkillFlowBindingsCompatible({
+                flowId: skill.flowId,
                 appClientId: skill.appClientId,
-                workflowVersion: skill.workflowVersion,
-                skillToolIds: skillTools.map((row) => row.toolId),
-                skillHostToolIds: hostToolIds,
+                flowVersion: skill.flowVersion,
             });
         }
         await this.prisma.$transaction(async (tx) => {
@@ -842,6 +836,8 @@ let HostToolService = HostToolService_1 = class HostToolService {
                 appClientId: true,
                 workflowId: true,
                 workflowVersion: true,
+                flowId: true,
+                flowVersion: true,
             },
         });
         if (!row) {
@@ -855,7 +851,7 @@ HostToolService = HostToolService_1 = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         agent_host_tool_catalog_service_1.AgentHostToolCatalogService,
         runtime_cache_invalidator_service_1.RuntimeCacheInvalidator,
-        workflow_service_1.WorkflowService])
+        flow_service_1.FlowService])
 ], HostToolService);
 exports.HostToolService = HostToolService;
 //# sourceMappingURL=host-tool.service.js.map

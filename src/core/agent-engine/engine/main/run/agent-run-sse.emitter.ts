@@ -567,6 +567,10 @@ export class AgentRunSseEmitter {
             if (!this.shouldEmitForRun(sessionId, runId)) {
               return;
             }
+            // reasoning_content 通道 → think SSE，与 <think> 标签思考同出口
+            if (delta.reasoningDelta) {
+              proseSession.ingestReasoningDelta(delta.reasoningDelta);
+            }
             if (!delta.contentDelta) {
               return;
             }

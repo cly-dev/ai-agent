@@ -4,6 +4,7 @@ import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import {
   advanceWorkflowRun,
   finalizeWorkflowRunAfterAdvance,
+  tryAdvanceNativePhaseAfterNodeSuccess,
 } from '../../../../../workflow/workflow-run.util';
 import { getCurrentWorkflowNode } from '../../../../../workflow/workflow-graph-routing.util';
 import { projectTaskPlanFromWorkflowRun } from '../../../../../workflow/workflow-plan-sync.util';
@@ -20,8 +21,64 @@ export function createWorkflowAdvanceNode(
     }
 
     const current = getCurrentWorkflowNode(state);
-    const completedNodeId = current?.nodeId;
-    let workflowRun = advanceWorkflowRun(run);
+    let workflowRun = run;
+
+    // Plan A：native 多相位就地推进，不跟 IR 边
+    if (
+      state.workflowExecutionMode === 'ir_native_direct' &&
+      state.workflowIr &&
+      current?.nodeId &&
+      (current.status === 'succeeded' || current.status === 'skipped')
+    ) {
+      const irNode = state.workflowIr.nodes.find(
+        (row) => row.id === current.nodeId,
+      );
+      if (irNode) {
+        const phaseStep = tryAdvanceNativePhaseAfterNodeSuccess({
+          run: workflowRun,
+          nodeId: current.nodeId,
+          irNode,
+        });
+        if (phaseStep.advancedPhase) {
+          workflowRun = phaseStep.workflowRun;
+          const stepNum = nextRunStepNumber(state.steps);
+          const advanceStep: (typeof state.steps)[number] = {
+            step: stepNum,
+            type: 'workflow',
+            name: current.nodeId,
+            output: runHelpers.normalizeJsonLike({
+              nodeId: current.nodeId,
+              action: current.action,
+              priorStatus: current.status,
+              event: 'phase_advanced',
+              nextPhase: workflowRun.nodes.find(
+                (n) => n.nodeId === current.nodeId,
+              )?.phase,
+              workflowStatus: workflowRun.status,
+            }),
+          };
+          const steps = [...state.steps, advanceStep];
+          await runHelpers.updateRun(
+            ctx.input.runId,
+            steps,
+            AgentRunStatus.running,
+          );
+          logWorkflowDebug('workflow_phase_advance', {
+            runId: ctx.input.runId,
+            nodeId: current.nodeId,
+            workflowRun,
+          });
+          return {
+            ...state,
+            steps,
+            workflowRun,
+            workflowAwaitingReact: false,
+          };
+        }
+      }
+    }
+
+    workflowRun = advanceWorkflowRun(workflowRun);
     const wasRunning = workflowRun.status === 'running';
     workflowRun = finalizeWorkflowRunAfterAdvance(workflowRun);
     if (wasRunning && workflowRun.status === 'completed') {

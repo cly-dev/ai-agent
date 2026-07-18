@@ -92,6 +92,8 @@ export type AgentSkillCatalogRow = {
     skillHostToolIds: number[];
     workflowId: number | null;
     workflowVersion: number | null;
+    flowId: number | null;
+    flowVersion: number | null;
 };
 export type AgentSkillCatalogSnapshot = {
     appClientId: number;

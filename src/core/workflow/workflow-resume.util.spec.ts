@@ -192,4 +192,125 @@ describe('resolveWorkflowGraphForResume', () => {
     expect(graph?.nodes.map((row) => row.id)).toEqual(['fetch', 'summarize']);
     expect(graph?.edges).toBeNull();
   });
+
+  it('loads Flow when compiledFrom is flow_db', async () => {
+    jest.resetModules();
+    jest.doMock('./load-flow-for-run.util', () => ({
+      loadFlowForRun: jest.fn().mockResolvedValue({
+        workflowId: 42,
+        version: 3,
+        compiledFrom: 'flow_db',
+        nodes,
+        edges: [
+          {
+            id: 'e1',
+            from: 'fetch',
+            to: 'summarize',
+            kind: 'always',
+          },
+        ],
+        entryNodeId: 'fetch',
+        edgesDeclared: true,
+        workflowRun: {} as never,
+      }),
+    }));
+    const { resolveWorkflowGraphForResume } = await import('./workflow-resume.util');
+    const { loadFlowForRun } = await import('./load-flow-for-run.util');
+
+    const savedRun = initWorkflowRun({
+      workflowId: 42,
+      version: 3,
+      nodes,
+      compiledFrom: 'flow_db',
+    });
+    const plan = {
+      source: 'template',
+      originalUserRequest: 'hi',
+      goal: 'hi',
+      deliverable: 'answer',
+      constraints: [],
+      steps: [],
+      pendingStepIds: [],
+      completedStepIds: [],
+      taskPhase: 'gather',
+      currentObjective: '',
+      currentStepId: null,
+      frames: [],
+      activeFrameIndex: 0,
+    } satisfies TaskPlanSnapshot;
+
+    const graph = await resolveWorkflowGraphForResume({} as never, {
+      savedRun,
+      taskPlan: plan,
+      appClientId: 1,
+      scope: { allowedToolIds: [1], allowedHostToolIds: [] },
+    });
+
+    expect(loadFlowForRun).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        flowId: 42,
+        flowVersion: 3,
+        appClientId: 1,
+      }),
+    );
+    expect(graph?.nodes.map((row) => row.id)).toEqual(['fetch', 'summarize']);
+    expect(graph?.edges).toEqual([
+      { id: 'e1', from: 'fetch', to: 'summarize', kind: 'always' },
+    ]);
+  });
+
+  it('does not load legacy Workflow when compiledFrom is workflow_db', async () => {
+    jest.resetModules();
+    jest.doMock('./load-flow-for-run.util', () => ({
+      loadFlowForRun: jest.fn(),
+    }));
+    const { resolveWorkflowGraphForResume } = await import('./workflow-resume.util');
+    const { loadFlowForRun } = await import('./load-flow-for-run.util');
+
+    const savedRun = initWorkflowRun({
+      workflowId: 9,
+      version: 1,
+      nodes,
+      compiledFrom: 'workflow_db',
+    });
+    const plan = {
+      source: 'template',
+      originalUserRequest: 'hi',
+      goal: 'hi',
+      deliverable: 'answer',
+      constraints: [],
+      steps: [
+        {
+          id: 'fetch',
+          phase: 'gather',
+          kind: 'tool',
+          objective: 'Fetch data',
+        },
+        {
+          id: 'summarize',
+          phase: 'answer',
+          kind: 'summarize',
+          objective: 'Answer',
+        },
+      ],
+      pendingStepIds: ['fetch'],
+      completedStepIds: [],
+      taskPhase: 'gather',
+      currentObjective: 'Fetch data',
+      currentStepId: 'fetch',
+      frames: [],
+      activeFrameIndex: 0,
+    } satisfies TaskPlanSnapshot;
+
+    const graph = await resolveWorkflowGraphForResume({} as never, {
+      savedRun,
+      taskPlan: plan,
+      appClientId: 1,
+    });
+
+    expect(loadFlowForRun).not.toHaveBeenCalled();
+    expect(graph?.nodes.map((row) => row.id)).toEqual(['fetch', 'summarize']);
+    expect(graph?.edges).toBeNull();
+  });
 });

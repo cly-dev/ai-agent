@@ -15,6 +15,7 @@ export declare class ChatController {
     private readonly chatService;
     private readonly chatEvents;
     private readonly sessionPrepareService;
+    private readonly logger;
     constructor(chatService: ChatService, chatEvents: ChatEventsService, sessionPrepareService: SessionPrepareService);
     private userId;
     private appClientId;
@@ -77,11 +78,11 @@ export declare class ChatController {
         agentId: number;
         createdAt: Date;
         messages: import("../../common/pagination").PaginatedResult<{
-            id: number;
             role: string;
+            id: number;
             createdAt: Date;
-            content: string;
             sessionId: string;
+            content: string;
             toolName: string;
             toolInput: import("@prisma/client/runtime/client").JsonValue;
             toolOutput: import("@prisma/client/runtime/client").JsonValue;

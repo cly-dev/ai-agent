@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.filterSkillsWithRunnableToolIds = exports.filterRunnableSkills = exports.skillHasRunnableToolIds = exports.skillIsRunnable = exports.skillIsRunnableForUser = exports.skillIsResolvableForRequested = exports.skillIsResolvableInScope = exports.skillIsVisibleOnClientPage = exports.skillMatchesPageHostTools = exports.skillIsHostOnlySkill = exports.deriveSkillRunnableKind = exports.normalizeSkillRunnableCapabilities = exports.skillIsWorkflowBound = void 0;
 function skillIsWorkflowBound(skill) {
-    return skill.workflowId != null && skill.workflowId > 0;
+    return skill.flowId != null && skill.flowId > 0;
 }
 exports.skillIsWorkflowBound = skillIsWorkflowBound;
 function normalizeSkillRunnableCapabilities(skill) {
@@ -10,6 +10,8 @@ function normalizeSkillRunnableCapabilities(skill) {
     return {
         skillToolIds: (_b = (_a = skill.skillToolIds) !== null && _a !== void 0 ? _a : skill.toolIds) !== null && _b !== void 0 ? _b : [],
         hostToolIds: (_c = skill.hostToolIds) !== null && _c !== void 0 ? _c : [],
+        workflowId: skill.workflowId,
+        flowId: skill.flowId,
     };
 }
 exports.normalizeSkillRunnableCapabilities = normalizeSkillRunnableCapabilities;

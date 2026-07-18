@@ -25,12 +25,6 @@ function validateNodeInput(node, issues) {
     }
     const input = rawInput;
     switch (node.action) {
-        case 'load_page_context':
-            if (input.materialize != null &&
-                typeof input.materialize !== 'boolean') {
-                pushIssue(issues, `${basePath}.materialize`, 'invalid_boolean', 'materialize must be boolean');
-            }
-            break;
         case 'detect_clues':
             if (input.hint != null && typeof input.hint !== 'string') {
                 pushIssue(issues, `${basePath}.hint`, 'invalid_hint', 'hint must be a string when provided');

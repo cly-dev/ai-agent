@@ -24,6 +24,7 @@ function createPageWorkflowExecutorRuntime(input, recorder) {
         hostTool: input.hostTool,
         stepRecorder: recorder,
         toolBundle: (_c = input.toolBundle) !== null && _c !== void 0 ? _c : null,
+        materializedEntities: [],
         fillText: '',
         dslOutcome: null,
         metrics: {

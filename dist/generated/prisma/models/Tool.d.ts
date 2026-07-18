@@ -228,6 +228,7 @@ export type ToolWhereInput = {
     skillTools?: Prisma.SkillToolListRelationFilter;
     agentTools?: Prisma.AgentToolListRelationFilter;
     workflowTools?: Prisma.WorkflowToolListRelationFilter;
+    flowTools?: Prisma.FlowToolListRelationFilter;
     integration?: Prisma.XOR<Prisma.IntegrationScalarRelationFilter, Prisma.IntegrationWhereInput>;
     appClient?: Prisma.XOR<Prisma.AppClientScalarRelationFilter, Prisma.AppClientWhereInput>;
     toolCategory?: Prisma.XOR<Prisma.ToolCategoryNullableScalarRelationFilter, Prisma.ToolCategoryWhereInput> | null;
@@ -256,6 +257,7 @@ export type ToolOrderByWithRelationInput = {
     skillTools?: Prisma.SkillToolOrderByRelationAggregateInput;
     agentTools?: Prisma.AgentToolOrderByRelationAggregateInput;
     workflowTools?: Prisma.WorkflowToolOrderByRelationAggregateInput;
+    flowTools?: Prisma.FlowToolOrderByRelationAggregateInput;
     integration?: Prisma.IntegrationOrderByWithRelationInput;
     appClient?: Prisma.AppClientOrderByWithRelationInput;
     toolCategory?: Prisma.ToolCategoryOrderByWithRelationInput;
@@ -288,6 +290,7 @@ export type ToolWhereUniqueInput = Prisma.AtLeast<{
     skillTools?: Prisma.SkillToolListRelationFilter;
     agentTools?: Prisma.AgentToolListRelationFilter;
     workflowTools?: Prisma.WorkflowToolListRelationFilter;
+    flowTools?: Prisma.FlowToolListRelationFilter;
     integration?: Prisma.XOR<Prisma.IntegrationScalarRelationFilter, Prisma.IntegrationWhereInput>;
     appClient?: Prisma.XOR<Prisma.AppClientScalarRelationFilter, Prisma.AppClientWhereInput>;
     toolCategory?: Prisma.XOR<Prisma.ToolCategoryNullableScalarRelationFilter, Prisma.ToolCategoryWhereInput> | null;
@@ -362,6 +365,7 @@ export type ToolCreateInput = {
     skillTools?: Prisma.SkillToolCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolCreateNestedManyWithoutToolInput;
     integration: Prisma.IntegrationCreateNestedOneWithoutToolsInput;
     appClient: Prisma.AppClientCreateNestedOneWithoutToolsInput;
     toolCategory?: Prisma.ToolCategoryCreateNestedOneWithoutToolsInput;
@@ -390,6 +394,7 @@ export type ToolUncheckedCreateInput = {
     skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolUncheckedCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolUncheckedCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolUncheckedCreateNestedManyWithoutToolInput;
     roleTools?: Prisma.RoleToolUncheckedCreateNestedManyWithoutToolInput;
 };
 export type ToolUpdateInput = {
@@ -411,6 +416,7 @@ export type ToolUpdateInput = {
     skillTools?: Prisma.SkillToolUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUpdateManyWithoutToolNestedInput;
     integration?: Prisma.IntegrationUpdateOneRequiredWithoutToolsNestedInput;
     appClient?: Prisma.AppClientUpdateOneRequiredWithoutToolsNestedInput;
     toolCategory?: Prisma.ToolCategoryUpdateOneWithoutToolsNestedInput;
@@ -439,6 +445,7 @@ export type ToolUncheckedUpdateInput = {
     skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUncheckedUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUncheckedUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUncheckedUpdateManyWithoutToolNestedInput;
     roleTools?: Prisma.RoleToolUncheckedUpdateManyWithoutToolNestedInput;
 };
 export type ToolCreateManyInput = {
@@ -748,6 +755,18 @@ export type ToolUpdateOneRequiredWithoutWorkflowToolsNestedInput = {
     connect?: Prisma.ToolWhereUniqueInput;
     update?: Prisma.XOR<Prisma.XOR<Prisma.ToolUpdateToOneWithWhereWithoutWorkflowToolsInput, Prisma.ToolUpdateWithoutWorkflowToolsInput>, Prisma.ToolUncheckedUpdateWithoutWorkflowToolsInput>;
 };
+export type ToolCreateNestedOneWithoutFlowToolsInput = {
+    create?: Prisma.XOR<Prisma.ToolCreateWithoutFlowToolsInput, Prisma.ToolUncheckedCreateWithoutFlowToolsInput>;
+    connectOrCreate?: Prisma.ToolCreateOrConnectWithoutFlowToolsInput;
+    connect?: Prisma.ToolWhereUniqueInput;
+};
+export type ToolUpdateOneRequiredWithoutFlowToolsNestedInput = {
+    create?: Prisma.XOR<Prisma.ToolCreateWithoutFlowToolsInput, Prisma.ToolUncheckedCreateWithoutFlowToolsInput>;
+    connectOrCreate?: Prisma.ToolCreateOrConnectWithoutFlowToolsInput;
+    upsert?: Prisma.ToolUpsertWithoutFlowToolsInput;
+    connect?: Prisma.ToolWhereUniqueInput;
+    update?: Prisma.XOR<Prisma.XOR<Prisma.ToolUpdateToOneWithWhereWithoutFlowToolsInput, Prisma.ToolUpdateWithoutFlowToolsInput>, Prisma.ToolUncheckedUpdateWithoutFlowToolsInput>;
+};
 export type ToolCreateWithoutAppClientInput = {
     definitionKey: string;
     name: string;
@@ -767,6 +786,7 @@ export type ToolCreateWithoutAppClientInput = {
     skillTools?: Prisma.SkillToolCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolCreateNestedManyWithoutToolInput;
     integration: Prisma.IntegrationCreateNestedOneWithoutToolsInput;
     toolCategory?: Prisma.ToolCategoryCreateNestedOneWithoutToolsInput;
     roleTools?: Prisma.RoleToolCreateNestedManyWithoutToolInput;
@@ -793,6 +813,7 @@ export type ToolUncheckedCreateWithoutAppClientInput = {
     skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolUncheckedCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolUncheckedCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolUncheckedCreateNestedManyWithoutToolInput;
     roleTools?: Prisma.RoleToolUncheckedCreateNestedManyWithoutToolInput;
 };
 export type ToolCreateOrConnectWithoutAppClientInput = {
@@ -859,6 +880,7 @@ export type ToolCreateWithoutToolCategoryInput = {
     skillTools?: Prisma.SkillToolCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolCreateNestedManyWithoutToolInput;
     integration: Prisma.IntegrationCreateNestedOneWithoutToolsInput;
     appClient: Prisma.AppClientCreateNestedOneWithoutToolsInput;
     roleTools?: Prisma.RoleToolCreateNestedManyWithoutToolInput;
@@ -885,6 +907,7 @@ export type ToolUncheckedCreateWithoutToolCategoryInput = {
     skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolUncheckedCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolUncheckedCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolUncheckedCreateNestedManyWithoutToolInput;
     roleTools?: Prisma.RoleToolUncheckedCreateNestedManyWithoutToolInput;
 };
 export type ToolCreateOrConnectWithoutToolCategoryInput = {
@@ -927,6 +950,7 @@ export type ToolCreateWithoutIntegrationInput = {
     skillTools?: Prisma.SkillToolCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolCreateNestedManyWithoutToolInput;
     appClient: Prisma.AppClientCreateNestedOneWithoutToolsInput;
     toolCategory?: Prisma.ToolCategoryCreateNestedOneWithoutToolsInput;
     roleTools?: Prisma.RoleToolCreateNestedManyWithoutToolInput;
@@ -953,6 +977,7 @@ export type ToolUncheckedCreateWithoutIntegrationInput = {
     skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolUncheckedCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolUncheckedCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolUncheckedCreateNestedManyWithoutToolInput;
     roleTools?: Prisma.RoleToolUncheckedCreateNestedManyWithoutToolInput;
 };
 export type ToolCreateOrConnectWithoutIntegrationInput = {
@@ -994,6 +1019,7 @@ export type ToolCreateWithoutSkillToolsInput = {
     updatedAt?: Date | string;
     agentTools?: Prisma.AgentToolCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolCreateNestedManyWithoutToolInput;
     integration: Prisma.IntegrationCreateNestedOneWithoutToolsInput;
     appClient: Prisma.AppClientCreateNestedOneWithoutToolsInput;
     toolCategory?: Prisma.ToolCategoryCreateNestedOneWithoutToolsInput;
@@ -1021,6 +1047,7 @@ export type ToolUncheckedCreateWithoutSkillToolsInput = {
     updatedAt?: Date | string;
     agentTools?: Prisma.AgentToolUncheckedCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolUncheckedCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolUncheckedCreateNestedManyWithoutToolInput;
     roleTools?: Prisma.RoleToolUncheckedCreateNestedManyWithoutToolInput;
 };
 export type ToolCreateOrConnectWithoutSkillToolsInput = {
@@ -1054,6 +1081,7 @@ export type ToolUpdateWithoutSkillToolsInput = {
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     agentTools?: Prisma.AgentToolUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUpdateManyWithoutToolNestedInput;
     integration?: Prisma.IntegrationUpdateOneRequiredWithoutToolsNestedInput;
     appClient?: Prisma.AppClientUpdateOneRequiredWithoutToolsNestedInput;
     toolCategory?: Prisma.ToolCategoryUpdateOneWithoutToolsNestedInput;
@@ -1081,6 +1109,7 @@ export type ToolUncheckedUpdateWithoutSkillToolsInput = {
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     agentTools?: Prisma.AgentToolUncheckedUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUncheckedUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUncheckedUpdateManyWithoutToolNestedInput;
     roleTools?: Prisma.RoleToolUncheckedUpdateManyWithoutToolNestedInput;
 };
 export type ToolCreateWithoutRoleToolsInput = {
@@ -1102,6 +1131,7 @@ export type ToolCreateWithoutRoleToolsInput = {
     skillTools?: Prisma.SkillToolCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolCreateNestedManyWithoutToolInput;
     integration: Prisma.IntegrationCreateNestedOneWithoutToolsInput;
     appClient: Prisma.AppClientCreateNestedOneWithoutToolsInput;
     toolCategory?: Prisma.ToolCategoryCreateNestedOneWithoutToolsInput;
@@ -1129,6 +1159,7 @@ export type ToolUncheckedCreateWithoutRoleToolsInput = {
     skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolUncheckedCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolUncheckedCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolUncheckedCreateNestedManyWithoutToolInput;
 };
 export type ToolCreateOrConnectWithoutRoleToolsInput = {
     where: Prisma.ToolWhereUniqueInput;
@@ -1162,6 +1193,7 @@ export type ToolUpdateWithoutRoleToolsInput = {
     skillTools?: Prisma.SkillToolUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUpdateManyWithoutToolNestedInput;
     integration?: Prisma.IntegrationUpdateOneRequiredWithoutToolsNestedInput;
     appClient?: Prisma.AppClientUpdateOneRequiredWithoutToolsNestedInput;
     toolCategory?: Prisma.ToolCategoryUpdateOneWithoutToolsNestedInput;
@@ -1189,6 +1221,7 @@ export type ToolUncheckedUpdateWithoutRoleToolsInput = {
     skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUncheckedUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUncheckedUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUncheckedUpdateManyWithoutToolNestedInput;
 };
 export type ToolCreateWithoutAgentToolsInput = {
     definitionKey: string;
@@ -1208,6 +1241,7 @@ export type ToolCreateWithoutAgentToolsInput = {
     updatedAt?: Date | string;
     skillTools?: Prisma.SkillToolCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolCreateNestedManyWithoutToolInput;
     integration: Prisma.IntegrationCreateNestedOneWithoutToolsInput;
     appClient: Prisma.AppClientCreateNestedOneWithoutToolsInput;
     toolCategory?: Prisma.ToolCategoryCreateNestedOneWithoutToolsInput;
@@ -1235,6 +1269,7 @@ export type ToolUncheckedCreateWithoutAgentToolsInput = {
     updatedAt?: Date | string;
     skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutToolInput;
     workflowTools?: Prisma.WorkflowToolUncheckedCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolUncheckedCreateNestedManyWithoutToolInput;
     roleTools?: Prisma.RoleToolUncheckedCreateNestedManyWithoutToolInput;
 };
 export type ToolCreateOrConnectWithoutAgentToolsInput = {
@@ -1268,6 +1303,7 @@ export type ToolUpdateWithoutAgentToolsInput = {
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     skillTools?: Prisma.SkillToolUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUpdateManyWithoutToolNestedInput;
     integration?: Prisma.IntegrationUpdateOneRequiredWithoutToolsNestedInput;
     appClient?: Prisma.AppClientUpdateOneRequiredWithoutToolsNestedInput;
     toolCategory?: Prisma.ToolCategoryUpdateOneWithoutToolsNestedInput;
@@ -1295,6 +1331,7 @@ export type ToolUncheckedUpdateWithoutAgentToolsInput = {
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUncheckedUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUncheckedUpdateManyWithoutToolNestedInput;
     roleTools?: Prisma.RoleToolUncheckedUpdateManyWithoutToolNestedInput;
 };
 export type ToolCreateWithoutWorkflowToolsInput = {
@@ -1315,6 +1352,7 @@ export type ToolCreateWithoutWorkflowToolsInput = {
     updatedAt?: Date | string;
     skillTools?: Prisma.SkillToolCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolCreateNestedManyWithoutToolInput;
     integration: Prisma.IntegrationCreateNestedOneWithoutToolsInput;
     appClient: Prisma.AppClientCreateNestedOneWithoutToolsInput;
     toolCategory?: Prisma.ToolCategoryCreateNestedOneWithoutToolsInput;
@@ -1342,6 +1380,7 @@ export type ToolUncheckedCreateWithoutWorkflowToolsInput = {
     updatedAt?: Date | string;
     skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutToolInput;
     agentTools?: Prisma.AgentToolUncheckedCreateNestedManyWithoutToolInput;
+    flowTools?: Prisma.FlowToolUncheckedCreateNestedManyWithoutToolInput;
     roleTools?: Prisma.RoleToolUncheckedCreateNestedManyWithoutToolInput;
 };
 export type ToolCreateOrConnectWithoutWorkflowToolsInput = {
@@ -1375,6 +1414,7 @@ export type ToolUpdateWithoutWorkflowToolsInput = {
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     skillTools?: Prisma.SkillToolUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUpdateManyWithoutToolNestedInput;
     integration?: Prisma.IntegrationUpdateOneRequiredWithoutToolsNestedInput;
     appClient?: Prisma.AppClientUpdateOneRequiredWithoutToolsNestedInput;
     toolCategory?: Prisma.ToolCategoryUpdateOneWithoutToolsNestedInput;
@@ -1402,6 +1442,118 @@ export type ToolUncheckedUpdateWithoutWorkflowToolsInput = {
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUncheckedUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUncheckedUpdateManyWithoutToolNestedInput;
+    roleTools?: Prisma.RoleToolUncheckedUpdateManyWithoutToolNestedInput;
+};
+export type ToolCreateWithoutFlowToolsInput = {
+    definitionKey: string;
+    name: string;
+    description: string;
+    riskLevel?: $Enums.ToolLevel;
+    schema: Prisma.JsonNullValueInput | runtime.InputJsonValue;
+    inputSchema: Prisma.JsonNullValueInput | runtime.InputJsonValue;
+    outputSchema?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    responseProfile?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    agentMetadata?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    method: $Enums.HttpMethod;
+    path: string;
+    isActive?: boolean;
+    timeout?: number | null;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    skillTools?: Prisma.SkillToolCreateNestedManyWithoutToolInput;
+    agentTools?: Prisma.AgentToolCreateNestedManyWithoutToolInput;
+    workflowTools?: Prisma.WorkflowToolCreateNestedManyWithoutToolInput;
+    integration: Prisma.IntegrationCreateNestedOneWithoutToolsInput;
+    appClient: Prisma.AppClientCreateNestedOneWithoutToolsInput;
+    toolCategory?: Prisma.ToolCategoryCreateNestedOneWithoutToolsInput;
+    roleTools?: Prisma.RoleToolCreateNestedManyWithoutToolInput;
+};
+export type ToolUncheckedCreateWithoutFlowToolsInput = {
+    id?: number;
+    appClientId: number;
+    definitionKey: string;
+    name: string;
+    description: string;
+    riskLevel?: $Enums.ToolLevel;
+    schema: Prisma.JsonNullValueInput | runtime.InputJsonValue;
+    inputSchema: Prisma.JsonNullValueInput | runtime.InputJsonValue;
+    outputSchema?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    responseProfile?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    agentMetadata?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    method: $Enums.HttpMethod;
+    path: string;
+    integrationId: number;
+    toolCategoryId?: number | null;
+    isActive?: boolean;
+    timeout?: number | null;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutToolInput;
+    agentTools?: Prisma.AgentToolUncheckedCreateNestedManyWithoutToolInput;
+    workflowTools?: Prisma.WorkflowToolUncheckedCreateNestedManyWithoutToolInput;
+    roleTools?: Prisma.RoleToolUncheckedCreateNestedManyWithoutToolInput;
+};
+export type ToolCreateOrConnectWithoutFlowToolsInput = {
+    where: Prisma.ToolWhereUniqueInput;
+    create: Prisma.XOR<Prisma.ToolCreateWithoutFlowToolsInput, Prisma.ToolUncheckedCreateWithoutFlowToolsInput>;
+};
+export type ToolUpsertWithoutFlowToolsInput = {
+    update: Prisma.XOR<Prisma.ToolUpdateWithoutFlowToolsInput, Prisma.ToolUncheckedUpdateWithoutFlowToolsInput>;
+    create: Prisma.XOR<Prisma.ToolCreateWithoutFlowToolsInput, Prisma.ToolUncheckedCreateWithoutFlowToolsInput>;
+    where?: Prisma.ToolWhereInput;
+};
+export type ToolUpdateToOneWithWhereWithoutFlowToolsInput = {
+    where?: Prisma.ToolWhereInput;
+    data: Prisma.XOR<Prisma.ToolUpdateWithoutFlowToolsInput, Prisma.ToolUncheckedUpdateWithoutFlowToolsInput>;
+};
+export type ToolUpdateWithoutFlowToolsInput = {
+    definitionKey?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.StringFieldUpdateOperationsInput | string;
+    description?: Prisma.StringFieldUpdateOperationsInput | string;
+    riskLevel?: Prisma.EnumToolLevelFieldUpdateOperationsInput | $Enums.ToolLevel;
+    schema?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
+    inputSchema?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
+    outputSchema?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    responseProfile?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    agentMetadata?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    method?: Prisma.EnumHttpMethodFieldUpdateOperationsInput | $Enums.HttpMethod;
+    path?: Prisma.StringFieldUpdateOperationsInput | string;
+    isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean;
+    timeout?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    skillTools?: Prisma.SkillToolUpdateManyWithoutToolNestedInput;
+    agentTools?: Prisma.AgentToolUpdateManyWithoutToolNestedInput;
+    workflowTools?: Prisma.WorkflowToolUpdateManyWithoutToolNestedInput;
+    integration?: Prisma.IntegrationUpdateOneRequiredWithoutToolsNestedInput;
+    appClient?: Prisma.AppClientUpdateOneRequiredWithoutToolsNestedInput;
+    toolCategory?: Prisma.ToolCategoryUpdateOneWithoutToolsNestedInput;
+    roleTools?: Prisma.RoleToolUpdateManyWithoutToolNestedInput;
+};
+export type ToolUncheckedUpdateWithoutFlowToolsInput = {
+    id?: Prisma.IntFieldUpdateOperationsInput | number;
+    appClientId?: Prisma.IntFieldUpdateOperationsInput | number;
+    definitionKey?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.StringFieldUpdateOperationsInput | string;
+    description?: Prisma.StringFieldUpdateOperationsInput | string;
+    riskLevel?: Prisma.EnumToolLevelFieldUpdateOperationsInput | $Enums.ToolLevel;
+    schema?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
+    inputSchema?: Prisma.JsonNullValueInput | runtime.InputJsonValue;
+    outputSchema?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    responseProfile?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    agentMetadata?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    method?: Prisma.EnumHttpMethodFieldUpdateOperationsInput | $Enums.HttpMethod;
+    path?: Prisma.StringFieldUpdateOperationsInput | string;
+    integrationId?: Prisma.IntFieldUpdateOperationsInput | number;
+    toolCategoryId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
+    isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean;
+    timeout?: Prisma.NullableIntFieldUpdateOperationsInput | number | null;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutToolNestedInput;
+    agentTools?: Prisma.AgentToolUncheckedUpdateManyWithoutToolNestedInput;
+    workflowTools?: Prisma.WorkflowToolUncheckedUpdateManyWithoutToolNestedInput;
     roleTools?: Prisma.RoleToolUncheckedUpdateManyWithoutToolNestedInput;
 };
 export type ToolCreateManyAppClientInput = {
@@ -1443,6 +1595,7 @@ export type ToolUpdateWithoutAppClientInput = {
     skillTools?: Prisma.SkillToolUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUpdateManyWithoutToolNestedInput;
     integration?: Prisma.IntegrationUpdateOneRequiredWithoutToolsNestedInput;
     toolCategory?: Prisma.ToolCategoryUpdateOneWithoutToolsNestedInput;
     roleTools?: Prisma.RoleToolUpdateManyWithoutToolNestedInput;
@@ -1469,6 +1622,7 @@ export type ToolUncheckedUpdateWithoutAppClientInput = {
     skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUncheckedUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUncheckedUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUncheckedUpdateManyWithoutToolNestedInput;
     roleTools?: Prisma.RoleToolUncheckedUpdateManyWithoutToolNestedInput;
 };
 export type ToolUncheckedUpdateManyWithoutAppClientInput = {
@@ -1530,6 +1684,7 @@ export type ToolUpdateWithoutToolCategoryInput = {
     skillTools?: Prisma.SkillToolUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUpdateManyWithoutToolNestedInput;
     integration?: Prisma.IntegrationUpdateOneRequiredWithoutToolsNestedInput;
     appClient?: Prisma.AppClientUpdateOneRequiredWithoutToolsNestedInput;
     roleTools?: Prisma.RoleToolUpdateManyWithoutToolNestedInput;
@@ -1556,6 +1711,7 @@ export type ToolUncheckedUpdateWithoutToolCategoryInput = {
     skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUncheckedUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUncheckedUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUncheckedUpdateManyWithoutToolNestedInput;
     roleTools?: Prisma.RoleToolUncheckedUpdateManyWithoutToolNestedInput;
 };
 export type ToolUncheckedUpdateManyWithoutToolCategoryInput = {
@@ -1617,6 +1773,7 @@ export type ToolUpdateWithoutIntegrationInput = {
     skillTools?: Prisma.SkillToolUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUpdateManyWithoutToolNestedInput;
     appClient?: Prisma.AppClientUpdateOneRequiredWithoutToolsNestedInput;
     toolCategory?: Prisma.ToolCategoryUpdateOneWithoutToolsNestedInput;
     roleTools?: Prisma.RoleToolUpdateManyWithoutToolNestedInput;
@@ -1643,6 +1800,7 @@ export type ToolUncheckedUpdateWithoutIntegrationInput = {
     skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutToolNestedInput;
     agentTools?: Prisma.AgentToolUncheckedUpdateManyWithoutToolNestedInput;
     workflowTools?: Prisma.WorkflowToolUncheckedUpdateManyWithoutToolNestedInput;
+    flowTools?: Prisma.FlowToolUncheckedUpdateManyWithoutToolNestedInput;
     roleTools?: Prisma.RoleToolUncheckedUpdateManyWithoutToolNestedInput;
 };
 export type ToolUncheckedUpdateManyWithoutIntegrationInput = {
@@ -1669,12 +1827,14 @@ export type ToolCountOutputType = {
     skillTools: number;
     agentTools: number;
     workflowTools: number;
+    flowTools: number;
     roleTools: number;
 };
 export type ToolCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     skillTools?: boolean | ToolCountOutputTypeCountSkillToolsArgs;
     agentTools?: boolean | ToolCountOutputTypeCountAgentToolsArgs;
     workflowTools?: boolean | ToolCountOutputTypeCountWorkflowToolsArgs;
+    flowTools?: boolean | ToolCountOutputTypeCountFlowToolsArgs;
     roleTools?: boolean | ToolCountOutputTypeCountRoleToolsArgs;
 };
 export type ToolCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1688,6 +1848,9 @@ export type ToolCountOutputTypeCountAgentToolsArgs<ExtArgs extends runtime.Types
 };
 export type ToolCountOutputTypeCountWorkflowToolsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     where?: Prisma.WorkflowToolWhereInput;
+};
+export type ToolCountOutputTypeCountFlowToolsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    where?: Prisma.FlowToolWhereInput;
 };
 export type ToolCountOutputTypeCountRoleToolsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     where?: Prisma.RoleToolWhereInput;
@@ -1715,6 +1878,7 @@ export type ToolSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
     skillTools?: boolean | Prisma.Tool$skillToolsArgs<ExtArgs>;
     agentTools?: boolean | Prisma.Tool$agentToolsArgs<ExtArgs>;
     workflowTools?: boolean | Prisma.Tool$workflowToolsArgs<ExtArgs>;
+    flowTools?: boolean | Prisma.Tool$flowToolsArgs<ExtArgs>;
     integration?: boolean | Prisma.IntegrationDefaultArgs<ExtArgs>;
     appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>;
     toolCategory?: boolean | Prisma.Tool$toolCategoryArgs<ExtArgs>;
@@ -1795,6 +1959,7 @@ export type ToolInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
     skillTools?: boolean | Prisma.Tool$skillToolsArgs<ExtArgs>;
     agentTools?: boolean | Prisma.Tool$agentToolsArgs<ExtArgs>;
     workflowTools?: boolean | Prisma.Tool$workflowToolsArgs<ExtArgs>;
+    flowTools?: boolean | Prisma.Tool$flowToolsArgs<ExtArgs>;
     integration?: boolean | Prisma.IntegrationDefaultArgs<ExtArgs>;
     appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>;
     toolCategory?: boolean | Prisma.Tool$toolCategoryArgs<ExtArgs>;
@@ -1817,6 +1982,7 @@ export type $ToolPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
         skillTools: Prisma.$SkillToolPayload<ExtArgs>[];
         agentTools: Prisma.$AgentToolPayload<ExtArgs>[];
         workflowTools: Prisma.$WorkflowToolPayload<ExtArgs>[];
+        flowTools: Prisma.$FlowToolPayload<ExtArgs>[];
         integration: Prisma.$IntegrationPayload<ExtArgs>;
         appClient: Prisma.$AppClientPayload<ExtArgs>;
         toolCategory: Prisma.$ToolCategoryPayload<ExtArgs> | null;
@@ -1897,6 +2063,7 @@ export interface Prisma__ToolClient<T, Null = never, ExtArgs extends runtime.Typ
     skillTools<T extends Prisma.Tool$skillToolsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Tool$skillToolsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SkillToolPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     agentTools<T extends Prisma.Tool$agentToolsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Tool$agentToolsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AgentToolPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     workflowTools<T extends Prisma.Tool$workflowToolsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Tool$workflowToolsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WorkflowToolPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
+    flowTools<T extends Prisma.Tool$flowToolsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Tool$flowToolsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$FlowToolPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     integration<T extends Prisma.IntegrationDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.IntegrationDefaultArgs<ExtArgs>>): Prisma.Prisma__IntegrationClient<runtime.Types.Result.GetResult<Prisma.$IntegrationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>;
     appClient<T extends Prisma.AppClientDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClientDefaultArgs<ExtArgs>>): Prisma.Prisma__AppClientClient<runtime.Types.Result.GetResult<Prisma.$AppClientPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>;
     toolCategory<T extends Prisma.Tool$toolCategoryArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Tool$toolCategoryArgs<ExtArgs>>): Prisma.Prisma__ToolCategoryClient<runtime.Types.Result.GetResult<Prisma.$ToolCategoryPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>;
@@ -2058,6 +2225,17 @@ export type Tool$workflowToolsArgs<ExtArgs extends runtime.Types.Extensions.Inte
     take?: number;
     skip?: number;
     distinct?: Prisma.WorkflowToolScalarFieldEnum | Prisma.WorkflowToolScalarFieldEnum[];
+};
+export type Tool$flowToolsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    select?: Prisma.FlowToolSelect<ExtArgs> | null;
+    omit?: Prisma.FlowToolOmit<ExtArgs> | null;
+    include?: Prisma.FlowToolInclude<ExtArgs> | null;
+    where?: Prisma.FlowToolWhereInput;
+    orderBy?: Prisma.FlowToolOrderByWithRelationInput | Prisma.FlowToolOrderByWithRelationInput[];
+    cursor?: Prisma.FlowToolWhereUniqueInput;
+    take?: number;
+    skip?: number;
+    distinct?: Prisma.FlowToolScalarFieldEnum | Prisma.FlowToolScalarFieldEnum[];
 };
 export type Tool$toolCategoryArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     select?: Prisma.ToolCategorySelect<ExtArgs> | null;

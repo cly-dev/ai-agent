@@ -19,8 +19,9 @@ export type SuspendForApprovalInput = {
   source: ApprovalSource;
   initiatorUserId: number | null;
   approverUserId: number;
-  workflowId: number;
-  workflowVersion: number;
+  /** 编排资产：新建/刷新审批必须有 Flow */
+  flowId: number;
+  flowVersion?: number | null;
   nodeId: string;
   title: string;
   /** 写草稿真值；preview / summary / pendingWrite 由此派生。 */
@@ -74,9 +75,8 @@ export class ApprovalGateService {
     const summary = writeDraft.presentation.summaryText ?? null;
 
     let resumeSnapshot: ApprovalResumeSnapshot = {
-      version: 1,
+      version: 2,
       workflowRun: input.workflowRun,
-      workflowNodeDefs: input.workflowNodeDefs,
       workflowNodeOutputs: input.workflowNodeOutputs,
       pendingWrite,
       writeDraft,
@@ -84,6 +84,20 @@ export class ApprovalGateService {
       pageContext: input.pageContext ?? null,
       channel: input.channel,
       draftRetryCount: writeDraft.provenance.draftRetryCount,
+      flow: {
+        id: input.flowId,
+        version: input.flowVersion ?? input.workflowRun.version,
+      },
+      suspended: {
+        irNodeId:
+          input.workflowRun.nodes.find((n) => n.nodeId === input.nodeId)
+            ?.irNodeId ?? input.nodeId,
+        phase:
+          input.workflowRun.nodes.find((n) => n.nodeId === input.nodeId)
+            ?.phase ?? null,
+      },
+      // 可选缓存，便于旧 rewind；续跑优先重载 Flow
+      workflowNodeDefs: input.workflowNodeDefs,
     };
 
     if (input.existingApprovalRequestId != null) {
@@ -133,7 +147,7 @@ export class ApprovalGateService {
         detail: {
           approvalRequestId: approval.id,
           nodeId: input.nodeId,
-          workflowId: input.workflowId,
+          flowId: input.flowId,
           refreshed: true,
           ...buildWriteDraftStepDetail(writeDraft),
         },
@@ -146,8 +160,8 @@ export class ApprovalGateService {
       source: input.source,
       initiatorUserId: input.initiatorUserId,
       approverUserId: input.approverUserId,
-      workflowId: input.workflowId,
-      workflowVersion: input.workflowVersion,
+      flowId: input.flowId,
+      flowVersion: input.flowVersion ?? null,
       nodeId: input.nodeId,
       title: input.title,
       summary,
@@ -164,7 +178,7 @@ export class ApprovalGateService {
       detail: {
         approvalRequestId: approval.id,
         nodeId: input.nodeId,
-        workflowId: input.workflowId,
+        flowId: input.flowId,
         ...buildWriteDraftStepDetail(writeDraft),
       },
     });

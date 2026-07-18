@@ -286,13 +286,10 @@ export function buildWorkflowNodeCompleteAudit(
             ? summarizeRecordForAudit(row.arguments as Record<string, unknown>)
             : null,
       };
-    case 'load_page_context':
+    case 'summarize_images':
       return {
-        page: row.page ?? null,
-        entityType: row.entityType ?? null,
-        entityId: row.entityId ?? null,
-        dataSufficiency: row.dataSufficiency ?? null,
-        inlineContentKinds: row.inlineContentKinds ?? null,
+        groupCount: row.groupCount ?? null,
+        cellCount: row.cellCount ?? null,
       };
     default:
       return {};

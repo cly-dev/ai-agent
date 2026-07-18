@@ -17,7 +17,9 @@ export const AUTOMATION_PAGE_ACTION_RUN_INCLUDE = {
       actionKey: true,
       name: true,
       workflowId: true,
+      flowId: true,
       workflow: { select: { workflowKey: true, name: true } },
+      flow: { select: { flowKey: true, name: true } },
     },
   },
   approvalRequest: { select: { id: true, status: true } },
@@ -89,7 +91,9 @@ function toTimeline(steps: unknown): AutomationTaskTimelineEntry[] {
 export function toAutomationTaskFromPageActionRun(
   row: AutomationPageActionRunRow,
 ): AutomationTaskListItem {
+  // PageAction 绑 Flow 时无 workflow 关系；用 flowKey/name 回填公开字段。
   const workflow = row.pageAction.workflow;
+  const flow = row.pageAction.flow;
   const outcome = resolvePageActionRunOutcome({
     status: row.status,
     errorCode: row.errorCode,
@@ -102,8 +106,8 @@ export function toAutomationTaskFromPageActionRun(
     title: row.pageAction.name,
     subtitle: buildAutomationTaskSubtitle(row.pageContext),
     pageActionKey: row.pageActionKey,
-    workflowKey: workflow?.workflowKey ?? null,
-    workflowName: workflow?.name ?? null,
+    workflowKey: workflow?.workflowKey ?? flow?.flowKey ?? null,
+    workflowName: workflow?.name ?? flow?.name ?? null,
     createdAt: row.createdAt.toISOString(),
     finishedAt: row.finishedAt?.toISOString() ?? null,
     durationMs: row.durationMs,

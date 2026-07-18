@@ -9,6 +9,8 @@ export declare class UpdateSkillDto {
     riskLevel?: ToolLevel;
     workflowId?: number | null;
     workflowVersion?: number | null;
+    flowId?: number | null;
+    flowVersion?: number | null;
     workflowOverrides?: Record<string, {
         objective?: string;
     }> | null;

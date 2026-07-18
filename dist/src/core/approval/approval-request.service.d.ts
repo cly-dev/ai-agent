@@ -11,6 +11,12 @@ declare const APPROVAL_INBOX_INCLUDE: {
             name: true;
         };
     };
+    flow: {
+        select: {
+            flowKey: true;
+            name: true;
+        };
+    };
     initiator: {
         select: {
             id: true;

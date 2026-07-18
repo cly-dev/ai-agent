@@ -145,5 +145,17 @@ export interface PrismaClient<in LogOpts extends Prisma.LogLevel = never, in out
     get workflowHostTool(): Prisma.WorkflowHostToolDelegate<ExtArgs, {
         omit: OmitOpts;
     }>;
+    get flow(): Prisma.FlowDelegate<ExtArgs, {
+        omit: OmitOpts;
+    }>;
+    get flowRevision(): Prisma.FlowRevisionDelegate<ExtArgs, {
+        omit: OmitOpts;
+    }>;
+    get flowTool(): Prisma.FlowToolDelegate<ExtArgs, {
+        omit: OmitOpts;
+    }>;
+    get flowHostTool(): Prisma.FlowHostToolDelegate<ExtArgs, {
+        omit: OmitOpts;
+    }>;
 }
 export declare function getPrismaClientClass(): PrismaClientConstructor;

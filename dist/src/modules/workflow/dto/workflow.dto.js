@@ -17,11 +17,8 @@ const client_1 = require("../../../../generated/prisma/client");
 const pagination_1 = require("../../../common/pagination");
 exports.WORKFLOW_PRESET_KIND_VALUES = [
     'page_auto_fill',
-    'page_context_push',
-    'fetch_push_summarize',
     'fetch_and_answer',
     'mutation_submit',
-    'page_context_mutation_submit',
 ];
 class WorkflowToolBindingDto {
 }
@@ -105,7 +102,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         enum: exports.WORKFLOW_PRESET_KIND_VALUES,
-        description: '场景 Preset：与 presetConfig 一起使用时，服务端展开为 nodes[] 再保存；与 nodes 互斥',
+        description: '场景 Preset：与 presetConfig 一起展开为 Intent 再编译 IR；与 intent 互斥',
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsIn)([...exports.WORKFLOW_PRESET_KIND_VALUES]),
@@ -113,7 +110,7 @@ __decorate([
 ], CreateWorkflowDto.prototype, "preset", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        description: 'Preset 参数：如 hostToolId / readToolId / writeToolId / objectives 等，见 GET /workflow/presets/catalog',
+        description: 'Preset 参数：hostToolId / readToolId / writeToolId；变更可选 explainBeforeConfirm / summarizeAfter',
     }),
     (0, class_validator_1.ValidateIf)((dto) => dto.preset != null),
     (0, class_validator_1.IsObject)(),
@@ -121,12 +118,12 @@ __decorate([
 ], CreateWorkflowDto.prototype, "presetConfig", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        description: 'B 端须传文档对象 { nodes, edges, entryNodeId? }（与 preset 二选一）。线性流程也必须传 edges（节点间 always 边）；线索分支用 clue/default。禁止仅传 nodes[]',
+        description: '配置真源 WorkflowIntent（operation+capability）。与 preset 二选一。禁止再传旧 nodes[] IR。',
     }),
     (0, class_validator_1.ValidateIf)((dto) => dto.preset == null),
-    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsObject)(),
     __metadata("design:type", Object)
-], CreateWorkflowDto.prototype, "nodes", void 0);
+], CreateWorkflowDto.prototype, "intent", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ type: [String] }),
     (0, class_validator_1.IsOptional)(),
@@ -150,7 +147,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         type: [WorkflowToolBindingDto],
-        description: '可选。仅用于为 nodes[].input.toolIds/toolId 覆盖 isRequired；绑定 ID 必须在节点 input 上声明，省略则自动从 nodes 推导',
+        description: '可选。仅覆盖 isRequired；绑定 ID 从 Intent slots / 编译 IR 推导',
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsArray)(),
@@ -161,7 +158,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         type: [WorkflowHostToolBindingDto],
-        description: '可选。仅用于为 nodes[].input.hostToolIds/hostToolId 覆盖 isRequired；绑定 ID 必须在节点 input 上声明，省略则自动从 nodes 推导',
+        description: '可选。仅覆盖 isRequired；绑定 ID 从 Intent slots / 编译 IR 推导',
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsArray)(),
@@ -208,7 +205,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         enum: exports.WORKFLOW_PRESET_KIND_VALUES,
-        description: '场景 Preset：与 presetConfig 一起使用时重新展开 nodes[]',
+        description: '场景 Preset：重新展开为 Intent 并编译 IR',
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsIn)([...exports.WORKFLOW_PRESET_KIND_VALUES]),
@@ -222,12 +219,13 @@ __decorate([
 ], UpdateWorkflowDto.prototype, "presetConfig", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        description: '更新 nodes 会递增 version 并写 revision；B 端须传 { nodes, edges, entryNodeId? }（线性也须 always 边）；与 preset 二选一',
+        description: '更新 Intent 会递增 version 并写 revision；与 preset 二选一。禁止旧 nodes IR。',
     }),
     (0, class_validator_1.ValidateIf)((dto) => dto.preset == null),
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsObject)(),
     __metadata("design:type", Object)
-], UpdateWorkflowDto.prototype, "nodes", void 0);
+], UpdateWorkflowDto.prototype, "intent", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ type: [String] }),
     (0, class_validator_1.IsOptional)(),

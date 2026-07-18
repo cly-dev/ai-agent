@@ -1,5 +1,5 @@
 import type { HostActionSsePayload } from '../host-bridge/host-action.types';
-export type PageActionRunStepType = 'lifecycle' | 'llm' | 'dsl' | 'workflow' | 'harness';
+export type PageActionRunStepType = 'lifecycle' | 'llm' | 'dsl' | 'workflow' | 'harness' | 'entity';
 export type PageActionRunStep = {
     step: number;
     type: PageActionRunStepType;

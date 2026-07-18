@@ -23,6 +23,8 @@ export type PageActionRunExecutionInput = {
     appClientId: number;
     pageActionId: number;
     actionKey: string;
+    flowId: number | null;
+    flowVersion: number | null;
     workflowId: number | null;
     workflowVersion: number | null;
     workflowOverrides: unknown;

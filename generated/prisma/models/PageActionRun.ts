@@ -36,6 +36,8 @@ export type PageActionRunAvgAggregateOutputType = {
   durationMs: number | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
   generation: number | null
 }
 
@@ -49,6 +51,8 @@ export type PageActionRunSumAggregateOutputType = {
   durationMs: number | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
   generation: number | null
 }
 
@@ -74,6 +78,8 @@ export type PageActionRunMinAggregateOutputType = {
   clientActionId: string | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
   generation: number | null
   createdAt: Date | null
   finishedAt: Date | null
@@ -101,6 +107,8 @@ export type PageActionRunMaxAggregateOutputType = {
   clientActionId: string | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
   generation: number | null
   createdAt: Date | null
   finishedAt: Date | null
@@ -131,6 +139,8 @@ export type PageActionRunCountAggregateOutputType = {
   steps: number
   workflowId: number
   workflowVersion: number
+  flowId: number
+  flowVersion: number
   workflowRun: number
   generation: number
   createdAt: number
@@ -149,6 +159,8 @@ export type PageActionRunAvgAggregateInputType = {
   durationMs?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
   generation?: true
 }
 
@@ -162,6 +174,8 @@ export type PageActionRunSumAggregateInputType = {
   durationMs?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
   generation?: true
 }
 
@@ -187,6 +201,8 @@ export type PageActionRunMinAggregateInputType = {
   clientActionId?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
   generation?: true
   createdAt?: true
   finishedAt?: true
@@ -214,6 +230,8 @@ export type PageActionRunMaxAggregateInputType = {
   clientActionId?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
   generation?: true
   createdAt?: true
   finishedAt?: true
@@ -244,6 +262,8 @@ export type PageActionRunCountAggregateInputType = {
   steps?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
   workflowRun?: true
   generation?: true
   createdAt?: true
@@ -362,6 +382,8 @@ export type PageActionRunGroupByOutputType = {
   steps: runtime.JsonValue
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
   workflowRun: runtime.JsonValue | null
   generation: number
   createdAt: Date
@@ -416,6 +438,8 @@ export type PageActionRunWhereInput = {
   steps?: Prisma.JsonFilter<"PageActionRun">
   workflowId?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
   workflowVersion?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
+  flowId?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
+  flowVersion?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
   workflowRun?: Prisma.JsonNullableFilter<"PageActionRun">
   generation?: Prisma.IntFilter<"PageActionRun"> | number
   createdAt?: Prisma.DateTimeFilter<"PageActionRun"> | Date | string
@@ -423,6 +447,7 @@ export type PageActionRunWhereInput = {
   pageAction?: Prisma.XOR<Prisma.PageActionScalarRelationFilter, Prisma.PageActionWhereInput>
   appClient?: Prisma.XOR<Prisma.AppClientScalarRelationFilter, Prisma.AppClientWhereInput>
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
+  flow?: Prisma.XOR<Prisma.FlowNullableScalarRelationFilter, Prisma.FlowWhereInput> | null
   approvalRequest?: Prisma.XOR<Prisma.ApprovalRequestNullableScalarRelationFilter, Prisma.ApprovalRequestWhereInput> | null
 }
 
@@ -451,6 +476,8 @@ export type PageActionRunOrderByWithRelationInput = {
   steps?: Prisma.SortOrder
   workflowId?: Prisma.SortOrderInput | Prisma.SortOrder
   workflowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowId?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   workflowRun?: Prisma.SortOrderInput | Prisma.SortOrder
   generation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -458,6 +485,7 @@ export type PageActionRunOrderByWithRelationInput = {
   pageAction?: Prisma.PageActionOrderByWithRelationInput
   appClient?: Prisma.AppClientOrderByWithRelationInput
   user?: Prisma.UserOrderByWithRelationInput
+  flow?: Prisma.FlowOrderByWithRelationInput
   approvalRequest?: Prisma.ApprovalRequestOrderByWithRelationInput
 }
 
@@ -489,6 +517,8 @@ export type PageActionRunWhereUniqueInput = Prisma.AtLeast<{
   steps?: Prisma.JsonFilter<"PageActionRun">
   workflowId?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
   workflowVersion?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
+  flowId?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
+  flowVersion?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
   workflowRun?: Prisma.JsonNullableFilter<"PageActionRun">
   generation?: Prisma.IntFilter<"PageActionRun"> | number
   createdAt?: Prisma.DateTimeFilter<"PageActionRun"> | Date | string
@@ -496,6 +526,7 @@ export type PageActionRunWhereUniqueInput = Prisma.AtLeast<{
   pageAction?: Prisma.XOR<Prisma.PageActionScalarRelationFilter, Prisma.PageActionWhereInput>
   appClient?: Prisma.XOR<Prisma.AppClientScalarRelationFilter, Prisma.AppClientWhereInput>
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
+  flow?: Prisma.XOR<Prisma.FlowNullableScalarRelationFilter, Prisma.FlowWhereInput> | null
   approvalRequest?: Prisma.XOR<Prisma.ApprovalRequestNullableScalarRelationFilter, Prisma.ApprovalRequestWhereInput> | null
 }, "id">
 
@@ -524,6 +555,8 @@ export type PageActionRunOrderByWithAggregationInput = {
   steps?: Prisma.SortOrder
   workflowId?: Prisma.SortOrderInput | Prisma.SortOrder
   workflowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowId?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   workflowRun?: Prisma.SortOrderInput | Prisma.SortOrder
   generation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -563,6 +596,8 @@ export type PageActionRunScalarWhereWithAggregatesInput = {
   steps?: Prisma.JsonWithAggregatesFilter<"PageActionRun">
   workflowId?: Prisma.IntNullableWithAggregatesFilter<"PageActionRun"> | number | null
   workflowVersion?: Prisma.IntNullableWithAggregatesFilter<"PageActionRun"> | number | null
+  flowId?: Prisma.IntNullableWithAggregatesFilter<"PageActionRun"> | number | null
+  flowVersion?: Prisma.IntNullableWithAggregatesFilter<"PageActionRun"> | number | null
   workflowRun?: Prisma.JsonNullableWithAggregatesFilter<"PageActionRun">
   generation?: Prisma.IntWithAggregatesFilter<"PageActionRun"> | number
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"PageActionRun"> | Date | string
@@ -590,6 +625,7 @@ export type PageActionRunCreateInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -597,6 +633,7 @@ export type PageActionRunCreateInput = {
   pageAction: Prisma.PageActionCreateNestedOneWithoutRunsInput
   appClient: Prisma.AppClientCreateNestedOneWithoutPageActionRunsInput
   user: Prisma.UserCreateNestedOneWithoutPageActionRunsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutPageActionRunsInput
   approvalRequest?: Prisma.ApprovalRequestCreateNestedOneWithoutPageActionRunInput
 }
 
@@ -625,6 +662,8 @@ export type PageActionRunUncheckedCreateInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -653,6 +692,7 @@ export type PageActionRunUpdateInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -660,6 +700,7 @@ export type PageActionRunUpdateInput = {
   pageAction?: Prisma.PageActionUpdateOneRequiredWithoutRunsNestedInput
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutPageActionRunsNestedInput
   user?: Prisma.UserUpdateOneRequiredWithoutPageActionRunsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutPageActionRunsNestedInput
   approvalRequest?: Prisma.ApprovalRequestUpdateOneWithoutPageActionRunNestedInput
 }
 
@@ -688,6 +729,8 @@ export type PageActionRunUncheckedUpdateInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -720,6 +763,8 @@ export type PageActionRunCreateManyInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -747,6 +792,7 @@ export type PageActionRunUpdateManyMutationInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -778,6 +824,8 @@ export type PageActionRunUncheckedUpdateManyInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -819,6 +867,8 @@ export type PageActionRunCountOrderByAggregateInput = {
   steps?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
   workflowRun?: Prisma.SortOrder
   generation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -835,6 +885,8 @@ export type PageActionRunAvgOrderByAggregateInput = {
   durationMs?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
   generation?: Prisma.SortOrder
 }
 
@@ -860,6 +912,8 @@ export type PageActionRunMaxOrderByAggregateInput = {
   clientActionId?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
   generation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   finishedAt?: Prisma.SortOrder
@@ -887,6 +941,8 @@ export type PageActionRunMinOrderByAggregateInput = {
   clientActionId?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
   generation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   finishedAt?: Prisma.SortOrder
@@ -902,6 +958,8 @@ export type PageActionRunSumOrderByAggregateInput = {
   durationMs?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
   generation?: Prisma.SortOrder
 }
 
@@ -1056,6 +1114,48 @@ export type PageActionRunUpdateOneWithoutApprovalRequestNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.PageActionRunUpdateToOneWithWhereWithoutApprovalRequestInput, Prisma.PageActionRunUpdateWithoutApprovalRequestInput>, Prisma.PageActionRunUncheckedUpdateWithoutApprovalRequestInput>
 }
 
+export type PageActionRunCreateNestedManyWithoutFlowInput = {
+  create?: Prisma.XOR<Prisma.PageActionRunCreateWithoutFlowInput, Prisma.PageActionRunUncheckedCreateWithoutFlowInput> | Prisma.PageActionRunCreateWithoutFlowInput[] | Prisma.PageActionRunUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.PageActionRunCreateOrConnectWithoutFlowInput | Prisma.PageActionRunCreateOrConnectWithoutFlowInput[]
+  createMany?: Prisma.PageActionRunCreateManyFlowInputEnvelope
+  connect?: Prisma.PageActionRunWhereUniqueInput | Prisma.PageActionRunWhereUniqueInput[]
+}
+
+export type PageActionRunUncheckedCreateNestedManyWithoutFlowInput = {
+  create?: Prisma.XOR<Prisma.PageActionRunCreateWithoutFlowInput, Prisma.PageActionRunUncheckedCreateWithoutFlowInput> | Prisma.PageActionRunCreateWithoutFlowInput[] | Prisma.PageActionRunUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.PageActionRunCreateOrConnectWithoutFlowInput | Prisma.PageActionRunCreateOrConnectWithoutFlowInput[]
+  createMany?: Prisma.PageActionRunCreateManyFlowInputEnvelope
+  connect?: Prisma.PageActionRunWhereUniqueInput | Prisma.PageActionRunWhereUniqueInput[]
+}
+
+export type PageActionRunUpdateManyWithoutFlowNestedInput = {
+  create?: Prisma.XOR<Prisma.PageActionRunCreateWithoutFlowInput, Prisma.PageActionRunUncheckedCreateWithoutFlowInput> | Prisma.PageActionRunCreateWithoutFlowInput[] | Prisma.PageActionRunUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.PageActionRunCreateOrConnectWithoutFlowInput | Prisma.PageActionRunCreateOrConnectWithoutFlowInput[]
+  upsert?: Prisma.PageActionRunUpsertWithWhereUniqueWithoutFlowInput | Prisma.PageActionRunUpsertWithWhereUniqueWithoutFlowInput[]
+  createMany?: Prisma.PageActionRunCreateManyFlowInputEnvelope
+  set?: Prisma.PageActionRunWhereUniqueInput | Prisma.PageActionRunWhereUniqueInput[]
+  disconnect?: Prisma.PageActionRunWhereUniqueInput | Prisma.PageActionRunWhereUniqueInput[]
+  delete?: Prisma.PageActionRunWhereUniqueInput | Prisma.PageActionRunWhereUniqueInput[]
+  connect?: Prisma.PageActionRunWhereUniqueInput | Prisma.PageActionRunWhereUniqueInput[]
+  update?: Prisma.PageActionRunUpdateWithWhereUniqueWithoutFlowInput | Prisma.PageActionRunUpdateWithWhereUniqueWithoutFlowInput[]
+  updateMany?: Prisma.PageActionRunUpdateManyWithWhereWithoutFlowInput | Prisma.PageActionRunUpdateManyWithWhereWithoutFlowInput[]
+  deleteMany?: Prisma.PageActionRunScalarWhereInput | Prisma.PageActionRunScalarWhereInput[]
+}
+
+export type PageActionRunUncheckedUpdateManyWithoutFlowNestedInput = {
+  create?: Prisma.XOR<Prisma.PageActionRunCreateWithoutFlowInput, Prisma.PageActionRunUncheckedCreateWithoutFlowInput> | Prisma.PageActionRunCreateWithoutFlowInput[] | Prisma.PageActionRunUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.PageActionRunCreateOrConnectWithoutFlowInput | Prisma.PageActionRunCreateOrConnectWithoutFlowInput[]
+  upsert?: Prisma.PageActionRunUpsertWithWhereUniqueWithoutFlowInput | Prisma.PageActionRunUpsertWithWhereUniqueWithoutFlowInput[]
+  createMany?: Prisma.PageActionRunCreateManyFlowInputEnvelope
+  set?: Prisma.PageActionRunWhereUniqueInput | Prisma.PageActionRunWhereUniqueInput[]
+  disconnect?: Prisma.PageActionRunWhereUniqueInput | Prisma.PageActionRunWhereUniqueInput[]
+  delete?: Prisma.PageActionRunWhereUniqueInput | Prisma.PageActionRunWhereUniqueInput[]
+  connect?: Prisma.PageActionRunWhereUniqueInput | Prisma.PageActionRunWhereUniqueInput[]
+  update?: Prisma.PageActionRunUpdateWithWhereUniqueWithoutFlowInput | Prisma.PageActionRunUpdateWithWhereUniqueWithoutFlowInput[]
+  updateMany?: Prisma.PageActionRunUpdateManyWithWhereWithoutFlowInput | Prisma.PageActionRunUpdateManyWithWhereWithoutFlowInput[]
+  deleteMany?: Prisma.PageActionRunScalarWhereInput | Prisma.PageActionRunScalarWhereInput[]
+}
+
 export type PageActionRunCreateWithoutUserInput = {
   delivery: $Enums.PageActionDelivery
   status?: $Enums.PageActionRunStatus
@@ -1077,12 +1177,14 @@ export type PageActionRunCreateWithoutUserInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
   finishedAt?: Date | string | null
   pageAction: Prisma.PageActionCreateNestedOneWithoutRunsInput
   appClient: Prisma.AppClientCreateNestedOneWithoutPageActionRunsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutPageActionRunsInput
   approvalRequest?: Prisma.ApprovalRequestCreateNestedOneWithoutPageActionRunInput
 }
 
@@ -1110,6 +1212,8 @@ export type PageActionRunUncheckedCreateWithoutUserInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -1171,6 +1275,8 @@ export type PageActionRunScalarWhereInput = {
   steps?: Prisma.JsonFilter<"PageActionRun">
   workflowId?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
   workflowVersion?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
+  flowId?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
+  flowVersion?: Prisma.IntNullableFilter<"PageActionRun"> | number | null
   workflowRun?: Prisma.JsonNullableFilter<"PageActionRun">
   generation?: Prisma.IntFilter<"PageActionRun"> | number
   createdAt?: Prisma.DateTimeFilter<"PageActionRun"> | Date | string
@@ -1198,12 +1304,14 @@ export type PageActionRunCreateWithoutAppClientInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
   finishedAt?: Date | string | null
   pageAction: Prisma.PageActionCreateNestedOneWithoutRunsInput
   user: Prisma.UserCreateNestedOneWithoutPageActionRunsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutPageActionRunsInput
   approvalRequest?: Prisma.ApprovalRequestCreateNestedOneWithoutPageActionRunInput
 }
 
@@ -1231,6 +1339,8 @@ export type PageActionRunUncheckedCreateWithoutAppClientInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -1285,12 +1395,14 @@ export type PageActionRunCreateWithoutPageActionInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
   finishedAt?: Date | string | null
   appClient: Prisma.AppClientCreateNestedOneWithoutPageActionRunsInput
   user: Prisma.UserCreateNestedOneWithoutPageActionRunsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutPageActionRunsInput
   approvalRequest?: Prisma.ApprovalRequestCreateNestedOneWithoutPageActionRunInput
 }
 
@@ -1318,6 +1430,8 @@ export type PageActionRunUncheckedCreateWithoutPageActionInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -1372,6 +1486,7 @@ export type PageActionRunCreateWithoutApprovalRequestInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -1379,6 +1494,7 @@ export type PageActionRunCreateWithoutApprovalRequestInput = {
   pageAction: Prisma.PageActionCreateNestedOneWithoutRunsInput
   appClient: Prisma.AppClientCreateNestedOneWithoutPageActionRunsInput
   user: Prisma.UserCreateNestedOneWithoutPageActionRunsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutPageActionRunsInput
 }
 
 export type PageActionRunUncheckedCreateWithoutApprovalRequestInput = {
@@ -1406,6 +1522,8 @@ export type PageActionRunUncheckedCreateWithoutApprovalRequestInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -1449,6 +1567,7 @@ export type PageActionRunUpdateWithoutApprovalRequestInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1456,6 +1575,7 @@ export type PageActionRunUpdateWithoutApprovalRequestInput = {
   pageAction?: Prisma.PageActionUpdateOneRequiredWithoutRunsNestedInput
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutPageActionRunsNestedInput
   user?: Prisma.UserUpdateOneRequiredWithoutPageActionRunsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutPageActionRunsNestedInput
 }
 
 export type PageActionRunUncheckedUpdateWithoutApprovalRequestInput = {
@@ -1483,10 +1603,103 @@ export type PageActionRunUncheckedUpdateWithoutApprovalRequestInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   finishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+}
+
+export type PageActionRunCreateWithoutFlowInput = {
+  delivery: $Enums.PageActionDelivery
+  status?: $Enums.PageActionRunStatus
+  instruction?: string | null
+  context?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  pageContext?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  fillText?: string | null
+  dslOutcome?: string | null
+  errorCode?: string | null
+  errorMessage?: string | null
+  streamId?: string | null
+  model?: string | null
+  promptTokens?: number | null
+  completionTokens?: number | null
+  durationMs?: number | null
+  idempotencyKey?: string | null
+  pageActionKey?: string | null
+  clientActionId?: string | null
+  steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowVersion?: number | null
+  workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  generation?: number
+  createdAt?: Date | string
+  finishedAt?: Date | string | null
+  pageAction: Prisma.PageActionCreateNestedOneWithoutRunsInput
+  appClient: Prisma.AppClientCreateNestedOneWithoutPageActionRunsInput
+  user: Prisma.UserCreateNestedOneWithoutPageActionRunsInput
+  approvalRequest?: Prisma.ApprovalRequestCreateNestedOneWithoutPageActionRunInput
+}
+
+export type PageActionRunUncheckedCreateWithoutFlowInput = {
+  id?: number
+  pageActionId: number
+  appClientId: number
+  userId: number
+  delivery: $Enums.PageActionDelivery
+  status?: $Enums.PageActionRunStatus
+  instruction?: string | null
+  context?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  pageContext?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  fillText?: string | null
+  dslOutcome?: string | null
+  errorCode?: string | null
+  errorMessage?: string | null
+  streamId?: string | null
+  model?: string | null
+  promptTokens?: number | null
+  completionTokens?: number | null
+  durationMs?: number | null
+  idempotencyKey?: string | null
+  pageActionKey?: string | null
+  clientActionId?: string | null
+  steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowVersion?: number | null
+  workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  generation?: number
+  createdAt?: Date | string
+  finishedAt?: Date | string | null
+  approvalRequest?: Prisma.ApprovalRequestUncheckedCreateNestedOneWithoutPageActionRunInput
+}
+
+export type PageActionRunCreateOrConnectWithoutFlowInput = {
+  where: Prisma.PageActionRunWhereUniqueInput
+  create: Prisma.XOR<Prisma.PageActionRunCreateWithoutFlowInput, Prisma.PageActionRunUncheckedCreateWithoutFlowInput>
+}
+
+export type PageActionRunCreateManyFlowInputEnvelope = {
+  data: Prisma.PageActionRunCreateManyFlowInput | Prisma.PageActionRunCreateManyFlowInput[]
+  skipDuplicates?: boolean
+}
+
+export type PageActionRunUpsertWithWhereUniqueWithoutFlowInput = {
+  where: Prisma.PageActionRunWhereUniqueInput
+  update: Prisma.XOR<Prisma.PageActionRunUpdateWithoutFlowInput, Prisma.PageActionRunUncheckedUpdateWithoutFlowInput>
+  create: Prisma.XOR<Prisma.PageActionRunCreateWithoutFlowInput, Prisma.PageActionRunUncheckedCreateWithoutFlowInput>
+}
+
+export type PageActionRunUpdateWithWhereUniqueWithoutFlowInput = {
+  where: Prisma.PageActionRunWhereUniqueInput
+  data: Prisma.XOR<Prisma.PageActionRunUpdateWithoutFlowInput, Prisma.PageActionRunUncheckedUpdateWithoutFlowInput>
+}
+
+export type PageActionRunUpdateManyWithWhereWithoutFlowInput = {
+  where: Prisma.PageActionRunScalarWhereInput
+  data: Prisma.XOR<Prisma.PageActionRunUpdateManyMutationInput, Prisma.PageActionRunUncheckedUpdateManyWithoutFlowInput>
 }
 
 export type PageActionRunCreateManyUserInput = {
@@ -1513,6 +1726,8 @@ export type PageActionRunCreateManyUserInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -1540,12 +1755,14 @@ export type PageActionRunUpdateWithoutUserInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   finishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   pageAction?: Prisma.PageActionUpdateOneRequiredWithoutRunsNestedInput
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutPageActionRunsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutPageActionRunsNestedInput
   approvalRequest?: Prisma.ApprovalRequestUpdateOneWithoutPageActionRunNestedInput
 }
 
@@ -1573,6 +1790,8 @@ export type PageActionRunUncheckedUpdateWithoutUserInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1604,6 +1823,8 @@ export type PageActionRunUncheckedUpdateManyWithoutUserInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1634,6 +1855,8 @@ export type PageActionRunCreateManyAppClientInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -1661,12 +1884,14 @@ export type PageActionRunUpdateWithoutAppClientInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   finishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   pageAction?: Prisma.PageActionUpdateOneRequiredWithoutRunsNestedInput
   user?: Prisma.UserUpdateOneRequiredWithoutPageActionRunsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutPageActionRunsNestedInput
   approvalRequest?: Prisma.ApprovalRequestUpdateOneWithoutPageActionRunNestedInput
 }
 
@@ -1694,6 +1919,8 @@ export type PageActionRunUncheckedUpdateWithoutAppClientInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1725,6 +1952,8 @@ export type PageActionRunUncheckedUpdateManyWithoutAppClientInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1755,6 +1984,8 @@ export type PageActionRunCreateManyPageActionInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: number | null
   workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: number
   createdAt?: Date | string
@@ -1782,12 +2013,14 @@ export type PageActionRunUpdateWithoutPageActionInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   finishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutPageActionRunsNestedInput
   user?: Prisma.UserUpdateOneRequiredWithoutPageActionRunsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutPageActionRunsNestedInput
   approvalRequest?: Prisma.ApprovalRequestUpdateOneWithoutPageActionRunNestedInput
 }
 
@@ -1815,6 +2048,8 @@ export type PageActionRunUncheckedUpdateWithoutPageActionInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1846,6 +2081,137 @@ export type PageActionRunUncheckedUpdateManyWithoutPageActionInput = {
   steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  generation?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  finishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+}
+
+export type PageActionRunCreateManyFlowInput = {
+  id?: number
+  pageActionId: number
+  appClientId: number
+  userId: number
+  delivery: $Enums.PageActionDelivery
+  status?: $Enums.PageActionRunStatus
+  instruction?: string | null
+  context?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  pageContext?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  fillText?: string | null
+  dslOutcome?: string | null
+  errorCode?: string | null
+  errorMessage?: string | null
+  streamId?: string | null
+  model?: string | null
+  promptTokens?: number | null
+  completionTokens?: number | null
+  durationMs?: number | null
+  idempotencyKey?: string | null
+  pageActionKey?: string | null
+  clientActionId?: string | null
+  steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowVersion?: number | null
+  workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  generation?: number
+  createdAt?: Date | string
+  finishedAt?: Date | string | null
+}
+
+export type PageActionRunUpdateWithoutFlowInput = {
+  delivery?: Prisma.EnumPageActionDeliveryFieldUpdateOperationsInput | $Enums.PageActionDelivery
+  status?: Prisma.EnumPageActionRunStatusFieldUpdateOperationsInput | $Enums.PageActionRunStatus
+  instruction?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  context?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  pageContext?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  fillText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dslOutcome?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  errorCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  streamId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  model?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  promptTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  generation?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  finishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  pageAction?: Prisma.PageActionUpdateOneRequiredWithoutRunsNestedInput
+  appClient?: Prisma.AppClientUpdateOneRequiredWithoutPageActionRunsNestedInput
+  user?: Prisma.UserUpdateOneRequiredWithoutPageActionRunsNestedInput
+  approvalRequest?: Prisma.ApprovalRequestUpdateOneWithoutPageActionRunNestedInput
+}
+
+export type PageActionRunUncheckedUpdateWithoutFlowInput = {
+  id?: Prisma.IntFieldUpdateOperationsInput | number
+  pageActionId?: Prisma.IntFieldUpdateOperationsInput | number
+  appClientId?: Prisma.IntFieldUpdateOperationsInput | number
+  userId?: Prisma.IntFieldUpdateOperationsInput | number
+  delivery?: Prisma.EnumPageActionDeliveryFieldUpdateOperationsInput | $Enums.PageActionDelivery
+  status?: Prisma.EnumPageActionRunStatusFieldUpdateOperationsInput | $Enums.PageActionRunStatus
+  instruction?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  context?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  pageContext?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  fillText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dslOutcome?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  errorCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  streamId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  model?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  promptTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  generation?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  finishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalRequest?: Prisma.ApprovalRequestUncheckedUpdateOneWithoutPageActionRunNestedInput
+}
+
+export type PageActionRunUncheckedUpdateManyWithoutFlowInput = {
+  id?: Prisma.IntFieldUpdateOperationsInput | number
+  pageActionId?: Prisma.IntFieldUpdateOperationsInput | number
+  appClientId?: Prisma.IntFieldUpdateOperationsInput | number
+  userId?: Prisma.IntFieldUpdateOperationsInput | number
+  delivery?: Prisma.EnumPageActionDeliveryFieldUpdateOperationsInput | $Enums.PageActionDelivery
+  status?: Prisma.EnumPageActionRunStatusFieldUpdateOperationsInput | $Enums.PageActionRunStatus
+  instruction?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  context?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  pageContext?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  fillText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dslOutcome?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  errorCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  streamId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  model?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  promptTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completionTokens?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pageActionKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  clientActionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  steps?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowRun?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   generation?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1879,6 +2245,8 @@ export type PageActionRunSelect<ExtArgs extends runtime.Types.Extensions.Interna
   steps?: boolean
   workflowId?: boolean
   workflowVersion?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   workflowRun?: boolean
   generation?: boolean
   createdAt?: boolean
@@ -1886,6 +2254,7 @@ export type PageActionRunSelect<ExtArgs extends runtime.Types.Extensions.Interna
   pageAction?: boolean | Prisma.PageActionDefaultArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  flow?: boolean | Prisma.PageActionRun$flowArgs<ExtArgs>
   approvalRequest?: boolean | Prisma.PageActionRun$approvalRequestArgs<ExtArgs>
 }, ExtArgs["result"]["pageActionRun"]>
 
@@ -1914,6 +2283,8 @@ export type PageActionRunSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   steps?: boolean
   workflowId?: boolean
   workflowVersion?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   workflowRun?: boolean
   generation?: boolean
   createdAt?: boolean
@@ -1921,6 +2292,7 @@ export type PageActionRunSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   pageAction?: boolean | Prisma.PageActionDefaultArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  flow?: boolean | Prisma.PageActionRun$flowArgs<ExtArgs>
 }, ExtArgs["result"]["pageActionRun"]>
 
 export type PageActionRunSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1948,6 +2320,8 @@ export type PageActionRunSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   steps?: boolean
   workflowId?: boolean
   workflowVersion?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   workflowRun?: boolean
   generation?: boolean
   createdAt?: boolean
@@ -1955,6 +2329,7 @@ export type PageActionRunSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   pageAction?: boolean | Prisma.PageActionDefaultArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  flow?: boolean | Prisma.PageActionRun$flowArgs<ExtArgs>
 }, ExtArgs["result"]["pageActionRun"]>
 
 export type PageActionRunSelectScalar = {
@@ -1982,28 +2357,33 @@ export type PageActionRunSelectScalar = {
   steps?: boolean
   workflowId?: boolean
   workflowVersion?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   workflowRun?: boolean
   generation?: boolean
   createdAt?: boolean
   finishedAt?: boolean
 }
 
-export type PageActionRunOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "pageActionId" | "appClientId" | "userId" | "delivery" | "status" | "instruction" | "context" | "pageContext" | "fillText" | "dslOutcome" | "errorCode" | "errorMessage" | "streamId" | "model" | "promptTokens" | "completionTokens" | "durationMs" | "idempotencyKey" | "pageActionKey" | "clientActionId" | "steps" | "workflowId" | "workflowVersion" | "workflowRun" | "generation" | "createdAt" | "finishedAt", ExtArgs["result"]["pageActionRun"]>
+export type PageActionRunOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "pageActionId" | "appClientId" | "userId" | "delivery" | "status" | "instruction" | "context" | "pageContext" | "fillText" | "dslOutcome" | "errorCode" | "errorMessage" | "streamId" | "model" | "promptTokens" | "completionTokens" | "durationMs" | "idempotencyKey" | "pageActionKey" | "clientActionId" | "steps" | "workflowId" | "workflowVersion" | "flowId" | "flowVersion" | "workflowRun" | "generation" | "createdAt" | "finishedAt", ExtArgs["result"]["pageActionRun"]>
 export type PageActionRunInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   pageAction?: boolean | Prisma.PageActionDefaultArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  flow?: boolean | Prisma.PageActionRun$flowArgs<ExtArgs>
   approvalRequest?: boolean | Prisma.PageActionRun$approvalRequestArgs<ExtArgs>
 }
 export type PageActionRunIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   pageAction?: boolean | Prisma.PageActionDefaultArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  flow?: boolean | Prisma.PageActionRun$flowArgs<ExtArgs>
 }
 export type PageActionRunIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   pageAction?: boolean | Prisma.PageActionDefaultArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  flow?: boolean | Prisma.PageActionRun$flowArgs<ExtArgs>
 }
 
 export type $PageActionRunPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -2012,6 +2392,7 @@ export type $PageActionRunPayload<ExtArgs extends runtime.Types.Extensions.Inter
     pageAction: Prisma.$PageActionPayload<ExtArgs>
     appClient: Prisma.$AppClientPayload<ExtArgs>
     user: Prisma.$UserPayload<ExtArgs>
+    flow: Prisma.$FlowPayload<ExtArgs> | null
     approvalRequest: Prisma.$ApprovalRequestPayload<ExtArgs> | null
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
@@ -2045,6 +2426,11 @@ export type $PageActionRunPayload<ExtArgs extends runtime.Types.Extensions.Inter
     steps: runtime.JsonValue
     workflowId: number | null
     workflowVersion: number | null
+    /**
+     * Flow 运行审计（与 workflowId 二选一；不再把 flowId 写入 Workflow FK）
+     */
+    flowId: number | null
+    flowVersion: number | null
     workflowRun: runtime.JsonValue | null
     /**
      * 与 host_action SSE generation 对齐；默认等于 run id。
@@ -2449,6 +2835,7 @@ export interface Prisma__PageActionRunClient<T, Null = never, ExtArgs extends ru
   pageAction<T extends Prisma.PageActionDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PageActionDefaultArgs<ExtArgs>>): Prisma.Prisma__PageActionClient<runtime.Types.Result.GetResult<Prisma.$PageActionPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   appClient<T extends Prisma.AppClientDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClientDefaultArgs<ExtArgs>>): Prisma.Prisma__AppClientClient<runtime.Types.Result.GetResult<Prisma.$AppClientPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   user<T extends Prisma.UserDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.UserDefaultArgs<ExtArgs>>): Prisma.Prisma__UserClient<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+  flow<T extends Prisma.PageActionRun$flowArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PageActionRun$flowArgs<ExtArgs>>): Prisma.Prisma__FlowClient<runtime.Types.Result.GetResult<Prisma.$FlowPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   approvalRequest<T extends Prisma.PageActionRun$approvalRequestArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PageActionRun$approvalRequestArgs<ExtArgs>>): Prisma.Prisma__ApprovalRequestClient<runtime.Types.Result.GetResult<Prisma.$ApprovalRequestPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
@@ -2503,6 +2890,8 @@ export interface PageActionRunFieldRefs {
   readonly steps: Prisma.FieldRef<"PageActionRun", 'Json'>
   readonly workflowId: Prisma.FieldRef<"PageActionRun", 'Int'>
   readonly workflowVersion: Prisma.FieldRef<"PageActionRun", 'Int'>
+  readonly flowId: Prisma.FieldRef<"PageActionRun", 'Int'>
+  readonly flowVersion: Prisma.FieldRef<"PageActionRun", 'Int'>
   readonly workflowRun: Prisma.FieldRef<"PageActionRun", 'Json'>
   readonly generation: Prisma.FieldRef<"PageActionRun", 'Int'>
   readonly createdAt: Prisma.FieldRef<"PageActionRun", 'DateTime'>
@@ -2905,6 +3294,25 @@ export type PageActionRunDeleteManyArgs<ExtArgs extends runtime.Types.Extensions
    * Limit how many PageActionRuns to delete.
    */
   limit?: number
+}
+
+/**
+ * PageActionRun.flow
+ */
+export type PageActionRun$flowArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Flow
+   */
+  select?: Prisma.FlowSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Flow
+   */
+  omit?: Prisma.FlowOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.FlowInclude<ExtArgs> | null
+  where?: Prisma.FlowWhereInput
 }
 
 /**

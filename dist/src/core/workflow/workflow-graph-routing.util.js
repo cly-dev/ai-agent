@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.routeResultCheckWorkflowAxis = exports.routeAfterSummarizeWorkflowAxis = exports.routeAfterWorkflowAdvance = exports.routeAfterWorkflowReact = exports.routeAfterExecuteNode = exports.routeAfterWorkflowInit = exports.getCurrentWorkflowNode = exports.getWorkflowNodeDef = void 0;
+exports.routeResultCheckWorkflowAxis = exports.routeAfterSummarizeWorkflowAxis = exports.routeAfterWorkflowAdvance = exports.routeAfterWorkflowReact = exports.routeAfterExecuteNode = exports.routeAfterWorkflowInit = exports.getCurrentWorkflowNode = exports.resolveWorkflowNodeDefForExecute = exports.getWorkflowNodeDef = void 0;
+const workflow_ir_native_phase_util_1 = require("./workflow-ir-native-phase.util");
 const turn_graph_util_1 = require("../agent-engine/engine/turn/turn-graph.util");
 const workflow_plan_sync_util_1 = require("./workflow-plan-sync.util");
 function getWorkflowNodeDef(defs, nodeId) {
@@ -10,6 +11,23 @@ function getWorkflowNodeDef(defs, nodeId) {
     return defs.find((row) => row.id === nodeId);
 }
 exports.getWorkflowNodeDef = getWorkflowNodeDef;
+function resolveWorkflowNodeDefForExecute(input) {
+    var _a, _b;
+    if (input.executionMode === 'ir_native_direct' && input.ir) {
+        const irNode = input.ir.nodes.find((row) => row.id === input.nodeId);
+        if (irNode) {
+            try {
+                const phase = (_a = input.phase) !== null && _a !== void 0 ? _a : (0, workflow_ir_native_phase_util_1.resolveWorkflowIrNativePhases)(irNode)[0];
+                return (0, workflow_ir_native_phase_util_1.materializeWorkflowIrNodeForPhase)(irNode, phase);
+            }
+            catch (_c) {
+                return undefined;
+            }
+        }
+    }
+    return getWorkflowNodeDef((_b = input.defs) !== null && _b !== void 0 ? _b : undefined, input.nodeId);
+}
+exports.resolveWorkflowNodeDefForExecute = resolveWorkflowNodeDefForExecute;
 function getCurrentWorkflowNode(state) {
     var _a;
     const run = state.workflowRun;
@@ -51,7 +69,17 @@ function routeAfterExecuteNode(state) {
     if (state.workflowAwaitingReact) {
         return 'workflow_react';
     }
-    const def = getWorkflowNodeDef(state.workflowNodeDefs, (_a = state.workflowRun) === null || _a === void 0 ? void 0 : _a.currentNodeId);
+    const nodeId = (_a = state.workflowRun) === null || _a === void 0 ? void 0 : _a.currentNodeId;
+    if (!nodeId) {
+        return 'workflow_advance';
+    }
+    const def = resolveWorkflowNodeDefForExecute({
+        nodeId,
+        defs: state.workflowNodeDefs,
+        ir: state.workflowIr,
+        executionMode: state.workflowExecutionMode,
+        phase: current === null || current === void 0 ? void 0 : current.phase,
+    });
     if ((def === null || def === void 0 ? void 0 : def.action) === 'summarize' || (def === null || def === void 0 ? void 0 : def.action) === 'present_mutation') {
         return 'summarize';
     }

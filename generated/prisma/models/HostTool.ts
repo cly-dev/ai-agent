@@ -288,6 +288,7 @@ export type HostToolWhereInput = {
   roleHostTools?: Prisma.RoleHostToolListRelationFilter
   pageActions?: Prisma.PageActionListRelationFilter
   workflowHostTools?: Prisma.WorkflowHostToolListRelationFilter
+  flowHostTools?: Prisma.FlowHostToolListRelationFilter
 }
 
 export type HostToolOrderByWithRelationInput = {
@@ -311,6 +312,7 @@ export type HostToolOrderByWithRelationInput = {
   roleHostTools?: Prisma.RoleHostToolOrderByRelationAggregateInput
   pageActions?: Prisma.PageActionOrderByRelationAggregateInput
   workflowHostTools?: Prisma.WorkflowHostToolOrderByRelationAggregateInput
+  flowHostTools?: Prisma.FlowHostToolOrderByRelationAggregateInput
 }
 
 export type HostToolWhereUniqueInput = Prisma.AtLeast<{
@@ -339,6 +341,7 @@ export type HostToolWhereUniqueInput = Prisma.AtLeast<{
   roleHostTools?: Prisma.RoleHostToolListRelationFilter
   pageActions?: Prisma.PageActionListRelationFilter
   workflowHostTools?: Prisma.WorkflowHostToolListRelationFilter
+  flowHostTools?: Prisma.FlowHostToolListRelationFilter
 }, "id" | "appClientId_definitionKey" | "appClientId_name">
 
 export type HostToolOrderByWithAggregationInput = {
@@ -399,6 +402,7 @@ export type HostToolCreateInput = {
   roleHostTools?: Prisma.RoleHostToolCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolUncheckedCreateInput = {
@@ -420,6 +424,7 @@ export type HostToolUncheckedCreateInput = {
   roleHostTools?: Prisma.RoleHostToolUncheckedCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolUpdateInput = {
@@ -440,6 +445,7 @@ export type HostToolUpdateInput = {
   roleHostTools?: Prisma.RoleHostToolUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolUncheckedUpdateInput = {
@@ -461,6 +467,7 @@ export type HostToolUncheckedUpdateInput = {
   roleHostTools?: Prisma.RoleHostToolUncheckedUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolCreateManyInput = {
@@ -750,6 +757,20 @@ export type HostToolUpdateOneRequiredWithoutWorkflowHostToolsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.HostToolUpdateToOneWithWhereWithoutWorkflowHostToolsInput, Prisma.HostToolUpdateWithoutWorkflowHostToolsInput>, Prisma.HostToolUncheckedUpdateWithoutWorkflowHostToolsInput>
 }
 
+export type HostToolCreateNestedOneWithoutFlowHostToolsInput = {
+  create?: Prisma.XOR<Prisma.HostToolCreateWithoutFlowHostToolsInput, Prisma.HostToolUncheckedCreateWithoutFlowHostToolsInput>
+  connectOrCreate?: Prisma.HostToolCreateOrConnectWithoutFlowHostToolsInput
+  connect?: Prisma.HostToolWhereUniqueInput
+}
+
+export type HostToolUpdateOneRequiredWithoutFlowHostToolsNestedInput = {
+  create?: Prisma.XOR<Prisma.HostToolCreateWithoutFlowHostToolsInput, Prisma.HostToolUncheckedCreateWithoutFlowHostToolsInput>
+  connectOrCreate?: Prisma.HostToolCreateOrConnectWithoutFlowHostToolsInput
+  upsert?: Prisma.HostToolUpsertWithoutFlowHostToolsInput
+  connect?: Prisma.HostToolWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.HostToolUpdateToOneWithWhereWithoutFlowHostToolsInput, Prisma.HostToolUpdateWithoutFlowHostToolsInput>, Prisma.HostToolUncheckedUpdateWithoutFlowHostToolsInput>
+}
+
 export type HostToolCreateWithoutAppClientInput = {
   definitionKey: string
   name: string
@@ -767,6 +788,7 @@ export type HostToolCreateWithoutAppClientInput = {
   roleHostTools?: Prisma.RoleHostToolCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolUncheckedCreateWithoutAppClientInput = {
@@ -787,6 +809,7 @@ export type HostToolUncheckedCreateWithoutAppClientInput = {
   roleHostTools?: Prisma.RoleHostToolUncheckedCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolCreateOrConnectWithoutAppClientInput = {
@@ -851,6 +874,7 @@ export type HostToolCreateWithoutHostPageInput = {
   roleHostTools?: Prisma.RoleHostToolCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolUncheckedCreateWithoutHostPageInput = {
@@ -871,6 +895,7 @@ export type HostToolUncheckedCreateWithoutHostPageInput = {
   roleHostTools?: Prisma.RoleHostToolUncheckedCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolCreateOrConnectWithoutHostPageInput = {
@@ -916,6 +941,7 @@ export type HostToolCreateWithoutAgentHostToolsInput = {
   roleHostTools?: Prisma.RoleHostToolCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolUncheckedCreateWithoutAgentHostToolsInput = {
@@ -936,6 +962,7 @@ export type HostToolUncheckedCreateWithoutAgentHostToolsInput = {
   roleHostTools?: Prisma.RoleHostToolUncheckedCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolCreateOrConnectWithoutAgentHostToolsInput = {
@@ -971,6 +998,7 @@ export type HostToolUpdateWithoutAgentHostToolsInput = {
   roleHostTools?: Prisma.RoleHostToolUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolUncheckedUpdateWithoutAgentHostToolsInput = {
@@ -991,6 +1019,7 @@ export type HostToolUncheckedUpdateWithoutAgentHostToolsInput = {
   roleHostTools?: Prisma.RoleHostToolUncheckedUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolCreateWithoutSkillHostToolsInput = {
@@ -1010,6 +1039,7 @@ export type HostToolCreateWithoutSkillHostToolsInput = {
   roleHostTools?: Prisma.RoleHostToolCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolUncheckedCreateWithoutSkillHostToolsInput = {
@@ -1030,6 +1060,7 @@ export type HostToolUncheckedCreateWithoutSkillHostToolsInput = {
   roleHostTools?: Prisma.RoleHostToolUncheckedCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolCreateOrConnectWithoutSkillHostToolsInput = {
@@ -1065,6 +1096,7 @@ export type HostToolUpdateWithoutSkillHostToolsInput = {
   roleHostTools?: Prisma.RoleHostToolUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolUncheckedUpdateWithoutSkillHostToolsInput = {
@@ -1085,6 +1117,7 @@ export type HostToolUncheckedUpdateWithoutSkillHostToolsInput = {
   roleHostTools?: Prisma.RoleHostToolUncheckedUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolCreateWithoutRoleHostToolsInput = {
@@ -1104,6 +1137,7 @@ export type HostToolCreateWithoutRoleHostToolsInput = {
   skillHostTools?: Prisma.SkillHostToolCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolUncheckedCreateWithoutRoleHostToolsInput = {
@@ -1124,6 +1158,7 @@ export type HostToolUncheckedCreateWithoutRoleHostToolsInput = {
   skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolCreateOrConnectWithoutRoleHostToolsInput = {
@@ -1159,6 +1194,7 @@ export type HostToolUpdateWithoutRoleHostToolsInput = {
   skillHostTools?: Prisma.SkillHostToolUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolUncheckedUpdateWithoutRoleHostToolsInput = {
@@ -1179,6 +1215,7 @@ export type HostToolUncheckedUpdateWithoutRoleHostToolsInput = {
   skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolCreateWithoutPageActionsInput = {
@@ -1198,6 +1235,7 @@ export type HostToolCreateWithoutPageActionsInput = {
   skillHostTools?: Prisma.SkillHostToolCreateNestedManyWithoutHostToolInput
   roleHostTools?: Prisma.RoleHostToolCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolUncheckedCreateWithoutPageActionsInput = {
@@ -1218,6 +1256,7 @@ export type HostToolUncheckedCreateWithoutPageActionsInput = {
   skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutHostToolInput
   roleHostTools?: Prisma.RoleHostToolUncheckedCreateNestedManyWithoutHostToolInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolCreateOrConnectWithoutPageActionsInput = {
@@ -1253,6 +1292,7 @@ export type HostToolUpdateWithoutPageActionsInput = {
   skillHostTools?: Prisma.SkillHostToolUpdateManyWithoutHostToolNestedInput
   roleHostTools?: Prisma.RoleHostToolUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolUncheckedUpdateWithoutPageActionsInput = {
@@ -1273,6 +1313,7 @@ export type HostToolUncheckedUpdateWithoutPageActionsInput = {
   skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutHostToolNestedInput
   roleHostTools?: Prisma.RoleHostToolUncheckedUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolCreateWithoutWorkflowHostToolsInput = {
@@ -1292,6 +1333,7 @@ export type HostToolCreateWithoutWorkflowHostToolsInput = {
   skillHostTools?: Prisma.SkillHostToolCreateNestedManyWithoutHostToolInput
   roleHostTools?: Prisma.RoleHostToolCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolUncheckedCreateWithoutWorkflowHostToolsInput = {
@@ -1312,6 +1354,7 @@ export type HostToolUncheckedCreateWithoutWorkflowHostToolsInput = {
   skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutHostToolInput
   roleHostTools?: Prisma.RoleHostToolUncheckedCreateNestedManyWithoutHostToolInput
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutHostToolInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedCreateNestedManyWithoutHostToolInput
 }
 
 export type HostToolCreateOrConnectWithoutWorkflowHostToolsInput = {
@@ -1347,6 +1390,7 @@ export type HostToolUpdateWithoutWorkflowHostToolsInput = {
   skillHostTools?: Prisma.SkillHostToolUpdateManyWithoutHostToolNestedInput
   roleHostTools?: Prisma.RoleHostToolUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolUncheckedUpdateWithoutWorkflowHostToolsInput = {
@@ -1367,6 +1411,105 @@ export type HostToolUncheckedUpdateWithoutWorkflowHostToolsInput = {
   skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutHostToolNestedInput
   roleHostTools?: Prisma.RoleHostToolUncheckedUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+}
+
+export type HostToolCreateWithoutFlowHostToolsInput = {
+  definitionKey: string
+  name: string
+  description: string
+  argsSchema: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  argsTemplate?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  sortOrder?: number
+  isActive?: boolean
+  config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  appClient: Prisma.AppClientCreateNestedOneWithoutHostToolsInput
+  hostPage?: Prisma.HostPageCreateNestedOneWithoutHostToolsInput
+  agentHostTools?: Prisma.AgentHostToolCreateNestedManyWithoutHostToolInput
+  skillHostTools?: Prisma.SkillHostToolCreateNestedManyWithoutHostToolInput
+  roleHostTools?: Prisma.RoleHostToolCreateNestedManyWithoutHostToolInput
+  pageActions?: Prisma.PageActionCreateNestedManyWithoutHostToolInput
+  workflowHostTools?: Prisma.WorkflowHostToolCreateNestedManyWithoutHostToolInput
+}
+
+export type HostToolUncheckedCreateWithoutFlowHostToolsInput = {
+  id?: number
+  appClientId: number
+  hostPageId?: number | null
+  definitionKey: string
+  name: string
+  description: string
+  argsSchema: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  argsTemplate?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  sortOrder?: number
+  isActive?: boolean
+  config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  agentHostTools?: Prisma.AgentHostToolUncheckedCreateNestedManyWithoutHostToolInput
+  skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutHostToolInput
+  roleHostTools?: Prisma.RoleHostToolUncheckedCreateNestedManyWithoutHostToolInput
+  pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutHostToolInput
+  workflowHostTools?: Prisma.WorkflowHostToolUncheckedCreateNestedManyWithoutHostToolInput
+}
+
+export type HostToolCreateOrConnectWithoutFlowHostToolsInput = {
+  where: Prisma.HostToolWhereUniqueInput
+  create: Prisma.XOR<Prisma.HostToolCreateWithoutFlowHostToolsInput, Prisma.HostToolUncheckedCreateWithoutFlowHostToolsInput>
+}
+
+export type HostToolUpsertWithoutFlowHostToolsInput = {
+  update: Prisma.XOR<Prisma.HostToolUpdateWithoutFlowHostToolsInput, Prisma.HostToolUncheckedUpdateWithoutFlowHostToolsInput>
+  create: Prisma.XOR<Prisma.HostToolCreateWithoutFlowHostToolsInput, Prisma.HostToolUncheckedCreateWithoutFlowHostToolsInput>
+  where?: Prisma.HostToolWhereInput
+}
+
+export type HostToolUpdateToOneWithWhereWithoutFlowHostToolsInput = {
+  where?: Prisma.HostToolWhereInput
+  data: Prisma.XOR<Prisma.HostToolUpdateWithoutFlowHostToolsInput, Prisma.HostToolUncheckedUpdateWithoutFlowHostToolsInput>
+}
+
+export type HostToolUpdateWithoutFlowHostToolsInput = {
+  definitionKey?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  description?: Prisma.StringFieldUpdateOperationsInput | string
+  argsSchema?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  argsTemplate?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  appClient?: Prisma.AppClientUpdateOneRequiredWithoutHostToolsNestedInput
+  hostPage?: Prisma.HostPageUpdateOneWithoutHostToolsNestedInput
+  agentHostTools?: Prisma.AgentHostToolUpdateManyWithoutHostToolNestedInput
+  skillHostTools?: Prisma.SkillHostToolUpdateManyWithoutHostToolNestedInput
+  roleHostTools?: Prisma.RoleHostToolUpdateManyWithoutHostToolNestedInput
+  pageActions?: Prisma.PageActionUpdateManyWithoutHostToolNestedInput
+  workflowHostTools?: Prisma.WorkflowHostToolUpdateManyWithoutHostToolNestedInput
+}
+
+export type HostToolUncheckedUpdateWithoutFlowHostToolsInput = {
+  id?: Prisma.IntFieldUpdateOperationsInput | number
+  appClientId?: Prisma.IntFieldUpdateOperationsInput | number
+  hostPageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  definitionKey?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  description?: Prisma.StringFieldUpdateOperationsInput | string
+  argsSchema?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  argsTemplate?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  agentHostTools?: Prisma.AgentHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+  skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+  roleHostTools?: Prisma.RoleHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+  pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutHostToolNestedInput
+  workflowHostTools?: Prisma.WorkflowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolCreateManyAppClientInput = {
@@ -1401,6 +1544,7 @@ export type HostToolUpdateWithoutAppClientInput = {
   roleHostTools?: Prisma.RoleHostToolUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolUncheckedUpdateWithoutAppClientInput = {
@@ -1421,6 +1565,7 @@ export type HostToolUncheckedUpdateWithoutAppClientInput = {
   roleHostTools?: Prisma.RoleHostToolUncheckedUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolUncheckedUpdateManyWithoutAppClientInput = {
@@ -1470,6 +1615,7 @@ export type HostToolUpdateWithoutHostPageInput = {
   roleHostTools?: Prisma.RoleHostToolUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolUncheckedUpdateWithoutHostPageInput = {
@@ -1490,6 +1636,7 @@ export type HostToolUncheckedUpdateWithoutHostPageInput = {
   roleHostTools?: Prisma.RoleHostToolUncheckedUpdateManyWithoutHostToolNestedInput
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutHostToolNestedInput
   workflowHostTools?: Prisma.WorkflowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
+  flowHostTools?: Prisma.FlowHostToolUncheckedUpdateManyWithoutHostToolNestedInput
 }
 
 export type HostToolUncheckedUpdateManyWithoutHostPageInput = {
@@ -1518,6 +1665,7 @@ export type HostToolCountOutputType = {
   roleHostTools: number
   pageActions: number
   workflowHostTools: number
+  flowHostTools: number
 }
 
 export type HostToolCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1526,6 +1674,7 @@ export type HostToolCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensio
   roleHostTools?: boolean | HostToolCountOutputTypeCountRoleHostToolsArgs
   pageActions?: boolean | HostToolCountOutputTypeCountPageActionsArgs
   workflowHostTools?: boolean | HostToolCountOutputTypeCountWorkflowHostToolsArgs
+  flowHostTools?: boolean | HostToolCountOutputTypeCountFlowHostToolsArgs
 }
 
 /**
@@ -1573,6 +1722,13 @@ export type HostToolCountOutputTypeCountWorkflowHostToolsArgs<ExtArgs extends ru
   where?: Prisma.WorkflowHostToolWhereInput
 }
 
+/**
+ * HostToolCountOutputType without action
+ */
+export type HostToolCountOutputTypeCountFlowHostToolsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.FlowHostToolWhereInput
+}
+
 
 export type HostToolSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -1595,6 +1751,7 @@ export type HostToolSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs
   roleHostTools?: boolean | Prisma.HostTool$roleHostToolsArgs<ExtArgs>
   pageActions?: boolean | Prisma.HostTool$pageActionsArgs<ExtArgs>
   workflowHostTools?: boolean | Prisma.HostTool$workflowHostToolsArgs<ExtArgs>
+  flowHostTools?: boolean | Prisma.HostTool$flowHostToolsArgs<ExtArgs>
   _count?: boolean | Prisma.HostToolCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["hostTool"]>
 
@@ -1659,6 +1816,7 @@ export type HostToolInclude<ExtArgs extends runtime.Types.Extensions.InternalArg
   roleHostTools?: boolean | Prisma.HostTool$roleHostToolsArgs<ExtArgs>
   pageActions?: boolean | Prisma.HostTool$pageActionsArgs<ExtArgs>
   workflowHostTools?: boolean | Prisma.HostTool$workflowHostToolsArgs<ExtArgs>
+  flowHostTools?: boolean | Prisma.HostTool$flowHostToolsArgs<ExtArgs>
   _count?: boolean | Prisma.HostToolCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type HostToolIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1680,6 +1838,7 @@ export type $HostToolPayload<ExtArgs extends runtime.Types.Extensions.InternalAr
     roleHostTools: Prisma.$RoleHostToolPayload<ExtArgs>[]
     pageActions: Prisma.$PageActionPayload<ExtArgs>[]
     workflowHostTools: Prisma.$WorkflowHostToolPayload<ExtArgs>[]
+    flowHostTools: Prisma.$FlowHostToolPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: number
@@ -2111,6 +2270,7 @@ export interface Prisma__HostToolClient<T, Null = never, ExtArgs extends runtime
   roleHostTools<T extends Prisma.HostTool$roleHostToolsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.HostTool$roleHostToolsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$RoleHostToolPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   pageActions<T extends Prisma.HostTool$pageActionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.HostTool$pageActionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PageActionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   workflowHostTools<T extends Prisma.HostTool$workflowHostToolsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.HostTool$workflowHostToolsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WorkflowHostToolPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  flowHostTools<T extends Prisma.HostTool$flowHostToolsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.HostTool$flowHostToolsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$FlowHostToolPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2690,6 +2850,30 @@ export type HostTool$workflowHostToolsArgs<ExtArgs extends runtime.Types.Extensi
   take?: number
   skip?: number
   distinct?: Prisma.WorkflowHostToolScalarFieldEnum | Prisma.WorkflowHostToolScalarFieldEnum[]
+}
+
+/**
+ * HostTool.flowHostTools
+ */
+export type HostTool$flowHostToolsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the FlowHostTool
+   */
+  select?: Prisma.FlowHostToolSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the FlowHostTool
+   */
+  omit?: Prisma.FlowHostToolOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.FlowHostToolInclude<ExtArgs> | null
+  where?: Prisma.FlowHostToolWhereInput
+  orderBy?: Prisma.FlowHostToolOrderByWithRelationInput | Prisma.FlowHostToolOrderByWithRelationInput[]
+  cursor?: Prisma.FlowHostToolWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.FlowHostToolScalarFieldEnum | Prisma.FlowHostToolScalarFieldEnum[]
 }
 
 /**

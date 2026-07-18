@@ -125,13 +125,15 @@ let SkillService = class SkillService {
         };
     }
     async tryBuildTaskPlanFromSkillWorkflow(input) {
-        if (input.skill.workflowId == null || input.skill.workflowId <= 0) {
+        if (!(0, skill_runnable_util_1.skillIsWorkflowBound)(input.skill)) {
             return null;
         }
         return (0, resolve_skill_workflow_plan_util_1.tryBuildTaskPlanFromSkillWorkflow)(this.prisma, {
             appClientId: input.appClientId,
             userMessage: input.userMessage,
             binding: {
+                flowId: input.skill.flowId,
+                flowVersion: input.skill.flowVersion,
                 workflowId: input.skill.workflowId,
                 workflowVersion: input.skill.workflowVersion,
                 workflowOverrides: input.skill.workflowOverrides,
@@ -197,6 +199,7 @@ let SkillService = class SkillService {
             skillToolIds,
             hostToolIds,
             workflowId: row.workflowId,
+            flowId: row.flowId,
         };
         const resolvable = forRequestedSkill
             ? (0, skill_runnable_util_1.skillIsResolvableForRequested)(caps)
@@ -243,8 +246,16 @@ let SkillService = class SkillService {
                 skillWhitelistIds: skillCtx.skillWhitelistIds,
             })), (input.skillId != null ? { id: input.skillId } : {})), (input.workflowBoundOnly
                 ? {
-                    workflowId: { not: null },
-                    workflow: { is: { isActive: true } },
+                    OR: [
+                        {
+                            flowId: { not: null },
+                            flow: { is: { isActive: true } },
+                        },
+                        {
+                            workflowId: { not: null },
+                            workflow: { is: { isActive: true } },
+                        },
+                    ],
                 }
                 : input.pureHostOnly
                     ? {
@@ -279,6 +290,8 @@ let SkillService = class SkillService {
                 capabilityKey: true,
                 workflowId: true,
                 workflowVersion: true,
+                flowId: true,
+                flowVersion: true,
                 workflowOverrides: true,
                 skillTools: { select: { toolId: true } },
                 skillHostTools: { select: { hostToolId: true } },
@@ -299,7 +312,7 @@ let SkillService = class SkillService {
     toAvailableSkillRow(row, hostToolIds) {
         const skillToolIds = row.skillTools.map((skillTool) => skillTool.toolId);
         return Object.assign(Object.assign({}, this.toActiveSkillSnapshot(row)), { skillToolIds,
-            hostToolIds, runnableKind: (0, skill_runnable_util_1.deriveSkillRunnableKind)({ skillToolIds, hostToolIds }), workflowId: row.workflowId, workflowVersion: row.workflowVersion, workflowOverrides: row.workflowOverrides });
+            hostToolIds, runnableKind: (0, skill_runnable_util_1.deriveSkillRunnableKind)({ skillToolIds, hostToolIds }), workflowId: row.workflowId, workflowVersion: row.workflowVersion, flowId: row.flowId, flowVersion: row.flowVersion, workflowOverrides: row.workflowOverrides });
     }
 };
 SkillService = __decorate([

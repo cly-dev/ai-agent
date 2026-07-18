@@ -91,7 +91,7 @@ function alignWorkflowRunForPresentSummarize(state, input) {
     return Object.assign(Object.assign({}, aligned), { currentNodeId: presentNodeId });
 }
 function applyWorkflowAfterSummarize(state, input) {
-    var _a;
+    var _a, _b, _c;
     let run = state.workflowRun;
     if (!run) {
         return {};
@@ -106,7 +106,13 @@ function applyWorkflowAfterSummarize(state, input) {
     if (!nodeId) {
         return { workflowRun: run };
     }
-    const def = (0, workflow_graph_routing_util_1.getWorkflowNodeDef)(state.workflowNodeDefs, nodeId);
+    const def = (_c = (0, workflow_graph_routing_util_1.resolveWorkflowNodeDefForExecute)({
+        nodeId,
+        defs: state.workflowNodeDefs,
+        ir: state.workflowIr,
+        executionMode: state.workflowExecutionMode,
+        phase: (_b = run.nodes.find((n) => n.nodeId === nodeId)) === null || _b === void 0 ? void 0 : _b.phase,
+    })) !== null && _c !== void 0 ? _c : (0, workflow_graph_routing_util_1.getWorkflowNodeDef)(state.workflowNodeDefs, nodeId);
     const action = def === null || def === void 0 ? void 0 : def.action;
     if (!isWorkflowSummarizeCompletionAction(action)) {
         return run !== state.workflowRun ? { workflowRun: run, workflowAwaitingReact: false } : {};
@@ -115,6 +121,22 @@ function applyWorkflowAfterSummarize(state, input) {
         return run !== state.workflowRun ? { workflowRun: run, workflowAwaitingReact: false } : {};
     }
     let workflowRun = (0, workflow_plan_sync_util_1.completeWorkflowNodeFromSummarize)(run, nodeId, summarizeCompletionOutputRef(action, nodeId));
+    if (state.workflowExecutionMode === 'ir_native_direct' && state.workflowIr) {
+        const irNode = state.workflowIr.nodes.find((row) => row.id === nodeId);
+        if (irNode) {
+            const phaseStep = (0, workflow_run_util_1.tryAdvanceNativePhaseAfterNodeSuccess)({
+                run: workflowRun,
+                nodeId,
+                irNode,
+            });
+            if (phaseStep.advancedPhase) {
+                return {
+                    workflowRun: phaseStep.workflowRun,
+                    workflowAwaitingReact: false,
+                };
+            }
+        }
+    }
     workflowRun = (0, workflow_run_util_1.advanceWorkflowRun)(workflowRun);
     workflowRun = (0, workflow_run_util_1.finalizeWorkflowRunAfterAdvance)(workflowRun);
     return {

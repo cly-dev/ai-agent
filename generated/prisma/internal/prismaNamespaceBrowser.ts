@@ -89,7 +89,11 @@ export const ModelName = {
   Workflow: 'Workflow',
   WorkflowRevision: 'WorkflowRevision',
   WorkflowTool: 'WorkflowTool',
-  WorkflowHostTool: 'WorkflowHostTool'
+  WorkflowHostTool: 'WorkflowHostTool',
+  Flow: 'Flow',
+  FlowRevision: 'FlowRevision',
+  FlowTool: 'FlowTool',
+  FlowHostTool: 'FlowHostTool'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -372,7 +376,9 @@ export const SkillScalarFieldEnum = {
   updatedAt: 'updatedAt',
   workflowId: 'workflowId',
   workflowVersion: 'workflowVersion',
-  workflowOverrides: 'workflowOverrides'
+  workflowOverrides: 'workflowOverrides',
+  flowId: 'flowId',
+  flowVersion: 'flowVersion'
 } as const
 
 export type SkillScalarFieldEnum = (typeof SkillScalarFieldEnum)[keyof typeof SkillScalarFieldEnum]
@@ -633,6 +639,8 @@ export const PageActionScalarFieldEnum = {
   workflowId: 'workflowId',
   workflowVersion: 'workflowVersion',
   workflowOverrides: 'workflowOverrides',
+  flowId: 'flowId',
+  flowVersion: 'flowVersion',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -665,6 +673,8 @@ export const PageActionRunScalarFieldEnum = {
   steps: 'steps',
   workflowId: 'workflowId',
   workflowVersion: 'workflowVersion',
+  flowId: 'flowId',
+  flowVersion: 'flowVersion',
   workflowRun: 'workflowRun',
   generation: 'generation',
   createdAt: 'createdAt',
@@ -683,6 +693,8 @@ export const ApprovalRequestScalarFieldEnum = {
   approverUserId: 'approverUserId',
   workflowId: 'workflowId',
   workflowVersion: 'workflowVersion',
+  flowId: 'flowId',
+  flowVersion: 'flowVersion',
   nodeId: 'nodeId',
   title: 'title',
   summary: 'summary',
@@ -755,6 +767,63 @@ export const WorkflowHostToolScalarFieldEnum = {
 } as const
 
 export type WorkflowHostToolScalarFieldEnum = (typeof WorkflowHostToolScalarFieldEnum)[keyof typeof WorkflowHostToolScalarFieldEnum]
+
+
+export const FlowScalarFieldEnum = {
+  id: 'id',
+  appClientId: 'appClientId',
+  flowKey: 'flowKey',
+  name: 'name',
+  description: 'description',
+  goal: 'goal',
+  profile: 'profile',
+  deliverable: 'deliverable',
+  intent: 'intent',
+  ir: 'ir',
+  version: 'version',
+  constraints: 'constraints',
+  isActive: 'isActive',
+  sortOrder: 'sortOrder',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type FlowScalarFieldEnum = (typeof FlowScalarFieldEnum)[keyof typeof FlowScalarFieldEnum]
+
+
+export const FlowRevisionScalarFieldEnum = {
+  id: 'id',
+  flowId: 'flowId',
+  version: 'version',
+  intent: 'intent',
+  ir: 'ir',
+  deliverable: 'deliverable',
+  constraints: 'constraints',
+  changeNote: 'changeNote',
+  createdAt: 'createdAt'
+} as const
+
+export type FlowRevisionScalarFieldEnum = (typeof FlowRevisionScalarFieldEnum)[keyof typeof FlowRevisionScalarFieldEnum]
+
+
+export const FlowToolScalarFieldEnum = {
+  id: 'id',
+  flowId: 'flowId',
+  toolId: 'toolId',
+  isRequired: 'isRequired'
+} as const
+
+export type FlowToolScalarFieldEnum = (typeof FlowToolScalarFieldEnum)[keyof typeof FlowToolScalarFieldEnum]
+
+
+export const FlowHostToolScalarFieldEnum = {
+  id: 'id',
+  flowId: 'flowId',
+  hostToolId: 'hostToolId',
+  isRequired: 'isRequired'
+} as const
+
+export type FlowHostToolScalarFieldEnum = (typeof FlowHostToolScalarFieldEnum)[keyof typeof FlowHostToolScalarFieldEnum]
 
 
 export const SortOrder = {

@@ -37,15 +37,6 @@ function readFetchDataSource(ref, value) {
         data: output,
     };
 }
-function readLoadPageContextSource(ref, value) {
-    return {
-        ref,
-        action: 'load_page_context',
-        toolName: null,
-        toolId: null,
-        data: value,
-    };
-}
 function collectWorkflowSources(workflowNodeOutputs) {
     const sources = [];
     for (const [ref, value] of Object.entries(workflowNodeOutputs)) {
@@ -57,8 +48,14 @@ function collectWorkflowSources(workflowNodeOutputs) {
             }
             continue;
         }
-        if (action === 'load_page_context') {
-            sources.push(readLoadPageContextSource(ref, value));
+        if (action === 'summarize_images') {
+            sources.push({
+                ref,
+                action: 'summarize_images',
+                toolName: null,
+                toolId: null,
+                data: value,
+            });
         }
     }
     return sources.sort((left, right) => left.ref.localeCompare(right.ref));

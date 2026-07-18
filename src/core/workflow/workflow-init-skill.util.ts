@@ -1,22 +1,23 @@
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { AgentGraphNodeBundle } from '../agent-engine/engine/main/agent-graph/types/graph.types';
 import type { AgentGraphState } from '../agent-engine/engine/main/types/agent-engine.types';
-import {
-  loadWorkflowForRunDetailed,
-  parseWorkflowOverridesJson,
-  type LoadedWorkflowForRun,
-  type WorkflowLoadFailureReason,
+import { loadFlowForRunDetailed } from './load-flow-for-run.util';
+import type {
+  LoadedWorkflowForRun,
+  WorkflowLoadFailureReason,
 } from './load-workflow-definition.util';
+import { parseWorkflowOverridesJson } from './load-workflow-definition.util';
 
-/** workflow_init 对 Skill.workflowId 的解析结果（对应设计里的两条步序来源 + 硬失败）。 */
+/** workflow_init 对 Skill.flowId 的解析结果（运行时不再读 Skill.workflowId）。 */
 export type SkillWorkflowInitResolution =
   | { kind: 'no_workflow_binding' }
-  | { kind: 'loaded'; workflow: LoadedWorkflowForRun }
-  | { kind: 'scope_incompatible'; workflowId: number }
+  | { kind: 'loaded'; workflow: LoadedWorkflowForRun; source: 'flow' }
+  | { kind: 'scope_incompatible'; workflowId: number; source: 'flow' }
   | {
       kind: 'load_failed';
       workflowId: number;
       reason: Exclude<WorkflowLoadFailureReason, 'scope_incompatible'>;
+      source: 'flow';
     };
 
 export function resolveWorkflowBoundSkillId(
@@ -36,11 +37,8 @@ export function resolveWorkflowBoundSkillId(
 }
 
 /**
- * Skill 步序来源解析：
- * - `no_workflow_binding`：无 workflowId → 由 plan 阶段已产出的 taskPlan 走 plan_compile
- * - `loaded`：有 workflowId 且 DB 加载成功 → workflow_db
- * - `scope_incompatible`：有 workflowId 但与当前 scope 不兼容 → 回退 plan_compile
- * - `load_failed`：有 workflowId 但资产不可用 → 硬失败
+ * Skill 步序来源：仅 Flow（Intent/IR）。
+ * 未绑 flowId 的存量 Skill.workflowId 不再加载；须先 migrate。
  */
 export async function resolveSkillWorkflowForInit(
   prisma: PrismaService,
@@ -56,34 +54,46 @@ export async function resolveSkillWorkflowForInit(
   const skillRow = await prisma.skill.findUnique({
     where: { id: input.skillId },
     select: {
-      workflowId: true,
-      workflowVersion: true,
+      flowId: true,
+      flowVersion: true,
       workflowOverrides: true,
     },
   });
-  if (!skillRow?.workflowId || skillRow.workflowId <= 0) {
+
+  const overrides = parseWorkflowOverridesJson(skillRow?.workflowOverrides);
+
+  if (skillRow?.flowId == null || skillRow.flowId <= 0) {
     return { kind: 'no_workflow_binding' };
   }
-  const loadResult = await loadWorkflowForRunDetailed(prisma, {
-    workflowId: skillRow.workflowId,
+
+  const loadResult = await loadFlowForRunDetailed(prisma, {
+    flowId: skillRow.flowId,
     appClientId: input.appClientId,
-    workflowVersion: skillRow.workflowVersion,
-    workflowOverrides: parseWorkflowOverridesJson(skillRow.workflowOverrides),
+    flowVersion: skillRow.flowVersion,
+    workflowOverrides: overrides,
     scope: input.scope,
   });
+  return mapLoadResult(loadResult);
+}
+
+function mapLoadResult(
+  loadResult: Awaited<ReturnType<typeof loadFlowForRunDetailed>>,
+): SkillWorkflowInitResolution {
   if (loadResult.status === 'loaded') {
     const { status: _status, ...workflow } = loadResult;
-    return { kind: 'loaded', workflow };
+    return { kind: 'loaded', workflow, source: 'flow' };
   }
   if (loadResult.reason === 'scope_incompatible') {
     return {
       kind: 'scope_incompatible',
       workflowId: loadResult.workflowId,
+      source: 'flow',
     };
   }
   return {
     kind: 'load_failed',
     workflowId: loadResult.workflowId,
     reason: loadResult.reason,
+    source: 'flow',
   };
 }

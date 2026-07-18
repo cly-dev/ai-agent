@@ -21,6 +21,7 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AppClientDsnGuard } from '../../../auth/app-client-dsn.guard';
 import { APP_CLIENT_DSN_HEADER } from '../../../auth/app-client-dsn.constants';
@@ -76,6 +77,7 @@ export class PageActionCEndController {
   }
 
   @Get('page-action/runs/:id/stream')
+  @SkipThrottle()
   @UseGuards(UserJwtAuthGuard, AppClientDsnGuard)
   @ApiSecurity('app-dsn')
   @ApiHeader({

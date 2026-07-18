@@ -70,6 +70,7 @@ export type WorkflowResponse = {
   goal: string | null;
   profile: string;
   deliverable: string;
+  /** Legacy 图文档 */
   nodes: unknown;
   version: number;
   constraints: unknown;
@@ -82,11 +83,20 @@ export type WorkflowResponse = {
   skillRefCount: number;
   pageActionRefCount: number;
   revisionCount: number;
+  /** 配置写路径已迁 Flow；本资源只读 */
+  configWritable: false;
+  /** 建议用 POST /admin/flow/migrate-from-workflow/:id 迁到 Flow */
+  deprecated: true;
 };
 
 export type WorkflowListItem = Omit<
   WorkflowResponse,
-  'workflowTools' | 'workflowHostTools' | 'revisionCount' | 'nodes' | 'constraints' | 'goal'
+  | 'workflowTools'
+  | 'workflowHostTools'
+  | 'revisionCount'
+  | 'nodes'
+  | 'constraints'
+  | 'goal'
 > & {
   nodeCount: number;
 };

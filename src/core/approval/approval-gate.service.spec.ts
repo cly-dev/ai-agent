@@ -10,7 +10,7 @@ describe('ApprovalGateService', () => {
     version: 1,
     status: 'running',
     currentNodeId: 'await',
-    compiledFrom: 'workflow_db',
+    compiledFrom: 'flow_db',
     nodes: [],
   };
 
@@ -26,8 +26,8 @@ describe('ApprovalGateService', () => {
       source: 'page_action',
       initiatorUserId: 7,
       approverUserId: 7,
-      workflowId: 3,
-      workflowVersion: 1,
+      flowId: 3,
+      flowVersion: 1,
       nodeId: 'await',
       title: 'Test',
       workflowRun,
@@ -52,8 +52,11 @@ describe('ApprovalGateService', () => {
       expect.objectContaining({
         source: 'page_action',
         approverUserId: 7,
+        flowId: 3,
         resumeSnapshot: expect.objectContaining({
-          version: 1,
+          version: 2,
+          flow: { id: 3, version: 1 },
+          suspended: expect.objectContaining({ irNodeId: 'await' }),
           channel: { kind: 'page_action', pageActionRunId: 88 },
           writeDraft: expect.objectContaining({
             tool: expect.objectContaining({ name: 'update_item' }),

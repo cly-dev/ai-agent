@@ -8,6 +8,7 @@ import { resolveExecutorPageContext } from '../executors/executor-host.util';
 import { invokeDetectCluesLlm } from './detect-clues-llm.util';
 import type { WorkflowExecutor } from '../executors/workflow-executor.types';
 import { formatPriorOutputsForDetectClues } from '../workflow-node-outputs-summarize.util';
+import { resolveWorkflowNodeRuntimeInput } from '../resolve-workflow-node-runtime-input.util';
 
 function resolveDetectHint(input: unknown): string | undefined {
   if (input == null || typeof input !== 'object') {
@@ -79,7 +80,7 @@ export const detectCluesExecutor: WorkflowExecutor = {
     const output = await invokeDetectCluesLlm({
       llmService,
       objective: ctx.def.objective,
-      hint: resolveDetectHint(ctx.def.input),
+      hint: resolveDetectHint(resolveWorkflowNodeRuntimeInput(ctx.def)),
       clues,
       userMessage: resolveUserMessage(ctx.host),
       pageContextSummary: summarizeForDetect(pageContext ?? null),

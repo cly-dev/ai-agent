@@ -12,6 +12,7 @@ import {
   resolveSkillWorkflowForInit,
   resolveWorkflowBoundSkillId,
 } from '../../../../../workflow/workflow-init-skill.util';
+import { parseWorkflowOverridesJson } from '../../../../../workflow/load-workflow-definition.util';
 import {
   buildWorkflowResumeGraphSlice,
   hydrateTaskPlanWithWorkflowDefs,
@@ -94,6 +95,8 @@ function finalizeWorkflowInit(
     source: 'resume' | 'workflow_db' | 'plan_compile';
     skillId?: number | null;
     workflowAwaitingReact?: boolean;
+    workflowIr?: AgentGraphState['workflowIr'];
+    workflowExecutionMode?: AgentGraphState['workflowExecutionMode'];
   },
 ): AgentGraphState {
   const stepNum = nextRunStepNumber(state.steps);
@@ -129,6 +132,8 @@ function finalizeWorkflowInit(
     taskPlan,
     workflowRun: input.workflowRun,
     workflowNodeDefs: input.nodes,
+    workflowIr: input.workflowIr ?? null,
+    workflowExecutionMode: input.workflowExecutionMode,
     workflowNodeOutputs: state.workflowNodeOutputs ?? {},
     workflowAwaitingReact: input.workflowAwaitingReact ?? false,
   };
@@ -212,11 +217,25 @@ export function createWorkflowInitNode(
     if (afterPlan.planRunContext === 'resume') {
       const savedRun = bundle.ctx.getSessionGoa()?.activeTask?.workflowRun;
       if (isResumableWorkflowRun(savedRun)) {
+        // resume 重载 Flow 时必须带上 Skill.workflowOverrides，与首跑 init 对齐。
+        let resumeOverrides = null as ReturnType<
+          typeof parseWorkflowOverridesJson
+        >;
+        if (boundSkillId != null) {
+          const skillRow = await deps.prisma.skill.findUnique({
+            where: { id: boundSkillId },
+            select: { workflowOverrides: true },
+          });
+          resumeOverrides = parseWorkflowOverridesJson(
+            skillRow?.workflowOverrides,
+          );
+        }
         const graph = await resolveWorkflowGraphForResume(deps.prisma, {
           savedRun,
           taskPlan: afterPlan.taskPlan,
           appClientId: ctx.input.appClientId,
           scope,
+          workflowOverrides: resumeOverrides,
         });
         if (graph) {
           const resumed = buildWorkflowResumeGraphSlice({
@@ -229,6 +248,8 @@ export function createWorkflowInitNode(
             nodes: resumed.workflowNodeDefs,
             source: 'resume',
             workflowAwaitingReact: resumed.workflowAwaitingReact,
+            workflowIr: graph.ir,
+            workflowExecutionMode: graph.executionMode,
           });
           await runHelpers.updateRun(
             ctx.input.runId,
@@ -288,6 +309,8 @@ export function createWorkflowInitNode(
           nodes: skillWorkflow.workflow.nodes,
           source: 'workflow_db',
           skillId: boundSkillId,
+          workflowIr: skillWorkflow.workflow.ir,
+          workflowExecutionMode: skillWorkflow.workflow.executionMode,
         });
         await runHelpers.updateRun(
           ctx.input.runId,
@@ -300,6 +323,9 @@ export function createWorkflowInitNode(
           skillId: boundSkillId,
           workflowRun: next.workflowRun,
           source: 'workflow_db',
+          executionMode:
+            skillWorkflow.workflow.executionMode ?? 'materialized_expand',
+          irNodeCount: skillWorkflow.workflow.ir?.nodes.length ?? 0,
         });
         return next;
       }

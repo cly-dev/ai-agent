@@ -11,11 +11,12 @@ function deriveSkillExecutionChannels(input) {
     var _a;
     const nodes = (_a = input.nodes) !== null && _a !== void 0 ? _a : [];
     if (nodes.length > 0) {
-        const actions = new Set(nodes.map((node) => node.action));
+        const httpRead = nodes.some((n) => n.irType === 'data_query' || n.action === 'fetch_data');
+        const hostPush = nodes.some((n) => n.irType === 'host_effect' || n.action === 'generate_and_push');
         const httpMutation = input.deliverable === 'mutation' ||
-            actions.has('write_data') ||
-            (actions.has('compose_mutation') && actions.has('await_user_confirm'));
-        const hostPush = actions.has('generate_and_push');
+            nodes.some((n) => n.irType === 'tool_call' || n.action === 'write_data') ||
+            (nodes.some((n) => n.irType === 'data_transform' || n.action === 'compose_mutation') &&
+                nodes.some((n) => n.irType === 'human_task' || n.action === 'await_user_confirm'));
         const primaryWriteChannel = (() => {
             if (input.deliverable === 'mutation' || httpMutation) {
                 return 'http';
@@ -26,7 +27,7 @@ function deriveSkillExecutionChannels(input) {
             return null;
         })();
         return {
-            httpRead: actions.has('fetch_data') || actions.has('load_page_context'),
+            httpRead,
             httpMutation,
             hostPush,
             primaryWriteChannel,

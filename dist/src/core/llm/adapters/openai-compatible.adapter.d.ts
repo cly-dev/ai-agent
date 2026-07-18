@@ -11,6 +11,7 @@ export declare class OpenAiCompatibleAdapter implements LlmAdapter {
     private resetStreamProbe;
     private logStreamProbeSummary;
     private extractContent;
+    private extractReasoning;
     private noteStreamChunk;
     private extractToolCalls;
     private extractMessage;

@@ -11,6 +11,7 @@ import { shouldEnforceRequestedSkillFromContract } from '../../../turn/skill-int
 import { isPageContextOuterPlanActive } from '../../../../../host-bridge/page-context-execution-policy.util';
 import { syncTaskPlanBeforeReAct, toPlanSyncAgentStep } from '../../plan/plan-sync.util';
 import { isWorkflowBoundRun } from '../../../../../workflow/workflow-plan-transition.util';
+import { skillIsWorkflowBound } from '../../../../../skill/skill-runnable.util';
 import { planObservationBucketsFromState, planRunContextFromState } from '../../plan/plan-observation-scope.util';
 import { nextRunStepNumber } from '../../run/agent-run-steps.util';
 import type { PlanSyncSite } from '../../plan/plan-sync.util';
@@ -94,7 +95,7 @@ export function createAgentGraphSkillFrameHelpers(
       scopedHostToolIds: hostBundle.scopedHostTools.map((tool) => tool.id),
     });
     const effectiveHostBundle =
-      expanded.skill?.workflowId != null && expanded.skill.workflowId > 0
+      expanded.skill != null && skillIsWorkflowBound(expanded.skill)
         ? await runHelpers.loadScopedHostTools(ctx.input, pageContext, null)
         : hostBundle;
     const narrowedHostTools = filterDecisionHostToolsForSkill(

@@ -12,6 +12,7 @@ var __rest = (this && this.__rest) || function (s, e) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveSkillWorkflowForInit = exports.resolveWorkflowBoundSkillId = void 0;
+const load_flow_for_run_util_1 = require("./load-flow-for-run.util");
 const load_workflow_definition_util_1 = require("./load-workflow-definition.util");
 function resolveWorkflowBoundSkillId(bundle, state) {
     var _a, _b, _c, _d, _e, _f, _g, _h;
@@ -26,36 +27,42 @@ async function resolveSkillWorkflowForInit(prisma, input) {
     const skillRow = await prisma.skill.findUnique({
         where: { id: input.skillId },
         select: {
-            workflowId: true,
-            workflowVersion: true,
+            flowId: true,
+            flowVersion: true,
             workflowOverrides: true,
         },
     });
-    if (!(skillRow === null || skillRow === void 0 ? void 0 : skillRow.workflowId) || skillRow.workflowId <= 0) {
+    const overrides = (0, load_workflow_definition_util_1.parseWorkflowOverridesJson)(skillRow === null || skillRow === void 0 ? void 0 : skillRow.workflowOverrides);
+    if ((skillRow === null || skillRow === void 0 ? void 0 : skillRow.flowId) == null || skillRow.flowId <= 0) {
         return { kind: 'no_workflow_binding' };
     }
-    const loadResult = await (0, load_workflow_definition_util_1.loadWorkflowForRunDetailed)(prisma, {
-        workflowId: skillRow.workflowId,
+    const loadResult = await (0, load_flow_for_run_util_1.loadFlowForRunDetailed)(prisma, {
+        flowId: skillRow.flowId,
         appClientId: input.appClientId,
-        workflowVersion: skillRow.workflowVersion,
-        workflowOverrides: (0, load_workflow_definition_util_1.parseWorkflowOverridesJson)(skillRow.workflowOverrides),
+        flowVersion: skillRow.flowVersion,
+        workflowOverrides: overrides,
         scope: input.scope,
     });
+    return mapLoadResult(loadResult);
+}
+exports.resolveSkillWorkflowForInit = resolveSkillWorkflowForInit;
+function mapLoadResult(loadResult) {
     if (loadResult.status === 'loaded') {
         const { status: _status } = loadResult, workflow = __rest(loadResult, ["status"]);
-        return { kind: 'loaded', workflow };
+        return { kind: 'loaded', workflow, source: 'flow' };
     }
     if (loadResult.reason === 'scope_incompatible') {
         return {
             kind: 'scope_incompatible',
             workflowId: loadResult.workflowId,
+            source: 'flow',
         };
     }
     return {
         kind: 'load_failed',
         workflowId: loadResult.workflowId,
         reason: loadResult.reason,
+        source: 'flow',
     };
 }
-exports.resolveSkillWorkflowForInit = resolveSkillWorkflowForInit;
 //# sourceMappingURL=workflow-init-skill.util.js.map

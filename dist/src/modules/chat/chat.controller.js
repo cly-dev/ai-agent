@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var ChatController_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChatController = void 0;
 const common_1 = require("@nestjs/common");
@@ -31,11 +32,12 @@ const prepare_chat_response_dto_1 = require("./dto/prepare-chat-response.dto");
 const query_chat_list_dto_1 = require("./dto/query-chat-list.dto");
 const session_prepare_service_1 = require("./session-prepare.service");
 const message_feedback_constants_1 = require("../message/message-feedback.constants");
-let ChatController = class ChatController {
+let ChatController = ChatController_1 = class ChatController {
     constructor(chatService, chatEvents, sessionPrepareService) {
         this.chatService = chatService;
         this.chatEvents = chatEvents;
         this.sessionPrepareService = sessionPrepareService;
+        this.logger = new common_1.Logger(ChatController_1.name);
     }
     userId(req) {
         var _a;
@@ -86,9 +88,13 @@ let ChatController = class ChatController {
         const normalizedSessionId = this.normalizeSessionId(sessionId);
         return new rxjs_1.Observable((subscriber) => {
             let inner = null;
+            const connectedAt = Date.now();
+            let ownershipResolved = false;
             void this.chatService
                 .assertSessionOwnedByUser(normalizedSessionId, uid, aid)
                 .then((session) => {
+                ownershipResolved = true;
+                this.logger.debug(`chat SSE connected sessionId=${session.id} userId=${uid}`);
                 this.sessionPrepareService.warmInBackground(session.id, uid, aid);
                 inner = this.chatEvents.observeSession(session.id, uid).subscribe({
                     next: (evt) => {
@@ -101,8 +107,12 @@ let ChatController = class ChatController {
                     complete: () => subscriber.complete(),
                 });
             })
-                .catch((err) => subscriber.error(err));
+                .catch((err) => {
+                this.logger.warn(`chat SSE connect failed sessionId=${normalizedSessionId} userId=${uid}: ${err instanceof Error ? err.message : String(err)}`);
+                subscriber.error(err);
+            });
             return () => {
+                this.logger.debug(`chat SSE disconnected sessionId=${normalizedSessionId} userId=${uid} ownershipResolved=${ownershipResolved} durationMs=${Date.now() - connectedAt}`);
                 inner === null || inner === void 0 ? void 0 : inner.unsubscribe();
             };
         });
@@ -221,7 +231,7 @@ __decorate([
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", rxjs_1.Observable)
 ], ChatController.prototype, "stream", null);
-ChatController = __decorate([
+ChatController = ChatController_1 = __decorate([
     (0, swagger_1.ApiTags)('chat'),
     (0, common_1.Controller)('chat'),
     (0, common_1.UseGuards)(user_jwt_auth_guard_1.UserJwtAuthGuard, app_client_dsn_guard_1.AppClientDsnGuard),

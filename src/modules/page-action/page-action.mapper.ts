@@ -29,6 +29,8 @@ export function toPageActionResponse(row: PageActionDetailRow): PageActionRespon
     sourceSkillId: row.sourceSkillId,
     workflowId: row.workflowId,
     workflowVersion: row.workflowVersion,
+    flowId: row.flowId,
+    flowVersion: row.flowVersion,
     workflowOverrides: row.workflowOverrides,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -90,6 +92,8 @@ export function toPageActionRunAdminDetail(
     idempotencyKey: row.idempotencyKey,
     workflowId: row.workflowId,
     workflowVersion: row.workflowVersion,
+    flowId: row.flowId,
+    flowVersion: row.flowVersion,
     workflowRun: row.workflowRun,
     steps: parseRunSteps(row.steps),
   };

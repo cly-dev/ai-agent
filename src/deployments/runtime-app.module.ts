@@ -28,6 +28,7 @@ import { PageActionModule } from '../modules/page-action/page-action.module';
 import { PageAgentModule } from '../modules/page-agent/page-agent.module';
 import { ApprovalModule as ApprovalInboxModule } from '../modules/approval/approval.module';
 import { WorkflowModule } from '../modules/workflow/workflow.module';
+import { FlowModule } from '../modules/flow/flow.module';
 import { ConnectivityModule } from '../modules/connectivity/connectivity.module';
 import { SharedInfraModule } from './shared-infra.module';
 
@@ -53,6 +54,7 @@ import { SharedInfraModule } from './shared-infra.module';
     PageAgentModule,
     ApprovalInboxModule,
     WorkflowModule,
+    FlowModule,
     AgentModule,
     ChatModule,
     MessageModule,

@@ -13,9 +13,13 @@ import { type PageActionRunCompletion } from './page-action-run-completion.util'
 export type PageWorkflowRunnerInput = {
     workflowId: number;
     version: number;
+    flowId?: number | null;
+    flowVersion?: number | null;
     nodes: WorkflowNodeDef[];
     edges?: WorkflowEdge[];
     entryNodeId?: string | null;
+    ir?: import('../workflow/workflow-ir.types').WorkflowIrDocument | null;
+    executionMode?: import('../workflow/workflow-ir-native-direct.util').WorkflowExecutionMode;
     systemPrompt: string;
     objectivePrefix?: string | null;
     messages: LlmChatMessage[];

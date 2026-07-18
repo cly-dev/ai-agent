@@ -14,6 +14,7 @@ import {
   type PaginatedResult,
 } from '../../common/pagination';
 import { assertPageActionPromptLimits } from '../../core/page-action/page-action-prompt-limits.util';
+import { assertNoNewLegacyWorkflowBinding } from '../../core/workflow/assert-no-new-legacy-workflow-binding.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HOST_TOOL_DETAIL_INCLUDE } from '../host-tool/host-tool.types';
 import type {
@@ -35,13 +36,13 @@ import type {
   PageScopeOption,
 } from './page-action.types';
 import { PAGE_ACTION_DETAIL_INCLUDE, PAGE_ACTION_RUN_ADMIN_INCLUDE } from './page-action.types';
-import { WorkflowService } from '../workflow/workflow.service';
+import { FlowService } from '../flow/flow.service';
 
 @Injectable()
 export class PageActionService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly workflowService: WorkflowService,
+    private readonly flowService: FlowService,
   ) {}
 
   async create(dto: CreatePageActionDto): Promise<PageActionResponse> {
@@ -55,17 +56,14 @@ export class PageActionService {
     }
     const hostToolId = dto.hostToolId ?? null;
 
-    if (dto.workflowId != null && dto.workflowId > 0) {
-      await this.workflowService.assertWorkflowReferenceCompatible({
-        workflowId: dto.workflowId,
+    if (dto.workflowId !== undefined) {
+      assertNoNewLegacyWorkflowBinding(dto.workflowId, 'page_action');
+    }
+    if (dto.flowId != null && dto.flowId > 0) {
+      await this.flowService.assertPageActionFlowBindingsCompatible({
+        flowId: dto.flowId,
         appClientId: dto.appClientId,
-        entry: 'page_action',
-      });
-      await this.workflowService.assertPageActionWorkflowBindingsCompatible({
-        workflowId: dto.workflowId,
-        appClientId: dto.appClientId,
-        workflowVersion: dto.workflowVersion,
-        pageActionHostToolId: hostToolId,
+        flowVersion: dto.flowVersion,
       });
     }
 
@@ -88,8 +86,20 @@ export class PageActionService {
               ? undefined
               : (dto.config as Prisma.InputJsonValue),
           sourceSkillId: dto.sourceSkillId ?? null,
-          workflowId: dto.workflowId ?? undefined,
-          workflowVersion: dto.workflowVersion ?? undefined,
+          // 配置面只写 Flow；禁止落 legacy workflowId。
+          ...(dto.flowId != null && dto.flowId > 0
+            ? {
+                flowId: dto.flowId,
+                flowVersion: dto.flowVersion ?? undefined,
+                workflowId: null,
+                workflowVersion: null,
+              }
+            : {
+                flowId: null,
+                flowVersion: null,
+                workflowId: null,
+                workflowVersion: null,
+              }),
           workflowOverrides:
             dto.workflowOverrides === undefined
               ? undefined
@@ -122,28 +132,27 @@ export class PageActionService {
     if (dto.systemPrompt != null) {
       assertPageActionPromptLimits({ systemPrompt: dto.systemPrompt });
     }
-    if (dto.workflowId != null) {
-      await this.workflowService.assertWorkflowReferenceCompatible({
-        workflowId: dto.workflowId,
-        appClientId: existing.appClientId,
-        entry: 'page_action',
-      });
-    }
 
+    if (dto.workflowId !== undefined) {
+      assertNoNewLegacyWorkflowBinding(dto.workflowId, 'page_action');
+    }
+    const nextFlowId =
+      dto.flowId !== undefined ? dto.flowId : existing.flowId;
+    const nextFlowVersion =
+      dto.flowVersion !== undefined ? dto.flowVersion : existing.flowVersion;
     const nextWorkflowId =
       dto.workflowId !== undefined ? dto.workflowId : existing.workflowId;
     const nextWorkflowVersion =
-      dto.workflowVersion !== undefined
-        ? dto.workflowVersion
-        : existing.workflowVersion;
-    const nextHostToolId =
-      dto.hostToolId !== undefined ? dto.hostToolId : existing.hostToolId;
-    if (nextWorkflowId != null && nextWorkflowId > 0) {
-      await this.workflowService.assertPageActionWorkflowBindingsCompatible({
-        workflowId: nextWorkflowId,
+      nextWorkflowId == null
+        ? null
+        : dto.workflowVersion !== undefined
+          ? dto.workflowVersion
+          : existing.workflowVersion;
+    if (nextFlowId != null && nextFlowId > 0) {
+      await this.flowService.assertPageActionFlowBindingsCompatible({
+        flowId: nextFlowId,
         appClientId: existing.appClientId,
-        workflowVersion: nextWorkflowVersion,
-        pageActionHostToolId: nextHostToolId,
+        flowVersion: nextFlowVersion,
       });
     }
     const row = await this.prisma.pageAction.update({
@@ -171,9 +180,24 @@ export class PageActionService {
         ...(dto.config !== undefined
           ? { config: dto.config as Prisma.InputJsonValue | null }
           : {}),
-        ...(dto.workflowId !== undefined ? { workflowId: dto.workflowId } : {}),
-        ...(dto.workflowVersion !== undefined
-          ? { workflowVersion: dto.workflowVersion }
+        // 任一编排字段变更时写回互斥绑定：flow 优先于 workflow。
+        ...(dto.flowId !== undefined ||
+        dto.flowVersion !== undefined ||
+        dto.workflowId !== undefined ||
+        dto.workflowVersion !== undefined
+          ? nextFlowId != null && nextFlowId > 0
+            ? {
+                flowId: nextFlowId,
+                flowVersion: nextFlowVersion,
+                workflowId: null,
+                workflowVersion: null,
+              }
+            : {
+                workflowId: nextWorkflowId,
+                workflowVersion: nextWorkflowVersion,
+                flowId: null,
+                flowVersion: null,
+              }
           : {}),
         ...(dto.workflowOverrides !== undefined
           ? {

@@ -18,6 +18,7 @@ import {
   finalizeWorkflowRunAfterAdvance,
   initWorkflowRun,
   startWorkflowNode,
+  tryAdvanceNativePhaseAfterNodeSuccess,
 } from '../workflow/workflow-run.util';
 import { advanceWorkflowRunAfterWriteConfirm } from '../workflow/workflow-resume.util';
 import { logWorkflowDebug } from '../workflow/trace/workflow-debug.util';
@@ -29,6 +30,17 @@ import { applyPageWorkflowNodeOutput } from './page-workflow-node.util';
 import { buildPageWriteDraft } from '../draft-review';
 import type { ApprovalTriggerBinding } from '../approval/resolve-approval-parties.util';
 import { resolveApprovalParties } from '../approval/resolve-approval-parties.util';
+import {
+  materializeNativeFlatIrNode,
+} from '../workflow/workflow-ir-native-direct.util';
+import {
+  materializeEntitiesFromRuntimeContext,
+  recordPageActionEntityMaterialization,
+} from '../entity-materialization';
+import {
+  materializeWorkflowIrNodeForPhase,
+  resolveWorkflowIrNativePhases,
+} from '../workflow/workflow-ir-native-phase.util';
 import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
 
 export type PageWorkflowOrchestratorInput = PageWorkflowRunnerInput & {
@@ -68,6 +80,17 @@ export async function orchestratePageWorkflow(
     input.stepRecorder ?? new PageActionRunStepRecorder();
   const runtime = createPageWorkflowExecutorRuntime(input, recorder);
 
+  runtime.materializedEntities = materializeEntitiesFromRuntimeContext({
+    pageContext: input.pageContext,
+    actionContext: input.actionContext ?? null,
+  });
+  if (!input.resumeFrom) {
+    recordPageActionEntityMaterialization(
+      recorder,
+      runtime.materializedEntities,
+    );
+  }
+
   if (input.resumeFrom) {
     runtime.nodeOutputs = { ...input.resumeFrom.nodeOutputs };
   }
@@ -80,7 +103,17 @@ export async function orchestratePageWorkflow(
       nodes: input.nodes,
       edges: input.edges,
       entryNodeId: input.entryNodeId,
-      compiledFrom: input.resumeFrom ? 'resume' : 'workflow_db',
+      compiledFrom: input.flowId ? 'flow_db' : 'workflow_db',
+      // Plan A：native 入口相位，避免 present 完成后误当成 execute 跳过 await
+      phasesByNodeId:
+        input.executionMode === 'ir_native_direct' && input.ir
+          ? Object.fromEntries(
+              input.ir.nodes.map((node) => [
+                node.id,
+                resolveWorkflowIrNativePhases(node)[0]!,
+              ]),
+            )
+          : undefined,
     });
 
   if (input.resumeFrom?.advancePastAwait) {
@@ -94,12 +127,32 @@ export async function orchestratePageWorkflow(
     version: input.version,
     resumed: input.resumeFrom != null,
     nodeIds: input.nodes.map((row) => row.id),
+    executionMode: input.executionMode ?? 'materialized_expand',
+    irNodeCount: input.ir?.nodes.length ?? 0,
     workflowRun,
   });
 
   while (workflowRun.currentNodeId && workflowRun.status === 'running') {
     const nodeId = workflowRun.currentNodeId;
-    const def = input.nodes.find((row) => row.id === nodeId);
+    // Plan A：native 时从 IR + 当前 phase 合成 def
+    const runNode = workflowRun.nodes.find((row) => row.nodeId === nodeId);
+    const irNode =
+      input.executionMode === 'ir_native_direct'
+        ? input.ir?.nodes.find((row) => row.id === nodeId)
+        : undefined;
+    const def: WorkflowNodeDef | undefined =
+      irNode != null
+        ? (() => {
+            try {
+              const phase = runNode?.phase;
+              return phase
+                ? materializeWorkflowIrNodeForPhase(irNode, phase)
+                : materializeNativeFlatIrNode(irNode);
+            } catch {
+              return undefined;
+            }
+          })()
+        : input.nodes.find((row) => row.id === nodeId);
     if (!def) {
       return buildSuspendedOrFinal({
         workflowNodes: input.nodes,
@@ -236,13 +289,18 @@ export async function orchestratePageWorkflow(
         lastEvent: 'composed',
       });
 
+      if (input.flowId == null || input.flowId <= 0) {
+        throw new Error(
+          'PageAction approval requires flowId; legacy Workflow path removed',
+        );
+      }
       const approval = await input.approvalGate.suspend({
         appClientId: input.appClientId,
         source: 'page_action',
         initiatorUserId: parties.parties.initiatorUserId,
         approverUserId: parties.parties.approverUserId,
-        workflowId: input.workflowId,
-        workflowVersion: input.version,
+        flowId: input.flowId,
+        flowVersion: input.flowVersion ?? input.version,
         nodeId,
         title: `${input.actionKey} · ${def.name}`,
         writeDraft,
@@ -281,6 +339,24 @@ export async function orchestratePageWorkflow(
 
     if (nodeResult.kind === 'completed') {
       applyPageWorkflowNodeOutput(runtime, nodeResult.outcome);
+      if (input.executionMode === 'ir_native_direct' && irNode) {
+        const phaseStep = tryAdvanceNativePhaseAfterNodeSuccess({
+          run: workflowRun,
+          nodeId,
+          irNode,
+        });
+        workflowRun = phaseStep.workflowRun;
+        if (phaseStep.advancedPhase) {
+          logWorkflowDebug('page_node_phase_advanced', {
+            actionRunId: input.actionRunId,
+            actionKey: input.actionKey,
+            nodeId,
+            phase: workflowRun.nodes.find((n) => n.nodeId === nodeId)?.phase,
+            workflowRun,
+          });
+          continue;
+        }
+      }
       workflowRun = advanceWorkflowRun(workflowRun);
       workflowRun = finalizeWorkflowRunAfterAdvance(workflowRun);
       logWorkflowDebug('page_node_advanced', {

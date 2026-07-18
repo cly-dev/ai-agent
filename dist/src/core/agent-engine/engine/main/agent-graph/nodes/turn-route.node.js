@@ -18,6 +18,7 @@ const page_context_execution_policy_util_1 = require("../../../../../host-bridge
 const skill_runnable_util_1 = require("../../../../../skill/skill-runnable.util");
 const intent_kind_util_1 = require("../../../../intent-kind.util");
 const smalltalk_hints_util_1 = require("../../../../../intent/smalltalk-hints.util");
+const entity_materialization_1 = require("../../../../../entity-materialization");
 function resolveRequestedSkillRowForTurnRoute(input) {
     var _a;
     if (input.requestedSkillId == null) {
@@ -38,6 +39,8 @@ function resolveRequestedSkillForContract(input) {
             runnableKind: input.requestedSkillRow.runnableKind,
             workflowId: input.requestedSkillRow.workflowId,
             workflowVersion: input.requestedSkillRow.workflowVersion,
+            flowId: input.requestedSkillRow.flowId,
+            flowVersion: input.requestedSkillRow.flowVersion,
             riskLevel: input.requestedSkillRow.riskLevel,
             config: input.requestedSkillRow.config,
         };
@@ -51,6 +54,10 @@ function resolveRequestedSkillForContract(input) {
             skillToolIds: caps.skillToolIds,
             hostToolIds: caps.hostToolIds,
             runnableKind: (0, skill_runnable_util_1.deriveSkillRunnableKind)(caps),
+            workflowId: input.requestedSkillCtx.skill.workflowId,
+            workflowVersion: input.requestedSkillCtx.skill.workflowVersion,
+            flowId: input.requestedSkillCtx.skill.flowId,
+            flowVersion: input.requestedSkillCtx.skill.flowVersion,
         };
     }
     return null;
@@ -60,20 +67,23 @@ async function resolveRequestedSkillExecutionChannels(prisma, requestedSkill) {
     if (!requestedSkill) {
         return derive_skill_execution_channels_util_1.EMPTY_SKILL_EXECUTION_CHANNELS;
     }
-    let workflowId = (_a = requestedSkill.workflowId) !== null && _a !== void 0 ? _a : null;
-    let workflowVersion = (_b = requestedSkill.workflowVersion) !== null && _b !== void 0 ? _b : null;
-    if (workflowId == null || workflowId <= 0) {
+    let flowId = (_a = requestedSkill.flowId) !== null && _a !== void 0 ? _a : null;
+    let flowVersion = (_b = requestedSkill.flowVersion) !== null && _b !== void 0 ? _b : null;
+    if (flowId == null || flowId <= 0) {
         const skillRow = await prisma.skill.findUnique({
             where: { id: requestedSkill.id },
-            select: { workflowId: true, workflowVersion: true },
+            select: {
+                flowId: true,
+                flowVersion: true,
+            },
         });
-        workflowId = (_c = skillRow === null || skillRow === void 0 ? void 0 : skillRow.workflowId) !== null && _c !== void 0 ? _c : null;
-        workflowVersion = (_d = skillRow === null || skillRow === void 0 ? void 0 : skillRow.workflowVersion) !== null && _d !== void 0 ? _d : workflowVersion;
+        flowId = (_c = skillRow === null || skillRow === void 0 ? void 0 : skillRow.flowId) !== null && _c !== void 0 ? _c : null;
+        flowVersion = (_d = skillRow === null || skillRow === void 0 ? void 0 : skillRow.flowVersion) !== null && _d !== void 0 ? _d : flowVersion;
     }
-    if (workflowId != null && workflowId > 0) {
+    if (flowId != null && flowId > 0) {
         return (0, load_skill_execution_channels_util_1.loadSkillExecutionChannels)(prisma, {
-            workflowId,
-            workflowVersion,
+            flowId,
+            flowVersion,
             skillToolIds: requestedSkill.skillToolIds,
             hostToolIds: requestedSkill.hostToolIds,
         });
@@ -312,7 +322,18 @@ function createTurnRouteNode(bundle) {
                 skillAlignment: turnExecutionContract.skillAlignment,
             }),
         };
+        const materializedEntities = pageContextForRoute
+            ? (0, entity_materialization_1.materializeEntitiesFromRuntimeContext)({
+                pageContext: pageContextForRoute,
+            })
+            : [];
         const stepsWithRoute = [...state.steps, routeStep];
+        if (pageContextForRoute) {
+            stepsWithRoute.push((0, entity_materialization_1.buildAgentEntityMaterializationStep)({
+                step: (0, agent_run_steps_util_1.nextRunStepNumber)(stepsWithRoute),
+                entities: materializedEntities,
+            }));
+        }
         if (turnExecutionContract.terminalRespond) {
             const sessionGoa = ctx.getSessionGoa();
             if (((_k = sessionGoa === null || sessionGoa === void 0 ? void 0 : sessionGoa.activeTask) === null || _k === void 0 ? void 0 : _k.status) === 'in_progress' ||
@@ -337,7 +358,7 @@ function createTurnRouteNode(bundle) {
                 intentScopedTools,
                 requestedSkillCtx: ctx.requestedSkillCtx,
             });
-        const nextState = Object.assign(Object.assign(Object.assign({}, state), { steps: stepsWithRoute, turnExecutionContract, pageContext: pageContextForRoute, preloadedToolObservations: preloadedFromPageContext, scopedHostTools: route === 'direct_answer' ? [] : hostBundle.scopedHostTools, scopedHostLangChainTools: route === 'direct_answer' ? [] : hostBundle.scopedHostLangChainTools }), (0, turn_scoped_tools_util_1.spreadScopedToolsBundle)(activeScopedTools));
+        const nextState = Object.assign(Object.assign(Object.assign({}, state), { steps: stepsWithRoute, turnExecutionContract, pageContext: pageContextForRoute, materializedEntities, preloadedToolObservations: preloadedFromPageContext, scopedHostTools: route === 'direct_answer' ? [] : hostBundle.scopedHostTools, scopedHostLangChainTools: route === 'direct_answer' ? [] : hostBundle.scopedHostLangChainTools }), (0, turn_scoped_tools_util_1.spreadScopedToolsBundle)(activeScopedTools));
         return nextState;
     };
 }

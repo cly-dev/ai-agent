@@ -33,6 +33,8 @@ export type ApprovalRequestAvgAggregateOutputType = {
   approverUserId: number | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
   pageActionRunId: number | null
   decidedByUserId: number | null
 }
@@ -44,6 +46,8 @@ export type ApprovalRequestSumAggregateOutputType = {
   approverUserId: number | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
   pageActionRunId: number | null
   decidedByUserId: number | null
 }
@@ -57,6 +61,8 @@ export type ApprovalRequestMinAggregateOutputType = {
   approverUserId: number | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
   nodeId: string | null
   title: string | null
   summary: string | null
@@ -80,6 +86,8 @@ export type ApprovalRequestMaxAggregateOutputType = {
   approverUserId: number | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
   nodeId: string | null
   title: string | null
   summary: string | null
@@ -103,6 +111,8 @@ export type ApprovalRequestCountAggregateOutputType = {
   approverUserId: number
   workflowId: number
   workflowVersion: number
+  flowId: number
+  flowVersion: number
   nodeId: number
   title: number
   summary: number
@@ -128,6 +138,8 @@ export type ApprovalRequestAvgAggregateInputType = {
   approverUserId?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
   pageActionRunId?: true
   decidedByUserId?: true
 }
@@ -139,6 +151,8 @@ export type ApprovalRequestSumAggregateInputType = {
   approverUserId?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
   pageActionRunId?: true
   decidedByUserId?: true
 }
@@ -152,6 +166,8 @@ export type ApprovalRequestMinAggregateInputType = {
   approverUserId?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
   nodeId?: true
   title?: true
   summary?: true
@@ -175,6 +191,8 @@ export type ApprovalRequestMaxAggregateInputType = {
   approverUserId?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
   nodeId?: true
   title?: true
   summary?: true
@@ -198,6 +216,8 @@ export type ApprovalRequestCountAggregateInputType = {
   approverUserId?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
   nodeId?: true
   title?: true
   summary?: true
@@ -308,8 +328,10 @@ export type ApprovalRequestGroupByOutputType = {
   status: $Enums.ApprovalStatus
   initiatorUserId: number | null
   approverUserId: number
-  workflowId: number
-  workflowVersion: number
+  workflowId: number | null
+  workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
   nodeId: string
   title: string
   summary: string | null
@@ -356,8 +378,10 @@ export type ApprovalRequestWhereInput = {
   status?: Prisma.EnumApprovalStatusFilter<"ApprovalRequest"> | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
   approverUserId?: Prisma.IntFilter<"ApprovalRequest"> | number
-  workflowId?: Prisma.IntFilter<"ApprovalRequest"> | number
-  workflowVersion?: Prisma.IntFilter<"ApprovalRequest"> | number
+  workflowId?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
+  workflowVersion?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
+  flowId?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
+  flowVersion?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
   nodeId?: Prisma.StringFilter<"ApprovalRequest"> | string
   title?: Prisma.StringFilter<"ApprovalRequest"> | string
   summary?: Prisma.StringNullableFilter<"ApprovalRequest"> | string | null
@@ -375,7 +399,8 @@ export type ApprovalRequestWhereInput = {
   appClient?: Prisma.XOR<Prisma.AppClientScalarRelationFilter, Prisma.AppClientWhereInput>
   initiator?: Prisma.XOR<Prisma.UserNullableScalarRelationFilter, Prisma.UserWhereInput> | null
   approver?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
-  workflow?: Prisma.XOR<Prisma.WorkflowScalarRelationFilter, Prisma.WorkflowWhereInput>
+  workflow?: Prisma.XOR<Prisma.WorkflowNullableScalarRelationFilter, Prisma.WorkflowWhereInput> | null
+  flow?: Prisma.XOR<Prisma.FlowNullableScalarRelationFilter, Prisma.FlowWhereInput> | null
   pageActionRun?: Prisma.XOR<Prisma.PageActionRunNullableScalarRelationFilter, Prisma.PageActionRunWhereInput> | null
 }
 
@@ -386,8 +411,10 @@ export type ApprovalRequestOrderByWithRelationInput = {
   status?: Prisma.SortOrder
   initiatorUserId?: Prisma.SortOrderInput | Prisma.SortOrder
   approverUserId?: Prisma.SortOrder
-  workflowId?: Prisma.SortOrder
-  workflowVersion?: Prisma.SortOrder
+  workflowId?: Prisma.SortOrderInput | Prisma.SortOrder
+  workflowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowId?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   nodeId?: Prisma.SortOrder
   title?: Prisma.SortOrder
   summary?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -406,6 +433,7 @@ export type ApprovalRequestOrderByWithRelationInput = {
   initiator?: Prisma.UserOrderByWithRelationInput
   approver?: Prisma.UserOrderByWithRelationInput
   workflow?: Prisma.WorkflowOrderByWithRelationInput
+  flow?: Prisma.FlowOrderByWithRelationInput
   pageActionRun?: Prisma.PageActionRunOrderByWithRelationInput
 }
 
@@ -420,8 +448,10 @@ export type ApprovalRequestWhereUniqueInput = Prisma.AtLeast<{
   status?: Prisma.EnumApprovalStatusFilter<"ApprovalRequest"> | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
   approverUserId?: Prisma.IntFilter<"ApprovalRequest"> | number
-  workflowId?: Prisma.IntFilter<"ApprovalRequest"> | number
-  workflowVersion?: Prisma.IntFilter<"ApprovalRequest"> | number
+  workflowId?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
+  workflowVersion?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
+  flowId?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
+  flowVersion?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
   nodeId?: Prisma.StringFilter<"ApprovalRequest"> | string
   title?: Prisma.StringFilter<"ApprovalRequest"> | string
   summary?: Prisma.StringNullableFilter<"ApprovalRequest"> | string | null
@@ -438,7 +468,8 @@ export type ApprovalRequestWhereUniqueInput = Prisma.AtLeast<{
   appClient?: Prisma.XOR<Prisma.AppClientScalarRelationFilter, Prisma.AppClientWhereInput>
   initiator?: Prisma.XOR<Prisma.UserNullableScalarRelationFilter, Prisma.UserWhereInput> | null
   approver?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
-  workflow?: Prisma.XOR<Prisma.WorkflowScalarRelationFilter, Prisma.WorkflowWhereInput>
+  workflow?: Prisma.XOR<Prisma.WorkflowNullableScalarRelationFilter, Prisma.WorkflowWhereInput> | null
+  flow?: Prisma.XOR<Prisma.FlowNullableScalarRelationFilter, Prisma.FlowWhereInput> | null
   pageActionRun?: Prisma.XOR<Prisma.PageActionRunNullableScalarRelationFilter, Prisma.PageActionRunWhereInput> | null
 }, "id" | "pageActionRunId">
 
@@ -449,8 +480,10 @@ export type ApprovalRequestOrderByWithAggregationInput = {
   status?: Prisma.SortOrder
   initiatorUserId?: Prisma.SortOrderInput | Prisma.SortOrder
   approverUserId?: Prisma.SortOrder
-  workflowId?: Prisma.SortOrder
-  workflowVersion?: Prisma.SortOrder
+  workflowId?: Prisma.SortOrderInput | Prisma.SortOrder
+  workflowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowId?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   nodeId?: Prisma.SortOrder
   title?: Prisma.SortOrder
   summary?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -482,8 +515,10 @@ export type ApprovalRequestScalarWhereWithAggregatesInput = {
   status?: Prisma.EnumApprovalStatusWithAggregatesFilter<"ApprovalRequest"> | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.IntNullableWithAggregatesFilter<"ApprovalRequest"> | number | null
   approverUserId?: Prisma.IntWithAggregatesFilter<"ApprovalRequest"> | number
-  workflowId?: Prisma.IntWithAggregatesFilter<"ApprovalRequest"> | number
-  workflowVersion?: Prisma.IntWithAggregatesFilter<"ApprovalRequest"> | number
+  workflowId?: Prisma.IntNullableWithAggregatesFilter<"ApprovalRequest"> | number | null
+  workflowVersion?: Prisma.IntNullableWithAggregatesFilter<"ApprovalRequest"> | number | null
+  flowId?: Prisma.IntNullableWithAggregatesFilter<"ApprovalRequest"> | number | null
+  flowVersion?: Prisma.IntNullableWithAggregatesFilter<"ApprovalRequest"> | number | null
   nodeId?: Prisma.StringWithAggregatesFilter<"ApprovalRequest"> | string
   title?: Prisma.StringWithAggregatesFilter<"ApprovalRequest"> | string
   summary?: Prisma.StringNullableWithAggregatesFilter<"ApprovalRequest"> | string | null
@@ -503,7 +538,8 @@ export type ApprovalRequestScalarWhereWithAggregatesInput = {
 export type ApprovalRequestCreateInput = {
   source: $Enums.ApprovalSource
   status?: $Enums.ApprovalStatus
-  workflowVersion: number
+  workflowVersion?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -520,7 +556,8 @@ export type ApprovalRequestCreateInput = {
   appClient: Prisma.AppClientCreateNestedOneWithoutApprovalRequestsInput
   initiator?: Prisma.UserCreateNestedOneWithoutApprovalsInitiatedInput
   approver: Prisma.UserCreateNestedOneWithoutApprovalsToApproveInput
-  workflow: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  workflow?: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutApprovalRequestsInput
   pageActionRun?: Prisma.PageActionRunCreateNestedOneWithoutApprovalRequestInput
 }
 
@@ -531,8 +568,10 @@ export type ApprovalRequestUncheckedCreateInput = {
   status?: $Enums.ApprovalStatus
   initiatorUserId?: number | null
   approverUserId: number
-  workflowId: number
-  workflowVersion: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -552,7 +591,8 @@ export type ApprovalRequestUncheckedCreateInput = {
 export type ApprovalRequestUpdateInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -569,7 +609,8 @@ export type ApprovalRequestUpdateInput = {
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutApprovalRequestsNestedInput
   initiator?: Prisma.UserUpdateOneWithoutApprovalsInitiatedNestedInput
   approver?: Prisma.UserUpdateOneRequiredWithoutApprovalsToApproveNestedInput
-  workflow?: Prisma.WorkflowUpdateOneRequiredWithoutApprovalRequestsNestedInput
+  workflow?: Prisma.WorkflowUpdateOneWithoutApprovalRequestsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutApprovalRequestsNestedInput
   pageActionRun?: Prisma.PageActionRunUpdateOneWithoutApprovalRequestNestedInput
 }
 
@@ -580,8 +621,10 @@ export type ApprovalRequestUncheckedUpdateInput = {
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -605,8 +648,10 @@ export type ApprovalRequestCreateManyInput = {
   status?: $Enums.ApprovalStatus
   initiatorUserId?: number | null
   approverUserId: number
-  workflowId: number
-  workflowVersion: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -626,7 +671,8 @@ export type ApprovalRequestCreateManyInput = {
 export type ApprovalRequestUpdateManyMutationInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -649,8 +695,10 @@ export type ApprovalRequestUncheckedUpdateManyInput = {
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -691,6 +739,8 @@ export type ApprovalRequestCountOrderByAggregateInput = {
   approverUserId?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
   nodeId?: Prisma.SortOrder
   title?: Prisma.SortOrder
   summary?: Prisma.SortOrder
@@ -714,6 +764,8 @@ export type ApprovalRequestAvgOrderByAggregateInput = {
   approverUserId?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
   pageActionRunId?: Prisma.SortOrder
   decidedByUserId?: Prisma.SortOrder
 }
@@ -727,6 +779,8 @@ export type ApprovalRequestMaxOrderByAggregateInput = {
   approverUserId?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
   nodeId?: Prisma.SortOrder
   title?: Prisma.SortOrder
   summary?: Prisma.SortOrder
@@ -750,6 +804,8 @@ export type ApprovalRequestMinOrderByAggregateInput = {
   approverUserId?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
   nodeId?: Prisma.SortOrder
   title?: Prisma.SortOrder
   summary?: Prisma.SortOrder
@@ -771,6 +827,8 @@ export type ApprovalRequestSumOrderByAggregateInput = {
   approverUserId?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
   pageActionRunId?: Prisma.SortOrder
   decidedByUserId?: Prisma.SortOrder
 }
@@ -983,10 +1041,53 @@ export type ApprovalRequestUncheckedUpdateManyWithoutWorkflowNestedInput = {
   deleteMany?: Prisma.ApprovalRequestScalarWhereInput | Prisma.ApprovalRequestScalarWhereInput[]
 }
 
+export type ApprovalRequestCreateNestedManyWithoutFlowInput = {
+  create?: Prisma.XOR<Prisma.ApprovalRequestCreateWithoutFlowInput, Prisma.ApprovalRequestUncheckedCreateWithoutFlowInput> | Prisma.ApprovalRequestCreateWithoutFlowInput[] | Prisma.ApprovalRequestUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.ApprovalRequestCreateOrConnectWithoutFlowInput | Prisma.ApprovalRequestCreateOrConnectWithoutFlowInput[]
+  createMany?: Prisma.ApprovalRequestCreateManyFlowInputEnvelope
+  connect?: Prisma.ApprovalRequestWhereUniqueInput | Prisma.ApprovalRequestWhereUniqueInput[]
+}
+
+export type ApprovalRequestUncheckedCreateNestedManyWithoutFlowInput = {
+  create?: Prisma.XOR<Prisma.ApprovalRequestCreateWithoutFlowInput, Prisma.ApprovalRequestUncheckedCreateWithoutFlowInput> | Prisma.ApprovalRequestCreateWithoutFlowInput[] | Prisma.ApprovalRequestUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.ApprovalRequestCreateOrConnectWithoutFlowInput | Prisma.ApprovalRequestCreateOrConnectWithoutFlowInput[]
+  createMany?: Prisma.ApprovalRequestCreateManyFlowInputEnvelope
+  connect?: Prisma.ApprovalRequestWhereUniqueInput | Prisma.ApprovalRequestWhereUniqueInput[]
+}
+
+export type ApprovalRequestUpdateManyWithoutFlowNestedInput = {
+  create?: Prisma.XOR<Prisma.ApprovalRequestCreateWithoutFlowInput, Prisma.ApprovalRequestUncheckedCreateWithoutFlowInput> | Prisma.ApprovalRequestCreateWithoutFlowInput[] | Prisma.ApprovalRequestUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.ApprovalRequestCreateOrConnectWithoutFlowInput | Prisma.ApprovalRequestCreateOrConnectWithoutFlowInput[]
+  upsert?: Prisma.ApprovalRequestUpsertWithWhereUniqueWithoutFlowInput | Prisma.ApprovalRequestUpsertWithWhereUniqueWithoutFlowInput[]
+  createMany?: Prisma.ApprovalRequestCreateManyFlowInputEnvelope
+  set?: Prisma.ApprovalRequestWhereUniqueInput | Prisma.ApprovalRequestWhereUniqueInput[]
+  disconnect?: Prisma.ApprovalRequestWhereUniqueInput | Prisma.ApprovalRequestWhereUniqueInput[]
+  delete?: Prisma.ApprovalRequestWhereUniqueInput | Prisma.ApprovalRequestWhereUniqueInput[]
+  connect?: Prisma.ApprovalRequestWhereUniqueInput | Prisma.ApprovalRequestWhereUniqueInput[]
+  update?: Prisma.ApprovalRequestUpdateWithWhereUniqueWithoutFlowInput | Prisma.ApprovalRequestUpdateWithWhereUniqueWithoutFlowInput[]
+  updateMany?: Prisma.ApprovalRequestUpdateManyWithWhereWithoutFlowInput | Prisma.ApprovalRequestUpdateManyWithWhereWithoutFlowInput[]
+  deleteMany?: Prisma.ApprovalRequestScalarWhereInput | Prisma.ApprovalRequestScalarWhereInput[]
+}
+
+export type ApprovalRequestUncheckedUpdateManyWithoutFlowNestedInput = {
+  create?: Prisma.XOR<Prisma.ApprovalRequestCreateWithoutFlowInput, Prisma.ApprovalRequestUncheckedCreateWithoutFlowInput> | Prisma.ApprovalRequestCreateWithoutFlowInput[] | Prisma.ApprovalRequestUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.ApprovalRequestCreateOrConnectWithoutFlowInput | Prisma.ApprovalRequestCreateOrConnectWithoutFlowInput[]
+  upsert?: Prisma.ApprovalRequestUpsertWithWhereUniqueWithoutFlowInput | Prisma.ApprovalRequestUpsertWithWhereUniqueWithoutFlowInput[]
+  createMany?: Prisma.ApprovalRequestCreateManyFlowInputEnvelope
+  set?: Prisma.ApprovalRequestWhereUniqueInput | Prisma.ApprovalRequestWhereUniqueInput[]
+  disconnect?: Prisma.ApprovalRequestWhereUniqueInput | Prisma.ApprovalRequestWhereUniqueInput[]
+  delete?: Prisma.ApprovalRequestWhereUniqueInput | Prisma.ApprovalRequestWhereUniqueInput[]
+  connect?: Prisma.ApprovalRequestWhereUniqueInput | Prisma.ApprovalRequestWhereUniqueInput[]
+  update?: Prisma.ApprovalRequestUpdateWithWhereUniqueWithoutFlowInput | Prisma.ApprovalRequestUpdateWithWhereUniqueWithoutFlowInput[]
+  updateMany?: Prisma.ApprovalRequestUpdateManyWithWhereWithoutFlowInput | Prisma.ApprovalRequestUpdateManyWithWhereWithoutFlowInput[]
+  deleteMany?: Prisma.ApprovalRequestScalarWhereInput | Prisma.ApprovalRequestScalarWhereInput[]
+}
+
 export type ApprovalRequestCreateWithoutInitiatorInput = {
   source: $Enums.ApprovalSource
   status?: $Enums.ApprovalStatus
-  workflowVersion: number
+  workflowVersion?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1002,7 +1103,8 @@ export type ApprovalRequestCreateWithoutInitiatorInput = {
   updatedAt?: Date | string
   appClient: Prisma.AppClientCreateNestedOneWithoutApprovalRequestsInput
   approver: Prisma.UserCreateNestedOneWithoutApprovalsToApproveInput
-  workflow: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  workflow?: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutApprovalRequestsInput
   pageActionRun?: Prisma.PageActionRunCreateNestedOneWithoutApprovalRequestInput
 }
 
@@ -1012,8 +1114,10 @@ export type ApprovalRequestUncheckedCreateWithoutInitiatorInput = {
   source: $Enums.ApprovalSource
   status?: $Enums.ApprovalStatus
   approverUserId: number
-  workflowId: number
-  workflowVersion: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1043,7 +1147,8 @@ export type ApprovalRequestCreateManyInitiatorInputEnvelope = {
 export type ApprovalRequestCreateWithoutApproverInput = {
   source: $Enums.ApprovalSource
   status?: $Enums.ApprovalStatus
-  workflowVersion: number
+  workflowVersion?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1059,7 +1164,8 @@ export type ApprovalRequestCreateWithoutApproverInput = {
   updatedAt?: Date | string
   appClient: Prisma.AppClientCreateNestedOneWithoutApprovalRequestsInput
   initiator?: Prisma.UserCreateNestedOneWithoutApprovalsInitiatedInput
-  workflow: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  workflow?: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutApprovalRequestsInput
   pageActionRun?: Prisma.PageActionRunCreateNestedOneWithoutApprovalRequestInput
 }
 
@@ -1069,8 +1175,10 @@ export type ApprovalRequestUncheckedCreateWithoutApproverInput = {
   source: $Enums.ApprovalSource
   status?: $Enums.ApprovalStatus
   initiatorUserId?: number | null
-  workflowId: number
-  workflowVersion: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1123,8 +1231,10 @@ export type ApprovalRequestScalarWhereInput = {
   status?: Prisma.EnumApprovalStatusFilter<"ApprovalRequest"> | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
   approverUserId?: Prisma.IntFilter<"ApprovalRequest"> | number
-  workflowId?: Prisma.IntFilter<"ApprovalRequest"> | number
-  workflowVersion?: Prisma.IntFilter<"ApprovalRequest"> | number
+  workflowId?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
+  workflowVersion?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
+  flowId?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
+  flowVersion?: Prisma.IntNullableFilter<"ApprovalRequest"> | number | null
   nodeId?: Prisma.StringFilter<"ApprovalRequest"> | string
   title?: Prisma.StringFilter<"ApprovalRequest"> | string
   summary?: Prisma.StringNullableFilter<"ApprovalRequest"> | string | null
@@ -1160,7 +1270,8 @@ export type ApprovalRequestUpdateManyWithWhereWithoutApproverInput = {
 export type ApprovalRequestCreateWithoutAppClientInput = {
   source: $Enums.ApprovalSource
   status?: $Enums.ApprovalStatus
-  workflowVersion: number
+  workflowVersion?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1176,7 +1287,8 @@ export type ApprovalRequestCreateWithoutAppClientInput = {
   updatedAt?: Date | string
   initiator?: Prisma.UserCreateNestedOneWithoutApprovalsInitiatedInput
   approver: Prisma.UserCreateNestedOneWithoutApprovalsToApproveInput
-  workflow: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  workflow?: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutApprovalRequestsInput
   pageActionRun?: Prisma.PageActionRunCreateNestedOneWithoutApprovalRequestInput
 }
 
@@ -1186,8 +1298,10 @@ export type ApprovalRequestUncheckedCreateWithoutAppClientInput = {
   status?: $Enums.ApprovalStatus
   initiatorUserId?: number | null
   approverUserId: number
-  workflowId: number
-  workflowVersion: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1233,7 +1347,8 @@ export type ApprovalRequestUpdateManyWithWhereWithoutAppClientInput = {
 export type ApprovalRequestCreateWithoutPageActionRunInput = {
   source: $Enums.ApprovalSource
   status?: $Enums.ApprovalStatus
-  workflowVersion: number
+  workflowVersion?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1250,7 +1365,8 @@ export type ApprovalRequestCreateWithoutPageActionRunInput = {
   appClient: Prisma.AppClientCreateNestedOneWithoutApprovalRequestsInput
   initiator?: Prisma.UserCreateNestedOneWithoutApprovalsInitiatedInput
   approver: Prisma.UserCreateNestedOneWithoutApprovalsToApproveInput
-  workflow: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  workflow?: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutApprovalRequestsInput
 }
 
 export type ApprovalRequestUncheckedCreateWithoutPageActionRunInput = {
@@ -1260,8 +1376,10 @@ export type ApprovalRequestUncheckedCreateWithoutPageActionRunInput = {
   status?: $Enums.ApprovalStatus
   initiatorUserId?: number | null
   approverUserId: number
-  workflowId: number
-  workflowVersion: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1296,7 +1414,8 @@ export type ApprovalRequestUpdateToOneWithWhereWithoutPageActionRunInput = {
 export type ApprovalRequestUpdateWithoutPageActionRunInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1313,7 +1432,8 @@ export type ApprovalRequestUpdateWithoutPageActionRunInput = {
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutApprovalRequestsNestedInput
   initiator?: Prisma.UserUpdateOneWithoutApprovalsInitiatedNestedInput
   approver?: Prisma.UserUpdateOneRequiredWithoutApprovalsToApproveNestedInput
-  workflow?: Prisma.WorkflowUpdateOneRequiredWithoutApprovalRequestsNestedInput
+  workflow?: Prisma.WorkflowUpdateOneWithoutApprovalRequestsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutApprovalRequestsNestedInput
 }
 
 export type ApprovalRequestUncheckedUpdateWithoutPageActionRunInput = {
@@ -1323,8 +1443,10 @@ export type ApprovalRequestUncheckedUpdateWithoutPageActionRunInput = {
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1343,7 +1465,8 @@ export type ApprovalRequestUncheckedUpdateWithoutPageActionRunInput = {
 export type ApprovalRequestCreateWithoutWorkflowInput = {
   source: $Enums.ApprovalSource
   status?: $Enums.ApprovalStatus
-  workflowVersion: number
+  workflowVersion?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1360,6 +1483,7 @@ export type ApprovalRequestCreateWithoutWorkflowInput = {
   appClient: Prisma.AppClientCreateNestedOneWithoutApprovalRequestsInput
   initiator?: Prisma.UserCreateNestedOneWithoutApprovalsInitiatedInput
   approver: Prisma.UserCreateNestedOneWithoutApprovalsToApproveInput
+  flow?: Prisma.FlowCreateNestedOneWithoutApprovalRequestsInput
   pageActionRun?: Prisma.PageActionRunCreateNestedOneWithoutApprovalRequestInput
 }
 
@@ -1370,7 +1494,9 @@ export type ApprovalRequestUncheckedCreateWithoutWorkflowInput = {
   status?: $Enums.ApprovalStatus
   initiatorUserId?: number | null
   approverUserId: number
-  workflowVersion: number
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1413,14 +1539,93 @@ export type ApprovalRequestUpdateManyWithWhereWithoutWorkflowInput = {
   data: Prisma.XOR<Prisma.ApprovalRequestUpdateManyMutationInput, Prisma.ApprovalRequestUncheckedUpdateManyWithoutWorkflowInput>
 }
 
+export type ApprovalRequestCreateWithoutFlowInput = {
+  source: $Enums.ApprovalSource
+  status?: $Enums.ApprovalStatus
+  workflowVersion?: number | null
+  flowVersion?: number | null
+  nodeId: string
+  title: string
+  summary?: string | null
+  previewBlocks?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  resumeSnapshot: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  sessionId?: string | null
+  idempotencyKey?: string | null
+  decidedByUserId?: number | null
+  decidedAt?: Date | string | null
+  decisionNote?: string | null
+  expiresAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  appClient: Prisma.AppClientCreateNestedOneWithoutApprovalRequestsInput
+  initiator?: Prisma.UserCreateNestedOneWithoutApprovalsInitiatedInput
+  approver: Prisma.UserCreateNestedOneWithoutApprovalsToApproveInput
+  workflow?: Prisma.WorkflowCreateNestedOneWithoutApprovalRequestsInput
+  pageActionRun?: Prisma.PageActionRunCreateNestedOneWithoutApprovalRequestInput
+}
+
+export type ApprovalRequestUncheckedCreateWithoutFlowInput = {
+  id?: number
+  appClientId: number
+  source: $Enums.ApprovalSource
+  status?: $Enums.ApprovalStatus
+  initiatorUserId?: number | null
+  approverUserId: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowVersion?: number | null
+  nodeId: string
+  title: string
+  summary?: string | null
+  previewBlocks?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  resumeSnapshot: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  pageActionRunId?: number | null
+  sessionId?: string | null
+  idempotencyKey?: string | null
+  decidedByUserId?: number | null
+  decidedAt?: Date | string | null
+  decisionNote?: string | null
+  expiresAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ApprovalRequestCreateOrConnectWithoutFlowInput = {
+  where: Prisma.ApprovalRequestWhereUniqueInput
+  create: Prisma.XOR<Prisma.ApprovalRequestCreateWithoutFlowInput, Prisma.ApprovalRequestUncheckedCreateWithoutFlowInput>
+}
+
+export type ApprovalRequestCreateManyFlowInputEnvelope = {
+  data: Prisma.ApprovalRequestCreateManyFlowInput | Prisma.ApprovalRequestCreateManyFlowInput[]
+  skipDuplicates?: boolean
+}
+
+export type ApprovalRequestUpsertWithWhereUniqueWithoutFlowInput = {
+  where: Prisma.ApprovalRequestWhereUniqueInput
+  update: Prisma.XOR<Prisma.ApprovalRequestUpdateWithoutFlowInput, Prisma.ApprovalRequestUncheckedUpdateWithoutFlowInput>
+  create: Prisma.XOR<Prisma.ApprovalRequestCreateWithoutFlowInput, Prisma.ApprovalRequestUncheckedCreateWithoutFlowInput>
+}
+
+export type ApprovalRequestUpdateWithWhereUniqueWithoutFlowInput = {
+  where: Prisma.ApprovalRequestWhereUniqueInput
+  data: Prisma.XOR<Prisma.ApprovalRequestUpdateWithoutFlowInput, Prisma.ApprovalRequestUncheckedUpdateWithoutFlowInput>
+}
+
+export type ApprovalRequestUpdateManyWithWhereWithoutFlowInput = {
+  where: Prisma.ApprovalRequestScalarWhereInput
+  data: Prisma.XOR<Prisma.ApprovalRequestUpdateManyMutationInput, Prisma.ApprovalRequestUncheckedUpdateManyWithoutFlowInput>
+}
+
 export type ApprovalRequestCreateManyInitiatorInput = {
   id?: number
   appClientId: number
   source: $Enums.ApprovalSource
   status?: $Enums.ApprovalStatus
   approverUserId: number
-  workflowId: number
-  workflowVersion: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1443,8 +1648,10 @@ export type ApprovalRequestCreateManyApproverInput = {
   source: $Enums.ApprovalSource
   status?: $Enums.ApprovalStatus
   initiatorUserId?: number | null
-  workflowId: number
-  workflowVersion: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1464,7 +1671,8 @@ export type ApprovalRequestCreateManyApproverInput = {
 export type ApprovalRequestUpdateWithoutInitiatorInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1480,7 +1688,8 @@ export type ApprovalRequestUpdateWithoutInitiatorInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutApprovalRequestsNestedInput
   approver?: Prisma.UserUpdateOneRequiredWithoutApprovalsToApproveNestedInput
-  workflow?: Prisma.WorkflowUpdateOneRequiredWithoutApprovalRequestsNestedInput
+  workflow?: Prisma.WorkflowUpdateOneWithoutApprovalRequestsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutApprovalRequestsNestedInput
   pageActionRun?: Prisma.PageActionRunUpdateOneWithoutApprovalRequestNestedInput
 }
 
@@ -1490,8 +1699,10 @@ export type ApprovalRequestUncheckedUpdateWithoutInitiatorInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1514,8 +1725,10 @@ export type ApprovalRequestUncheckedUpdateManyWithoutInitiatorInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1535,7 +1748,8 @@ export type ApprovalRequestUncheckedUpdateManyWithoutInitiatorInput = {
 export type ApprovalRequestUpdateWithoutApproverInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1551,7 +1765,8 @@ export type ApprovalRequestUpdateWithoutApproverInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutApprovalRequestsNestedInput
   initiator?: Prisma.UserUpdateOneWithoutApprovalsInitiatedNestedInput
-  workflow?: Prisma.WorkflowUpdateOneRequiredWithoutApprovalRequestsNestedInput
+  workflow?: Prisma.WorkflowUpdateOneWithoutApprovalRequestsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutApprovalRequestsNestedInput
   pageActionRun?: Prisma.PageActionRunUpdateOneWithoutApprovalRequestNestedInput
 }
 
@@ -1561,8 +1776,10 @@ export type ApprovalRequestUncheckedUpdateWithoutApproverInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  workflowId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1585,8 +1802,10 @@ export type ApprovalRequestUncheckedUpdateManyWithoutApproverInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  workflowId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1609,8 +1828,10 @@ export type ApprovalRequestCreateManyAppClientInput = {
   status?: $Enums.ApprovalStatus
   initiatorUserId?: number | null
   approverUserId: number
-  workflowId: number
-  workflowVersion: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1630,7 +1851,8 @@ export type ApprovalRequestCreateManyAppClientInput = {
 export type ApprovalRequestUpdateWithoutAppClientInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1646,7 +1868,8 @@ export type ApprovalRequestUpdateWithoutAppClientInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   initiator?: Prisma.UserUpdateOneWithoutApprovalsInitiatedNestedInput
   approver?: Prisma.UserUpdateOneRequiredWithoutApprovalsToApproveNestedInput
-  workflow?: Prisma.WorkflowUpdateOneRequiredWithoutApprovalRequestsNestedInput
+  workflow?: Prisma.WorkflowUpdateOneWithoutApprovalRequestsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutApprovalRequestsNestedInput
   pageActionRun?: Prisma.PageActionRunUpdateOneWithoutApprovalRequestNestedInput
 }
 
@@ -1656,8 +1879,10 @@ export type ApprovalRequestUncheckedUpdateWithoutAppClientInput = {
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1680,8 +1905,10 @@ export type ApprovalRequestUncheckedUpdateManyWithoutAppClientInput = {
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1705,7 +1932,9 @@ export type ApprovalRequestCreateManyWorkflowInput = {
   status?: $Enums.ApprovalStatus
   initiatorUserId?: number | null
   approverUserId: number
-  workflowVersion: number
+  workflowVersion?: number | null
+  flowId?: number | null
+  flowVersion?: number | null
   nodeId: string
   title: string
   summary?: string | null
@@ -1725,7 +1954,8 @@ export type ApprovalRequestCreateManyWorkflowInput = {
 export type ApprovalRequestUpdateWithoutWorkflowInput = {
   source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1742,6 +1972,7 @@ export type ApprovalRequestUpdateWithoutWorkflowInput = {
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutApprovalRequestsNestedInput
   initiator?: Prisma.UserUpdateOneWithoutApprovalsInitiatedNestedInput
   approver?: Prisma.UserUpdateOneRequiredWithoutApprovalsToApproveNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutApprovalRequestsNestedInput
   pageActionRun?: Prisma.PageActionRunUpdateOneWithoutApprovalRequestNestedInput
 }
 
@@ -1752,7 +1983,9 @@ export type ApprovalRequestUncheckedUpdateWithoutWorkflowInput = {
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1776,7 +2009,112 @@ export type ApprovalRequestUncheckedUpdateManyWithoutWorkflowInput = {
   status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
   initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
-  workflowVersion?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  nodeId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
+  summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  previewBlocks?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  resumeSnapshot?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  pageActionRunId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  sessionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  decidedByUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  decidedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  decisionNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  expiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ApprovalRequestCreateManyFlowInput = {
+  id?: number
+  appClientId: number
+  source: $Enums.ApprovalSource
+  status?: $Enums.ApprovalStatus
+  initiatorUserId?: number | null
+  approverUserId: number
+  workflowId?: number | null
+  workflowVersion?: number | null
+  flowVersion?: number | null
+  nodeId: string
+  title: string
+  summary?: string | null
+  previewBlocks?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  resumeSnapshot: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  pageActionRunId?: number | null
+  sessionId?: string | null
+  idempotencyKey?: string | null
+  decidedByUserId?: number | null
+  decidedAt?: Date | string | null
+  decisionNote?: string | null
+  expiresAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ApprovalRequestUpdateWithoutFlowInput = {
+  source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
+  status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  nodeId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
+  summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  previewBlocks?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  resumeSnapshot?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  sessionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  decidedByUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  decidedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  decisionNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  expiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  appClient?: Prisma.AppClientUpdateOneRequiredWithoutApprovalRequestsNestedInput
+  initiator?: Prisma.UserUpdateOneWithoutApprovalsInitiatedNestedInput
+  approver?: Prisma.UserUpdateOneRequiredWithoutApprovalsToApproveNestedInput
+  workflow?: Prisma.WorkflowUpdateOneWithoutApprovalRequestsNestedInput
+  pageActionRun?: Prisma.PageActionRunUpdateOneWithoutApprovalRequestNestedInput
+}
+
+export type ApprovalRequestUncheckedUpdateWithoutFlowInput = {
+  id?: Prisma.IntFieldUpdateOperationsInput | number
+  appClientId?: Prisma.IntFieldUpdateOperationsInput | number
+  source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
+  status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
+  initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  nodeId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
+  summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  previewBlocks?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  resumeSnapshot?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  pageActionRunId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  sessionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idempotencyKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  decidedByUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  decidedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  decisionNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  expiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ApprovalRequestUncheckedUpdateManyWithoutFlowInput = {
+  id?: Prisma.IntFieldUpdateOperationsInput | number
+  appClientId?: Prisma.IntFieldUpdateOperationsInput | number
+  source?: Prisma.EnumApprovalSourceFieldUpdateOperationsInput | $Enums.ApprovalSource
+  status?: Prisma.EnumApprovalStatusFieldUpdateOperationsInput | $Enums.ApprovalStatus
+  initiatorUserId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  approverUserId?: Prisma.IntFieldUpdateOperationsInput | number
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   nodeId?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1804,6 +2142,8 @@ export type ApprovalRequestSelect<ExtArgs extends runtime.Types.Extensions.Inter
   approverUserId?: boolean
   workflowId?: boolean
   workflowVersion?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   nodeId?: boolean
   title?: boolean
   summary?: boolean
@@ -1821,7 +2161,8 @@ export type ApprovalRequestSelect<ExtArgs extends runtime.Types.Extensions.Inter
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   initiator?: boolean | Prisma.ApprovalRequest$initiatorArgs<ExtArgs>
   approver?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  workflow?: boolean | Prisma.WorkflowDefaultArgs<ExtArgs>
+  workflow?: boolean | Prisma.ApprovalRequest$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.ApprovalRequest$flowArgs<ExtArgs>
   pageActionRun?: boolean | Prisma.ApprovalRequest$pageActionRunArgs<ExtArgs>
 }, ExtArgs["result"]["approvalRequest"]>
 
@@ -1834,6 +2175,8 @@ export type ApprovalRequestSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   approverUserId?: boolean
   workflowId?: boolean
   workflowVersion?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   nodeId?: boolean
   title?: boolean
   summary?: boolean
@@ -1851,7 +2194,8 @@ export type ApprovalRequestSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   initiator?: boolean | Prisma.ApprovalRequest$initiatorArgs<ExtArgs>
   approver?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  workflow?: boolean | Prisma.WorkflowDefaultArgs<ExtArgs>
+  workflow?: boolean | Prisma.ApprovalRequest$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.ApprovalRequest$flowArgs<ExtArgs>
   pageActionRun?: boolean | Prisma.ApprovalRequest$pageActionRunArgs<ExtArgs>
 }, ExtArgs["result"]["approvalRequest"]>
 
@@ -1864,6 +2208,8 @@ export type ApprovalRequestSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   approverUserId?: boolean
   workflowId?: boolean
   workflowVersion?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   nodeId?: boolean
   title?: boolean
   summary?: boolean
@@ -1881,7 +2227,8 @@ export type ApprovalRequestSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   initiator?: boolean | Prisma.ApprovalRequest$initiatorArgs<ExtArgs>
   approver?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  workflow?: boolean | Prisma.WorkflowDefaultArgs<ExtArgs>
+  workflow?: boolean | Prisma.ApprovalRequest$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.ApprovalRequest$flowArgs<ExtArgs>
   pageActionRun?: boolean | Prisma.ApprovalRequest$pageActionRunArgs<ExtArgs>
 }, ExtArgs["result"]["approvalRequest"]>
 
@@ -1894,6 +2241,8 @@ export type ApprovalRequestSelectScalar = {
   approverUserId?: boolean
   workflowId?: boolean
   workflowVersion?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   nodeId?: boolean
   title?: boolean
   summary?: boolean
@@ -1910,26 +2259,29 @@ export type ApprovalRequestSelectScalar = {
   updatedAt?: boolean
 }
 
-export type ApprovalRequestOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "appClientId" | "source" | "status" | "initiatorUserId" | "approverUserId" | "workflowId" | "workflowVersion" | "nodeId" | "title" | "summary" | "previewBlocks" | "resumeSnapshot" | "pageActionRunId" | "sessionId" | "idempotencyKey" | "decidedByUserId" | "decidedAt" | "decisionNote" | "expiresAt" | "createdAt" | "updatedAt", ExtArgs["result"]["approvalRequest"]>
+export type ApprovalRequestOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "appClientId" | "source" | "status" | "initiatorUserId" | "approverUserId" | "workflowId" | "workflowVersion" | "flowId" | "flowVersion" | "nodeId" | "title" | "summary" | "previewBlocks" | "resumeSnapshot" | "pageActionRunId" | "sessionId" | "idempotencyKey" | "decidedByUserId" | "decidedAt" | "decisionNote" | "expiresAt" | "createdAt" | "updatedAt", ExtArgs["result"]["approvalRequest"]>
 export type ApprovalRequestInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   initiator?: boolean | Prisma.ApprovalRequest$initiatorArgs<ExtArgs>
   approver?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  workflow?: boolean | Prisma.WorkflowDefaultArgs<ExtArgs>
+  workflow?: boolean | Prisma.ApprovalRequest$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.ApprovalRequest$flowArgs<ExtArgs>
   pageActionRun?: boolean | Prisma.ApprovalRequest$pageActionRunArgs<ExtArgs>
 }
 export type ApprovalRequestIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   initiator?: boolean | Prisma.ApprovalRequest$initiatorArgs<ExtArgs>
   approver?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  workflow?: boolean | Prisma.WorkflowDefaultArgs<ExtArgs>
+  workflow?: boolean | Prisma.ApprovalRequest$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.ApprovalRequest$flowArgs<ExtArgs>
   pageActionRun?: boolean | Prisma.ApprovalRequest$pageActionRunArgs<ExtArgs>
 }
 export type ApprovalRequestIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   initiator?: boolean | Prisma.ApprovalRequest$initiatorArgs<ExtArgs>
   approver?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  workflow?: boolean | Prisma.WorkflowDefaultArgs<ExtArgs>
+  workflow?: boolean | Prisma.ApprovalRequest$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.ApprovalRequest$flowArgs<ExtArgs>
   pageActionRun?: boolean | Prisma.ApprovalRequest$pageActionRunArgs<ExtArgs>
 }
 
@@ -1939,7 +2291,8 @@ export type $ApprovalRequestPayload<ExtArgs extends runtime.Types.Extensions.Int
     appClient: Prisma.$AppClientPayload<ExtArgs>
     initiator: Prisma.$UserPayload<ExtArgs> | null
     approver: Prisma.$UserPayload<ExtArgs>
-    workflow: Prisma.$WorkflowPayload<ExtArgs>
+    workflow: Prisma.$WorkflowPayload<ExtArgs> | null
+    flow: Prisma.$FlowPayload<ExtArgs> | null
     pageActionRun: Prisma.$PageActionRunPayload<ExtArgs> | null
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
@@ -1955,8 +2308,16 @@ export type $ApprovalRequestPayload<ExtArgs extends runtime.Types.Extensions.Int
      * 谁必须审批（权威决策字段）：chat/pageAction = 发起人；webhook = workflow 配置指定
      */
     approverUserId: number
-    workflowId: number
-    workflowVersion: number
+    /**
+     * legacy Workflow 资产；与 flowId 二选一
+     */
+    workflowId: number | null
+    workflowVersion: number | null
+    /**
+     * 新 Flow 资产；与 workflowId 二选一
+     */
+    flowId: number | null
+    flowVersion: number | null
     /**
      * 挂起节点
      */
@@ -2383,7 +2744,8 @@ export interface Prisma__ApprovalRequestClient<T, Null = never, ExtArgs extends 
   appClient<T extends Prisma.AppClientDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClientDefaultArgs<ExtArgs>>): Prisma.Prisma__AppClientClient<runtime.Types.Result.GetResult<Prisma.$AppClientPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   initiator<T extends Prisma.ApprovalRequest$initiatorArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ApprovalRequest$initiatorArgs<ExtArgs>>): Prisma.Prisma__UserClient<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   approver<T extends Prisma.UserDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.UserDefaultArgs<ExtArgs>>): Prisma.Prisma__UserClient<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
-  workflow<T extends Prisma.WorkflowDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.WorkflowDefaultArgs<ExtArgs>>): Prisma.Prisma__WorkflowClient<runtime.Types.Result.GetResult<Prisma.$WorkflowPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+  workflow<T extends Prisma.ApprovalRequest$workflowArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ApprovalRequest$workflowArgs<ExtArgs>>): Prisma.Prisma__WorkflowClient<runtime.Types.Result.GetResult<Prisma.$WorkflowPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  flow<T extends Prisma.ApprovalRequest$flowArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ApprovalRequest$flowArgs<ExtArgs>>): Prisma.Prisma__FlowClient<runtime.Types.Result.GetResult<Prisma.$FlowPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   pageActionRun<T extends Prisma.ApprovalRequest$pageActionRunArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ApprovalRequest$pageActionRunArgs<ExtArgs>>): Prisma.Prisma__PageActionRunClient<runtime.Types.Result.GetResult<Prisma.$PageActionRunPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
@@ -2422,6 +2784,8 @@ export interface ApprovalRequestFieldRefs {
   readonly approverUserId: Prisma.FieldRef<"ApprovalRequest", 'Int'>
   readonly workflowId: Prisma.FieldRef<"ApprovalRequest", 'Int'>
   readonly workflowVersion: Prisma.FieldRef<"ApprovalRequest", 'Int'>
+  readonly flowId: Prisma.FieldRef<"ApprovalRequest", 'Int'>
+  readonly flowVersion: Prisma.FieldRef<"ApprovalRequest", 'Int'>
   readonly nodeId: Prisma.FieldRef<"ApprovalRequest", 'String'>
   readonly title: Prisma.FieldRef<"ApprovalRequest", 'String'>
   readonly summary: Prisma.FieldRef<"ApprovalRequest", 'String'>
@@ -2853,6 +3217,44 @@ export type ApprovalRequest$initiatorArgs<ExtArgs extends runtime.Types.Extensio
    */
   include?: Prisma.UserInclude<ExtArgs> | null
   where?: Prisma.UserWhereInput
+}
+
+/**
+ * ApprovalRequest.workflow
+ */
+export type ApprovalRequest$workflowArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Workflow
+   */
+  select?: Prisma.WorkflowSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Workflow
+   */
+  omit?: Prisma.WorkflowOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.WorkflowInclude<ExtArgs> | null
+  where?: Prisma.WorkflowWhereInput
+}
+
+/**
+ * ApprovalRequest.flow
+ */
+export type ApprovalRequest$flowArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Flow
+   */
+  select?: Prisma.FlowSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Flow
+   */
+  omit?: Prisma.FlowOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.FlowInclude<ExtArgs> | null
+  where?: Prisma.FlowWhereInput
 }
 
 /**

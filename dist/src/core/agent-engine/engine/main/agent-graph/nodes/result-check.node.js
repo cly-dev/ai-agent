@@ -17,6 +17,7 @@ const task_plan_llm_util_1 = require("../../plan/task-plan-llm.util");
 const task_plan_util_1 = require("../../plan/task-plan.util");
 const workflow_plan_transition_util_1 = require("../../../../../workflow/workflow-plan-transition.util");
 const agent_run_audit_util_1 = require("../../run/agent-run-audit.util");
+const patch_upstream_from_fetch_round_util_1 = require("../../../../../entity-materialization/patch-upstream-from-fetch-round.util");
 function workflowProgressPatch(state, planBefore, planAdvance, options) {
     if (!planBefore || !planAdvance) {
         return {};
@@ -227,6 +228,19 @@ function createResultCheckNode(bundle) {
             }),
         }, state);
         let steps = [...state.steps, ...skipSteps, ...planSyncSteps, resultCheckStep];
+        const upstreamEntityPatch = phase === 'post_tools' && savedRoundMeta && taskPlanNext
+            ? (0, patch_upstream_from_fetch_round_util_1.patchUpstreamEntitiesAfterFetchRound)({
+                state: Object.assign(Object.assign({}, state), workflowPatch),
+                steps,
+                planBefore: planBeforeReact,
+                planAfter: taskPlanNext,
+                roundObservationIndices: savedRoundMeta.roundObservationIndices,
+                allObservations: (0, graph_tool_observations_util_1.allToolObservations)(state),
+            })
+            : null;
+        if (upstreamEntityPatch) {
+            steps = upstreamEntityPatch.steps;
+        }
         const emitRouteThink = (message) => {
             deps.sse.emitThink(ctx.input.sessionId, ctx.input.runId, message, 'delta');
         };
@@ -252,12 +266,12 @@ function createResultCheckNode(bundle) {
                 emitRouteThink('任务计划已完成，正在生成最终结果…\n');
             }
             await runHelpers.updateRun(ctx.input.runId, steps, client_1.AgentRunStatus.running);
-            return Object.assign(Object.assign(Object.assign({}, state), workflowPatch), { steps, taskPlan: effectiveTaskPlanNext, pendingToolCalls: [], pendingRespond: (0, turn_respond_util_1.pendingRespondFromObservation)(summaryObservation), lastToolRoundMeta: null });
+            return Object.assign(Object.assign(Object.assign(Object.assign({}, state), workflowPatch), (upstreamEntityPatch !== null && upstreamEntityPatch !== void 0 ? upstreamEntityPatch : {})), { steps, taskPlan: effectiveTaskPlanNext, pendingToolCalls: [], pendingRespond: (0, turn_respond_util_1.pendingRespondFromObservation)(summaryObservation), lastToolRoundMeta: null });
         }
         if ((planFallback === null || planFallback === void 0 ? void 0 : planFallback.action) === 'skill_step') {
             emitRouteThink('进入下一技能步骤…\n');
             await runHelpers.updateRun(ctx.input.runId, steps, client_1.AgentRunStatus.running);
-            return skillFrame.applySkillFrameContext(Object.assign(Object.assign(Object.assign({}, state), workflowPatch), { steps, taskPlan: effectiveTaskPlanNext, pendingToolCalls: (0, result_check_route_util_1.resolveSkillStepPendingToolCalls)({
+            return skillFrame.applySkillFrameContext(Object.assign(Object.assign(Object.assign(Object.assign({}, state), workflowPatch), (upstreamEntityPatch !== null && upstreamEntityPatch !== void 0 ? upstreamEntityPatch : {})), { steps, taskPlan: effectiveTaskPlanNext, pendingToolCalls: (0, result_check_route_util_1.resolveSkillStepPendingToolCalls)({
                     pendingToolCalls: outcome.pendingToolCalls,
                     taskPlan: effectiveTaskPlanNext,
                     scopedTools: state.scopedTools,
@@ -268,7 +282,7 @@ function createResultCheckNode(bundle) {
                 emitRouteThink('进入下一任务步骤…\n');
             }
             await runHelpers.updateRun(ctx.input.runId, steps, client_1.AgentRunStatus.running);
-            return Object.assign(Object.assign(Object.assign({}, state), workflowPatch), { steps, taskPlan: effectiveTaskPlanNext, pendingToolCalls: planFallback.clearPendingToolCalls
+            return Object.assign(Object.assign(Object.assign(Object.assign({}, state), workflowPatch), (upstreamEntityPatch !== null && upstreamEntityPatch !== void 0 ? upstreamEntityPatch : {})), { steps, taskPlan: effectiveTaskPlanNext, pendingToolCalls: planFallback.clearPendingToolCalls
                     ? []
                     : outcome.pendingToolCalls, pendingRespond: null, lastToolRoundMeta: null });
         }

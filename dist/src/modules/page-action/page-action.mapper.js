@@ -24,6 +24,8 @@ function toPageActionResponse(row) {
         sourceSkillId: row.sourceSkillId,
         workflowId: row.workflowId,
         workflowVersion: row.workflowVersion,
+        flowId: row.flowId,
+        flowVersion: row.flowVersion,
         workflowOverrides: row.workflowOverrides,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -67,7 +69,7 @@ function toPageActionRunAdminListItem(row) {
 }
 exports.toPageActionRunAdminListItem = toPageActionRunAdminListItem;
 function toPageActionRunAdminDetail(row) {
-    return Object.assign(Object.assign({}, toPageActionRunAdminListItem(row)), { delivery: row.delivery, instruction: row.instruction, context: row.context, pageContext: row.pageContext, fillText: row.fillText, errorMessage: row.errorMessage, promptTokens: row.promptTokens, completionTokens: row.completionTokens, idempotencyKey: row.idempotencyKey, workflowId: row.workflowId, workflowVersion: row.workflowVersion, workflowRun: row.workflowRun, steps: parseRunSteps(row.steps) });
+    return Object.assign(Object.assign({}, toPageActionRunAdminListItem(row)), { delivery: row.delivery, instruction: row.instruction, context: row.context, pageContext: row.pageContext, fillText: row.fillText, errorMessage: row.errorMessage, promptTokens: row.promptTokens, completionTokens: row.completionTokens, idempotencyKey: row.idempotencyKey, workflowId: row.workflowId, workflowVersion: row.workflowVersion, flowId: row.flowId, flowVersion: row.flowVersion, workflowRun: row.workflowRun, steps: parseRunSteps(row.steps) });
 }
 exports.toPageActionRunAdminDetail = toPageActionRunAdminDetail;
 //# sourceMappingURL=page-action.mapper.js.map

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.evaluateWorkflowTriggerPermissionForNodes = exports.evaluateWorkflowTriggerPermission = exports.extractWorkflowWriteToolIds = exports.isWorkflowTriggerPermissionEnabled = void 0;
+const resolve_workflow_node_runtime_input_util_1 = require("./resolve-workflow-node-runtime-input.util");
 const WORKFLOW_TRIGGER_PERMISSION_ENV = 'WORKFLOW_TRIGGER_PERMISSION';
 function isWorkflowTriggerPermissionEnabled(env = process.env) {
     return env[WORKFLOW_TRIGGER_PERMISSION_ENV] !== 'false';
@@ -12,7 +13,7 @@ function extractWorkflowWriteToolIds(nodes) {
         if (node.action !== 'write_data') {
             continue;
         }
-        const input = node.input;
+        const input = (0, resolve_workflow_node_runtime_input_util_1.resolveWorkflowNodeRuntimeInput)(node);
         const toolId = input === null || input === void 0 ? void 0 : input.toolId;
         if (typeof toolId === 'number' && Number.isInteger(toolId) && toolId > 0) {
             ids.add(toolId);

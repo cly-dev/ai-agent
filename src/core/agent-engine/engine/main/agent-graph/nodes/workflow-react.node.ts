@@ -8,7 +8,7 @@ import {
 } from '../../plan/plan-observation-scope.util';
 import {
   getCurrentWorkflowNode,
-  getWorkflowNodeDef,
+  resolveWorkflowNodeDefForExecute,
   routeAfterWorkflowReact,
 } from '../../../../../workflow/workflow-graph-routing.util';
 import { harnessSensorsForWorkflowAction } from '../../../../../harness/sensors';
@@ -121,8 +121,17 @@ export function createWorkflowReactNode(
     }
 
     const nodeId = current.workflowRun?.currentNodeId;
-    const def = getWorkflowNodeDef(current.workflowNodeDefs, nodeId);
     const currentNode = getCurrentWorkflowNode(current);
+    const def =
+      nodeId != null
+        ? resolveWorkflowNodeDefForExecute({
+            nodeId,
+            defs: current.workflowNodeDefs,
+            ir: current.workflowIr,
+            executionMode: current.workflowExecutionMode,
+            phase: currentNode?.phase,
+          })
+        : undefined;
     if (
       nodeId &&
       def &&

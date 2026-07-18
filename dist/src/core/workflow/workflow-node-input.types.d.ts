@@ -1,9 +1,6 @@
 import type { WorkflowActionKind } from './workflow.types';
 export type WorkflowFetchCompleteWhen = 'first_success' | 'fetch_all_pages';
 export type WorkflowSummarizeMode = 'brief' | 'detailed' | 'draft' | 'final';
-export type LoadPageContextNodeInput = {
-    materialize?: boolean;
-};
 export type DetectCluesNodeInput = {
     hint?: string;
 };
@@ -48,7 +45,6 @@ export type AwaitUserConfirmNodeInput = {
     confirmKind?: 'mutation' | 'generic';
 };
 export type WorkflowNodeInputByAction = {
-    load_page_context: LoadPageContextNodeInput;
     detect_clues: DetectCluesNodeInput;
     fetch_data: FetchDataNodeInput;
     summarize_images: SummarizeImagesNodeInput;

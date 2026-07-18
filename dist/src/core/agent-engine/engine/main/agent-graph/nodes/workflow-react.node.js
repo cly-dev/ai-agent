@@ -89,8 +89,16 @@ function createWorkflowReactNode(bundle) {
             }
         }
         const nodeId = (_a = current.workflowRun) === null || _a === void 0 ? void 0 : _a.currentNodeId;
-        const def = (0, workflow_graph_routing_util_1.getWorkflowNodeDef)(current.workflowNodeDefs, nodeId);
         const currentNode = (0, workflow_graph_routing_util_1.getCurrentWorkflowNode)(current);
+        const def = nodeId != null
+            ? (0, workflow_graph_routing_util_1.resolveWorkflowNodeDefForExecute)({
+                nodeId,
+                defs: current.workflowNodeDefs,
+                ir: current.workflowIr,
+                executionMode: current.workflowExecutionMode,
+                phase: currentNode === null || currentNode === void 0 ? void 0 : currentNode.phase,
+            })
+            : undefined;
         if (nodeId &&
             def &&
             currentNode &&

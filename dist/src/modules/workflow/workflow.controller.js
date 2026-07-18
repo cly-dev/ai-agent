@@ -23,9 +23,6 @@ let WorkflowController = class WorkflowController {
     constructor(service) {
         this.service = service;
     }
-    create(body) {
-        return this.service.create(body);
-    }
     listPresets(profile) {
         return this.service.listPresets(profile);
     }
@@ -38,9 +35,6 @@ let WorkflowController = class WorkflowController {
     listRevisions(id, query) {
         return this.service.listRevisions(id, query);
     }
-    update(id, body) {
-        return this.service.update(id, body);
-    }
     remove(id) {
         return this.service.remove(id);
     }
@@ -49,17 +43,10 @@ let WorkflowController = class WorkflowController {
     }
 };
 __decorate([
-    (0, common_1.Post)(),
-    (0, swagger_1.ApiOperation)({ summary: 'B 端：创建 Workflow' }),
-    __param(0, (0, common_1.Body)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [workflow_dto_1.CreateWorkflowDto]),
-    __metadata("design:returntype", void 0)
-], WorkflowController.prototype, "create", null);
-__decorate([
     (0, common_1.Get)('presets/catalog'),
     (0, swagger_1.ApiOperation)({
-        summary: 'B 端：Workflow 场景 Preset 目录（保存时展开为 nodes[]）',
+        summary: '【归档】Preset 目录（请改用 GET /flow/presets/catalog）',
+        deprecated: true,
     }),
     __param(0, (0, common_1.Query)('profile')),
     __metadata("design:type", Function),
@@ -69,7 +56,10 @@ __decorate([
 __decorate([
     (0, common_1.Get)('by-app-client/:appClientId'),
     (0, swagger_1.ApiParam)({ name: 'appClientId', type: Number }),
-    (0, swagger_1.ApiOperation)({ summary: 'B 端：分页查询 App 下 Workflow' }),
+    (0, swagger_1.ApiOperation)({
+        summary: '【归档】分页查询仍存库的 legacy Workflow',
+        description: '用于迁移候选对照；新配置勿依赖本列表。',
+    }),
     __param(0, (0, common_1.Param)('appClientId', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Query)()),
     __metadata("design:type", Function),
@@ -80,7 +70,7 @@ __decorate([
     (0, common_1.Get)(':id/revisions/:version'),
     (0, swagger_1.ApiParam)({ name: 'id', type: Number }),
     (0, swagger_1.ApiParam)({ name: 'version', type: Number, description: 'revision 版本号' }),
-    (0, swagger_1.ApiOperation)({ summary: 'B 端：查看 Workflow 指定版本快照' }),
+    (0, swagger_1.ApiOperation)({ summary: '查看 Workflow 指定版本快照' }),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Param)('version', common_1.ParseIntPipe)),
     __metadata("design:type", Function),
@@ -91,7 +81,7 @@ __decorate([
     (0, common_1.Get)(':id/revisions'),
     (0, swagger_1.ApiParam)({ name: 'id', type: Number }),
     (0, swagger_1.ApiOperation)({
-        summary: 'B 端：Workflow revision 历史',
+        summary: 'Workflow revision 历史',
         description: '默认返回完整快照；summary=true 时仅返回版本元数据，适合版本下拉。',
     }),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
@@ -101,20 +91,10 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], WorkflowController.prototype, "listRevisions", null);
 __decorate([
-    (0, common_1.Patch)(':id'),
-    (0, swagger_1.ApiParam)({ name: 'id', type: Number }),
-    (0, swagger_1.ApiOperation)({ summary: 'B 端：更新 Workflow（nodes 变更会递增 version）' }),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Body)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, workflow_dto_1.UpdateWorkflowDto]),
-    __metadata("design:returntype", void 0)
-], WorkflowController.prototype, "update", null);
-__decorate([
     (0, common_1.Delete)(':id'),
     (0, admin_roles_decorator_1.AdminRoles)(client_1.AdminRole.OPERATOR),
     (0, swagger_1.ApiParam)({ name: 'id', type: Number }),
-    (0, swagger_1.ApiOperation)({ summary: 'B 端：删除 Workflow（需 OPERATOR / SUPER_ADMIN）' }),
+    (0, swagger_1.ApiOperation)({ summary: '删除 legacy Workflow' }),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Number]),
@@ -123,7 +103,7 @@ __decorate([
 __decorate([
     (0, common_1.Get)(':id'),
     (0, swagger_1.ApiParam)({ name: 'id', type: Number }),
-    (0, swagger_1.ApiOperation)({ summary: 'B 端：Workflow 详情（含绑定与引用计数）' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Workflow 详情' }),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Number]),

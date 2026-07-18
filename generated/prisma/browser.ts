@@ -195,7 +195,7 @@ export type PageActionRun = Prisma.PageActionRunModel
 export type ApprovalRequest = Prisma.ApprovalRequestModel
 /**
  * Model Workflow
- * AppClient 级可复用 Workflow 资产（动作节点编排）。
+ * Legacy Workflow：旧版原子 action 图（nodes IR）。新 Intent/IR 请用 Flow。
  */
 export type Workflow = Prisma.WorkflowModel
 /**
@@ -213,3 +213,23 @@ export type WorkflowTool = Prisma.WorkflowToolModel
  * 
  */
 export type WorkflowHostTool = Prisma.WorkflowHostToolModel
+/**
+ * Model Flow
+ * 新编排资产：Intent SSOT + 编译 IR（与 legacy Workflow 分表）。
+ */
+export type Flow = Prisma.FlowModel
+/**
+ * Model FlowRevision
+ * 
+ */
+export type FlowRevision = Prisma.FlowRevisionModel
+/**
+ * Model FlowTool
+ * 
+ */
+export type FlowTool = Prisma.FlowToolModel
+/**
+ * Model FlowHostTool
+ * 
+ */
+export type FlowHostTool = Prisma.FlowHostToolModel

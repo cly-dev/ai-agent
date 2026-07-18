@@ -15,6 +15,7 @@ export type ToolResponseProfile = {
     listPath?: string;
     listMetaFields?: ToolResponseFieldSpec[];
     decisionRole?: ToolDecisionRole;
+    entityType?: string;
 };
 export type ProjectedToolOutput = {
     data: unknown;

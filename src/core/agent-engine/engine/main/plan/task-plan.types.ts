@@ -220,7 +220,7 @@ export type PlanSessionWorkingMemory = {
 export type ResolveTaskPlanInput = BuildTaskPlanInput & {
   skillPrompt?: string | null;
   sessionWorkingMemory?: PlanSessionWorkingMemory | null;
-  /** Skill.workflowId 绑定资产编译后的内层 plan；优先于 skill.config.workflow。 */
+  /** Skill.flowId 绑定资产编译后的内层 plan；优先于 skill.config.workflow。 */
   skillBoundWorkflowPlan?: TaskPlanSnapshot | null;
 };
 

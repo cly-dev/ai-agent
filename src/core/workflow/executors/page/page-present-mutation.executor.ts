@@ -7,6 +7,7 @@ import { mergePageWorkflowLlmMetrics } from '../../../page-action/page-workflow-
 import { completeWorkflowNode } from '../../workflow-run.util';
 import { buildWorkflowNodeOutputRef } from '../../workflow-node-output.util';
 import type { PresentMutationNodeInput } from '../../workflow-node-input.types';
+import { resolveWorkflowNodeRuntimeInput } from '../../resolve-workflow-node-runtime-input.util';
 import { requirePageExecutorHost } from '../executor-host.util';
 import type { WorkflowExecutor } from '../workflow-executor.types';
 
@@ -18,7 +19,9 @@ export const pagePresentMutationExecutor: WorkflowExecutor = {
   action: 'present_mutation',
   async run(ctx) {
     const { runtime } = requirePageExecutorHost(ctx.host);
-    const nodeInput = ctx.def.input as PresentMutationNodeInput;
+    const nodeInput = resolveWorkflowNodeRuntimeInput(
+      ctx.def,
+    ) as PresentMutationNodeInput;
     const mode = nodeInput.mode ?? 'brief';
     const messages = injectWorkflowNodeObjective(
       appendWorkflowNodeOutputsToMessages(runtime.messages, runtime.nodeOutputs),

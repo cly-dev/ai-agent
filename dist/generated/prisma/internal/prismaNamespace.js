@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SkillHostToolScalarFieldEnum = exports.AgentHostToolScalarFieldEnum = exports.HostToolScalarFieldEnum = exports.HostPageScalarFieldEnum = exports.AgentToolScalarFieldEnum = exports.AgentRunScalarFieldEnum = exports.MessageTurnScalarFieldEnum = exports.PromptTemplateScalarFieldEnum = exports.AgentScalarFieldEnum = exports.RoleToolScalarFieldEnum = exports.UserAppScalarFieldEnum = exports.SkillToolScalarFieldEnum = exports.RoleSkillScalarFieldEnum = exports.AgentSkillScalarFieldEnum = exports.SkillScalarFieldEnum = exports.UserIntegrationScalarFieldEnum = exports.IntegrationScalarFieldEnum = exports.ToolScalarFieldEnum = exports.ToolCategoryScalarFieldEnum = exports.MessageFeedbackScalarFieldEnum = exports.MessageScalarFieldEnum = exports.SessionGoaMemoryScalarFieldEnum = exports.SessionScalarFieldEnum = exports.UserLlmModelConfigScalarFieldEnum = exports.IntentRecallConfigScalarFieldEnum = exports.PageAgentLlmProxyAuditScalarFieldEnum = exports.LlmModelConfigScalarFieldEnum = exports.AppClientScalarFieldEnum = exports.AdminUserScalarFieldEnum = exports.RoleScalarFieldEnum = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.prismaVersion = exports.getExtensionContext = exports.Decimal = exports.Sql = exports.raw = exports.join = exports.empty = exports.sql = exports.PrismaClientValidationError = exports.PrismaClientInitializationError = exports.PrismaClientRustPanicError = exports.PrismaClientUnknownRequestError = exports.PrismaClientKnownRequestError = void 0;
-exports.defineExtension = exports.JsonNullValueFilter = exports.NullsOrder = exports.QueryMode = exports.JsonNullValueInput = exports.NullableJsonNullValueInput = exports.SortOrder = exports.WorkflowHostToolScalarFieldEnum = exports.WorkflowToolScalarFieldEnum = exports.WorkflowRevisionScalarFieldEnum = exports.WorkflowScalarFieldEnum = exports.ApprovalRequestScalarFieldEnum = exports.PageActionRunScalarFieldEnum = exports.PageActionScalarFieldEnum = exports.RoleHostToolScalarFieldEnum = void 0;
+exports.defineExtension = exports.JsonNullValueFilter = exports.NullsOrder = exports.QueryMode = exports.JsonNullValueInput = exports.NullableJsonNullValueInput = exports.SortOrder = exports.FlowHostToolScalarFieldEnum = exports.FlowToolScalarFieldEnum = exports.FlowRevisionScalarFieldEnum = exports.FlowScalarFieldEnum = exports.WorkflowHostToolScalarFieldEnum = exports.WorkflowToolScalarFieldEnum = exports.WorkflowRevisionScalarFieldEnum = exports.WorkflowScalarFieldEnum = exports.ApprovalRequestScalarFieldEnum = exports.PageActionRunScalarFieldEnum = exports.PageActionScalarFieldEnum = exports.RoleHostToolScalarFieldEnum = void 0;
 const runtime = require("@prisma/client/runtime/client");
 exports.PrismaClientKnownRequestError = runtime.PrismaClientKnownRequestError;
 exports.PrismaClientUnknownRequestError = runtime.PrismaClientUnknownRequestError;
@@ -66,7 +66,11 @@ exports.ModelName = {
     Workflow: 'Workflow',
     WorkflowRevision: 'WorkflowRevision',
     WorkflowTool: 'WorkflowTool',
-    WorkflowHostTool: 'WorkflowHostTool'
+    WorkflowHostTool: 'WorkflowHostTool',
+    Flow: 'Flow',
+    FlowRevision: 'FlowRevision',
+    FlowTool: 'FlowTool',
+    FlowHostTool: 'FlowHostTool'
 };
 exports.TransactionIsolationLevel = runtime.makeStrictEnum({
     ReadUncommitted: 'ReadUncommitted',
@@ -274,7 +278,9 @@ exports.SkillScalarFieldEnum = {
     updatedAt: 'updatedAt',
     workflowId: 'workflowId',
     workflowVersion: 'workflowVersion',
-    workflowOverrides: 'workflowOverrides'
+    workflowOverrides: 'workflowOverrides',
+    flowId: 'flowId',
+    flowVersion: 'flowVersion'
 };
 exports.AgentSkillScalarFieldEnum = {
     id: 'id',
@@ -471,6 +477,8 @@ exports.PageActionScalarFieldEnum = {
     workflowId: 'workflowId',
     workflowVersion: 'workflowVersion',
     workflowOverrides: 'workflowOverrides',
+    flowId: 'flowId',
+    flowVersion: 'flowVersion',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
@@ -499,6 +507,8 @@ exports.PageActionRunScalarFieldEnum = {
     steps: 'steps',
     workflowId: 'workflowId',
     workflowVersion: 'workflowVersion',
+    flowId: 'flowId',
+    flowVersion: 'flowVersion',
     workflowRun: 'workflowRun',
     generation: 'generation',
     createdAt: 'createdAt',
@@ -513,6 +523,8 @@ exports.ApprovalRequestScalarFieldEnum = {
     approverUserId: 'approverUserId',
     workflowId: 'workflowId',
     workflowVersion: 'workflowVersion',
+    flowId: 'flowId',
+    flowVersion: 'flowVersion',
     nodeId: 'nodeId',
     title: 'title',
     summary: 'summary',
@@ -564,6 +576,47 @@ exports.WorkflowToolScalarFieldEnum = {
 exports.WorkflowHostToolScalarFieldEnum = {
     id: 'id',
     workflowId: 'workflowId',
+    hostToolId: 'hostToolId',
+    isRequired: 'isRequired'
+};
+exports.FlowScalarFieldEnum = {
+    id: 'id',
+    appClientId: 'appClientId',
+    flowKey: 'flowKey',
+    name: 'name',
+    description: 'description',
+    goal: 'goal',
+    profile: 'profile',
+    deliverable: 'deliverable',
+    intent: 'intent',
+    ir: 'ir',
+    version: 'version',
+    constraints: 'constraints',
+    isActive: 'isActive',
+    sortOrder: 'sortOrder',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+exports.FlowRevisionScalarFieldEnum = {
+    id: 'id',
+    flowId: 'flowId',
+    version: 'version',
+    intent: 'intent',
+    ir: 'ir',
+    deliverable: 'deliverable',
+    constraints: 'constraints',
+    changeNote: 'changeNote',
+    createdAt: 'createdAt'
+};
+exports.FlowToolScalarFieldEnum = {
+    id: 'id',
+    flowId: 'flowId',
+    toolId: 'toolId',
+    isRequired: 'isRequired'
+};
+exports.FlowHostToolScalarFieldEnum = {
+    id: 'id',
+    flowId: 'flowId',
     hostToolId: 'hostToolId',
     isRequired: 'isRequired'
 };

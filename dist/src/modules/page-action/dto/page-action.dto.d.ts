@@ -26,6 +26,8 @@ export declare class CreatePageActionDto {
     sourceSkillId?: number | null;
     workflowId?: number | null;
     workflowVersion?: number | null;
+    flowId?: number | null;
+    flowVersion?: number | null;
     workflowOverrides?: Record<string, {
         objective?: string;
     }> | null;
@@ -43,6 +45,8 @@ export declare class UpdatePageActionDto {
     config?: Record<string, unknown> | null;
     workflowId?: number | null;
     workflowVersion?: number | null;
+    flowId?: number | null;
+    flowVersion?: number | null;
     workflowOverrides?: Record<string, {
         objective?: string;
     }> | null;

@@ -18,12 +18,21 @@ import {
 } from './page-action-run-completion.util';
 
 export type PageWorkflowRunnerInput = {
+  /** 运行态资产 id：Flow 跑时等于 Flow.id（与 ApprovalRequest.flowId 对齐） */
   workflowId: number;
   version: number;
+  /** 有值时审批/审计走 Flow FK，不写 Workflow FK */
+  flowId?: number | null;
+  flowVersion?: number | null;
   nodes: WorkflowNodeDef[];
   /** 可选；缺省由 init 按 nodes 顺序合成 always 边 */
   edges?: WorkflowEdge[];
   entryNodeId?: string | null;
+  /**
+   * Plan A：Flow.ir 快照。`executionMode=ir_native_direct` 时为图真源。
+   */
+  ir?: import('../workflow/workflow-ir.types').WorkflowIrDocument | null;
+  executionMode?: import('../workflow/workflow-ir-native-direct.util').WorkflowExecutionMode;
   systemPrompt: string;
   objectivePrefix?: string | null;
   messages: LlmChatMessage[];
@@ -70,6 +79,7 @@ export function createPageWorkflowExecutorRuntime(
     hostTool: input.hostTool,
     stepRecorder: recorder,
     toolBundle: input.toolBundle ?? null,
+    materializedEntities: [],
     fillText: '',
     dslOutcome: null,
     metrics: {

@@ -17,6 +17,7 @@ import {
 } from '../../../page-action/page-action.constants';
 import { requirePageExecutorHost } from '../executor-host.util';
 import type { WorkflowExecutor } from '../workflow-executor.types';
+import { resolveWorkflowNodeRuntimeInput } from '../../resolve-workflow-node-runtime-input.util';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -26,10 +27,10 @@ export const pageGenerateAndPushExecutor: WorkflowExecutor = {
   action: 'generate_and_push',
   async run(ctx) {
     const { runtime } = requirePageExecutorHost(ctx.host);
-    const nodeInput = (isRecord(ctx.def.input) ? ctx.def.input : {}) as Record<
-      string,
-      unknown
-    >;
+    const resolved = resolveWorkflowNodeRuntimeInput(ctx.def);
+    const nodeInput = (
+      isRecord(resolved) ? resolved : {}
+    ) as Record<string, unknown>;
     const hostTools = await resolvePageActionHostToolsForPushNode(
       runtime.prisma,
       {

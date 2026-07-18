@@ -60,6 +60,8 @@ export class AgentSkillCatalogService {
       ),
       workflowId: row.workflowId,
       workflowVersion: row.workflowVersion,
+      flowId: row.flowId,
+      flowVersion: row.flowVersion,
     }));
   }
 
@@ -180,6 +182,8 @@ export class AgentSkillCatalogService {
       ),
       workflowId: row.workflowId,
       workflowVersion: row.workflowVersion,
+      flowId: row.flowId,
+      flowVersion: row.flowVersion,
     }));
     return {
       appClientId: input.appClientId,
@@ -224,6 +228,8 @@ export class AgentSkillCatalogService {
         updatedAt: true,
         workflowId: true,
         workflowVersion: true,
+        flowId: true,
+        flowVersion: true,
         skillTools: { select: { toolId: true } },
         skillHostTools: { select: { hostToolId: true } },
       },

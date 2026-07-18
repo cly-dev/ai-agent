@@ -6,9 +6,16 @@ export declare const AUTOMATION_PAGE_ACTION_RUN_INCLUDE: {
             actionKey: true;
             name: true;
             workflowId: true;
+            flowId: true;
             workflow: {
                 select: {
                     workflowKey: true;
+                    name: true;
+                };
+            };
+            flow: {
+                select: {
+                    flowKey: true;
                     name: true;
                 };
             };

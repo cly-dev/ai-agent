@@ -162,6 +162,8 @@ export async function executePageActionProseStream(input: {
     {
       signal: input.signal,
       onDelta: (delta) => {
+        // PageAction 无 think 展示通道：reasoningDelta（thinking 模型思考）直接丢弃，
+        // 只有 contentDelta 进 prose；防止思考过程流给前端（qwen3.x-plus 场景）。
         if (!delta.contentDelta) {
           return;
         }

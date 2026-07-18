@@ -12,7 +12,10 @@ export type LoadedWorkflowForRun = {
     workflowRun: WorkflowRunState;
     workflowId: number;
     version: number;
-    compiledFrom: 'workflow_db';
+    compiledFrom: 'workflow_db' | 'flow_db';
+    ir?: import('./workflow-ir.types').WorkflowIrDocument;
+    materializedDirectFromIr?: boolean;
+    executionMode?: import('./workflow-ir-native-direct.util').WorkflowExecutionMode;
 };
 export type WorkflowLoadFailureReason = 'asset_missing' | 'revision_missing' | 'empty_nodes' | 'invalid_edges' | 'scope_incompatible';
 export type WorkflowLoadResult = ({

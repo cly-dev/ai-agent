@@ -13,19 +13,19 @@ export declare const llmTaskPlanStepSchema: z.ZodObject<{
         mutate: "mutate";
     }>;
     kind: z.ZodEnum<{
-        summarize: "summarize";
         tool: "tool";
-        host_tool: "host_tool";
         reason: "reason";
+        summarize: "summarize";
+        host_tool: "host_tool";
     }>;
     toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     hostToolNames: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString>>>;
     objective: z.ZodString;
     stopWhen: z.ZodOptional<z.ZodNullable<z.ZodEnum<{
-        always: "always";
         observation_non_empty: "observation_non_empty";
         observation_fetch_complete: "observation_fetch_complete";
         observation_has_fields: "observation_has_fields";
+        always: "always";
     }>>>;
 }, z.core.$strip>;
 export declare const llmOuterPlanStepSchema: z.ZodObject<{
@@ -37,29 +37,29 @@ export declare const llmOuterPlanStepSchema: z.ZodObject<{
         mutate: "mutate";
     }>;
     kind: z.ZodEnum<{
-        summarize: "summarize";
         tool: "tool";
         skill: "skill";
-        host_tool: "host_tool";
         reason: "reason";
+        summarize: "summarize";
+        host_tool: "host_tool";
     }>;
     skillId: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
     toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     hostToolNames: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString>>>;
     objective: z.ZodString;
     stopWhen: z.ZodOptional<z.ZodNullable<z.ZodEnum<{
-        always: "always";
         observation_non_empty: "observation_non_empty";
         observation_fetch_complete: "observation_fetch_complete";
         observation_has_fields: "observation_has_fields";
+        always: "always";
     }>>>;
 }, z.core.$strip>;
 export declare const llmOuterPlanSchema: z.ZodObject<{
     deliverable: z.ZodEnum<{
-        mutation: "mutation";
         analysis: "analysis";
         list: "list";
         detail: "detail";
+        mutation: "mutation";
         answer: "answer";
     }>;
     goal: z.ZodString;
@@ -72,30 +72,30 @@ export declare const llmOuterPlanSchema: z.ZodObject<{
             mutate: "mutate";
         }>;
         kind: z.ZodEnum<{
-            summarize: "summarize";
             tool: "tool";
             skill: "skill";
-            host_tool: "host_tool";
             reason: "reason";
+            summarize: "summarize";
+            host_tool: "host_tool";
         }>;
         skillId: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         hostToolNames: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString>>>;
         objective: z.ZodString;
         stopWhen: z.ZodOptional<z.ZodNullable<z.ZodEnum<{
-            always: "always";
             observation_non_empty: "observation_non_empty";
             observation_fetch_complete: "observation_fetch_complete";
             observation_has_fields: "observation_has_fields";
+            always: "always";
         }>>>;
     }, z.core.$strip>>;
 }, z.core.$strip>;
 export declare const llmTaskPlanSchema: z.ZodObject<{
     deliverable: z.ZodEnum<{
-        mutation: "mutation";
         analysis: "analysis";
         list: "list";
         detail: "detail";
+        mutation: "mutation";
         answer: "answer";
     }>;
     goal: z.ZodString;
@@ -108,19 +108,19 @@ export declare const llmTaskPlanSchema: z.ZodObject<{
             mutate: "mutate";
         }>;
         kind: z.ZodEnum<{
-            summarize: "summarize";
             tool: "tool";
-            host_tool: "host_tool";
             reason: "reason";
+            summarize: "summarize";
+            host_tool: "host_tool";
         }>;
         toolRole: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         hostToolNames: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString>>>;
         objective: z.ZodString;
         stopWhen: z.ZodOptional<z.ZodNullable<z.ZodEnum<{
-            always: "always";
             observation_non_empty: "observation_non_empty";
             observation_fetch_complete: "observation_fetch_complete";
             observation_has_fields: "observation_has_fields";
+            always: "always";
         }>>>;
     }, z.core.$strip>>;
 }, z.core.$strip>;

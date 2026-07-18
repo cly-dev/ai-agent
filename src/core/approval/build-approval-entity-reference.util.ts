@@ -24,7 +24,7 @@ export type ApprovalEntityReference = {
   entityId: string | null;
   /** pageContext.metadata 内联正文（协议：{ kind: { content, ... } }） */
   inlineRecords: Array<{ kind: string; record: Record<string, unknown> }>;
-  /** fetch_data / load_page_context 等节点产出，供与 writeDraft 对照 */
+  /** fetch_data / summarize_images 等节点产出，供与 writeDraft 对照 */
   sources: ApprovalEntityReferenceSource[];
 };
 
@@ -67,19 +67,6 @@ function readFetchDataSource(
   };
 }
 
-function readLoadPageContextSource(
-  ref: string,
-  value: unknown,
-): ApprovalEntityReferenceSource {
-  return {
-    ref,
-    action: 'load_page_context',
-    toolName: null,
-    toolId: null,
-    data: value,
-  };
-}
-
 function collectWorkflowSources(
   workflowNodeOutputs: Record<string, unknown>,
 ): ApprovalEntityReferenceSource[] {
@@ -93,8 +80,14 @@ function collectWorkflowSources(
       }
       continue;
     }
-    if (action === 'load_page_context') {
-      sources.push(readLoadPageContextSource(ref, value));
+    if (action === 'summarize_images') {
+      sources.push({
+        ref,
+        action: 'summarize_images',
+        toolName: null,
+        toolId: null,
+        data: value,
+      });
     }
   }
   return sources.sort((left, right) => left.ref.localeCompare(right.ref));

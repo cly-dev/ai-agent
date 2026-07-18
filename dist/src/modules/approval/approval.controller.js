@@ -84,7 +84,7 @@ let ApprovalController = class ApprovalController {
         return { ok: true };
     }
     toInboxItem(row, toolMap) {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
         const toolId = (0, approval_write_draft_mapper_1.resolveApprovalRowToolId)(row);
         const writeTool = toolId != null ? (_a = toolMap.get(toolId)) !== null && _a !== void 0 ? _a : null : null;
         const { writeDraft, editPolicy } = (0, approval_write_draft_mapper_1.buildApprovalWriteDraftPayload)(row, writeTool);
@@ -96,8 +96,12 @@ let ApprovalController = class ApprovalController {
             summary: row.summary,
             workflowId: row.workflowId,
             workflowVersion: row.workflowVersion,
-            workflowKey: (_c = (_b = row.workflow) === null || _b === void 0 ? void 0 : _b.workflowKey) !== null && _c !== void 0 ? _c : null,
-            workflowName: (_e = (_d = row.workflow) === null || _d === void 0 ? void 0 : _d.name) !== null && _e !== void 0 ? _e : null,
+            flowId: row.flowId,
+            flowVersion: row.flowVersion,
+            workflowKey: (_e = (_c = (_b = row.workflow) === null || _b === void 0 ? void 0 : _b.workflowKey) !== null && _c !== void 0 ? _c : (_d = row.flow) === null || _d === void 0 ? void 0 : _d.flowKey) !== null && _e !== void 0 ? _e : null,
+            workflowName: (_j = (_g = (_f = row.workflow) === null || _f === void 0 ? void 0 : _f.name) !== null && _g !== void 0 ? _g : (_h = row.flow) === null || _h === void 0 ? void 0 : _h.name) !== null && _j !== void 0 ? _j : null,
+            flowKey: (_l = (_k = row.flow) === null || _k === void 0 ? void 0 : _k.flowKey) !== null && _l !== void 0 ? _l : null,
+            flowName: (_o = (_m = row.flow) === null || _m === void 0 ? void 0 : _m.name) !== null && _o !== void 0 ? _o : null,
             nodeId: row.nodeId,
             sessionId: row.sessionId,
             pageActionRunId: row.pageActionRunId,

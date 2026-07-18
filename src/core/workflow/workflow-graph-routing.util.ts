@@ -1,7 +1,13 @@
+import type { WorkflowNodeDef } from './workflow.types';
+import type { WorkflowIrDocument } from './workflow-ir.types';
+import type { WorkflowExecutionMode } from './workflow-ir-native-direct.util';
+import {
+  materializeWorkflowIrNodeForPhase,
+  resolveWorkflowIrNativePhases,
+} from './workflow-ir-native-phase.util';
 import type { AgentGraphState } from '../agent-engine/engine/main/types/agent-engine.types';
 import { shouldRouteToRespond } from '../agent-engine/engine/turn/turn-graph.util';
 import { workflowNodeRequiresReactLoop } from './workflow-plan-sync.util';
-import type { WorkflowNodeDef } from './workflow.types';
 
 export function getWorkflowNodeDef(
   defs: WorkflowNodeDef[] | undefined,
@@ -11,6 +17,32 @@ export function getWorkflowNodeDef(
     return undefined;
   }
   return defs.find((row) => row.id === nodeId);
+}
+
+/**
+ * Plan A：native 按 IR + 当前 phase 合成 def；否则回退 workflowNodeDefs。
+ */
+export function resolveWorkflowNodeDefForExecute(input: {
+  nodeId: string;
+  defs?: WorkflowNodeDef[] | null;
+  ir?: WorkflowIrDocument | null;
+  executionMode?: WorkflowExecutionMode | null;
+  phase?: import('./workflow-ir-native-phase.util').WorkflowIrNativePhase | null;
+}): WorkflowNodeDef | undefined {
+  if (input.executionMode === 'ir_native_direct' && input.ir) {
+    const irNode = input.ir.nodes.find((row) => row.id === input.nodeId);
+    if (irNode) {
+      try {
+        const phase =
+          input.phase ??
+          resolveWorkflowIrNativePhases(irNode)[0]!;
+        return materializeWorkflowIrNodeForPhase(irNode, phase);
+      } catch {
+        return undefined;
+      }
+    }
+  }
+  return getWorkflowNodeDef(input.defs ?? undefined, input.nodeId);
 }
 
 export function getCurrentWorkflowNode(state: AgentGraphState) {
@@ -55,10 +87,18 @@ export function routeAfterExecuteNode(
   if (state.workflowAwaitingReact) {
     return 'workflow_react';
   }
-  const def = getWorkflowNodeDef(
-    state.workflowNodeDefs,
-    state.workflowRun?.currentNodeId,
-  );
+  const nodeId = state.workflowRun?.currentNodeId;
+  if (!nodeId) {
+    return 'workflow_advance';
+  }
+  // 须带当前 phase：缺省会落到入口 present，在 await 相位误路由到 summarize。
+  const def = resolveWorkflowNodeDefForExecute({
+    nodeId,
+    defs: state.workflowNodeDefs,
+    ir: state.workflowIr,
+    executionMode: state.workflowExecutionMode,
+    phase: current?.phase,
+  });
   if (def?.action === 'summarize' || def?.action === 'present_mutation') {
     return 'summarize';
   }

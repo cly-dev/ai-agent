@@ -27,7 +27,18 @@ let PageActionRunTaskProvider = class PageActionRunTaskProvider {
                 pageAction: Object.assign(Object.assign({}, (((_e = filter.actionKey) === null || _e === void 0 ? void 0 : _e.trim())
                     ? { actionKey: { contains: filter.actionKey.trim() } }
                     : {})), (((_f = filter.workflowKey) === null || _f === void 0 ? void 0 : _f.trim())
-                    ? { workflow: { workflowKey: filter.workflowKey.trim() } }
+                    ? {
+                        OR: [
+                            {
+                                workflow: {
+                                    workflowKey: filter.workflowKey.trim(),
+                                },
+                            },
+                            {
+                                flow: { flowKey: filter.workflowKey.trim() },
+                            },
+                        ],
+                    }
                     : {})),
             }
             : {}));

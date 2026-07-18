@@ -3,12 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.workflowProfileAllowsAction = exports.isWorkflowActionKind = exports.getWorkflowActionRegistryEntry = exports.WORKFLOW_ACTION_KINDS = exports.WORKFLOW_ACTION_REGISTRY = void 0;
 exports.WORKFLOW_ACTION_REGISTRY = [
     {
-        kind: 'load_page_context',
-        implemented: true,
-        allowedProfiles: ['page_action', 'chat_skill', 'shared'],
-        batch: 'A',
-    },
-    {
         kind: 'detect_clues',
         implemented: true,
         allowedProfiles: ['page_action', 'chat_skill', 'shared'],

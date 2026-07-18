@@ -53,66 +53,28 @@ function tailAfterLastConfiguredThinkClose(
 }
 
 /**
- * 模型无关兜底：取任意 XML 闭标签之后、或末段双换行之后的正文。
+ * 仅在「剥离 thinking 后正文为空」时使用。
+ * 优先取配置过的 thinking 闭标签之后；再兜底末段双换行。
+ * 不做「任意 HTML/XML 开标签 → 裁成末段」——那会误伤博客 HTML prose。
  */
-function recoverUserFacingWhenStrippedEmpty(raw: string): string {
+function recoverWhenThinkStripEmptied(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) {
     return '';
   }
 
-  const genericCloseTagRe = /<\/([a-zA-Z][\w-]*)\s*>/g;
-  let lastGenericEnd = -1;
-  for (const match of trimmed.matchAll(genericCloseTagRe)) {
-    lastGenericEnd = (match.index ?? 0) + match[0].length;
-  }
-  if (lastGenericEnd >= 0) {
-    const tail = trimmed.slice(lastGenericEnd).trim();
-    if (tail.length >= 8 && !/^<[a-zA-Z]/.test(tail)) {
-      return tail;
-    }
+  const patterns = getReasoningStripPatterns();
+  const afterThinkClose = tailAfterLastConfiguredThinkClose(trimmed, patterns);
+  if (afterThinkClose.length > 0) {
+    return afterThinkClose;
   }
 
-  const paragraphs = trimmed
-    .split(/\n{2,}/)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-  if (paragraphs.length >= 2) {
-    const last = paragraphs[paragraphs.length - 1];
-    if (last.length >= 8) {
-      return last;
-    }
+  // thinking 未闭合、整段被 strip 吃掉：无可靠正文边界，返回空，避免误取 HTML 末段。
+  if (patterns.thinkOpen.test(trimmed)) {
+    return '';
   }
 
   return '';
-}
-
-function recoverUserFacingTail(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return '';
-  }
-
-  const patterns = getReasoningStripPatterns();
-  const afterKnownClose = tailAfterLastConfiguredThinkClose(trimmed, patterns);
-  if (afterKnownClose.length >= 8 && !/^<[a-zA-Z]/.test(afterKnownClose)) {
-    return afterKnownClose;
-  }
-
-  return recoverUserFacingWhenStrippedEmpty(raw);
-}
-
-function looksLikeInlineScaffolding(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return false;
-  }
-  const patterns = getReasoningStripPatterns();
-  return (
-    patterns.thinkOpen.test(trimmed) ||
-    patterns.thinkCloseTest.test(trimmed) ||
-    /^<[a-zA-Z][\w-]*\s*>/.test(trimmed)
-  );
 }
 
 /** 剥离模型输出中的思考块（含未闭合标签）。 */
@@ -125,6 +87,12 @@ export function stripLlmThinkBlocks(text: string): string {
   return result.replace(patterns.orphanThinkTag, '').trim();
 }
 
+/**
+ * 真源契约：
+ * 1. 有正文 → 只剥 thinking，保留全文（含合法 HTML `<h1>`/`<p>`）
+ * 2. 剥完为空 → 仅从 thinking 闭标签之后恢复
+ * 禁止：因「看起来像标签」就用末段覆盖非空正文（那是补丁式启发式，会裁掉博客全文）
+ */
 function resolveUserFacingBody(
   source: string,
   options?: { stripToolCalls?: boolean },
@@ -135,12 +103,8 @@ function resolveUserFacingBody(
   }
 
   let body = stripLlmThinkBlocks(raw);
-  const recovered = recoverUserFacingTail(raw);
-
   if (!body.trim()) {
-    body = recovered;
-  } else if (looksLikeInlineScaffolding(body) && recovered.length >= 8) {
-    body = recovered;
+    body = recoverWhenThinkStripEmptied(raw);
   }
 
   if (options?.stripToolCalls !== false) {

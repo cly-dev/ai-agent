@@ -7,6 +7,7 @@ const compile_task_plan_from_workflow_util_1 = require("../../../../../workflow/
 const validate_workflow_against_scope_util_1 = require("../../../../../workflow/validate-workflow-against-scope.util");
 const workflow_init_audit_util_1 = require("../../../../../workflow/workflow-init-audit.util");
 const workflow_init_skill_util_1 = require("../../../../../workflow/workflow-init-skill.util");
+const load_workflow_definition_util_1 = require("../../../../../workflow/load-workflow-definition.util");
 const workflow_resume_util_1 = require("../../../../../workflow/workflow-resume.util");
 const workflow_debug_util_1 = require("../../../../../workflow/trace/workflow-debug.util");
 const workflow_init_skip_util_1 = require("../../../../../workflow/workflow-init-skip.util");
@@ -44,7 +45,7 @@ function annotateWorkflowInitSkipped(state, reason, extra, userMessage) {
         }) }), (pendingRespond ? { pendingRespond } : {}));
 }
 function finalizeWorkflowInit(state, input) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g;
     const stepNum = (0, agent_run_steps_util_1.nextRunStepNumber)(state.steps);
     const output = (0, workflow_init_audit_util_1.buildWorkflowInitRunStepOutput)({
         workflowRun: input.workflowRun,
@@ -71,7 +72,7 @@ function finalizeWorkflowInit(state, input) {
             })) !== null && _d !== void 0 ? _d : taskPlan;
     }
     return Object.assign(Object.assign({}, state), { steps,
-        taskPlan, workflowRun: input.workflowRun, workflowNodeDefs: input.nodes, workflowNodeOutputs: (_e = state.workflowNodeOutputs) !== null && _e !== void 0 ? _e : {}, workflowAwaitingReact: (_f = input.workflowAwaitingReact) !== null && _f !== void 0 ? _f : false });
+        taskPlan, workflowRun: input.workflowRun, workflowNodeDefs: input.nodes, workflowIr: (_e = input.workflowIr) !== null && _e !== void 0 ? _e : null, workflowExecutionMode: input.workflowExecutionMode, workflowNodeOutputs: (_f = state.workflowNodeOutputs) !== null && _f !== void 0 ? _f : {}, workflowAwaitingReact: (_g = input.workflowAwaitingReact) !== null && _g !== void 0 ? _g : false });
 }
 function ctxMessageFallback(state) {
     var _a, _b, _c, _d;
@@ -90,7 +91,7 @@ function createWorkflowInitNode(bundle) {
         agentId: ctx.input.agentId,
     };
     return async (state) => {
-        var _a, _b, _c, _d, _e, _f, _g;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
         const afterPlan = state.taskPlan ? state : await planNode(state);
         if (afterPlan.finished || !afterPlan.taskPlan) {
             (0, workflow_debug_util_1.logWorkflowDebug)('init_skipped', Object.assign(Object.assign({}, debugBase), { reason: afterPlan.finished ? 'finished' : 'no_task_plan', finished: afterPlan.finished }));
@@ -113,11 +114,20 @@ function createWorkflowInitNode(bundle) {
         if (afterPlan.planRunContext === 'resume') {
             const savedRun = (_e = (_d = bundle.ctx.getSessionGoa()) === null || _d === void 0 ? void 0 : _d.activeTask) === null || _e === void 0 ? void 0 : _e.workflowRun;
             if ((0, workflow_resume_util_1.isResumableWorkflowRun)(savedRun)) {
+                let resumeOverrides = null;
+                if (boundSkillId != null) {
+                    const skillRow = await deps.prisma.skill.findUnique({
+                        where: { id: boundSkillId },
+                        select: { workflowOverrides: true },
+                    });
+                    resumeOverrides = (0, load_workflow_definition_util_1.parseWorkflowOverridesJson)(skillRow === null || skillRow === void 0 ? void 0 : skillRow.workflowOverrides);
+                }
                 const graph = await (0, workflow_resume_util_1.resolveWorkflowGraphForResume)(deps.prisma, {
                     savedRun,
                     taskPlan: afterPlan.taskPlan,
                     appClientId: ctx.input.appClientId,
                     scope,
+                    workflowOverrides: resumeOverrides,
                 });
                 if (graph) {
                     const resumed = (0, workflow_resume_util_1.buildWorkflowResumeGraphSlice)({
@@ -130,6 +140,8 @@ function createWorkflowInitNode(bundle) {
                         nodes: resumed.workflowNodeDefs,
                         source: 'resume',
                         workflowAwaitingReact: resumed.workflowAwaitingReact,
+                        workflowIr: graph.ir,
+                        workflowExecutionMode: graph.executionMode,
                     });
                     await runHelpers.updateRun(ctx.input.runId, next.steps, client_1.AgentRunStatus.running);
                     (0, workflow_debug_util_1.logWorkflowDebug)('init_resume_goa', Object.assign(Object.assign({}, debugBase), { outcome: 'ok', workflowRun: next.workflowRun, source: 'resume' }));
@@ -156,9 +168,11 @@ function createWorkflowInitNode(bundle) {
                     nodes: skillWorkflow.workflow.nodes,
                     source: 'workflow_db',
                     skillId: boundSkillId,
+                    workflowIr: skillWorkflow.workflow.ir,
+                    workflowExecutionMode: skillWorkflow.workflow.executionMode,
                 });
                 await runHelpers.updateRun(ctx.input.runId, next.steps, client_1.AgentRunStatus.running);
-                (0, workflow_debug_util_1.logWorkflowDebug)('init_db_load', Object.assign(Object.assign({}, debugBase), { outcome: 'ok', skillId: boundSkillId, workflowRun: next.workflowRun, source: 'workflow_db' }));
+                (0, workflow_debug_util_1.logWorkflowDebug)('init_db_load', Object.assign(Object.assign({}, debugBase), { outcome: 'ok', skillId: boundSkillId, workflowRun: next.workflowRun, source: 'workflow_db', executionMode: (_f = skillWorkflow.workflow.executionMode) !== null && _f !== void 0 ? _f : 'materialized_expand', irNodeCount: (_h = (_g = skillWorkflow.workflow.ir) === null || _g === void 0 ? void 0 : _g.nodes.length) !== null && _h !== void 0 ? _h : 0 }));
                 return next;
             }
             if (skillWorkflow.kind === 'load_failed') {
@@ -203,7 +217,7 @@ function createWorkflowInitNode(bundle) {
             skillId: boundSkillId,
         });
         await runHelpers.updateRun(ctx.input.runId, next.steps, client_1.AgentRunStatus.running);
-        (0, workflow_debug_util_1.logWorkflowDebug)('init_plan_compile', Object.assign(Object.assign({}, debugBase), { outcome: 'ok', skillId: boundSkillId, compiledFrom: (_g = (_f = next.workflowRun) === null || _f === void 0 ? void 0 : _f.compiledFrom) !== null && _g !== void 0 ? _g : null, workflowRun: next.workflowRun, source: 'plan_compile' }));
+        (0, workflow_debug_util_1.logWorkflowDebug)('init_plan_compile', Object.assign(Object.assign({}, debugBase), { outcome: 'ok', skillId: boundSkillId, compiledFrom: (_k = (_j = next.workflowRun) === null || _j === void 0 ? void 0 : _j.compiledFrom) !== null && _k !== void 0 ? _k : null, workflowRun: next.workflowRun, source: 'plan_compile' }));
         return next;
     };
 }

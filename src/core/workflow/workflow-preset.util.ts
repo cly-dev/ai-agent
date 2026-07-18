@@ -1,10 +1,17 @@
 import type {
+  WorkflowIntent,
+  WorkflowIntentEdge,
+  WorkflowIntentStep,
+} from './workflow-intent.types';
+import { WORKFLOW_INTENT_VERSION } from './workflow-intent.types';
+import { validateWorkflowIntent } from './validate-workflow-intent.util';
+import type {
   WorkflowPresetCatalogEntry,
   WorkflowPresetConfig,
   WorkflowPresetKind,
   WorkflowPresetValidationIssue,
 } from './workflow-preset.types';
-import type { WorkflowNodeDef, WorkflowProfile } from './workflow.types';
+import type { WorkflowProfile } from './workflow.types';
 
 const ALL_WORKFLOW_PROFILES: WorkflowProfile[] = [
   'page_action',
@@ -12,319 +19,175 @@ const ALL_WORKFLOW_PROFILES: WorkflowProfile[] = [
   'shared',
 ];
 
-const PRESET_PROFILES: Record<WorkflowPresetKind, WorkflowProfile[]> = {
-  page_auto_fill: ALL_WORKFLOW_PROFILES,
-  page_context_push: ALL_WORKFLOW_PROFILES,
-  fetch_push_summarize: ALL_WORKFLOW_PROFILES,
-  fetch_and_answer: ALL_WORKFLOW_PROFILES,
-  mutation_submit: ALL_WORKFLOW_PROFILES,
-  page_context_mutation_submit: ALL_WORKFLOW_PROFILES,
-};
-
-type MutationChainLabels = {
-  compose?: string;
-  present?: string;
-  await?: string;
-  write?: string;
-  summarize?: string;
-};
-
-const DEFAULT_OBJECTIVES = {
-  loadPage:
-    'Load page context and materialize observations required for this turn.',
-  fetch: 'Fetch data from the bound read tool using identifiers from user intent.',
-  push: 'Generate user-facing content and push to the page via the bound host tool.',
-  compose:
-    'Compose write parameters only from read observations; do not execute HTTP write yet.',
-  present:
-    'Present the pending mutation draft to the user; quote composed arguments verbatim.',
-  write: 'Execute the bound write tool using composed parameters after user confirmation.',
-  summarize: 'Summarize the outcome for the user in concise language.',
-} as const;
-
 function isPositiveInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
-function objective(
-  config: WorkflowPresetConfig,
-  key: keyof typeof DEFAULT_OBJECTIVES,
-): string {
-  const fromConfig = config.objectives?.[key];
-  if (typeof fromConfig === 'string' && fromConfig.trim()) {
-    return fromConfig.trim();
+function linearAlwaysEdges(stepIds: string[]): WorkflowIntentEdge[] {
+  const edges: WorkflowIntentEdge[] = [];
+  for (let i = 0; i < stepIds.length - 1; i++) {
+    edges.push({
+      id: `e_${stepIds[i]}_${stepIds[i + 1]}`,
+      from: stepIds[i]!,
+      to: stepIds[i + 1]!,
+      kind: 'always',
+    });
   }
-  return DEFAULT_OBJECTIVES[key];
+  return edges;
 }
 
-function loadPageNode(config: WorkflowPresetConfig): WorkflowNodeDef {
+function buildIntent(
+  profile: WorkflowProfile,
+  steps: WorkflowIntentStep[],
+): WorkflowIntent {
+  const stepIds = steps.map((s) => s.id);
   return {
-    id: 'load_page',
-    action: 'load_page_context',
-    name: '加载页上下文',
-    objective: objective(config, 'loadPage'),
-    input: {
-      materialize: config.materializePageContext !== false,
-    },
+    version: WORKFLOW_INTENT_VERSION,
+    profile,
+    entryStepId: stepIds[0]!,
+    steps,
+    edges: linearAlwaysEdges(stepIds),
   };
 }
 
-function fetchNode(
-  config: WorkflowPresetConfig,
-  toolId: number,
-  id = 'fetch_data',
-): WorkflowNodeDef {
-  return {
-    id,
-    action: 'fetch_data',
-    name: '获取数据',
-    objective: objective(config, 'fetch'),
-    input: {
-      toolIds: [toolId],
-      completeWhen: config.fetchCompleteWhen ?? 'first_success',
-    },
-  };
-}
-
-function pushNode(
-  config: WorkflowPresetConfig,
-  hostToolId: number,
-  id = 'generate_push',
-): WorkflowNodeDef {
-  return {
-    id,
-    action: 'generate_and_push',
-    name: '生成并推送',
-    objective: objective(config, 'push'),
-    input: {
-      hostToolIds: [hostToolId],
-    },
-  };
-}
-
-function summarizeNode(
-  config: WorkflowPresetConfig,
-  name = '说明总结',
-): WorkflowNodeDef {
-  return {
-    id: 'summarize',
-    action: 'summarize',
-    name,
-    objective: objective(config, 'summarize'),
-    input: {
-      mode: config.summarizeMode ?? 'final',
-    },
-  };
-}
-
-function expandMutationWriteConfirmChain(
-  config: WorkflowPresetConfig,
-  writeToolId: number,
-  labels?: MutationChainLabels,
-): WorkflowNodeDef[] {
-  return [
-    {
-      id: 'compose_mutation',
-      action: 'compose_mutation',
-      name: labels?.compose ?? '组装变更参数',
-      objective: objective(config, 'compose'),
-      input: { toolId: writeToolId },
-    },
-    {
-      id: 'present_mutation',
-      action: 'present_mutation',
-      name: labels?.present ?? '展示变更草稿',
-      objective: objective(config, 'present'),
-      input: { mode: config.presentMode ?? 'brief' },
-    },
-    {
-      id: 'await_confirm',
-      action: 'await_user_confirm',
-      name: labels?.await ?? '等待用户确认',
-      objective: 'Wait for user confirmation before executing the write.',
-      input: { confirmKind: config.confirmKind ?? 'mutation' },
-    },
-    {
-      id: 'write_data',
-      action: 'write_data',
-      name: labels?.write ?? '提交变更',
-      objective: objective(config, 'write'),
-      input: { toolId: writeToolId, useComposedArgs: true },
-    },
-    summarizeNode(config, labels?.summarize),
-  ];
-}
-
-function expandPageAutoFill(config: WorkflowPresetConfig): WorkflowNodeDef[] {
-  const hostToolId = config.hostToolId!;
-  const nodes: WorkflowNodeDef[] = [loadPageNode(config)];
-  if (config.readToolId != null) {
-    nodes.push(fetchNode(config, config.readToolId));
+/** Preset → Intent（配置真源）。pageContext 不进入步骤。 */
+export function expandWorkflowPresetToIntent(input: {
+  preset: WorkflowPresetKind;
+  profile: WorkflowProfile;
+  config: WorkflowPresetConfig;
+}): WorkflowIntent {
+  const issues = validateWorkflowPresetInput({
+    preset: input.preset,
+    profile: input.profile,
+    config: input.config,
+  });
+  if (issues.length > 0) {
+    throw new Error(
+      `Workflow preset validation failed: ${issues.map((row) => row.message).join('; ')}`,
+    );
   }
-  nodes.push(pushNode(config, hostToolId), summarizeNode(config));
-  return nodes;
-}
 
-function expandPageContextPush(config: WorkflowPresetConfig): WorkflowNodeDef[] {
-  return [
-    loadPageNode(config),
-    pushNode(config, config.hostToolId!),
-    summarizeNode(config),
-  ];
-}
+  const { profile, config } = input;
+  let intent: WorkflowIntent;
 
-function expandFetchPushSummarize(config: WorkflowPresetConfig): WorkflowNodeDef[] {
-  return [
-    fetchNode(config, config.readToolId!),
-    pushNode(config, config.hostToolId!),
-    summarizeNode(config),
-  ];
-}
-
-function expandFetchAndAnswer(config: WorkflowPresetConfig): WorkflowNodeDef[] {
-  return [fetchNode(config, config.readToolId!), summarizeNode(config)];
-}
-
-function expandMutationSubmit(config: WorkflowPresetConfig): WorkflowNodeDef[] {
-  const writeToolId = config.writeToolId!;
-  const nodes: WorkflowNodeDef[] = [];
-  if (config.readToolId != null) {
-    nodes.push(fetchNode(config, config.readToolId, 'fetch_before_write'));
+  switch (input.preset) {
+    case 'page_auto_fill': {
+      // 可选拉数 → 仅填页（无口头说明）
+      const steps: WorkflowIntentStep[] = [];
+      if (config.readToolId != null) {
+        steps.push({
+          id: 'read',
+          operation: 'read',
+          name: '获取数据',
+          slots: { readToolIds: [config.readToolId] },
+        });
+      }
+      steps.push({
+        id: 'fill',
+        operation: 'deliver',
+        channel: 'fill',
+        name: '生成并推送',
+        slots: { fillHostToolIds: [config.hostToolId!] },
+      });
+      intent = buildIntent(profile, steps);
+      break;
+    }
+    case 'fetch_and_answer':
+      intent = buildIntent(profile, [
+        {
+          id: 'read',
+          operation: 'read',
+          name: '获取数据',
+          slots: { readToolIds: [config.readToolId!] },
+        },
+        {
+          id: 'speak',
+          operation: 'deliver',
+          channel: 'speak',
+          name: '说明总结',
+        },
+      ]);
+      break;
+    case 'mutation_submit': {
+      const mutateSlots: {
+        writeToolId: number;
+        readToolIds?: number[];
+      } = { writeToolId: config.writeToolId! };
+      if (config.readToolId != null) {
+        mutateSlots.readToolIds = [config.readToolId];
+      }
+      intent = buildIntent(profile, [
+        {
+          id: 'mutate',
+          operation: 'mutate',
+          name: '变更提交',
+          slots: mutateSlots,
+          // 标准链：组参 → 审批 → 执行；说明开关已从产品面删除（永远不插 present/写后 speak）
+        },
+      ]);
+      break;
+    }
+    default:
+      throw new Error(
+        `Unsupported workflow preset: ${input.preset satisfies never}`,
+      );
   }
-  nodes.push(...expandMutationWriteConfirmChain(config, writeToolId));
-  return nodes;
-}
 
-function expandPageContextMutationSubmit(
-  config: WorkflowPresetConfig,
-): WorkflowNodeDef[] {
-  const writeToolId = config.writeToolId!;
-  const nodes: WorkflowNodeDef[] = [loadPageNode(config)];
-  if (config.readToolId != null) {
-    nodes.push(fetchNode(config, config.readToolId, 'fetch_before_write'));
+  const intentIssues = validateWorkflowIntent(intent);
+  if (intentIssues.length > 0) {
+    throw new Error(
+      `Preset-produced intent invalid: ${intentIssues.map((i) => i.message).join('; ')}`,
+    );
   }
-  nodes.push(
-    ...expandMutationWriteConfirmChain(config, writeToolId, {
-      compose: '生成参数',
-      present: '草稿说明',
-      await: '确认读写',
-      write: '执行读写',
-      summarize: '总结说明',
-    }),
-  );
-  return nodes;
+  return intent;
 }
 
+/** 运营目录即产品三卡；无隐藏兼容 kind。 */
 export const WORKFLOW_PRESET_CATALOG: WorkflowPresetCatalogEntry[] = [
   {
     kind: 'page_auto_fill',
-    label: '页内自动回填',
-    description:
-      '加载页上下文 →（可选）拉取数据 → Host Tool 推送 → 总结说明。PageAction 最常用场景。',
-    profiles: PRESET_PROFILES.page_auto_fill,
+    label: '页内回填',
+    description: '（可选）拉数 → Host 填页。页内标准无口头说明。',
+    profiles: ALL_WORKFLOW_PROFILES,
     requiredConfig: ['hostToolId'],
-    optionalConfig: [
-      'readToolId',
-      'fetchCompleteWhen',
-      'summarizeMode',
-      'materializePageContext',
-      'objectives',
-    ],
-    expandedActions: [
-      'load_page_context',
-      'fetch_data?',
-      'generate_and_push',
-      'summarize',
-    ],
-  },
-  {
-    kind: 'page_context_push',
-    label: '页内推送',
-    description: '加载页上下文 → Host Tool 推送 → 总结说明（不拉 HTTP 读接口）。',
-    profiles: PRESET_PROFILES.page_context_push,
-    requiredConfig: ['hostToolId'],
-    optionalConfig: ['summarizeMode', 'materializePageContext', 'objectives'],
-    expandedActions: ['load_page_context', 'generate_and_push', 'summarize'],
-  },
-  {
-    kind: 'fetch_push_summarize',
-    label: '拉数并推送',
-    description: 'HTTP 拉数 → Host Tool 推送 → 总结说明。',
-    profiles: PRESET_PROFILES.fetch_push_summarize,
-    requiredConfig: ['readToolId', 'hostToolId'],
-    optionalConfig: [
-      'fetchCompleteWhen',
-      'summarizeMode',
-      'objectives',
-    ],
-    expandedActions: ['fetch_data', 'generate_and_push', 'summarize'],
+    optionalConfig: ['readToolId'],
+    expandedOperations: ['read?', 'deliver(fill)'],
   },
   {
     kind: 'fetch_and_answer',
     label: '拉数作答',
-    description: 'HTTP 拉数 → 文字总结。Chat 只读问答。',
-    profiles: PRESET_PROFILES.fetch_and_answer,
+    description: 'HTTP 拉数 → 口头说明（Chat）。',
+    profiles: ALL_WORKFLOW_PROFILES,
     requiredConfig: ['readToolId'],
-    optionalConfig: ['fetchCompleteWhen', 'summarizeMode', 'objectives'],
-    expandedActions: ['fetch_data', 'summarize'],
+    optionalConfig: [],
+    expandedOperations: ['read', 'deliver(speak)'],
   },
   {
     kind: 'mutation_submit',
     label: '变更提交',
     description:
-      '（可选）拉数 → 组装写参数 → 展示草稿 → 用户确认 → 执行写 → 总结。',
-    profiles: PRESET_PROFILES.mutation_submit,
+      'Chat/Skill：组参 → 必确认 → 执行。勿绑 PageAction（页内写用 deliver fill）。',
+    profiles: ALL_WORKFLOW_PROFILES,
     requiredConfig: ['writeToolId'],
-    optionalConfig: [
-      'readToolId',
-      'presentMode',
-      'confirmKind',
-      'summarizeMode',
-      'objectives',
-    ],
-    expandedActions: [
-      'fetch_data?',
-      'compose_mutation',
-      'present_mutation',
-      'await_user_confirm',
-      'write_data',
-      'summarize',
-    ],
-  },
-  {
-    kind: 'page_context_mutation_submit',
-    label: '页内写确认',
-    description:
-      '加载页上下文 → 生成参数 → 草稿说明 → 确认读写 → 执行读写 → 总结说明。适合带 pageContext 的 Chat 写操作。',
-    profiles: PRESET_PROFILES.page_context_mutation_submit,
-    requiredConfig: ['writeToolId'],
-    optionalConfig: [
-      'readToolId',
-      'presentMode',
-      'confirmKind',
-      'summarizeMode',
-      'materializePageContext',
-      'objectives',
-    ],
-    expandedActions: [
-      'load_page_context',
-      'fetch_data?',
-      'compose_mutation',
-      'present_mutation',
-      'await_user_confirm',
-      'write_data',
-      'summarize',
-    ],
+    optionalConfig: ['readToolId'],
+    expandedOperations: ['mutate'],
   },
 ];
 
 export function listWorkflowPresetCatalog(
-  _profile?: WorkflowProfile,
+  profile?: WorkflowProfile,
 ): WorkflowPresetCatalogEntry[] {
-  return WORKFLOW_PRESET_CATALOG;
+  if (profile == null) {
+    return WORKFLOW_PRESET_CATALOG;
+  }
+  return WORKFLOW_PRESET_CATALOG.filter((row) =>
+    row.profiles.includes(profile),
+  );
 }
 
-export function isWorkflowPresetKind(value: unknown): value is WorkflowPresetKind {
+export function isWorkflowPresetKind(
+  value: unknown,
+): value is WorkflowPresetKind {
   return (
     typeof value === 'string' &&
     WORKFLOW_PRESET_CATALOG.some((row) => row.kind === value)
@@ -337,7 +200,9 @@ export function validateWorkflowPresetInput(input: {
   config: unknown;
 }): WorkflowPresetValidationIssue[] {
   const issues: WorkflowPresetValidationIssue[] = [];
-  const catalog = WORKFLOW_PRESET_CATALOG.find((row) => row.kind === input.preset);
+  const catalog = WORKFLOW_PRESET_CATALOG.find(
+    (row) => row.kind === input.preset,
+  );
   if (!catalog) {
     issues.push({
       path: 'preset',
@@ -346,7 +211,18 @@ export function validateWorkflowPresetInput(input: {
     });
     return issues;
   }
-  if (!input.config || typeof input.config !== 'object' || Array.isArray(input.config)) {
+  if (!catalog.profiles.includes(input.profile)) {
+    issues.push({
+      path: 'profile',
+      code: 'preset_profile_mismatch',
+      message: `preset ${input.preset} is not allowed for profile ${input.profile}`,
+    });
+  }
+  if (
+    !input.config ||
+    typeof input.config !== 'object' ||
+    Array.isArray(input.config)
+  ) {
     issues.push({
       path: 'presetConfig',
       code: 'invalid_preset_config',
@@ -391,50 +267,9 @@ export function validateWorkflowPresetInput(input: {
   return issues;
 }
 
-export function expandWorkflowPreset(input: {
-  preset: WorkflowPresetKind;
-  profile: WorkflowProfile;
-  config: WorkflowPresetConfig;
-}): WorkflowNodeDef[] {
-  const issues = validateWorkflowPresetInput({
-    preset: input.preset,
-    profile: input.profile,
-    config: input.config,
-  });
-  if (issues.length > 0) {
-    throw new Error(
-      `Workflow preset validation failed: ${issues.map((row) => row.message).join('; ')}`,
-    );
-  }
-
-  let nodes: WorkflowNodeDef[];
-  switch (input.preset) {
-    case 'page_auto_fill':
-      nodes = expandPageAutoFill(input.config);
-      break;
-    case 'page_context_push':
-      nodes = expandPageContextPush(input.config);
-      break;
-    case 'fetch_push_summarize':
-      nodes = expandFetchPushSummarize(input.config);
-      break;
-    case 'fetch_and_answer':
-      nodes = expandFetchAndAnswer(input.config);
-      break;
-    case 'mutation_submit':
-      nodes = expandMutationSubmit(input.config);
-      break;
-    case 'page_context_mutation_submit':
-      nodes = expandPageContextMutationSubmit(input.config);
-      break;
-    default:
-      throw new Error(`Unsupported workflow preset: ${input.preset satisfies never}`);
-  }
-
-  return nodes;
-}
-
-export function parseWorkflowPresetConfig(value: unknown): WorkflowPresetConfig {
+export function parseWorkflowPresetConfig(
+  value: unknown,
+): WorkflowPresetConfig {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }

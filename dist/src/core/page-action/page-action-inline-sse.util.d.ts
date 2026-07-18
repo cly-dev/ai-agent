@@ -14,8 +14,11 @@ export type PageWorkflowNodeSsePayload = {
     clientActionId?: string | null;
     nodeId: string;
     action: WorkflowActionKind;
+    irNodeId?: string | null;
+    irType?: string | null;
     workflowStatus?: string;
     currentNodeId?: string | null;
+    currentIrNodeId?: string | null;
     outputRef?: string | null;
     errorCode?: string | null;
     errorMessage?: string | null;

@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildWorkflowResumeGraphSlice = exports.workflowRunHasPendingNodes = exports.advanceWorkflowRunAfterWriteConfirm = exports.prepareTaskPlanForWorkflowWriteConfirmResume = exports.hydrateTaskPlanWithWorkflowDefs = exports.shouldAwaitReactOnWorkflowResume = exports.resolveWorkflowGraphForResume = exports.isResumableWorkflowRun = void 0;
 const normalize_task_plan_for_workflow_util_1 = require("./normalize-task-plan-for-workflow.util");
 const compile_plan_to_workflow_util_1 = require("./compile-plan-to-workflow.util");
-const load_workflow_definition_util_1 = require("./load-workflow-definition.util");
+const load_flow_for_run_util_1 = require("./load-flow-for-run.util");
 const workflow_plan_sync_util_1 = require("./workflow-plan-sync.util");
 const workflow_run_util_1 = require("./workflow-run.util");
 function isResumableWorkflowRun(run) {
@@ -21,15 +21,23 @@ function nodeDefsCoverRun(defs, run) {
     return run.nodes.every((row) => defIds.has(row.nodeId));
 }
 async function resolveWorkflowGraphForResume(prisma, input) {
-    if (input.savedRun.workflowId > 0) {
-        const loaded = await (0, load_workflow_definition_util_1.loadWorkflowForRun)(prisma, {
-            workflowId: input.savedRun.workflowId,
+    var _a;
+    if (input.savedRun.compiledFrom === 'flow_db' &&
+        input.savedRun.workflowId > 0) {
+        const loaded = await (0, load_flow_for_run_util_1.loadFlowForRun)(prisma, {
+            flowId: input.savedRun.workflowId,
             appClientId: input.appClientId,
-            workflowVersion: input.savedRun.version,
+            flowVersion: input.savedRun.version,
+            workflowOverrides: (_a = input.workflowOverrides) !== null && _a !== void 0 ? _a : null,
             scope: input.scope,
         });
         if (loaded && nodeDefsCoverRun(loaded.nodes, input.savedRun)) {
-            return { nodes: loaded.nodes, edges: loaded.edges };
+            return {
+                nodes: loaded.nodes,
+                edges: loaded.edges,
+                ir: loaded.ir,
+                executionMode: loaded.executionMode,
+            };
         }
     }
     const fromPlan = (0, compile_plan_to_workflow_util_1.compileTaskPlanToWorkflowNodes)(input.taskPlan.steps);

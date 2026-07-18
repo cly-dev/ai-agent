@@ -9,6 +9,7 @@ import {
   createExpressPageActionSseSink,
   initPageActionSseResponse,
   replayBufferedEvents,
+  startPageActionSseHeartbeat,
 } from './page-action-sse-sink.util';
 
 type RunStreamSession = {
@@ -39,16 +40,20 @@ export class PageActionRunStreamHub implements PageActionRunEventBus {
     initPageActionSseResponse(res);
     const sink = createExpressPageActionSseSink(res);
     const session = this.ensureSession(runId);
+    // 长跑 / LLM 等待期间无业务事件时靠心跳撑住代理超时
+    const stopHeartbeat = startPageActionSseHeartbeat(res);
 
     replayBufferedEvents(sink, session.buffer);
 
     if (session.closed) {
+      stopHeartbeat();
       sink.end();
       return;
     }
 
     session.subscribers.add(sink);
     res.on('close', () => {
+      stopHeartbeat();
       session.subscribers.delete(sink);
     });
   }

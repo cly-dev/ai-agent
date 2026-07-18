@@ -31,6 +31,8 @@ export type SkillAvgAggregateOutputType = {
   appClientId: number | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
 }
 
 export type SkillSumAggregateOutputType = {
@@ -38,6 +40,8 @@ export type SkillSumAggregateOutputType = {
   appClientId: number | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
 }
 
 export type SkillMinAggregateOutputType = {
@@ -53,6 +57,8 @@ export type SkillMinAggregateOutputType = {
   updatedAt: Date | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
 }
 
 export type SkillMaxAggregateOutputType = {
@@ -68,6 +74,8 @@ export type SkillMaxAggregateOutputType = {
   updatedAt: Date | null
   workflowId: number | null
   workflowVersion: number | null
+  flowId: number | null
+  flowVersion: number | null
 }
 
 export type SkillCountAggregateOutputType = {
@@ -85,6 +93,8 @@ export type SkillCountAggregateOutputType = {
   workflowId: number
   workflowVersion: number
   workflowOverrides: number
+  flowId: number
+  flowVersion: number
   _all: number
 }
 
@@ -94,6 +104,8 @@ export type SkillAvgAggregateInputType = {
   appClientId?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
 }
 
 export type SkillSumAggregateInputType = {
@@ -101,6 +113,8 @@ export type SkillSumAggregateInputType = {
   appClientId?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
 }
 
 export type SkillMinAggregateInputType = {
@@ -116,6 +130,8 @@ export type SkillMinAggregateInputType = {
   updatedAt?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
 }
 
 export type SkillMaxAggregateInputType = {
@@ -131,6 +147,8 @@ export type SkillMaxAggregateInputType = {
   updatedAt?: true
   workflowId?: true
   workflowVersion?: true
+  flowId?: true
+  flowVersion?: true
 }
 
 export type SkillCountAggregateInputType = {
@@ -148,6 +166,8 @@ export type SkillCountAggregateInputType = {
   workflowId?: true
   workflowVersion?: true
   workflowOverrides?: true
+  flowId?: true
+  flowVersion?: true
   _all?: true
 }
 
@@ -252,6 +272,8 @@ export type SkillGroupByOutputType = {
   workflowId: number | null
   workflowVersion: number | null
   workflowOverrides: runtime.JsonValue | null
+  flowId: number | null
+  flowVersion: number | null
   _count: SkillCountAggregateOutputType | null
   _avg: SkillAvgAggregateOutputType | null
   _sum: SkillSumAggregateOutputType | null
@@ -292,7 +314,10 @@ export type SkillWhereInput = {
   workflowId?: Prisma.IntNullableFilter<"Skill"> | number | null
   workflowVersion?: Prisma.IntNullableFilter<"Skill"> | number | null
   workflowOverrides?: Prisma.JsonNullableFilter<"Skill">
+  flowId?: Prisma.IntNullableFilter<"Skill"> | number | null
+  flowVersion?: Prisma.IntNullableFilter<"Skill"> | number | null
   workflow?: Prisma.XOR<Prisma.WorkflowNullableScalarRelationFilter, Prisma.WorkflowWhereInput> | null
+  flow?: Prisma.XOR<Prisma.FlowNullableScalarRelationFilter, Prisma.FlowWhereInput> | null
   appClient?: Prisma.XOR<Prisma.AppClientScalarRelationFilter, Prisma.AppClientWhereInput>
   agentSkills?: Prisma.AgentSkillListRelationFilter
   skillTools?: Prisma.SkillToolListRelationFilter
@@ -315,7 +340,10 @@ export type SkillOrderByWithRelationInput = {
   workflowId?: Prisma.SortOrderInput | Prisma.SortOrder
   workflowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   workflowOverrides?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowId?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   workflow?: Prisma.WorkflowOrderByWithRelationInput
+  flow?: Prisma.FlowOrderByWithRelationInput
   appClient?: Prisma.AppClientOrderByWithRelationInput
   agentSkills?: Prisma.AgentSkillOrderByRelationAggregateInput
   skillTools?: Prisma.SkillToolOrderByRelationAggregateInput
@@ -343,7 +371,10 @@ export type SkillWhereUniqueInput = Prisma.AtLeast<{
   workflowId?: Prisma.IntNullableFilter<"Skill"> | number | null
   workflowVersion?: Prisma.IntNullableFilter<"Skill"> | number | null
   workflowOverrides?: Prisma.JsonNullableFilter<"Skill">
+  flowId?: Prisma.IntNullableFilter<"Skill"> | number | null
+  flowVersion?: Prisma.IntNullableFilter<"Skill"> | number | null
   workflow?: Prisma.XOR<Prisma.WorkflowNullableScalarRelationFilter, Prisma.WorkflowWhereInput> | null
+  flow?: Prisma.XOR<Prisma.FlowNullableScalarRelationFilter, Prisma.FlowWhereInput> | null
   appClient?: Prisma.XOR<Prisma.AppClientScalarRelationFilter, Prisma.AppClientWhereInput>
   agentSkills?: Prisma.AgentSkillListRelationFilter
   skillTools?: Prisma.SkillToolListRelationFilter
@@ -366,6 +397,8 @@ export type SkillOrderByWithAggregationInput = {
   workflowId?: Prisma.SortOrderInput | Prisma.SortOrder
   workflowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   workflowOverrides?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowId?: Prisma.SortOrderInput | Prisma.SortOrder
+  flowVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.SkillCountOrderByAggregateInput
   _avg?: Prisma.SkillAvgOrderByAggregateInput
   _max?: Prisma.SkillMaxOrderByAggregateInput
@@ -391,6 +424,8 @@ export type SkillScalarWhereWithAggregatesInput = {
   workflowId?: Prisma.IntNullableWithAggregatesFilter<"Skill"> | number | null
   workflowVersion?: Prisma.IntNullableWithAggregatesFilter<"Skill"> | number | null
   workflowOverrides?: Prisma.JsonNullableWithAggregatesFilter<"Skill">
+  flowId?: Prisma.IntNullableWithAggregatesFilter<"Skill"> | number | null
+  flowVersion?: Prisma.IntNullableWithAggregatesFilter<"Skill"> | number | null
 }
 
 export type SkillCreateInput = {
@@ -405,7 +440,9 @@ export type SkillCreateInput = {
   updatedAt?: Date | string
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: number | null
   workflow?: Prisma.WorkflowCreateNestedOneWithoutSkillsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutSkillsInput
   appClient: Prisma.AppClientCreateNestedOneWithoutSkillsInput
   agentSkills?: Prisma.AgentSkillCreateNestedManyWithoutSkillInput
   skillTools?: Prisma.SkillToolCreateNestedManyWithoutSkillInput
@@ -428,6 +465,8 @@ export type SkillUncheckedCreateInput = {
   workflowId?: number | null
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: number | null
+  flowVersion?: number | null
   agentSkills?: Prisma.AgentSkillUncheckedCreateNestedManyWithoutSkillInput
   skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutSkillInput
   skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutSkillInput
@@ -446,7 +485,9 @@ export type SkillUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflow?: Prisma.WorkflowUpdateOneWithoutSkillsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutSkillsNestedInput
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutSkillsNestedInput
   agentSkills?: Prisma.AgentSkillUpdateManyWithoutSkillNestedInput
   skillTools?: Prisma.SkillToolUpdateManyWithoutSkillNestedInput
@@ -469,6 +510,8 @@ export type SkillUncheckedUpdateInput = {
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   agentSkills?: Prisma.AgentSkillUncheckedUpdateManyWithoutSkillNestedInput
   skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutSkillNestedInput
   skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutSkillNestedInput
@@ -490,6 +533,8 @@ export type SkillCreateManyInput = {
   workflowId?: number | null
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: number | null
+  flowVersion?: number | null
 }
 
 export type SkillUpdateManyMutationInput = {
@@ -504,6 +549,7 @@ export type SkillUpdateManyMutationInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type SkillUncheckedUpdateManyInput = {
@@ -521,6 +567,8 @@ export type SkillUncheckedUpdateManyInput = {
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type SkillListRelationFilter = {
@@ -558,6 +606,8 @@ export type SkillCountOrderByAggregateInput = {
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
   workflowOverrides?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
 }
 
 export type SkillAvgOrderByAggregateInput = {
@@ -565,6 +615,8 @@ export type SkillAvgOrderByAggregateInput = {
   appClientId?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
 }
 
 export type SkillMaxOrderByAggregateInput = {
@@ -580,6 +632,8 @@ export type SkillMaxOrderByAggregateInput = {
   updatedAt?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
 }
 
 export type SkillMinOrderByAggregateInput = {
@@ -595,6 +649,8 @@ export type SkillMinOrderByAggregateInput = {
   updatedAt?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
 }
 
 export type SkillSumOrderByAggregateInput = {
@@ -602,6 +658,8 @@ export type SkillSumOrderByAggregateInput = {
   appClientId?: Prisma.SortOrder
   workflowId?: Prisma.SortOrder
   workflowVersion?: Prisma.SortOrder
+  flowId?: Prisma.SortOrder
+  flowVersion?: Prisma.SortOrder
 }
 
 export type SkillScalarRelationFilter = {
@@ -749,6 +807,48 @@ export type SkillUncheckedUpdateManyWithoutWorkflowNestedInput = {
   deleteMany?: Prisma.SkillScalarWhereInput | Prisma.SkillScalarWhereInput[]
 }
 
+export type SkillCreateNestedManyWithoutFlowInput = {
+  create?: Prisma.XOR<Prisma.SkillCreateWithoutFlowInput, Prisma.SkillUncheckedCreateWithoutFlowInput> | Prisma.SkillCreateWithoutFlowInput[] | Prisma.SkillUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.SkillCreateOrConnectWithoutFlowInput | Prisma.SkillCreateOrConnectWithoutFlowInput[]
+  createMany?: Prisma.SkillCreateManyFlowInputEnvelope
+  connect?: Prisma.SkillWhereUniqueInput | Prisma.SkillWhereUniqueInput[]
+}
+
+export type SkillUncheckedCreateNestedManyWithoutFlowInput = {
+  create?: Prisma.XOR<Prisma.SkillCreateWithoutFlowInput, Prisma.SkillUncheckedCreateWithoutFlowInput> | Prisma.SkillCreateWithoutFlowInput[] | Prisma.SkillUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.SkillCreateOrConnectWithoutFlowInput | Prisma.SkillCreateOrConnectWithoutFlowInput[]
+  createMany?: Prisma.SkillCreateManyFlowInputEnvelope
+  connect?: Prisma.SkillWhereUniqueInput | Prisma.SkillWhereUniqueInput[]
+}
+
+export type SkillUpdateManyWithoutFlowNestedInput = {
+  create?: Prisma.XOR<Prisma.SkillCreateWithoutFlowInput, Prisma.SkillUncheckedCreateWithoutFlowInput> | Prisma.SkillCreateWithoutFlowInput[] | Prisma.SkillUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.SkillCreateOrConnectWithoutFlowInput | Prisma.SkillCreateOrConnectWithoutFlowInput[]
+  upsert?: Prisma.SkillUpsertWithWhereUniqueWithoutFlowInput | Prisma.SkillUpsertWithWhereUniqueWithoutFlowInput[]
+  createMany?: Prisma.SkillCreateManyFlowInputEnvelope
+  set?: Prisma.SkillWhereUniqueInput | Prisma.SkillWhereUniqueInput[]
+  disconnect?: Prisma.SkillWhereUniqueInput | Prisma.SkillWhereUniqueInput[]
+  delete?: Prisma.SkillWhereUniqueInput | Prisma.SkillWhereUniqueInput[]
+  connect?: Prisma.SkillWhereUniqueInput | Prisma.SkillWhereUniqueInput[]
+  update?: Prisma.SkillUpdateWithWhereUniqueWithoutFlowInput | Prisma.SkillUpdateWithWhereUniqueWithoutFlowInput[]
+  updateMany?: Prisma.SkillUpdateManyWithWhereWithoutFlowInput | Prisma.SkillUpdateManyWithWhereWithoutFlowInput[]
+  deleteMany?: Prisma.SkillScalarWhereInput | Prisma.SkillScalarWhereInput[]
+}
+
+export type SkillUncheckedUpdateManyWithoutFlowNestedInput = {
+  create?: Prisma.XOR<Prisma.SkillCreateWithoutFlowInput, Prisma.SkillUncheckedCreateWithoutFlowInput> | Prisma.SkillCreateWithoutFlowInput[] | Prisma.SkillUncheckedCreateWithoutFlowInput[]
+  connectOrCreate?: Prisma.SkillCreateOrConnectWithoutFlowInput | Prisma.SkillCreateOrConnectWithoutFlowInput[]
+  upsert?: Prisma.SkillUpsertWithWhereUniqueWithoutFlowInput | Prisma.SkillUpsertWithWhereUniqueWithoutFlowInput[]
+  createMany?: Prisma.SkillCreateManyFlowInputEnvelope
+  set?: Prisma.SkillWhereUniqueInput | Prisma.SkillWhereUniqueInput[]
+  disconnect?: Prisma.SkillWhereUniqueInput | Prisma.SkillWhereUniqueInput[]
+  delete?: Prisma.SkillWhereUniqueInput | Prisma.SkillWhereUniqueInput[]
+  connect?: Prisma.SkillWhereUniqueInput | Prisma.SkillWhereUniqueInput[]
+  update?: Prisma.SkillUpdateWithWhereUniqueWithoutFlowInput | Prisma.SkillUpdateWithWhereUniqueWithoutFlowInput[]
+  updateMany?: Prisma.SkillUpdateManyWithWhereWithoutFlowInput | Prisma.SkillUpdateManyWithWhereWithoutFlowInput[]
+  deleteMany?: Prisma.SkillScalarWhereInput | Prisma.SkillScalarWhereInput[]
+}
+
 export type SkillCreateWithoutAppClientInput = {
   name: string
   capabilityKey?: string | null
@@ -761,7 +861,9 @@ export type SkillCreateWithoutAppClientInput = {
   updatedAt?: Date | string
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: number | null
   workflow?: Prisma.WorkflowCreateNestedOneWithoutSkillsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutSkillsInput
   agentSkills?: Prisma.AgentSkillCreateNestedManyWithoutSkillInput
   skillTools?: Prisma.SkillToolCreateNestedManyWithoutSkillInput
   skillHostTools?: Prisma.SkillHostToolCreateNestedManyWithoutSkillInput
@@ -782,6 +884,8 @@ export type SkillUncheckedCreateWithoutAppClientInput = {
   workflowId?: number | null
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: number | null
+  flowVersion?: number | null
   agentSkills?: Prisma.AgentSkillUncheckedCreateNestedManyWithoutSkillInput
   skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutSkillInput
   skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutSkillInput
@@ -832,6 +936,8 @@ export type SkillScalarWhereInput = {
   workflowId?: Prisma.IntNullableFilter<"Skill"> | number | null
   workflowVersion?: Prisma.IntNullableFilter<"Skill"> | number | null
   workflowOverrides?: Prisma.JsonNullableFilter<"Skill">
+  flowId?: Prisma.IntNullableFilter<"Skill"> | number | null
+  flowVersion?: Prisma.IntNullableFilter<"Skill"> | number | null
 }
 
 export type SkillCreateWithoutAgentSkillsInput = {
@@ -846,7 +952,9 @@ export type SkillCreateWithoutAgentSkillsInput = {
   updatedAt?: Date | string
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: number | null
   workflow?: Prisma.WorkflowCreateNestedOneWithoutSkillsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutSkillsInput
   appClient: Prisma.AppClientCreateNestedOneWithoutSkillsInput
   skillTools?: Prisma.SkillToolCreateNestedManyWithoutSkillInput
   skillHostTools?: Prisma.SkillHostToolCreateNestedManyWithoutSkillInput
@@ -868,6 +976,8 @@ export type SkillUncheckedCreateWithoutAgentSkillsInput = {
   workflowId?: number | null
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: number | null
+  flowVersion?: number | null
   skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutSkillInput
   skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutSkillInput
   roleSkills?: Prisma.RoleSkillUncheckedCreateNestedManyWithoutSkillInput
@@ -901,7 +1011,9 @@ export type SkillUpdateWithoutAgentSkillsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflow?: Prisma.WorkflowUpdateOneWithoutSkillsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutSkillsNestedInput
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutSkillsNestedInput
   skillTools?: Prisma.SkillToolUpdateManyWithoutSkillNestedInput
   skillHostTools?: Prisma.SkillHostToolUpdateManyWithoutSkillNestedInput
@@ -923,6 +1035,8 @@ export type SkillUncheckedUpdateWithoutAgentSkillsInput = {
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutSkillNestedInput
   skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutSkillNestedInput
   roleSkills?: Prisma.RoleSkillUncheckedUpdateManyWithoutSkillNestedInput
@@ -940,7 +1054,9 @@ export type SkillCreateWithoutRoleSkillsInput = {
   updatedAt?: Date | string
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: number | null
   workflow?: Prisma.WorkflowCreateNestedOneWithoutSkillsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutSkillsInput
   appClient: Prisma.AppClientCreateNestedOneWithoutSkillsInput
   agentSkills?: Prisma.AgentSkillCreateNestedManyWithoutSkillInput
   skillTools?: Prisma.SkillToolCreateNestedManyWithoutSkillInput
@@ -962,6 +1078,8 @@ export type SkillUncheckedCreateWithoutRoleSkillsInput = {
   workflowId?: number | null
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: number | null
+  flowVersion?: number | null
   agentSkills?: Prisma.AgentSkillUncheckedCreateNestedManyWithoutSkillInput
   skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutSkillInput
   skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutSkillInput
@@ -995,7 +1113,9 @@ export type SkillUpdateWithoutRoleSkillsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflow?: Prisma.WorkflowUpdateOneWithoutSkillsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutSkillsNestedInput
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutSkillsNestedInput
   agentSkills?: Prisma.AgentSkillUpdateManyWithoutSkillNestedInput
   skillTools?: Prisma.SkillToolUpdateManyWithoutSkillNestedInput
@@ -1017,6 +1137,8 @@ export type SkillUncheckedUpdateWithoutRoleSkillsInput = {
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   agentSkills?: Prisma.AgentSkillUncheckedUpdateManyWithoutSkillNestedInput
   skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutSkillNestedInput
   skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutSkillNestedInput
@@ -1034,7 +1156,9 @@ export type SkillCreateWithoutSkillToolsInput = {
   updatedAt?: Date | string
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: number | null
   workflow?: Prisma.WorkflowCreateNestedOneWithoutSkillsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutSkillsInput
   appClient: Prisma.AppClientCreateNestedOneWithoutSkillsInput
   agentSkills?: Prisma.AgentSkillCreateNestedManyWithoutSkillInput
   skillHostTools?: Prisma.SkillHostToolCreateNestedManyWithoutSkillInput
@@ -1056,6 +1180,8 @@ export type SkillUncheckedCreateWithoutSkillToolsInput = {
   workflowId?: number | null
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: number | null
+  flowVersion?: number | null
   agentSkills?: Prisma.AgentSkillUncheckedCreateNestedManyWithoutSkillInput
   skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutSkillInput
   roleSkills?: Prisma.RoleSkillUncheckedCreateNestedManyWithoutSkillInput
@@ -1089,7 +1215,9 @@ export type SkillUpdateWithoutSkillToolsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflow?: Prisma.WorkflowUpdateOneWithoutSkillsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutSkillsNestedInput
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutSkillsNestedInput
   agentSkills?: Prisma.AgentSkillUpdateManyWithoutSkillNestedInput
   skillHostTools?: Prisma.SkillHostToolUpdateManyWithoutSkillNestedInput
@@ -1111,6 +1239,8 @@ export type SkillUncheckedUpdateWithoutSkillToolsInput = {
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   agentSkills?: Prisma.AgentSkillUncheckedUpdateManyWithoutSkillNestedInput
   skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutSkillNestedInput
   roleSkills?: Prisma.RoleSkillUncheckedUpdateManyWithoutSkillNestedInput
@@ -1128,7 +1258,9 @@ export type SkillCreateWithoutSkillHostToolsInput = {
   updatedAt?: Date | string
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: number | null
   workflow?: Prisma.WorkflowCreateNestedOneWithoutSkillsInput
+  flow?: Prisma.FlowCreateNestedOneWithoutSkillsInput
   appClient: Prisma.AppClientCreateNestedOneWithoutSkillsInput
   agentSkills?: Prisma.AgentSkillCreateNestedManyWithoutSkillInput
   skillTools?: Prisma.SkillToolCreateNestedManyWithoutSkillInput
@@ -1150,6 +1282,8 @@ export type SkillUncheckedCreateWithoutSkillHostToolsInput = {
   workflowId?: number | null
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: number | null
+  flowVersion?: number | null
   agentSkills?: Prisma.AgentSkillUncheckedCreateNestedManyWithoutSkillInput
   skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutSkillInput
   roleSkills?: Prisma.RoleSkillUncheckedCreateNestedManyWithoutSkillInput
@@ -1183,7 +1317,9 @@ export type SkillUpdateWithoutSkillHostToolsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflow?: Prisma.WorkflowUpdateOneWithoutSkillsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutSkillsNestedInput
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutSkillsNestedInput
   agentSkills?: Prisma.AgentSkillUpdateManyWithoutSkillNestedInput
   skillTools?: Prisma.SkillToolUpdateManyWithoutSkillNestedInput
@@ -1205,6 +1341,8 @@ export type SkillUncheckedUpdateWithoutSkillHostToolsInput = {
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   agentSkills?: Prisma.AgentSkillUncheckedUpdateManyWithoutSkillNestedInput
   skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutSkillNestedInput
   roleSkills?: Prisma.RoleSkillUncheckedUpdateManyWithoutSkillNestedInput
@@ -1222,6 +1360,8 @@ export type SkillCreateWithoutWorkflowInput = {
   updatedAt?: Date | string
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: number | null
+  flow?: Prisma.FlowCreateNestedOneWithoutSkillsInput
   appClient: Prisma.AppClientCreateNestedOneWithoutSkillsInput
   agentSkills?: Prisma.AgentSkillCreateNestedManyWithoutSkillInput
   skillTools?: Prisma.SkillToolCreateNestedManyWithoutSkillInput
@@ -1243,6 +1383,8 @@ export type SkillUncheckedCreateWithoutWorkflowInput = {
   updatedAt?: Date | string
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: number | null
+  flowVersion?: number | null
   agentSkills?: Prisma.AgentSkillUncheckedCreateNestedManyWithoutSkillInput
   skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutSkillInput
   skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutSkillInput
@@ -1275,6 +1417,75 @@ export type SkillUpdateManyWithWhereWithoutWorkflowInput = {
   data: Prisma.XOR<Prisma.SkillUpdateManyMutationInput, Prisma.SkillUncheckedUpdateManyWithoutWorkflowInput>
 }
 
+export type SkillCreateWithoutFlowInput = {
+  name: string
+  capabilityKey?: string | null
+  description?: string | null
+  prompt: string
+  riskLevel?: $Enums.ToolLevel
+  config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  workflowVersion?: number | null
+  workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: number | null
+  workflow?: Prisma.WorkflowCreateNestedOneWithoutSkillsInput
+  appClient: Prisma.AppClientCreateNestedOneWithoutSkillsInput
+  agentSkills?: Prisma.AgentSkillCreateNestedManyWithoutSkillInput
+  skillTools?: Prisma.SkillToolCreateNestedManyWithoutSkillInput
+  skillHostTools?: Prisma.SkillHostToolCreateNestedManyWithoutSkillInput
+  roleSkills?: Prisma.RoleSkillCreateNestedManyWithoutSkillInput
+}
+
+export type SkillUncheckedCreateWithoutFlowInput = {
+  id?: number
+  appClientId: number
+  name: string
+  capabilityKey?: string | null
+  description?: string | null
+  prompt: string
+  riskLevel?: $Enums.ToolLevel
+  config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  workflowId?: number | null
+  workflowVersion?: number | null
+  workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: number | null
+  agentSkills?: Prisma.AgentSkillUncheckedCreateNestedManyWithoutSkillInput
+  skillTools?: Prisma.SkillToolUncheckedCreateNestedManyWithoutSkillInput
+  skillHostTools?: Prisma.SkillHostToolUncheckedCreateNestedManyWithoutSkillInput
+  roleSkills?: Prisma.RoleSkillUncheckedCreateNestedManyWithoutSkillInput
+}
+
+export type SkillCreateOrConnectWithoutFlowInput = {
+  where: Prisma.SkillWhereUniqueInput
+  create: Prisma.XOR<Prisma.SkillCreateWithoutFlowInput, Prisma.SkillUncheckedCreateWithoutFlowInput>
+}
+
+export type SkillCreateManyFlowInputEnvelope = {
+  data: Prisma.SkillCreateManyFlowInput | Prisma.SkillCreateManyFlowInput[]
+  skipDuplicates?: boolean
+}
+
+export type SkillUpsertWithWhereUniqueWithoutFlowInput = {
+  where: Prisma.SkillWhereUniqueInput
+  update: Prisma.XOR<Prisma.SkillUpdateWithoutFlowInput, Prisma.SkillUncheckedUpdateWithoutFlowInput>
+  create: Prisma.XOR<Prisma.SkillCreateWithoutFlowInput, Prisma.SkillUncheckedCreateWithoutFlowInput>
+}
+
+export type SkillUpdateWithWhereUniqueWithoutFlowInput = {
+  where: Prisma.SkillWhereUniqueInput
+  data: Prisma.XOR<Prisma.SkillUpdateWithoutFlowInput, Prisma.SkillUncheckedUpdateWithoutFlowInput>
+}
+
+export type SkillUpdateManyWithWhereWithoutFlowInput = {
+  where: Prisma.SkillScalarWhereInput
+  data: Prisma.XOR<Prisma.SkillUpdateManyMutationInput, Prisma.SkillUncheckedUpdateManyWithoutFlowInput>
+}
+
 export type SkillCreateManyAppClientInput = {
   id?: number
   name: string
@@ -1289,6 +1500,8 @@ export type SkillCreateManyAppClientInput = {
   workflowId?: number | null
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: number | null
+  flowVersion?: number | null
 }
 
 export type SkillUpdateWithoutAppClientInput = {
@@ -1303,7 +1516,9 @@ export type SkillUpdateWithoutAppClientInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflow?: Prisma.WorkflowUpdateOneWithoutSkillsNestedInput
+  flow?: Prisma.FlowUpdateOneWithoutSkillsNestedInput
   agentSkills?: Prisma.AgentSkillUpdateManyWithoutSkillNestedInput
   skillTools?: Prisma.SkillToolUpdateManyWithoutSkillNestedInput
   skillHostTools?: Prisma.SkillHostToolUpdateManyWithoutSkillNestedInput
@@ -1324,6 +1539,8 @@ export type SkillUncheckedUpdateWithoutAppClientInput = {
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   agentSkills?: Prisma.AgentSkillUncheckedUpdateManyWithoutSkillNestedInput
   skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutSkillNestedInput
   skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutSkillNestedInput
@@ -1344,6 +1561,8 @@ export type SkillUncheckedUpdateManyWithoutAppClientInput = {
   workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type SkillCreateManyWorkflowInput = {
@@ -1360,6 +1579,8 @@ export type SkillCreateManyWorkflowInput = {
   updatedAt?: Date | string
   workflowVersion?: number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: number | null
+  flowVersion?: number | null
 }
 
 export type SkillUpdateWithoutWorkflowInput = {
@@ -1374,6 +1595,8 @@ export type SkillUpdateWithoutWorkflowInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flow?: Prisma.FlowUpdateOneWithoutSkillsNestedInput
   appClient?: Prisma.AppClientUpdateOneRequiredWithoutSkillsNestedInput
   agentSkills?: Prisma.AgentSkillUpdateManyWithoutSkillNestedInput
   skillTools?: Prisma.SkillToolUpdateManyWithoutSkillNestedInput
@@ -1395,6 +1618,8 @@ export type SkillUncheckedUpdateWithoutWorkflowInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   agentSkills?: Prisma.AgentSkillUncheckedUpdateManyWithoutSkillNestedInput
   skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutSkillNestedInput
   skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutSkillNestedInput
@@ -1415,6 +1640,87 @@ export type SkillUncheckedUpdateManyWithoutWorkflowInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+}
+
+export type SkillCreateManyFlowInput = {
+  id?: number
+  appClientId: number
+  name: string
+  capabilityKey?: string | null
+  description?: string | null
+  prompt: string
+  riskLevel?: $Enums.ToolLevel
+  config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  workflowId?: number | null
+  workflowVersion?: number | null
+  workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: number | null
+}
+
+export type SkillUpdateWithoutFlowInput = {
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  capabilityKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prompt?: Prisma.StringFieldUpdateOperationsInput | string
+  riskLevel?: Prisma.EnumToolLevelFieldUpdateOperationsInput | $Enums.ToolLevel
+  config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflow?: Prisma.WorkflowUpdateOneWithoutSkillsNestedInput
+  appClient?: Prisma.AppClientUpdateOneRequiredWithoutSkillsNestedInput
+  agentSkills?: Prisma.AgentSkillUpdateManyWithoutSkillNestedInput
+  skillTools?: Prisma.SkillToolUpdateManyWithoutSkillNestedInput
+  skillHostTools?: Prisma.SkillHostToolUpdateManyWithoutSkillNestedInput
+  roleSkills?: Prisma.RoleSkillUpdateManyWithoutSkillNestedInput
+}
+
+export type SkillUncheckedUpdateWithoutFlowInput = {
+  id?: Prisma.IntFieldUpdateOperationsInput | number
+  appClientId?: Prisma.IntFieldUpdateOperationsInput | number
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  capabilityKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prompt?: Prisma.StringFieldUpdateOperationsInput | string
+  riskLevel?: Prisma.EnumToolLevelFieldUpdateOperationsInput | $Enums.ToolLevel
+  config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  agentSkills?: Prisma.AgentSkillUncheckedUpdateManyWithoutSkillNestedInput
+  skillTools?: Prisma.SkillToolUncheckedUpdateManyWithoutSkillNestedInput
+  skillHostTools?: Prisma.SkillHostToolUncheckedUpdateManyWithoutSkillNestedInput
+  roleSkills?: Prisma.RoleSkillUncheckedUpdateManyWithoutSkillNestedInput
+}
+
+export type SkillUncheckedUpdateManyWithoutFlowInput = {
+  id?: Prisma.IntFieldUpdateOperationsInput | number
+  appClientId?: Prisma.IntFieldUpdateOperationsInput | number
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  capabilityKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prompt?: Prisma.StringFieldUpdateOperationsInput | string
+  riskLevel?: Prisma.EnumToolLevelFieldUpdateOperationsInput | $Enums.ToolLevel
+  config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  workflowId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  workflowOverrides?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  flowVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 
@@ -1490,7 +1796,10 @@ export type SkillSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   workflowId?: boolean
   workflowVersion?: boolean
   workflowOverrides?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   workflow?: boolean | Prisma.Skill$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.Skill$flowArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   agentSkills?: boolean | Prisma.Skill$agentSkillsArgs<ExtArgs>
   skillTools?: boolean | Prisma.Skill$skillToolsArgs<ExtArgs>
@@ -1514,7 +1823,10 @@ export type SkillSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensi
   workflowId?: boolean
   workflowVersion?: boolean
   workflowOverrides?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   workflow?: boolean | Prisma.Skill$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.Skill$flowArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["skill"]>
 
@@ -1533,7 +1845,10 @@ export type SkillSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensi
   workflowId?: boolean
   workflowVersion?: boolean
   workflowOverrides?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
   workflow?: boolean | Prisma.Skill$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.Skill$flowArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["skill"]>
 
@@ -1552,11 +1867,14 @@ export type SkillSelectScalar = {
   workflowId?: boolean
   workflowVersion?: boolean
   workflowOverrides?: boolean
+  flowId?: boolean
+  flowVersion?: boolean
 }
 
-export type SkillOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "appClientId" | "name" | "capabilityKey" | "description" | "prompt" | "riskLevel" | "config" | "isActive" | "createdAt" | "updatedAt" | "workflowId" | "workflowVersion" | "workflowOverrides", ExtArgs["result"]["skill"]>
+export type SkillOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "appClientId" | "name" | "capabilityKey" | "description" | "prompt" | "riskLevel" | "config" | "isActive" | "createdAt" | "updatedAt" | "workflowId" | "workflowVersion" | "workflowOverrides" | "flowId" | "flowVersion", ExtArgs["result"]["skill"]>
 export type SkillInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   workflow?: boolean | Prisma.Skill$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.Skill$flowArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
   agentSkills?: boolean | Prisma.Skill$agentSkillsArgs<ExtArgs>
   skillTools?: boolean | Prisma.Skill$skillToolsArgs<ExtArgs>
@@ -1566,10 +1884,12 @@ export type SkillInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs =
 }
 export type SkillIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   workflow?: boolean | Prisma.Skill$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.Skill$flowArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
 }
 export type SkillIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   workflow?: boolean | Prisma.Skill$workflowArgs<ExtArgs>
+  flow?: boolean | Prisma.Skill$flowArgs<ExtArgs>
   appClient?: boolean | Prisma.AppClientDefaultArgs<ExtArgs>
 }
 
@@ -1577,6 +1897,7 @@ export type $SkillPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   name: "Skill"
   objects: {
     workflow: Prisma.$WorkflowPayload<ExtArgs> | null
+    flow: Prisma.$FlowPayload<ExtArgs> | null
     appClient: Prisma.$AppClientPayload<ExtArgs>
     agentSkills: Prisma.$AgentSkillPayload<ExtArgs>[]
     skillTools: Prisma.$SkillToolPayload<ExtArgs>[]
@@ -1604,6 +1925,11 @@ export type $SkillPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs 
     workflowId: number | null
     workflowVersion: number | null
     workflowOverrides: runtime.JsonValue | null
+    /**
+     * 新 Intent/IR 资产（与 legacy Workflow 分表）
+     */
+    flowId: number | null
+    flowVersion: number | null
   }, ExtArgs["result"]["skill"]>
   composites: {}
 }
@@ -1999,6 +2325,7 @@ readonly fields: SkillFieldRefs;
 export interface Prisma__SkillClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   workflow<T extends Prisma.Skill$workflowArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Skill$workflowArgs<ExtArgs>>): Prisma.Prisma__WorkflowClient<runtime.Types.Result.GetResult<Prisma.$WorkflowPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  flow<T extends Prisma.Skill$flowArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Skill$flowArgs<ExtArgs>>): Prisma.Prisma__FlowClient<runtime.Types.Result.GetResult<Prisma.$FlowPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   appClient<T extends Prisma.AppClientDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClientDefaultArgs<ExtArgs>>): Prisma.Prisma__AppClientClient<runtime.Types.Result.GetResult<Prisma.$AppClientPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   agentSkills<T extends Prisma.Skill$agentSkillsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Skill$agentSkillsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AgentSkillPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   skillTools<T extends Prisma.Skill$skillToolsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Skill$skillToolsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SkillToolPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -2047,6 +2374,8 @@ export interface SkillFieldRefs {
   readonly workflowId: Prisma.FieldRef<"Skill", 'Int'>
   readonly workflowVersion: Prisma.FieldRef<"Skill", 'Int'>
   readonly workflowOverrides: Prisma.FieldRef<"Skill", 'Json'>
+  readonly flowId: Prisma.FieldRef<"Skill", 'Int'>
+  readonly flowVersion: Prisma.FieldRef<"Skill", 'Int'>
 }
     
 
@@ -2464,6 +2793,25 @@ export type Skill$workflowArgs<ExtArgs extends runtime.Types.Extensions.Internal
    */
   include?: Prisma.WorkflowInclude<ExtArgs> | null
   where?: Prisma.WorkflowWhereInput
+}
+
+/**
+ * Skill.flow
+ */
+export type Skill$flowArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Flow
+   */
+  select?: Prisma.FlowSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Flow
+   */
+  omit?: Prisma.FlowOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.FlowInclude<ExtArgs> | null
+  where?: Prisma.FlowWhereInput
 }
 
 /**

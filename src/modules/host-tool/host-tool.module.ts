@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuthModule } from '../../auth/auth.module';
-import { WorkflowModule } from '../workflow/workflow.module';
+import { FlowModule } from '../flow/flow.module';
 import { HostToolController } from './host-tool.controller';
 import { HostToolService } from './host-tool.service';
 
 @Module({
-  imports: [PrismaModule, AuthModule, WorkflowModule],
+  imports: [PrismaModule, AuthModule, FlowModule],
   controllers: [HostToolController],
   providers: [HostToolService],
   exports: [HostToolService],

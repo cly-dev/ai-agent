@@ -196,6 +196,10 @@ export declare const ModelName: {
     readonly WorkflowRevision: "WorkflowRevision";
     readonly WorkflowTool: "WorkflowTool";
     readonly WorkflowHostTool: "WorkflowHostTool";
+    readonly Flow: "Flow";
+    readonly FlowRevision: "FlowRevision";
+    readonly FlowTool: "FlowTool";
+    readonly FlowHostTool: "FlowHostTool";
 };
 export type ModelName = (typeof ModelName)[keyof typeof ModelName];
 export interface TypeMapCb<GlobalOmitOptions = {}> extends runtime.Types.Utils.Fn<{
@@ -208,7 +212,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         omit: GlobalOmitOptions;
     };
     meta: {
-        modelProps: "user" | "role" | "adminUser" | "appClient" | "llmModelConfig" | "pageAgentLlmProxyAudit" | "intentRecallConfig" | "userLlmModelConfig" | "session" | "sessionGoaMemory" | "message" | "messageFeedback" | "toolCategory" | "tool" | "integration" | "userIntegration" | "skill" | "agentSkill" | "roleSkill" | "skillTool" | "userApp" | "roleTool" | "agent" | "promptTemplate" | "messageTurn" | "agentRun" | "agentTool" | "hostPage" | "hostTool" | "agentHostTool" | "skillHostTool" | "roleHostTool" | "pageAction" | "pageActionRun" | "approvalRequest" | "workflow" | "workflowRevision" | "workflowTool" | "workflowHostTool";
+        modelProps: "user" | "role" | "adminUser" | "appClient" | "llmModelConfig" | "pageAgentLlmProxyAudit" | "intentRecallConfig" | "userLlmModelConfig" | "session" | "sessionGoaMemory" | "message" | "messageFeedback" | "toolCategory" | "tool" | "integration" | "userIntegration" | "skill" | "agentSkill" | "roleSkill" | "skillTool" | "userApp" | "roleTool" | "agent" | "promptTemplate" | "messageTurn" | "agentRun" | "agentTool" | "hostPage" | "hostTool" | "agentHostTool" | "skillHostTool" | "roleHostTool" | "pageAction" | "pageActionRun" | "approvalRequest" | "workflow" | "workflowRevision" | "workflowTool" | "workflowHostTool" | "flow" | "flowRevision" | "flowTool" | "flowHostTool";
         txIsolationLevel: TransactionIsolationLevel;
     };
     model: {
@@ -3098,6 +3102,302 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
                 };
             };
         };
+        Flow: {
+            payload: Prisma.$FlowPayload<ExtArgs>;
+            fields: Prisma.FlowFieldRefs;
+            operations: {
+                findUnique: {
+                    args: Prisma.FlowFindUniqueArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload> | null;
+                };
+                findUniqueOrThrow: {
+                    args: Prisma.FlowFindUniqueOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload>;
+                };
+                findFirst: {
+                    args: Prisma.FlowFindFirstArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload> | null;
+                };
+                findFirstOrThrow: {
+                    args: Prisma.FlowFindFirstOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload>;
+                };
+                findMany: {
+                    args: Prisma.FlowFindManyArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload>[];
+                };
+                create: {
+                    args: Prisma.FlowCreateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload>;
+                };
+                createMany: {
+                    args: Prisma.FlowCreateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                createManyAndReturn: {
+                    args: Prisma.FlowCreateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload>[];
+                };
+                delete: {
+                    args: Prisma.FlowDeleteArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload>;
+                };
+                update: {
+                    args: Prisma.FlowUpdateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload>;
+                };
+                deleteMany: {
+                    args: Prisma.FlowDeleteManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateMany: {
+                    args: Prisma.FlowUpdateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateManyAndReturn: {
+                    args: Prisma.FlowUpdateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload>[];
+                };
+                upsert: {
+                    args: Prisma.FlowUpsertArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowPayload>;
+                };
+                aggregate: {
+                    args: Prisma.FlowAggregateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.AggregateFlow>;
+                };
+                groupBy: {
+                    args: Prisma.FlowGroupByArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.FlowGroupByOutputType>[];
+                };
+                count: {
+                    args: Prisma.FlowCountArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.FlowCountAggregateOutputType> | number;
+                };
+            };
+        };
+        FlowRevision: {
+            payload: Prisma.$FlowRevisionPayload<ExtArgs>;
+            fields: Prisma.FlowRevisionFieldRefs;
+            operations: {
+                findUnique: {
+                    args: Prisma.FlowRevisionFindUniqueArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload> | null;
+                };
+                findUniqueOrThrow: {
+                    args: Prisma.FlowRevisionFindUniqueOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload>;
+                };
+                findFirst: {
+                    args: Prisma.FlowRevisionFindFirstArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload> | null;
+                };
+                findFirstOrThrow: {
+                    args: Prisma.FlowRevisionFindFirstOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload>;
+                };
+                findMany: {
+                    args: Prisma.FlowRevisionFindManyArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload>[];
+                };
+                create: {
+                    args: Prisma.FlowRevisionCreateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload>;
+                };
+                createMany: {
+                    args: Prisma.FlowRevisionCreateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                createManyAndReturn: {
+                    args: Prisma.FlowRevisionCreateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload>[];
+                };
+                delete: {
+                    args: Prisma.FlowRevisionDeleteArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload>;
+                };
+                update: {
+                    args: Prisma.FlowRevisionUpdateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload>;
+                };
+                deleteMany: {
+                    args: Prisma.FlowRevisionDeleteManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateMany: {
+                    args: Prisma.FlowRevisionUpdateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateManyAndReturn: {
+                    args: Prisma.FlowRevisionUpdateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload>[];
+                };
+                upsert: {
+                    args: Prisma.FlowRevisionUpsertArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowRevisionPayload>;
+                };
+                aggregate: {
+                    args: Prisma.FlowRevisionAggregateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.AggregateFlowRevision>;
+                };
+                groupBy: {
+                    args: Prisma.FlowRevisionGroupByArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.FlowRevisionGroupByOutputType>[];
+                };
+                count: {
+                    args: Prisma.FlowRevisionCountArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.FlowRevisionCountAggregateOutputType> | number;
+                };
+            };
+        };
+        FlowTool: {
+            payload: Prisma.$FlowToolPayload<ExtArgs>;
+            fields: Prisma.FlowToolFieldRefs;
+            operations: {
+                findUnique: {
+                    args: Prisma.FlowToolFindUniqueArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload> | null;
+                };
+                findUniqueOrThrow: {
+                    args: Prisma.FlowToolFindUniqueOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload>;
+                };
+                findFirst: {
+                    args: Prisma.FlowToolFindFirstArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload> | null;
+                };
+                findFirstOrThrow: {
+                    args: Prisma.FlowToolFindFirstOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload>;
+                };
+                findMany: {
+                    args: Prisma.FlowToolFindManyArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload>[];
+                };
+                create: {
+                    args: Prisma.FlowToolCreateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload>;
+                };
+                createMany: {
+                    args: Prisma.FlowToolCreateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                createManyAndReturn: {
+                    args: Prisma.FlowToolCreateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload>[];
+                };
+                delete: {
+                    args: Prisma.FlowToolDeleteArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload>;
+                };
+                update: {
+                    args: Prisma.FlowToolUpdateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload>;
+                };
+                deleteMany: {
+                    args: Prisma.FlowToolDeleteManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateMany: {
+                    args: Prisma.FlowToolUpdateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateManyAndReturn: {
+                    args: Prisma.FlowToolUpdateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload>[];
+                };
+                upsert: {
+                    args: Prisma.FlowToolUpsertArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowToolPayload>;
+                };
+                aggregate: {
+                    args: Prisma.FlowToolAggregateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.AggregateFlowTool>;
+                };
+                groupBy: {
+                    args: Prisma.FlowToolGroupByArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.FlowToolGroupByOutputType>[];
+                };
+                count: {
+                    args: Prisma.FlowToolCountArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.FlowToolCountAggregateOutputType> | number;
+                };
+            };
+        };
+        FlowHostTool: {
+            payload: Prisma.$FlowHostToolPayload<ExtArgs>;
+            fields: Prisma.FlowHostToolFieldRefs;
+            operations: {
+                findUnique: {
+                    args: Prisma.FlowHostToolFindUniqueArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload> | null;
+                };
+                findUniqueOrThrow: {
+                    args: Prisma.FlowHostToolFindUniqueOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload>;
+                };
+                findFirst: {
+                    args: Prisma.FlowHostToolFindFirstArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload> | null;
+                };
+                findFirstOrThrow: {
+                    args: Prisma.FlowHostToolFindFirstOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload>;
+                };
+                findMany: {
+                    args: Prisma.FlowHostToolFindManyArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload>[];
+                };
+                create: {
+                    args: Prisma.FlowHostToolCreateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload>;
+                };
+                createMany: {
+                    args: Prisma.FlowHostToolCreateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                createManyAndReturn: {
+                    args: Prisma.FlowHostToolCreateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload>[];
+                };
+                delete: {
+                    args: Prisma.FlowHostToolDeleteArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload>;
+                };
+                update: {
+                    args: Prisma.FlowHostToolUpdateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload>;
+                };
+                deleteMany: {
+                    args: Prisma.FlowHostToolDeleteManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateMany: {
+                    args: Prisma.FlowHostToolUpdateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateManyAndReturn: {
+                    args: Prisma.FlowHostToolUpdateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload>[];
+                };
+                upsert: {
+                    args: Prisma.FlowHostToolUpsertArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$FlowHostToolPayload>;
+                };
+                aggregate: {
+                    args: Prisma.FlowHostToolAggregateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.AggregateFlowHostTool>;
+                };
+                groupBy: {
+                    args: Prisma.FlowHostToolGroupByArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.FlowHostToolGroupByOutputType>[];
+                };
+                count: {
+                    args: Prisma.FlowHostToolCountArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.FlowHostToolCountAggregateOutputType> | number;
+                };
+            };
+        };
     };
 } & {
     other: {
@@ -3346,6 +3646,8 @@ export declare const SkillScalarFieldEnum: {
     readonly workflowId: "workflowId";
     readonly workflowVersion: "workflowVersion";
     readonly workflowOverrides: "workflowOverrides";
+    readonly flowId: "flowId";
+    readonly flowVersion: "flowVersion";
 };
 export type SkillScalarFieldEnum = (typeof SkillScalarFieldEnum)[keyof typeof SkillScalarFieldEnum];
 export declare const AgentSkillScalarFieldEnum: {
@@ -3558,6 +3860,8 @@ export declare const PageActionScalarFieldEnum: {
     readonly workflowId: "workflowId";
     readonly workflowVersion: "workflowVersion";
     readonly workflowOverrides: "workflowOverrides";
+    readonly flowId: "flowId";
+    readonly flowVersion: "flowVersion";
     readonly createdAt: "createdAt";
     readonly updatedAt: "updatedAt";
 };
@@ -3587,6 +3891,8 @@ export declare const PageActionRunScalarFieldEnum: {
     readonly steps: "steps";
     readonly workflowId: "workflowId";
     readonly workflowVersion: "workflowVersion";
+    readonly flowId: "flowId";
+    readonly flowVersion: "flowVersion";
     readonly workflowRun: "workflowRun";
     readonly generation: "generation";
     readonly createdAt: "createdAt";
@@ -3602,6 +3908,8 @@ export declare const ApprovalRequestScalarFieldEnum: {
     readonly approverUserId: "approverUserId";
     readonly workflowId: "workflowId";
     readonly workflowVersion: "workflowVersion";
+    readonly flowId: "flowId";
+    readonly flowVersion: "flowVersion";
     readonly nodeId: "nodeId";
     readonly title: "title";
     readonly summary: "summary";
@@ -3661,6 +3969,51 @@ export declare const WorkflowHostToolScalarFieldEnum: {
     readonly isRequired: "isRequired";
 };
 export type WorkflowHostToolScalarFieldEnum = (typeof WorkflowHostToolScalarFieldEnum)[keyof typeof WorkflowHostToolScalarFieldEnum];
+export declare const FlowScalarFieldEnum: {
+    readonly id: "id";
+    readonly appClientId: "appClientId";
+    readonly flowKey: "flowKey";
+    readonly name: "name";
+    readonly description: "description";
+    readonly goal: "goal";
+    readonly profile: "profile";
+    readonly deliverable: "deliverable";
+    readonly intent: "intent";
+    readonly ir: "ir";
+    readonly version: "version";
+    readonly constraints: "constraints";
+    readonly isActive: "isActive";
+    readonly sortOrder: "sortOrder";
+    readonly createdAt: "createdAt";
+    readonly updatedAt: "updatedAt";
+};
+export type FlowScalarFieldEnum = (typeof FlowScalarFieldEnum)[keyof typeof FlowScalarFieldEnum];
+export declare const FlowRevisionScalarFieldEnum: {
+    readonly id: "id";
+    readonly flowId: "flowId";
+    readonly version: "version";
+    readonly intent: "intent";
+    readonly ir: "ir";
+    readonly deliverable: "deliverable";
+    readonly constraints: "constraints";
+    readonly changeNote: "changeNote";
+    readonly createdAt: "createdAt";
+};
+export type FlowRevisionScalarFieldEnum = (typeof FlowRevisionScalarFieldEnum)[keyof typeof FlowRevisionScalarFieldEnum];
+export declare const FlowToolScalarFieldEnum: {
+    readonly id: "id";
+    readonly flowId: "flowId";
+    readonly toolId: "toolId";
+    readonly isRequired: "isRequired";
+};
+export type FlowToolScalarFieldEnum = (typeof FlowToolScalarFieldEnum)[keyof typeof FlowToolScalarFieldEnum];
+export declare const FlowHostToolScalarFieldEnum: {
+    readonly id: "id";
+    readonly flowId: "flowId";
+    readonly hostToolId: "hostToolId";
+    readonly isRequired: "isRequired";
+};
+export type FlowHostToolScalarFieldEnum = (typeof FlowHostToolScalarFieldEnum)[keyof typeof FlowHostToolScalarFieldEnum];
 export declare const SortOrder: {
     readonly asc: "asc";
     readonly desc: "desc";
@@ -3797,6 +4150,10 @@ export type GlobalOmitConfig = {
     workflowRevision?: Prisma.WorkflowRevisionOmit;
     workflowTool?: Prisma.WorkflowToolOmit;
     workflowHostTool?: Prisma.WorkflowHostToolOmit;
+    flow?: Prisma.FlowOmit;
+    flowRevision?: Prisma.FlowRevisionOmit;
+    flowTool?: Prisma.FlowToolOmit;
+    flowHostTool?: Prisma.FlowHostToolOmit;
 };
 export type LogLevel = 'info' | 'query' | 'warn' | 'error';
 export type LogDefinition = {

@@ -1,14 +1,12 @@
 import { type PaginatedResult } from '../../common/pagination';
 import type { WorkflowProfile } from '../../core/workflow/workflow.types';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { CreateWorkflowDto, QueryWorkflowDto, UpdateWorkflowDto } from './dto/workflow.dto';
+import type { QueryWorkflowDto } from './dto/workflow.dto';
 import type { WorkflowListItem, WorkflowResponse, WorkflowRevisionResponse, WorkflowRevisionSummaryResponse } from './workflow.types';
-import type { WorkflowEntryKind } from './workflow-profile.util';
+export type WorkflowEntryKind = 'skill' | 'page_action';
 export declare class WorkflowService {
     private readonly prisma;
     constructor(prisma: PrismaService);
-    create(dto: CreateWorkflowDto): Promise<WorkflowResponse>;
-    update(id: number, dto: UpdateWorkflowDto): Promise<WorkflowResponse>;
     listPresets(profile?: WorkflowProfile): Promise<import("../../core/workflow/workflow-preset.types").WorkflowPresetCatalogEntry[]>;
     findOne(id: number): Promise<WorkflowResponse>;
     remove(id: number): Promise<{
@@ -39,20 +37,5 @@ export declare class WorkflowService {
         workflowVersion?: number | null;
         pageActionHostToolId?: number | null;
     }): Promise<void>;
-    private assertReferencingSkillsStillCompatible;
-    private assertReferencingPageActionsStillCompatible;
-    private isNodesPayloadProvided;
-    private assertBEndNodesIncludeEdges;
-    private assertGraphEdgesWellFormed;
-    private normalizePersistedGraph;
-    private resolveWorkflowGraph;
-    private resolveWorkflowNodes;
     private findEntityOrThrow;
-    private assertAppClientExists;
-    private assertWorkflowValid;
-    private normalizeToolBindings;
-    private normalizeHostToolBindings;
-    private toBindingRefs;
-    private assertBindingsExist;
-    private assertCanDeactivate;
 }

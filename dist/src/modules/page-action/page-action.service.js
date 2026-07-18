@@ -14,18 +14,19 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("../../../generated/prisma/client");
 const pagination_1 = require("../../common/pagination");
 const page_action_prompt_limits_util_1 = require("../../core/page-action/page-action-prompt-limits.util");
+const assert_no_new_legacy_workflow_binding_util_1 = require("../../core/workflow/assert-no-new-legacy-workflow-binding.util");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const host_tool_types_1 = require("../host-tool/host-tool.types");
 const page_action_mapper_1 = require("./page-action.mapper");
 const page_action_types_1 = require("./page-action.types");
-const workflow_service_1 = require("../workflow/workflow.service");
+const flow_service_1 = require("../flow/flow.service");
 let PageActionService = class PageActionService {
-    constructor(prisma, workflowService) {
+    constructor(prisma, flowService) {
         this.prisma = prisma;
-        this.workflowService = workflowService;
+        this.flowService = flowService;
     }
     async create(dto) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        var _a, _b, _c, _d, _e, _f, _g, _h;
         await this.assertAppClientExists(dto.appClientId);
         this.assertInlineStreamOnly(dto.defaultDelivery);
         const actionKey = dto.actionKey.trim();
@@ -34,45 +35,37 @@ let PageActionService = class PageActionService {
             await this.assertHostToolForApp(dto.appClientId, dto.hostToolId);
         }
         const hostToolId = (_a = dto.hostToolId) !== null && _a !== void 0 ? _a : null;
-        if (dto.workflowId != null && dto.workflowId > 0) {
-            await this.workflowService.assertWorkflowReferenceCompatible({
-                workflowId: dto.workflowId,
+        if (dto.workflowId !== undefined) {
+            (0, assert_no_new_legacy_workflow_binding_util_1.assertNoNewLegacyWorkflowBinding)(dto.workflowId, 'page_action');
+        }
+        if (dto.flowId != null && dto.flowId > 0) {
+            await this.flowService.assertPageActionFlowBindingsCompatible({
+                flowId: dto.flowId,
                 appClientId: dto.appClientId,
-                entry: 'page_action',
-            });
-            await this.workflowService.assertPageActionWorkflowBindingsCompatible({
-                workflowId: dto.workflowId,
-                appClientId: dto.appClientId,
-                workflowVersion: dto.workflowVersion,
-                pageActionHostToolId: hostToolId,
+                flowVersion: dto.flowVersion,
             });
         }
         try {
             const row = await this.prisma.pageAction.create({
-                data: {
-                    appClientId: dto.appClientId,
-                    actionKey,
-                    name: dto.name.trim(),
-                    description: ((_b = dto.description) === null || _b === void 0 ? void 0 : _b.trim()) || null,
-                    hostToolId,
-                    pageScope: ((_c = dto.pageScope) === null || _c === void 0 ? void 0 : _c.trim()) || null,
-                    systemPrompt: dto.systemPrompt.trim(),
-                    defaultDelivery: client_1.PageActionDelivery.inline_stream,
-                    allowCustomInstruction: (_d = dto.allowCustomInstruction) !== null && _d !== void 0 ? _d : true,
-                    isActive: (_e = dto.isActive) !== null && _e !== void 0 ? _e : true,
-                    sortOrder: (_f = dto.sortOrder) !== null && _f !== void 0 ? _f : 0,
-                    config: dto.config === undefined
+                data: Object.assign(Object.assign({ appClientId: dto.appClientId, actionKey, name: dto.name.trim(), description: ((_b = dto.description) === null || _b === void 0 ? void 0 : _b.trim()) || null, hostToolId, pageScope: ((_c = dto.pageScope) === null || _c === void 0 ? void 0 : _c.trim()) || null, systemPrompt: dto.systemPrompt.trim(), defaultDelivery: client_1.PageActionDelivery.inline_stream, allowCustomInstruction: (_d = dto.allowCustomInstruction) !== null && _d !== void 0 ? _d : true, isActive: (_e = dto.isActive) !== null && _e !== void 0 ? _e : true, sortOrder: (_f = dto.sortOrder) !== null && _f !== void 0 ? _f : 0, config: dto.config === undefined
                         ? undefined
-                        : dto.config,
-                    sourceSkillId: (_g = dto.sourceSkillId) !== null && _g !== void 0 ? _g : null,
-                    workflowId: (_h = dto.workflowId) !== null && _h !== void 0 ? _h : undefined,
-                    workflowVersion: (_j = dto.workflowVersion) !== null && _j !== void 0 ? _j : undefined,
-                    workflowOverrides: dto.workflowOverrides === undefined
+                        : dto.config, sourceSkillId: (_g = dto.sourceSkillId) !== null && _g !== void 0 ? _g : null }, (dto.flowId != null && dto.flowId > 0
+                    ? {
+                        flowId: dto.flowId,
+                        flowVersion: (_h = dto.flowVersion) !== null && _h !== void 0 ? _h : undefined,
+                        workflowId: null,
+                        workflowVersion: null,
+                    }
+                    : {
+                        flowId: null,
+                        flowVersion: null,
+                        workflowId: null,
+                        workflowVersion: null,
+                    })), { workflowOverrides: dto.workflowOverrides === undefined
                         ? undefined
                         : dto.workflowOverrides === null
                             ? client_1.Prisma.JsonNull
-                            : dto.workflowOverrides,
-                },
+                            : dto.workflowOverrides }),
                 include: page_action_types_1.PAGE_ACTION_DETAIL_INCLUDE,
             });
             return (0, page_action_mapper_1.toPageActionResponse)(row);
@@ -95,29 +88,27 @@ let PageActionService = class PageActionService {
         if (dto.systemPrompt != null) {
             (0, page_action_prompt_limits_util_1.assertPageActionPromptLimits)({ systemPrompt: dto.systemPrompt });
         }
-        if (dto.workflowId != null) {
-            await this.workflowService.assertWorkflowReferenceCompatible({
-                workflowId: dto.workflowId,
-                appClientId: existing.appClientId,
-                entry: 'page_action',
-            });
+        if (dto.workflowId !== undefined) {
+            (0, assert_no_new_legacy_workflow_binding_util_1.assertNoNewLegacyWorkflowBinding)(dto.workflowId, 'page_action');
         }
+        const nextFlowId = dto.flowId !== undefined ? dto.flowId : existing.flowId;
+        const nextFlowVersion = dto.flowVersion !== undefined ? dto.flowVersion : existing.flowVersion;
         const nextWorkflowId = dto.workflowId !== undefined ? dto.workflowId : existing.workflowId;
-        const nextWorkflowVersion = dto.workflowVersion !== undefined
-            ? dto.workflowVersion
-            : existing.workflowVersion;
-        const nextHostToolId = dto.hostToolId !== undefined ? dto.hostToolId : existing.hostToolId;
-        if (nextWorkflowId != null && nextWorkflowId > 0) {
-            await this.workflowService.assertPageActionWorkflowBindingsCompatible({
-                workflowId: nextWorkflowId,
+        const nextWorkflowVersion = nextWorkflowId == null
+            ? null
+            : dto.workflowVersion !== undefined
+                ? dto.workflowVersion
+                : existing.workflowVersion;
+        if (nextFlowId != null && nextFlowId > 0) {
+            await this.flowService.assertPageActionFlowBindingsCompatible({
+                flowId: nextFlowId,
                 appClientId: existing.appClientId,
-                workflowVersion: nextWorkflowVersion,
-                pageActionHostToolId: nextHostToolId,
+                flowVersion: nextFlowVersion,
             });
         }
         const row = await this.prisma.pageAction.update({
             where: { id },
-            data: Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (dto.name != null ? { name: dto.name.trim() } : {})), (dto.description !== undefined
+            data: Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (dto.name != null ? { name: dto.name.trim() } : {})), (dto.description !== undefined
                 ? { description: ((_a = dto.description) === null || _a === void 0 ? void 0 : _a.trim()) || null }
                 : {})), (dto.hostToolId !== undefined ? { hostToolId: dto.hostToolId } : {})), (dto.pageScope !== undefined
                 ? { pageScope: ((_b = dto.pageScope) === null || _b === void 0 ? void 0 : _b.trim()) || null }
@@ -129,8 +120,23 @@ let PageActionService = class PageActionService {
                 ? { allowCustomInstruction: dto.allowCustomInstruction }
                 : {})), (dto.isActive != null ? { isActive: dto.isActive } : {})), (dto.sortOrder != null ? { sortOrder: dto.sortOrder } : {})), (dto.config !== undefined
                 ? { config: dto.config }
-                : {})), (dto.workflowId !== undefined ? { workflowId: dto.workflowId } : {})), (dto.workflowVersion !== undefined
-                ? { workflowVersion: dto.workflowVersion }
+                : {})), (dto.flowId !== undefined ||
+                dto.flowVersion !== undefined ||
+                dto.workflowId !== undefined ||
+                dto.workflowVersion !== undefined
+                ? nextFlowId != null && nextFlowId > 0
+                    ? {
+                        flowId: nextFlowId,
+                        flowVersion: nextFlowVersion,
+                        workflowId: null,
+                        workflowVersion: null,
+                    }
+                    : {
+                        workflowId: nextWorkflowId,
+                        workflowVersion: nextWorkflowVersion,
+                        flowId: null,
+                        flowVersion: null,
+                    }
                 : {})), (dto.workflowOverrides !== undefined
                 ? {
                     workflowOverrides: dto.workflowOverrides === null
@@ -288,7 +294,7 @@ let PageActionService = class PageActionService {
 PageActionService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        workflow_service_1.WorkflowService])
+        flow_service_1.FlowService])
 ], PageActionService);
 exports.PageActionService = PageActionService;
 //# sourceMappingURL=page-action.service.js.map

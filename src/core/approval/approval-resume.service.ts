@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { PageActionRunStepRecorder } from '../page-action/page-action-run-steps.util';
 import type { ApprovalResumeSnapshot } from './approval-resume-snapshot.types';
+import { resolveApprovalResumeNodeDefs } from './approval-resume-snapshot.types';
 import { ApprovalGateService } from './approval-gate.service';
 import { ApprovalRequestService } from './approval-request.service';
 import { ApprovalTriggerPermissionService } from './approval-trigger-permission.service';
@@ -267,7 +268,7 @@ export class ApprovalResumeService {
       triggerPermission: this.triggerPermission,
     });
     const decision = this.triggerPermission.evaluateForNodes({
-      nodes: snapshot.workflowNodeDefs,
+      nodes: resolveApprovalResumeNodeDefs(snapshot, null),
       allowedToolIds,
     });
     if (!decision.allowed) {

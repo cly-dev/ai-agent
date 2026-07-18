@@ -4,6 +4,7 @@ export type SummarizeProseStreamCallbacks = {
 };
 export type SummarizeProseStreamSession = {
     ingestLlmDelta: (contentDelta: string) => void;
+    ingestReasoningDelta: (reasoningDelta: string) => void;
     replayRoutedMessage: (routedMessage: string) => void;
     resolveUserMarkdown: (input: {
         llmFinal?: string;

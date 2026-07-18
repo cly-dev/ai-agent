@@ -12,22 +12,38 @@ const page_workflow_node_runner_util_1 = require("../workflow/page/page-workflow
 const page_workflow_node_util_1 = require("./page-workflow-node.util");
 const draft_review_1 = require("../draft-review");
 const resolve_approval_parties_util_1 = require("../approval/resolve-approval-parties.util");
+const workflow_ir_native_direct_util_1 = require("../workflow/workflow-ir-native-direct.util");
+const entity_materialization_1 = require("../entity-materialization");
+const workflow_ir_native_phase_util_1 = require("../workflow/workflow-ir-native-phase.util");
 async function orchestratePageWorkflow(input) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
     const recorder = (_a = input.stepRecorder) !== null && _a !== void 0 ? _a : new page_action_run_steps_util_1.PageActionRunStepRecorder();
     const runtime = (0, page_workflow_runtime_util_1.createPageWorkflowExecutorRuntime)(input, recorder);
+    runtime.materializedEntities = (0, entity_materialization_1.materializeEntitiesFromRuntimeContext)({
+        pageContext: input.pageContext,
+        actionContext: (_b = input.actionContext) !== null && _b !== void 0 ? _b : null,
+    });
+    if (!input.resumeFrom) {
+        (0, entity_materialization_1.recordPageActionEntityMaterialization)(recorder, runtime.materializedEntities);
+    }
     if (input.resumeFrom) {
         runtime.nodeOutputs = Object.assign({}, input.resumeFrom.nodeOutputs);
     }
-    let workflowRun = (_c = (_b = input.resumeFrom) === null || _b === void 0 ? void 0 : _b.workflowRun) !== null && _c !== void 0 ? _c : (0, workflow_run_util_1.initWorkflowRun)({
+    let workflowRun = (_d = (_c = input.resumeFrom) === null || _c === void 0 ? void 0 : _c.workflowRun) !== null && _d !== void 0 ? _d : (0, workflow_run_util_1.initWorkflowRun)({
         workflowId: input.workflowId,
         version: input.version,
         nodes: input.nodes,
         edges: input.edges,
         entryNodeId: input.entryNodeId,
-        compiledFrom: input.resumeFrom ? 'resume' : 'workflow_db',
+        compiledFrom: input.flowId ? 'flow_db' : 'workflow_db',
+        phasesByNodeId: input.executionMode === 'ir_native_direct' && input.ir
+            ? Object.fromEntries(input.ir.nodes.map((node) => [
+                node.id,
+                (0, workflow_ir_native_phase_util_1.resolveWorkflowIrNativePhases)(node)[0],
+            ]))
+            : undefined,
     });
-    if ((_d = input.resumeFrom) === null || _d === void 0 ? void 0 : _d.advancePastAwait) {
+    if ((_e = input.resumeFrom) === null || _e === void 0 ? void 0 : _e.advancePastAwait) {
         workflowRun = (0, workflow_resume_util_1.advanceWorkflowRunAfterWriteConfirm)(workflowRun);
     }
     (0, workflow_debug_util_1.logWorkflowDebug)('page_workflow_start', {
@@ -37,11 +53,29 @@ async function orchestratePageWorkflow(input) {
         version: input.version,
         resumed: input.resumeFrom != null,
         nodeIds: input.nodes.map((row) => row.id),
+        executionMode: (_f = input.executionMode) !== null && _f !== void 0 ? _f : 'materialized_expand',
+        irNodeCount: (_h = (_g = input.ir) === null || _g === void 0 ? void 0 : _g.nodes.length) !== null && _h !== void 0 ? _h : 0,
         workflowRun,
     });
     while (workflowRun.currentNodeId && workflowRun.status === 'running') {
         const nodeId = workflowRun.currentNodeId;
-        const def = input.nodes.find((row) => row.id === nodeId);
+        const runNode = workflowRun.nodes.find((row) => row.nodeId === nodeId);
+        const irNode = input.executionMode === 'ir_native_direct'
+            ? (_j = input.ir) === null || _j === void 0 ? void 0 : _j.nodes.find((row) => row.id === nodeId)
+            : undefined;
+        const def = irNode != null
+            ? (() => {
+                try {
+                    const phase = runNode === null || runNode === void 0 ? void 0 : runNode.phase;
+                    return phase
+                        ? (0, workflow_ir_native_phase_util_1.materializeWorkflowIrNodeForPhase)(irNode, phase)
+                        : (0, workflow_ir_native_direct_util_1.materializeNativeFlatIrNode)(irNode);
+                }
+                catch (_a) {
+                    return undefined;
+                }
+            })()
+            : input.nodes.find((row) => row.id === nodeId);
         if (!def) {
             return buildSuspendedOrFinal({
                 workflowNodes: input.nodes,
@@ -84,7 +118,7 @@ async function orchestratePageWorkflow(input) {
                 workflowRun,
                 runtime,
                 allowedToolIds: input.allowedToolIds,
-                pendingWrite: (_f = (_e = input.resumeFrom) === null || _e === void 0 ? void 0 : _e.pendingWrite) !== null && _f !== void 0 ? _f : null,
+                pendingWrite: (_l = (_k = input.resumeFrom) === null || _k === void 0 ? void 0 : _k.pendingWrite) !== null && _l !== void 0 ? _l : null,
             });
             workflowRun = reactResult.workflowRun;
             if (reactResult.ok === false) {
@@ -130,7 +164,7 @@ async function orchestratePageWorkflow(input) {
             const parties = (0, resolve_approval_parties_util_1.resolveApprovalParties)({
                 source: 'page_action',
                 initiatorUserId: input.userId,
-                triggerBinding: (_g = input.approvalTriggerBinding) !== null && _g !== void 0 ? _g : null,
+                triggerBinding: (_m = input.approvalTriggerBinding) !== null && _m !== void 0 ? _m : null,
             });
             if (parties.ok === false) {
                 return buildSuspendedOrFinal({
@@ -161,13 +195,16 @@ async function orchestratePageWorkflow(input) {
                     : 0,
                 lastEvent: 'composed',
             });
+            if (input.flowId == null || input.flowId <= 0) {
+                throw new Error('PageAction approval requires flowId; legacy Workflow path removed');
+            }
             const approval = await input.approvalGate.suspend({
                 appClientId: input.appClientId,
                 source: 'page_action',
                 initiatorUserId: parties.parties.initiatorUserId,
                 approverUserId: parties.parties.approverUserId,
-                workflowId: input.workflowId,
-                workflowVersion: input.version,
+                flowId: input.flowId,
+                flowVersion: (_o = input.flowVersion) !== null && _o !== void 0 ? _o : input.version,
                 nodeId,
                 title: `${input.actionKey} · ${def.name}`,
                 writeDraft,
@@ -177,10 +214,10 @@ async function orchestratePageWorkflow(input) {
                 scopedToolIds: input.allowedToolIds,
                 pageContext: input.pageContext,
                 pageActionRunId: input.actionRunId,
-                idempotencyKey: (_h = input.pageActionKey) !== null && _h !== void 0 ? _h : null,
+                idempotencyKey: (_p = input.pageActionKey) !== null && _p !== void 0 ? _p : null,
                 channel: { kind: 'page_action', pageActionRunId: input.actionRunId },
                 stepRecorder: recorder,
-                existingApprovalRequestId: (_j = input.existingApprovalRequestId) !== null && _j !== void 0 ? _j : null,
+                existingApprovalRequestId: (_q = input.existingApprovalRequestId) !== null && _q !== void 0 ? _q : null,
             });
             (0, workflow_debug_util_1.logWorkflowDebug)('page_workflow_suspended', {
                 actionRunId: input.actionRunId,
@@ -199,6 +236,24 @@ async function orchestratePageWorkflow(input) {
         }
         if (nodeResult.kind === 'completed') {
             (0, page_workflow_node_util_1.applyPageWorkflowNodeOutput)(runtime, nodeResult.outcome);
+            if (input.executionMode === 'ir_native_direct' && irNode) {
+                const phaseStep = (0, workflow_run_util_1.tryAdvanceNativePhaseAfterNodeSuccess)({
+                    run: workflowRun,
+                    nodeId,
+                    irNode,
+                });
+                workflowRun = phaseStep.workflowRun;
+                if (phaseStep.advancedPhase) {
+                    (0, workflow_debug_util_1.logWorkflowDebug)('page_node_phase_advanced', {
+                        actionRunId: input.actionRunId,
+                        actionKey: input.actionKey,
+                        nodeId,
+                        phase: (_r = workflowRun.nodes.find((n) => n.nodeId === nodeId)) === null || _r === void 0 ? void 0 : _r.phase,
+                        workflowRun,
+                    });
+                    continue;
+                }
+            }
             workflowRun = (0, workflow_run_util_1.advanceWorkflowRun)(workflowRun);
             workflowRun = (0, workflow_run_util_1.finalizeWorkflowRunAfterAdvance)(workflowRun);
             (0, workflow_debug_util_1.logWorkflowDebug)('page_node_advanced', {

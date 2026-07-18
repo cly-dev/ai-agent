@@ -2,13 +2,14 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildHarnessSensorPayload = void 0;
 const resolve_workflow_node_tool_refs_util_1 = require("./resolve-workflow-node-tool-refs.util");
+const resolve_workflow_node_runtime_input_util_1 = require("./resolve-workflow-node-runtime-input.util");
 function buildHarnessSensorPayload(def, state, extra) {
     if (!def) {
         return extra !== null && extra !== void 0 ? extra : {};
     }
     switch (def.action) {
         case 'fetch_data': {
-            const toolIds = (0, resolve_workflow_node_tool_refs_util_1.resolveFetchDataToolIds)(def.input);
+            const toolIds = (0, resolve_workflow_node_tool_refs_util_1.resolveFetchDataToolIds)((0, resolve_workflow_node_runtime_input_util_1.resolveWorkflowNodeRuntimeInput)(def));
             const payload = {
                 observations: state.toolObservations,
                 toolId: toolIds[0],

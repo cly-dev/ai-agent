@@ -316,6 +316,11 @@ export function parseResponseProfile(
 
   const decisionRole = parseConfiguredToolDecisionRole(raw.decisionRole);
 
+  const entityType =
+    typeof raw.entityType === 'string' && raw.entityType.trim()
+      ? raw.entityType.trim()
+      : undefined;
+
   return {
     coreFields,
     optionalFields,
@@ -323,6 +328,7 @@ export function parseResponseProfile(
     listPath,
     listMetaFields,
     decisionRole,
+    ...(entityType ? { entityType } : {}),
   };
 }
 

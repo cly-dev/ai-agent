@@ -8,6 +8,7 @@ import { mergePageWorkflowLlmMetrics } from '../../../page-action/page-workflow-
 import { completeWorkflowNode } from '../../workflow-run.util';
 import { buildWorkflowNodeOutputRef } from '../../workflow-node-output.util';
 import type { SummarizeNodeInput } from '../../workflow-node-input.types';
+import { resolveWorkflowNodeRuntimeInput } from '../../resolve-workflow-node-runtime-input.util';
 import { requirePageExecutorHost } from '../executor-host.util';
 import type { WorkflowExecutor } from '../workflow-executor.types';
 
@@ -33,7 +34,9 @@ export const pageSummarizeExecutor: WorkflowExecutor = {
   action: 'summarize',
   async run(ctx) {
     const { runtime } = requirePageExecutorHost(ctx.host);
-    const nodeInput = ctx.def.input as SummarizeNodeInput;
+    const nodeInput = resolveWorkflowNodeRuntimeInput(
+      ctx.def,
+    ) as SummarizeNodeInput;
     warnDeprecatedSummarizeHostToolId(ctx.nodeId, nodeInput.hostToolId);
     const mode = nodeInput.mode ?? 'final';
     const messages = injectWorkflowNodeObjective(

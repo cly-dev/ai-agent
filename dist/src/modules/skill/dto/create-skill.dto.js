@@ -75,7 +75,10 @@ __decorate([
     __metadata("design:type", Array)
 ], CreateSkillDto.prototype, "tools", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: '引用的 Workflow 资产 ID' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: '【已移除】禁止新绑；请用 flowId。存量仅可读，迁移见 POST /admin/flow/migrate-from-workflow/:id',
+        deprecated: true,
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
@@ -83,13 +86,34 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateSkillDto.prototype, "workflowId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'pin Workflow revision version' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: '【已移除】随 workflowId 废弃',
+        deprecated: true,
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.Min)(1),
     __metadata("design:type", Number)
 ], CreateSkillDto.prototype, "workflowVersion", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: '引用的 Flow 资产 ID（Intent/IR；编排唯一绑定）',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    __metadata("design:type", Number)
+], CreateSkillDto.prototype, "flowId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'pin Flow revision version' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    __metadata("design:type", Number)
+], CreateSkillDto.prototype, "flowVersion", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ description: '按 nodeId 覆盖 objective 等字段' }),
     (0, class_validator_1.IsOptional)(),

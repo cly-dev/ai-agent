@@ -1,6 +1,7 @@
 import type { ComposeMutationNodeInput } from '../workflow/workflow-node-input.types';
 import type { WriteDataNodeInput } from '../workflow/workflow-node-input.types';
 import type { WorkflowNodeDef } from '../workflow/workflow.types';
+import { resolveWorkflowNodeRuntimeInput } from '../workflow/resolve-workflow-node-runtime-input.util';
 
 /** page workflow compose 节点产出：供 present / await / resume 读取。 */
 export type PageWorkflowComposeOutput = {
@@ -77,7 +78,9 @@ export function resolvePageWorkflowPendingWrite(input: {
   }
 
   const writeNode = input.nodes.find((row) => row.action === 'write_data');
-  const writeInput = writeNode?.input as WriteDataNodeInput | undefined;
+  const writeInput = writeNode
+    ? (resolveWorkflowNodeRuntimeInput(writeNode) as WriteDataNodeInput)
+    : undefined;
   const toolId = writeInput?.toolId;
   if (writeNode && typeof toolId === 'number' && toolId > 0) {
     for (const output of Object.values(input.nodeOutputs)) {

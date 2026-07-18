@@ -2,12 +2,15 @@ export type SkillRunnableCapabilities = {
   skillToolIds: number[];
   hostToolIds: number[];
   workflowId?: number | null;
+  flowId?: number | null;
 };
 
 export function skillIsWorkflowBound(skill: {
   workflowId?: number | null;
+  flowId?: number | null;
 }): boolean {
-  return skill.workflowId != null && skill.workflowId > 0;
+  // 运行时只认 Flow；存量 Skill.workflowId 须 migrate，不再当作已绑编排。
+  return skill.flowId != null && skill.flowId > 0;
 }
 
 export type SkillRunnableKind = 'http' | 'host' | 'both';
@@ -16,10 +19,14 @@ export function normalizeSkillRunnableCapabilities(skill: {
   skillToolIds?: number[];
   toolIds?: number[];
   hostToolIds?: number[];
+  workflowId?: number | null;
+  flowId?: number | null;
 }): SkillRunnableCapabilities {
   return {
     skillToolIds: skill.skillToolIds ?? skill.toolIds ?? [],
     hostToolIds: skill.hostToolIds ?? [],
+    workflowId: skill.workflowId,
+    flowId: skill.flowId,
   };
 }
 
@@ -130,6 +137,7 @@ export function skillIsRunnableForUser(
     toolIds: number[];
     hostToolIds?: number[];
     workflowId?: number | null;
+    flowId?: number | null;
   },
   allowedToolIds: ReadonlySet<number>,
 ): boolean {
@@ -167,6 +175,7 @@ export function filterRunnableSkills<
     toolIds: number[];
     hostToolIds?: number[];
     workflowId?: number | null;
+    flowId?: number | null;
   },
 >(skills: T[], allowedToolIds: ReadonlySet<number>): T[] {
   return skills.filter((skill) => skillIsRunnableForUser(skill, allowedToolIds));

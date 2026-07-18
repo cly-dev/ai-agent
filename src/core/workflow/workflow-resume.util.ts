@@ -2,7 +2,7 @@ import type { PrismaService } from '../../prisma/prisma.service';
 import type { TaskPlanSnapshot } from '../agent-engine/engine/main/plan/task-plan.types';
 import { normalizeTaskPlanSnapshotForWorkflow } from './normalize-task-plan-for-workflow.util';
 import { compileTaskPlanToWorkflowNodes } from './compile-plan-to-workflow.util';
-import { loadWorkflowForRun } from './load-workflow-definition.util';
+import { loadFlowForRun } from './load-flow-for-run.util';
 import {
   projectTaskPlanFromWorkflowRun,
   workflowNodeRequiresReactLoop,
@@ -15,6 +15,7 @@ import {
 import type {
   WorkflowEdge,
   WorkflowNodeDef,
+  WorkflowOverrides,
   WorkflowRunState,
 } from './workflow.types';
 
@@ -41,11 +42,16 @@ function nodeDefsCoverRun(
 /**
  * Resume 解析整图：nodes +（DB 时）edges。
  * 边是推进真源；禁止只拿 defs 再靠 GOA 缺边快照合成线性。
+ *
+ * 运行时只认 Flow（compiledFrom=flow_db）；legacy Workflow 表不再参与 resume。
+ * flow_db 跑里 workflowId 字段存的是 Flow.id。
  */
 export type WorkflowResumeResolvedGraph = {
   nodes: WorkflowNodeDef[];
   /** DB load 成功时带回；plan 回退为 null → 保留 savedRun.edges */
   edges: WorkflowEdge[] | null;
+  ir?: import('./workflow-ir.types').WorkflowIrDocument | null;
+  executionMode?: import('./workflow-ir-native-direct.util').WorkflowExecutionMode;
 };
 
 export async function resolveWorkflowGraphForResume(
@@ -58,17 +64,28 @@ export async function resolveWorkflowGraphForResume(
       allowedToolIds: number[];
       allowedHostToolIds: number[];
     };
+    /** 与 init 一致：Skill/PageAction 上的 objective 覆盖，避免 resume 与首跑图分歧 */
+    workflowOverrides?: WorkflowOverrides | null;
   },
 ): Promise<WorkflowResumeResolvedGraph | null> {
-  if (input.savedRun.workflowId > 0) {
-    const loaded = await loadWorkflowForRun(prisma, {
-      workflowId: input.savedRun.workflowId,
+  if (
+    input.savedRun.compiledFrom === 'flow_db' &&
+    input.savedRun.workflowId > 0
+  ) {
+    const loaded = await loadFlowForRun(prisma, {
+      flowId: input.savedRun.workflowId,
       appClientId: input.appClientId,
-      workflowVersion: input.savedRun.version,
+      flowVersion: input.savedRun.version,
+      workflowOverrides: input.workflowOverrides ?? null,
       scope: input.scope,
     });
     if (loaded && nodeDefsCoverRun(loaded.nodes, input.savedRun)) {
-      return { nodes: loaded.nodes, edges: loaded.edges };
+      return {
+        nodes: loaded.nodes,
+        edges: loaded.edges,
+        ir: loaded.ir,
+        executionMode: loaded.executionMode,
+      };
     }
   }
 

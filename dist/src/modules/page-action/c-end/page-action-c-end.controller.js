@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PageActionCEndController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const throttler_1 = require("@nestjs/throttler");
 const app_client_dsn_guard_1 = require("../../../auth/app-client-dsn.guard");
 const app_client_dsn_constants_1 = require("../../../auth/app-client-dsn.constants");
 const user_jwt_auth_guard_1 = require("../../../auth/user-jwt-auth.guard");
@@ -72,6 +73,7 @@ __decorate([
 ], PageActionCEndController.prototype, "invoke", null);
 __decorate([
     (0, common_1.Get)('page-action/runs/:id/stream'),
+    (0, throttler_1.SkipThrottle)(),
     (0, common_1.UseGuards)(user_jwt_auth_guard_1.UserJwtAuthGuard, app_client_dsn_guard_1.AppClientDsnGuard),
     (0, swagger_1.ApiSecurity)('app-dsn'),
     (0, swagger_1.ApiHeader)({

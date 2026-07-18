@@ -2,7 +2,7 @@
 
 > **受众**：C 端宿主前端、列表/详情页嵌入 PageAction 按钮的业务方。  
 > **目标**：正确调用 `invoke`、订阅 SSE、处理重复提交拦截（`pageActionKey`）、展示任务状态。  
-> **相关文档**：[c-end-page-action-approval-interaction.md](./c-end-page-action-approval-interaction.md)（审批实体对照展示）、[c-end-auto-agent-integration.md](./c-end-auto-agent-integration.md)（Chat）、[outbound-network-guide.md](./outbound-network-guide.md)（断连/失败提示）。
+> **相关文档**：[c-end-page-action-streaming-guide.md](./c-end-page-action-streaming-guide.md)（**前端 SSE / HostTool DSL 对接规范**）、[c-end-page-action-approval-interaction.md](./c-end-page-action-approval-interaction.md)（审批实体对照展示）、[c-end-auto-agent-integration.md](./c-end-auto-agent-integration.md)（Chat）、[outbound-network-guide.md](./outbound-network-guide.md)（断连/失败提示）、[entity-materialization-architecture.md](./entity-materialization-architecture.md)（架构原则）、[**entity-materialization-integration.md**](./entity-materialization-integration.md)（**物化传参 & 运行记录对接**）。
 
 ---
 
@@ -267,7 +267,7 @@ Accept: text/event-stream
 
 HostTool 结构化写入（SEO、打标等）走 **`host_action`** 事件（`tool.flush` 定稿），不走 `phase=stream`。迟订阅重放时，总结类 run 会先重放若干 `stream` 再 `completed`。
 
-Workflow 场景下还有节点级字段（`nodeId`、`action`、`nodeStatus` 等），见 [frontend-workflow-config-guide.md §8](./frontend-workflow-config-guide.md#8-c-端-pageaction-invoke)。
+Workflow 场景下还有节点级字段（`nodeId`、`action`、`nodeStatus` 等）；编排配置见 [b-end-flow-admin-guide.md](./b-end-flow-admin-guide.md)。
 
 ### 5.2 常见 `errorCode`（Workflow 加载失败）
 

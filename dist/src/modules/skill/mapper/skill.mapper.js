@@ -30,6 +30,8 @@ function mapSkillCore(row) {
         config: row.config,
         workflowId: row.workflowId,
         workflowVersion: row.workflowVersion,
+        flowId: row.flowId,
+        flowVersion: row.flowVersion,
         workflowOverrides: row.workflowOverrides,
         isActive: row.isActive,
         createdAt: row.createdAt,

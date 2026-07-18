@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, MessageEvent, Param, Post, Query, Req, Sse, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Logger, MessageEvent, Param, Post, Query, Req, Sse, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
@@ -35,6 +35,8 @@ import { MESSAGE_FEEDBACK_DOWN_REASON_TAGS } from '../message/message-feedback.c
 @ApiBearerAuth()
 @ApiSecurity('app-dsn')
 export class ChatController {
+  private readonly logger = new Logger(ChatController.name);
+
   constructor(
     private readonly chatService: ChatService,
     private readonly chatEvents: ChatEventsService,
@@ -211,9 +213,15 @@ export class ChatController {
     const normalizedSessionId = this.normalizeSessionId(sessionId);
     return new Observable<MessageEvent>((subscriber) => {
       let inner: Subscription | null = null;
+      const connectedAt = Date.now();
+      let ownershipResolved = false;
       void this.chatService
         .assertSessionOwnedByUser(normalizedSessionId, uid, aid)
         .then((session) => {
+          ownershipResolved = true;
+          this.logger.debug(
+            `chat SSE connected sessionId=${session.id} userId=${uid}`,
+          );
           this.sessionPrepareService.warmInBackground(
             session.id,
             uid,
@@ -230,8 +238,18 @@ export class ChatController {
             complete: () => subscriber.complete(),
           });
         })
-        .catch((err: unknown) => subscriber.error(err));
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `chat SSE connect failed sessionId=${normalizedSessionId} userId=${uid}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+          subscriber.error(err);
+        });
       return () => {
+        this.logger.debug(
+          `chat SSE disconnected sessionId=${normalizedSessionId} userId=${uid} ownershipResolved=${ownershipResolved} durationMs=${Date.now() - connectedAt}`,
+        );
         inner?.unsubscribe();
       };
     });

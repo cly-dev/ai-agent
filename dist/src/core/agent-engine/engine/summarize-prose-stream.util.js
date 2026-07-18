@@ -74,6 +74,13 @@ function createSummarizeProseStreamSession(callbacks) {
         get proseStreamSuperseded() {
             return proseStreamSuperseded;
         },
+        ingestReasoningDelta(reasoningDelta) {
+            var _a;
+            if (!reasoningDelta) {
+                return;
+            }
+            (_a = callbacks.onThinkDelta) === null || _a === void 0 ? void 0 : _a.call(callbacks, reasoningDelta);
+        },
         ingestLlmDelta(contentDelta) {
             var _a;
             if (!contentDelta || proseStreamSuperseded) {

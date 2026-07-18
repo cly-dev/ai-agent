@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.readWriteDataToolId = exports.readComposeMutationToolId = exports.resolvePageWorkflowPendingWrite = exports.resolvePageWorkflowPresentSummary = exports.buildPageComposeNodeOutput = void 0;
+const resolve_workflow_node_runtime_input_util_1 = require("../workflow/resolve-workflow-node-runtime-input.util");
 const COMPOSE_OUTPUT_KEY = 'page_compose_mutation';
 function buildPageComposeNodeOutput(output) {
     return { [COMPOSE_OUTPUT_KEY]: output };
@@ -58,7 +59,9 @@ function resolvePageWorkflowPendingWrite(input) {
         };
     }
     const writeNode = input.nodes.find((row) => row.action === 'write_data');
-    const writeInput = writeNode === null || writeNode === void 0 ? void 0 : writeNode.input;
+    const writeInput = writeNode
+        ? (0, resolve_workflow_node_runtime_input_util_1.resolveWorkflowNodeRuntimeInput)(writeNode)
+        : undefined;
     const toolId = writeInput === null || writeInput === void 0 ? void 0 : writeInput.toolId;
     if (writeNode && typeof toolId === 'number' && toolId > 0) {
         for (const output of Object.values(input.nodeOutputs)) {

@@ -10,47 +10,42 @@ const page_action_run_audit_util_1 = require("../../page-action/page-action-run-
 const workflow_run_util_1 = require("../workflow-run.util");
 const workflow_debug_util_1 = require("../trace/workflow-debug.util");
 const executor_host_util_1 = require("../executors/executor-host.util");
-const executor_registry_1 = require("../executors/executor-registry");
+const resolve_workflow_node_executor_util_1 = require("../executors/resolve-workflow-node-executor.util");
+const project_ir_run_status_util_1 = require("../project-ir-run-status.util");
 async function executePageWorkflowNode(input) {
-    var _a, _b, _c, _d, _e, _f;
-    const executor = (0, executor_registry_1.getWorkflowExecutor)(input.def.action, 'page');
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    const resolved = (0, resolve_workflow_node_executor_util_1.resolveWorkflowNodeExecutor)(input.def, 'page');
+    const executor = resolved.executor;
     if (!executor) {
         return {
             kind: 'failed',
             workflowRun: (0, workflow_run_util_1.failWorkflowNode)(input.workflowRun, input.nodeId, {
                 code: 'action_not_implemented',
-                message: `Page workflow action not implemented: ${input.def.action}`,
+                message: `Page workflow action not implemented: ${resolved.action}`,
             }),
             errorCode: 'action_not_implemented',
-            errorMessage: `Page workflow action not implemented: ${input.def.action}`,
+            errorMessage: `Page workflow action not implemented: ${resolved.action}`,
         };
     }
-    const harness = (0, harness_runner_1.createPageHarnessRunner)((0, sensors_1.harnessSensorsForWorkflowAction)(input.def.action));
-    (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, {
-        phase: 'start',
-        actionRunId: input.runtime.actionRunId,
-        actionKey: input.runtime.actionKey,
-        generation: input.runtime.generation,
-        clientActionId: input.runtime.clientActionId,
+    (0, workflow_debug_util_1.logWorkflowDebug)('page_execute_node_dispatch', {
+        actionRunId: input.actionRunId,
+        actionKey: input.actionKey,
         nodeId: input.nodeId,
-        action: input.def.action,
-        workflowStatus: input.workflowRun.status,
-        currentNodeId: input.workflowRun.currentNodeId,
+        action: resolved.action,
+        irType: resolved.irType,
+        irNodeId: resolved.irNodeId,
+        dispatchKind: resolved.dispatchKind,
+        currentIrNodeId: (0, project_ir_run_status_util_1.resolveCurrentIrNodeId)(input.workflowRun),
     });
+    const harness = (0, harness_runner_1.createPageHarnessRunner)((0, sensors_1.harnessSensorsForWorkflowAction)(resolved.action));
+    const irSseFields = {
+        irNodeId: (_a = resolved.irNodeId) !== null && _a !== void 0 ? _a : null,
+        irType: (_b = resolved.irType) !== null && _b !== void 0 ? _b : null,
+    };
+    (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, Object.assign(Object.assign({ phase: 'start', actionRunId: input.runtime.actionRunId, actionKey: input.runtime.actionKey, generation: input.runtime.generation, clientActionId: input.runtime.clientActionId, nodeId: input.nodeId, action: resolved.action }, irSseFields), { workflowStatus: input.workflowRun.status, currentNodeId: input.workflowRun.currentNodeId, currentIrNodeId: (0, project_ir_run_status_util_1.resolveCurrentIrNodeId)(input.workflowRun) }));
     const emitWorkflowNodeFailed = (errorCode, errorMessage, workflowRun = input.workflowRun) => {
-        (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, {
-            phase: 'failed',
-            actionRunId: input.runtime.actionRunId,
-            actionKey: input.runtime.actionKey,
-            generation: input.runtime.generation,
-            clientActionId: input.runtime.clientActionId,
-            nodeId: input.nodeId,
-            action: input.def.action,
-            workflowStatus: workflowRun.status,
-            currentNodeId: workflowRun.currentNodeId,
-            errorCode,
-            errorMessage,
-        });
+        (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, Object.assign(Object.assign({ phase: 'failed', actionRunId: input.runtime.actionRunId, actionKey: input.runtime.actionKey, generation: input.runtime.generation, clientActionId: input.runtime.clientActionId, nodeId: input.nodeId, action: resolved.action }, irSseFields), { workflowStatus: workflowRun.status, currentNodeId: workflowRun.currentNodeId, currentIrNodeId: (0, project_ir_run_status_util_1.resolveCurrentIrNodeId)(workflowRun), errorCode,
+            errorMessage }));
     };
     let rawOutcome;
     try {
@@ -67,7 +62,7 @@ async function executePageWorkflowNode(input) {
             actionRunId: input.actionRunId,
             actionKey: input.actionKey,
             nodeId: input.nodeId,
-            action: input.def.action,
+            action: resolved.action,
             outcome: 'executor_error',
             errorMessage: message,
             workflowRun: input.workflowRun,
@@ -98,22 +93,12 @@ async function executePageWorkflowNode(input) {
         };
     }
     if (dispatch.action === 'suspend') {
-        (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, {
-            phase: 'awaiting_approval',
-            actionRunId: input.runtime.actionRunId,
-            actionKey: input.runtime.actionKey,
-            generation: input.runtime.generation,
-            clientActionId: input.runtime.clientActionId,
-            nodeId: input.nodeId,
-            action: input.def.action,
-            workflowStatus: dispatch.workflowRun.status,
-            currentNodeId: dispatch.workflowRun.currentNodeId,
-        });
+        (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, Object.assign(Object.assign({ phase: 'awaiting_approval', actionRunId: input.runtime.actionRunId, actionKey: input.runtime.actionKey, generation: input.runtime.generation, clientActionId: input.runtime.clientActionId, nodeId: input.nodeId, action: resolved.action }, irSseFields), { workflowStatus: dispatch.workflowRun.status, currentNodeId: dispatch.workflowRun.currentNodeId, currentIrNodeId: (0, project_ir_run_status_util_1.resolveCurrentIrNodeId)(dispatch.workflowRun) }));
         (0, workflow_debug_util_1.logWorkflowDebug)('page_execute_node', {
             actionRunId: input.actionRunId,
             actionKey: input.actionKey,
             nodeId: input.nodeId,
-            action: input.def.action,
+            action: resolved.action,
             outcome: 'awaiting_user_confirm',
             workflowRun: dispatch.workflowRun,
         });
@@ -129,7 +114,7 @@ async function executePageWorkflowNode(input) {
             actionRunId: input.actionRunId,
             actionKey: input.actionKey,
             nodeId: input.nodeId,
-            action: input.def.action,
+            action: resolved.action,
             outcome: 'delegate_react',
             workflowRun: dispatch.workflowRun,
         });
@@ -143,20 +128,20 @@ async function executePageWorkflowNode(input) {
     const sensorFailed = await (0, page_workflow_node_util_1.runPageWorkflowHarnessSensors)({
         harness,
         nodeId: input.nodeId,
-        action: input.def.action,
-        payload: (0, page_workflow_node_util_1.buildPageHarnessSensorPayload)(input.def.action, outcome),
+        action: resolved.action,
+        payload: (0, page_workflow_node_util_1.buildPageHarnessSensorPayload)(resolved.action, outcome),
         recorder: input.runtime.stepRecorder,
     });
     if (sensorFailed) {
         const failedRun = (0, workflow_run_util_1.failWorkflowNode)(input.workflowRun, input.nodeId, {
-            code: (_a = sensorFailed.code) !== null && _a !== void 0 ? _a : 'HARNESS_SENSOR_FAIL',
-            message: (_b = sensorFailed.message) !== null && _b !== void 0 ? _b : 'Harness sensor failed',
+            code: (_c = sensorFailed.code) !== null && _c !== void 0 ? _c : 'HARNESS_SENSOR_FAIL',
+            message: (_d = sensorFailed.message) !== null && _d !== void 0 ? _d : 'Harness sensor failed',
         });
-        emitWorkflowNodeFailed((_c = sensorFailed.code) !== null && _c !== void 0 ? _c : 'HARNESS_SENSOR_FAIL', sensorFailed.message, failedRun);
+        emitWorkflowNodeFailed((_e = sensorFailed.code) !== null && _e !== void 0 ? _e : 'HARNESS_SENSOR_FAIL', sensorFailed.message, failedRun);
         return {
             kind: 'failed',
             workflowRun: failedRun,
-            errorCode: (_d = sensorFailed.code) !== null && _d !== void 0 ? _d : 'HARNESS_SENSOR_FAIL',
+            errorCode: (_f = sensorFailed.code) !== null && _f !== void 0 ? _f : 'HARNESS_SENSOR_FAIL',
             errorMessage: sensorFailed.message,
         };
     }
@@ -164,27 +149,18 @@ async function executePageWorkflowNode(input) {
     input.runtime.stepRecorder.record({
         type: 'workflow',
         name: `${input.nodeId}:complete`,
-        detail: Object.assign({ outputRef: outcome.outputRef, action: input.def.action }, (0, page_action_run_audit_util_1.buildWorkflowNodeCompleteAudit)(input.def.action, outcome.nodeOutput)),
+        detail: Object.assign({ outputRef: outcome.outputRef, action: resolved.action }, (0, page_action_run_audit_util_1.buildWorkflowNodeCompleteAudit)(resolved.action, outcome.nodeOutput)),
     });
-    (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, {
-        phase: 'complete',
-        actionRunId: input.runtime.actionRunId,
-        actionKey: input.runtime.actionKey,
-        generation: input.runtime.generation,
-        clientActionId: input.runtime.clientActionId,
-        nodeId: input.nodeId,
-        action: input.def.action,
-        workflowStatus: outcome.workflowRun.status,
-        currentNodeId: outcome.workflowRun.currentNodeId,
-        outputRef: (_e = outcome.outputRef) !== null && _e !== void 0 ? _e : null,
-    });
+    (0, page_action_inline_sse_util_1.writePageWorkflowNodeSse)(input.runtime.sseSink, Object.assign(Object.assign({ phase: 'complete', actionRunId: input.runtime.actionRunId, actionKey: input.runtime.actionKey, generation: input.runtime.generation, clientActionId: input.runtime.clientActionId, nodeId: input.nodeId, action: resolved.action }, irSseFields), { workflowStatus: outcome.workflowRun.status, currentNodeId: outcome.workflowRun.currentNodeId, currentIrNodeId: (0, project_ir_run_status_util_1.resolveCurrentIrNodeId)(outcome.workflowRun), outputRef: (_g = outcome.outputRef) !== null && _g !== void 0 ? _g : null }));
     (0, workflow_debug_util_1.logWorkflowDebug)('page_execute_node', {
         actionRunId: input.actionRunId,
         actionKey: input.actionKey,
         nodeId: input.nodeId,
-        action: input.def.action,
+        action: resolved.action,
+        irType: resolved.irType,
+        dispatchKind: resolved.dispatchKind,
         outcome: 'completed',
-        outputRef: (_f = outcome.outputRef) !== null && _f !== void 0 ? _f : null,
+        outputRef: (_h = outcome.outputRef) !== null && _h !== void 0 ? _h : null,
         workflowRun: outcome.workflowRun,
     });
     return {

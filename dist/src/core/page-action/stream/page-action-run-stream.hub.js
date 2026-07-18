@@ -27,13 +27,16 @@ let PageActionRunStreamHub = class PageActionRunStreamHub {
         (0, page_action_sse_sink_util_1.initPageActionSseResponse)(res);
         const sink = (0, page_action_sse_sink_util_1.createExpressPageActionSseSink)(res);
         const session = this.ensureSession(runId);
+        const stopHeartbeat = (0, page_action_sse_sink_util_1.startPageActionSseHeartbeat)(res);
         (0, page_action_sse_sink_util_1.replayBufferedEvents)(sink, session.buffer);
         if (session.closed) {
+            stopHeartbeat();
             sink.end();
             return;
         }
         session.subscribers.add(sink);
         res.on('close', () => {
+            stopHeartbeat();
             session.subscribers.delete(sink);
         });
     }

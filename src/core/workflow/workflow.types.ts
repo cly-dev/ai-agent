@@ -5,8 +5,12 @@ export type { WorkflowNodeInput, WorkflowNodeInputByAction } from './workflow-no
 /** Workflow 运行入口：决定允许的 action 集合与保存校验.profile。 */
 export type WorkflowProfile = 'chat_skill' | 'page_action' | 'shared';
 
+/**
+ * 内部 IR action（策略编译产物）。配置面禁止手搓这些枚举；
+ * 配置真源见 `workflow-intent.types.ts`。
+ * 已删除 load_page_context：pageContext 运行时隐式消费。
+ */
 export type WorkflowActionKind =
-  | 'load_page_context'
   | 'detect_clues'
   | 'fetch_data'
   | 'summarize_images'
@@ -46,6 +50,7 @@ export type WorkflowRunStatus =
 
 export type WorkflowRunCompiledFrom =
   | 'workflow_db'
+  | 'flow_db'
   | 'plan_llm'
   | 'template'
   | 'minimal'
@@ -71,7 +76,7 @@ export type WorkflowEdge = {
   clue?: WorkflowClueDef;
 };
 
-/** DB Workflow.nodes / API 配置层节点。 */
+/** IR 节点定义（策略编译产物；非 Admin 配置真源）。 */
 export type WorkflowNodeDef<
   A extends WorkflowActionKind = WorkflowActionKind,
 > = {
@@ -80,6 +85,21 @@ export type WorkflowNodeDef<
   name: string;
   objective: string;
   input: WorkflowNodeInputByAction[A];
+  /**
+   * Flow 编译 IR 的 type（物化时打标）。
+   * Runtime §4.1 双分发：有值时优先按 IR type 解析 executor。
+   */
+  irType?: import('./workflow-ir.types').WorkflowIrNodeType;
+  /**
+   * 来源 IR 节点 id。expand 子步（如 human_task 的 present）与 IR 节点 id 不同，
+   * 供 run/advance 聚合到 IR 粒度（§4.1e）。
+   */
+  irNodeId?: string;
+  /**
+   * 来源 IR 节点 config 快照。有值时 runtime input 经
+   * `resolveWorkflowNodeRuntimeInput` 从本字段推导（§4.1e native）。
+   */
+  irConfig?: Record<string, unknown>;
 };
 
 /**
@@ -134,6 +154,17 @@ export type WorkflowRunNodeState = {
     code: string;
     message: string;
   };
+  /**
+   * 来源 IR 节点 id（init 自 WorkflowNodeDef 拷贝）。
+   * expand 子步共享同一 irNodeId，供 IR 粒度投影（§4.1e）。
+   */
+  irNodeId?: string;
+  irType?: import('./workflow-ir.types').WorkflowIrNodeType;
+  /**
+   * Plan A §4.3f：native 多相位（present→await / draft）。
+   * 缺省视为单相位 execute。
+   */
+  phase?: import('./workflow-ir-native-phase.util').WorkflowIrNativePhase;
 };
 
 /** 单次 invoke / Agent run 内的 L1 工作流快照。 */

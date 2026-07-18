@@ -682,7 +682,7 @@ export async function resolveTaskPlan(input: {
   scope: { appClientId: number; agentId: number };
   planInput: ResolveTaskPlanInput;
 }): Promise<ResolveTaskPlanResult> {
-  // ① Skill.workflowId：DB Workflow 资产
+  // ① Skill.flowId：Flow 资产（Intent/IR）
   if (input.planInput.skillBoundWorkflowPlan) {
     return {
       plan: input.planInput.skillBoundWorkflowPlan,

@@ -14,7 +14,7 @@ import type * as Prisma from "../internal/prismaNamespace"
 
 /**
  * Model Workflow
- * AppClient 级可复用 Workflow 资产（动作节点编排）。
+ * Legacy Workflow：旧版原子 action 图（nodes IR）。新 Intent/IR 请用 Flow。
  */
 export type WorkflowModel = runtime.Types.Result.DefaultSelection<Prisma.$WorkflowPayload>
 
@@ -568,11 +568,6 @@ export type WorkflowNullableScalarRelationFilter = {
   isNot?: Prisma.WorkflowWhereInput | null
 }
 
-export type WorkflowScalarRelationFilter = {
-  is?: Prisma.WorkflowWhereInput
-  isNot?: Prisma.WorkflowWhereInput
-}
-
 export type WorkflowAppClientIdWorkflowKeyCompoundUniqueInput = {
   appClientId: number
   workflowKey: string
@@ -640,6 +635,11 @@ export type WorkflowSumOrderByAggregateInput = {
   appClientId?: Prisma.SortOrder
   version?: Prisma.SortOrder
   sortOrder?: Prisma.SortOrder
+}
+
+export type WorkflowScalarRelationFilter = {
+  is?: Prisma.WorkflowWhereInput
+  isNot?: Prisma.WorkflowWhereInput
 }
 
 export type WorkflowCreateNestedManyWithoutAppClientInput = {
@@ -722,10 +722,12 @@ export type WorkflowCreateNestedOneWithoutApprovalRequestsInput = {
   connect?: Prisma.WorkflowWhereUniqueInput
 }
 
-export type WorkflowUpdateOneRequiredWithoutApprovalRequestsNestedInput = {
+export type WorkflowUpdateOneWithoutApprovalRequestsNestedInput = {
   create?: Prisma.XOR<Prisma.WorkflowCreateWithoutApprovalRequestsInput, Prisma.WorkflowUncheckedCreateWithoutApprovalRequestsInput>
   connectOrCreate?: Prisma.WorkflowCreateOrConnectWithoutApprovalRequestsInput
   upsert?: Prisma.WorkflowUpsertWithoutApprovalRequestsInput
+  disconnect?: Prisma.WorkflowWhereInput | boolean
+  delete?: Prisma.WorkflowWhereInput | boolean
   connect?: Prisma.WorkflowWhereUniqueInput
   update?: Prisma.XOR<Prisma.XOR<Prisma.WorkflowUpdateToOneWithWhereWithoutApprovalRequestsInput, Prisma.WorkflowUpdateWithoutApprovalRequestsInput>, Prisma.WorkflowUncheckedUpdateWithoutApprovalRequestsInput>
 }
@@ -1783,6 +1785,9 @@ export type $WorkflowPayload<ExtArgs extends runtime.Types.Extensions.InternalAr
     goal: string | null
     profile: $Enums.WorkflowProfile
     deliverable: $Enums.WorkflowDeliverable
+    /**
+     * * Legacy 图文档：{ nodes, edges, entryNodeId }
+     */
     nodes: runtime.JsonValue
     version: number
     constraints: runtime.JsonValue

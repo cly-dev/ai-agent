@@ -250,6 +250,7 @@ export type AppClientWhereInput = {
   pageActions?: Prisma.PageActionListRelationFilter
   pageActionRuns?: Prisma.PageActionRunListRelationFilter
   workflows?: Prisma.WorkflowListRelationFilter
+  flows?: Prisma.FlowListRelationFilter
   skills?: Prisma.SkillListRelationFilter
   approvalRequests?: Prisma.ApprovalRequestListRelationFilter
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditListRelationFilter
@@ -278,6 +279,7 @@ export type AppClientOrderByWithRelationInput = {
   pageActions?: Prisma.PageActionOrderByRelationAggregateInput
   pageActionRuns?: Prisma.PageActionRunOrderByRelationAggregateInput
   workflows?: Prisma.WorkflowOrderByRelationAggregateInput
+  flows?: Prisma.FlowOrderByRelationAggregateInput
   skills?: Prisma.SkillOrderByRelationAggregateInput
   approvalRequests?: Prisma.ApprovalRequestOrderByRelationAggregateInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditOrderByRelationAggregateInput
@@ -309,6 +311,7 @@ export type AppClientWhereUniqueInput = Prisma.AtLeast<{
   pageActions?: Prisma.PageActionListRelationFilter
   pageActionRuns?: Prisma.PageActionRunListRelationFilter
   workflows?: Prisma.WorkflowListRelationFilter
+  flows?: Prisma.FlowListRelationFilter
   skills?: Prisma.SkillListRelationFilter
   approvalRequests?: Prisma.ApprovalRequestListRelationFilter
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditListRelationFilter
@@ -366,6 +369,7 @@ export type AppClientCreateInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -394,6 +398,7 @@ export type AppClientUncheckedCreateInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -421,6 +426,7 @@ export type AppClientUpdateInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -449,6 +455,7 @@ export type AppClientUncheckedUpdateInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -775,6 +782,20 @@ export type AppClientUpdateOneRequiredWithoutWorkflowsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.AppClientUpdateToOneWithWhereWithoutWorkflowsInput, Prisma.AppClientUpdateWithoutWorkflowsInput>, Prisma.AppClientUncheckedUpdateWithoutWorkflowsInput>
 }
 
+export type AppClientCreateNestedOneWithoutFlowsInput = {
+  create?: Prisma.XOR<Prisma.AppClientCreateWithoutFlowsInput, Prisma.AppClientUncheckedCreateWithoutFlowsInput>
+  connectOrCreate?: Prisma.AppClientCreateOrConnectWithoutFlowsInput
+  connect?: Prisma.AppClientWhereUniqueInput
+}
+
+export type AppClientUpdateOneRequiredWithoutFlowsNestedInput = {
+  create?: Prisma.XOR<Prisma.AppClientCreateWithoutFlowsInput, Prisma.AppClientUncheckedCreateWithoutFlowsInput>
+  connectOrCreate?: Prisma.AppClientCreateOrConnectWithoutFlowsInput
+  upsert?: Prisma.AppClientUpsertWithoutFlowsInput
+  connect?: Prisma.AppClientWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.AppClientUpdateToOneWithWhereWithoutFlowsInput, Prisma.AppClientUpdateWithoutFlowsInput>, Prisma.AppClientUncheckedUpdateWithoutFlowsInput>
+}
+
 export type AppClientCreateWithoutPageAgentLlmProxyAuditsInput = {
   name: string
   dsn: string
@@ -797,6 +818,7 @@ export type AppClientCreateWithoutPageAgentLlmProxyAuditsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
 }
@@ -824,6 +846,7 @@ export type AppClientUncheckedCreateWithoutPageAgentLlmProxyAuditsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
 }
@@ -866,6 +889,7 @@ export type AppClientUpdateWithoutPageAgentLlmProxyAuditsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
 }
@@ -893,6 +917,7 @@ export type AppClientUncheckedUpdateWithoutPageAgentLlmProxyAuditsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
 }
@@ -918,6 +943,7 @@ export type AppClientCreateWithoutSessionsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -945,6 +971,7 @@ export type AppClientUncheckedCreateWithoutSessionsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -987,6 +1014,7 @@ export type AppClientUpdateWithoutSessionsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -1014,6 +1042,7 @@ export type AppClientUncheckedUpdateWithoutSessionsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -1040,6 +1069,7 @@ export type AppClientCreateWithoutMessageFeedbacksInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -1067,6 +1097,7 @@ export type AppClientUncheckedCreateWithoutMessageFeedbacksInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -1109,6 +1140,7 @@ export type AppClientUpdateWithoutMessageFeedbacksInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -1136,6 +1168,7 @@ export type AppClientUncheckedUpdateWithoutMessageFeedbacksInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -1162,6 +1195,7 @@ export type AppClientCreateWithoutToolsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -1189,6 +1223,7 @@ export type AppClientUncheckedCreateWithoutToolsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -1231,6 +1266,7 @@ export type AppClientUpdateWithoutToolsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -1258,6 +1294,7 @@ export type AppClientUncheckedUpdateWithoutToolsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -1284,6 +1321,7 @@ export type AppClientCreateWithoutIntegrationsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -1311,6 +1349,7 @@ export type AppClientUncheckedCreateWithoutIntegrationsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -1353,6 +1392,7 @@ export type AppClientUpdateWithoutIntegrationsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -1380,6 +1420,7 @@ export type AppClientUncheckedUpdateWithoutIntegrationsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -1407,6 +1448,7 @@ export type AppClientCreateWithoutSkillsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
 }
@@ -1434,6 +1476,7 @@ export type AppClientUncheckedCreateWithoutSkillsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
 }
@@ -1476,6 +1519,7 @@ export type AppClientUpdateWithoutSkillsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
 }
@@ -1503,6 +1547,7 @@ export type AppClientUncheckedUpdateWithoutSkillsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
 }
@@ -1528,6 +1573,7 @@ export type AppClientCreateWithoutUserAppsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -1555,6 +1601,7 @@ export type AppClientUncheckedCreateWithoutUserAppsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -1597,6 +1644,7 @@ export type AppClientUpdateWithoutUserAppsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -1624,6 +1672,7 @@ export type AppClientUncheckedUpdateWithoutUserAppsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -1650,6 +1699,7 @@ export type AppClientCreateWithoutAgentsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -1677,6 +1727,7 @@ export type AppClientUncheckedCreateWithoutAgentsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -1719,6 +1770,7 @@ export type AppClientUpdateWithoutAgentsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -1746,6 +1798,7 @@ export type AppClientUncheckedUpdateWithoutAgentsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -1772,6 +1825,7 @@ export type AppClientCreateWithoutPromptTemplatesInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -1799,6 +1853,7 @@ export type AppClientUncheckedCreateWithoutPromptTemplatesInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -1841,6 +1896,7 @@ export type AppClientUpdateWithoutPromptTemplatesInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -1868,6 +1924,7 @@ export type AppClientUncheckedUpdateWithoutPromptTemplatesInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -1894,6 +1951,7 @@ export type AppClientCreateWithoutMessageTurnsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -1921,6 +1979,7 @@ export type AppClientUncheckedCreateWithoutMessageTurnsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -1963,6 +2022,7 @@ export type AppClientUpdateWithoutMessageTurnsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -1990,6 +2050,7 @@ export type AppClientUncheckedUpdateWithoutMessageTurnsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -2016,6 +2077,7 @@ export type AppClientCreateWithoutAgentRunsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -2043,6 +2105,7 @@ export type AppClientUncheckedCreateWithoutAgentRunsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -2085,6 +2148,7 @@ export type AppClientUpdateWithoutAgentRunsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -2112,6 +2176,7 @@ export type AppClientUncheckedUpdateWithoutAgentRunsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -2138,6 +2203,7 @@ export type AppClientCreateWithoutHostPagesInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -2165,6 +2231,7 @@ export type AppClientUncheckedCreateWithoutHostPagesInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -2207,6 +2274,7 @@ export type AppClientUpdateWithoutHostPagesInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -2234,6 +2302,7 @@ export type AppClientUncheckedUpdateWithoutHostPagesInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -2260,6 +2329,7 @@ export type AppClientCreateWithoutHostToolsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -2287,6 +2357,7 @@ export type AppClientUncheckedCreateWithoutHostToolsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -2329,6 +2400,7 @@ export type AppClientUpdateWithoutHostToolsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -2356,6 +2428,7 @@ export type AppClientUncheckedUpdateWithoutHostToolsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -2382,6 +2455,7 @@ export type AppClientCreateWithoutPageActionsInput = {
   hostTools?: Prisma.HostToolCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -2409,6 +2483,7 @@ export type AppClientUncheckedCreateWithoutPageActionsInput = {
   hostTools?: Prisma.HostToolUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -2451,6 +2526,7 @@ export type AppClientUpdateWithoutPageActionsInput = {
   hostTools?: Prisma.HostToolUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -2478,6 +2554,7 @@ export type AppClientUncheckedUpdateWithoutPageActionsInput = {
   hostTools?: Prisma.HostToolUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -2504,6 +2581,7 @@ export type AppClientCreateWithoutPageActionRunsInput = {
   hostTools?: Prisma.HostToolCreateNestedManyWithoutAppClientInput
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -2531,6 +2609,7 @@ export type AppClientUncheckedCreateWithoutPageActionRunsInput = {
   hostTools?: Prisma.HostToolUncheckedCreateNestedManyWithoutAppClientInput
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -2573,6 +2652,7 @@ export type AppClientUpdateWithoutPageActionRunsInput = {
   hostTools?: Prisma.HostToolUpdateManyWithoutAppClientNestedInput
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -2600,6 +2680,7 @@ export type AppClientUncheckedUpdateWithoutPageActionRunsInput = {
   hostTools?: Prisma.HostToolUncheckedUpdateManyWithoutAppClientNestedInput
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -2627,6 +2708,7 @@ export type AppClientCreateWithoutApprovalRequestsInput = {
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
 }
@@ -2654,6 +2736,7 @@ export type AppClientUncheckedCreateWithoutApprovalRequestsInput = {
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
   workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
 }
@@ -2696,6 +2779,7 @@ export type AppClientUpdateWithoutApprovalRequestsInput = {
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
 }
@@ -2723,6 +2807,7 @@ export type AppClientUncheckedUpdateWithoutApprovalRequestsInput = {
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
   workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
 }
@@ -2748,6 +2833,7 @@ export type AppClientCreateWithoutWorkflowsInput = {
   hostTools?: Prisma.HostToolCreateNestedManyWithoutAppClientInput
   pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
@@ -2775,6 +2861,7 @@ export type AppClientUncheckedCreateWithoutWorkflowsInput = {
   hostTools?: Prisma.HostToolUncheckedCreateNestedManyWithoutAppClientInput
   pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
   pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
+  flows?: Prisma.FlowUncheckedCreateNestedManyWithoutAppClientInput
   skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
@@ -2817,6 +2904,7 @@ export type AppClientUpdateWithoutWorkflowsInput = {
   hostTools?: Prisma.HostToolUpdateManyWithoutAppClientNestedInput
   pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
@@ -2844,6 +2932,133 @@ export type AppClientUncheckedUpdateWithoutWorkflowsInput = {
   hostTools?: Prisma.HostToolUncheckedUpdateManyWithoutAppClientNestedInput
   pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
   pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
+  flows?: Prisma.FlowUncheckedUpdateManyWithoutAppClientNestedInput
+  skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
+  approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
+  pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
+}
+
+export type AppClientCreateWithoutFlowsInput = {
+  name: string
+  dsn: string
+  description?: string | null
+  authConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  agents?: Prisma.AgentCreateNestedManyWithoutAppClientInput
+  tools?: Prisma.ToolCreateNestedManyWithoutAppClientInput
+  sessions?: Prisma.SessionCreateNestedManyWithoutAppClientInput
+  messageTurns?: Prisma.MessageTurnCreateNestedManyWithoutAppClientInput
+  messageFeedbacks?: Prisma.MessageFeedbackCreateNestedManyWithoutAppClientInput
+  agentRuns?: Prisma.AgentRunCreateNestedManyWithoutAppClientInput
+  integrations?: Prisma.IntegrationCreateNestedManyWithoutAppClientInput
+  userApps?: Prisma.UserAppCreateNestedManyWithoutAppClientInput
+  promptTemplates?: Prisma.PromptTemplateCreateNestedManyWithoutAppClientInput
+  hostPages?: Prisma.HostPageCreateNestedManyWithoutAppClientInput
+  hostTools?: Prisma.HostToolCreateNestedManyWithoutAppClientInput
+  pageActions?: Prisma.PageActionCreateNestedManyWithoutAppClientInput
+  pageActionRuns?: Prisma.PageActionRunCreateNestedManyWithoutAppClientInput
+  workflows?: Prisma.WorkflowCreateNestedManyWithoutAppClientInput
+  skills?: Prisma.SkillCreateNestedManyWithoutAppClientInput
+  approvalRequests?: Prisma.ApprovalRequestCreateNestedManyWithoutAppClientInput
+  pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditCreateNestedManyWithoutAppClientInput
+}
+
+export type AppClientUncheckedCreateWithoutFlowsInput = {
+  id?: number
+  name: string
+  dsn: string
+  description?: string | null
+  authConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  agents?: Prisma.AgentUncheckedCreateNestedManyWithoutAppClientInput
+  tools?: Prisma.ToolUncheckedCreateNestedManyWithoutAppClientInput
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutAppClientInput
+  messageTurns?: Prisma.MessageTurnUncheckedCreateNestedManyWithoutAppClientInput
+  messageFeedbacks?: Prisma.MessageFeedbackUncheckedCreateNestedManyWithoutAppClientInput
+  agentRuns?: Prisma.AgentRunUncheckedCreateNestedManyWithoutAppClientInput
+  integrations?: Prisma.IntegrationUncheckedCreateNestedManyWithoutAppClientInput
+  userApps?: Prisma.UserAppUncheckedCreateNestedManyWithoutAppClientInput
+  promptTemplates?: Prisma.PromptTemplateUncheckedCreateNestedManyWithoutAppClientInput
+  hostPages?: Prisma.HostPageUncheckedCreateNestedManyWithoutAppClientInput
+  hostTools?: Prisma.HostToolUncheckedCreateNestedManyWithoutAppClientInput
+  pageActions?: Prisma.PageActionUncheckedCreateNestedManyWithoutAppClientInput
+  pageActionRuns?: Prisma.PageActionRunUncheckedCreateNestedManyWithoutAppClientInput
+  workflows?: Prisma.WorkflowUncheckedCreateNestedManyWithoutAppClientInput
+  skills?: Prisma.SkillUncheckedCreateNestedManyWithoutAppClientInput
+  approvalRequests?: Prisma.ApprovalRequestUncheckedCreateNestedManyWithoutAppClientInput
+  pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedCreateNestedManyWithoutAppClientInput
+}
+
+export type AppClientCreateOrConnectWithoutFlowsInput = {
+  where: Prisma.AppClientWhereUniqueInput
+  create: Prisma.XOR<Prisma.AppClientCreateWithoutFlowsInput, Prisma.AppClientUncheckedCreateWithoutFlowsInput>
+}
+
+export type AppClientUpsertWithoutFlowsInput = {
+  update: Prisma.XOR<Prisma.AppClientUpdateWithoutFlowsInput, Prisma.AppClientUncheckedUpdateWithoutFlowsInput>
+  create: Prisma.XOR<Prisma.AppClientCreateWithoutFlowsInput, Prisma.AppClientUncheckedCreateWithoutFlowsInput>
+  where?: Prisma.AppClientWhereInput
+}
+
+export type AppClientUpdateToOneWithWhereWithoutFlowsInput = {
+  where?: Prisma.AppClientWhereInput
+  data: Prisma.XOR<Prisma.AppClientUpdateWithoutFlowsInput, Prisma.AppClientUncheckedUpdateWithoutFlowsInput>
+}
+
+export type AppClientUpdateWithoutFlowsInput = {
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  dsn?: Prisma.StringFieldUpdateOperationsInput | string
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  authConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  agents?: Prisma.AgentUpdateManyWithoutAppClientNestedInput
+  tools?: Prisma.ToolUpdateManyWithoutAppClientNestedInput
+  sessions?: Prisma.SessionUpdateManyWithoutAppClientNestedInput
+  messageTurns?: Prisma.MessageTurnUpdateManyWithoutAppClientNestedInput
+  messageFeedbacks?: Prisma.MessageFeedbackUpdateManyWithoutAppClientNestedInput
+  agentRuns?: Prisma.AgentRunUpdateManyWithoutAppClientNestedInput
+  integrations?: Prisma.IntegrationUpdateManyWithoutAppClientNestedInput
+  userApps?: Prisma.UserAppUpdateManyWithoutAppClientNestedInput
+  promptTemplates?: Prisma.PromptTemplateUpdateManyWithoutAppClientNestedInput
+  hostPages?: Prisma.HostPageUpdateManyWithoutAppClientNestedInput
+  hostTools?: Prisma.HostToolUpdateManyWithoutAppClientNestedInput
+  pageActions?: Prisma.PageActionUpdateManyWithoutAppClientNestedInput
+  pageActionRuns?: Prisma.PageActionRunUpdateManyWithoutAppClientNestedInput
+  workflows?: Prisma.WorkflowUpdateManyWithoutAppClientNestedInput
+  skills?: Prisma.SkillUpdateManyWithoutAppClientNestedInput
+  approvalRequests?: Prisma.ApprovalRequestUpdateManyWithoutAppClientNestedInput
+  pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUpdateManyWithoutAppClientNestedInput
+}
+
+export type AppClientUncheckedUpdateWithoutFlowsInput = {
+  id?: Prisma.IntFieldUpdateOperationsInput | number
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  dsn?: Prisma.StringFieldUpdateOperationsInput | string
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  authConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  agents?: Prisma.AgentUncheckedUpdateManyWithoutAppClientNestedInput
+  tools?: Prisma.ToolUncheckedUpdateManyWithoutAppClientNestedInput
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutAppClientNestedInput
+  messageTurns?: Prisma.MessageTurnUncheckedUpdateManyWithoutAppClientNestedInput
+  messageFeedbacks?: Prisma.MessageFeedbackUncheckedUpdateManyWithoutAppClientNestedInput
+  agentRuns?: Prisma.AgentRunUncheckedUpdateManyWithoutAppClientNestedInput
+  integrations?: Prisma.IntegrationUncheckedUpdateManyWithoutAppClientNestedInput
+  userApps?: Prisma.UserAppUncheckedUpdateManyWithoutAppClientNestedInput
+  promptTemplates?: Prisma.PromptTemplateUncheckedUpdateManyWithoutAppClientNestedInput
+  hostPages?: Prisma.HostPageUncheckedUpdateManyWithoutAppClientNestedInput
+  hostTools?: Prisma.HostToolUncheckedUpdateManyWithoutAppClientNestedInput
+  pageActions?: Prisma.PageActionUncheckedUpdateManyWithoutAppClientNestedInput
+  pageActionRuns?: Prisma.PageActionRunUncheckedUpdateManyWithoutAppClientNestedInput
+  workflows?: Prisma.WorkflowUncheckedUpdateManyWithoutAppClientNestedInput
   skills?: Prisma.SkillUncheckedUpdateManyWithoutAppClientNestedInput
   approvalRequests?: Prisma.ApprovalRequestUncheckedUpdateManyWithoutAppClientNestedInput
   pageAgentLlmProxyAudits?: Prisma.PageAgentLlmProxyAuditUncheckedUpdateManyWithoutAppClientNestedInput
@@ -2869,6 +3084,7 @@ export type AppClientCountOutputType = {
   pageActions: number
   pageActionRuns: number
   workflows: number
+  flows: number
   skills: number
   approvalRequests: number
   pageAgentLlmProxyAudits: number
@@ -2889,6 +3105,7 @@ export type AppClientCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensi
   pageActions?: boolean | AppClientCountOutputTypeCountPageActionsArgs
   pageActionRuns?: boolean | AppClientCountOutputTypeCountPageActionRunsArgs
   workflows?: boolean | AppClientCountOutputTypeCountWorkflowsArgs
+  flows?: boolean | AppClientCountOutputTypeCountFlowsArgs
   skills?: boolean | AppClientCountOutputTypeCountSkillsArgs
   approvalRequests?: boolean | AppClientCountOutputTypeCountApprovalRequestsArgs
   pageAgentLlmProxyAudits?: boolean | AppClientCountOutputTypeCountPageAgentLlmProxyAuditsArgs
@@ -3005,6 +3222,13 @@ export type AppClientCountOutputTypeCountWorkflowsArgs<ExtArgs extends runtime.T
 /**
  * AppClientCountOutputType without action
  */
+export type AppClientCountOutputTypeCountFlowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.FlowWhereInput
+}
+
+/**
+ * AppClientCountOutputType without action
+ */
 export type AppClientCountOutputTypeCountSkillsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.SkillWhereInput
 }
@@ -3047,6 +3271,7 @@ export type AppClientSelect<ExtArgs extends runtime.Types.Extensions.InternalArg
   pageActions?: boolean | Prisma.AppClient$pageActionsArgs<ExtArgs>
   pageActionRuns?: boolean | Prisma.AppClient$pageActionRunsArgs<ExtArgs>
   workflows?: boolean | Prisma.AppClient$workflowsArgs<ExtArgs>
+  flows?: boolean | Prisma.AppClient$flowsArgs<ExtArgs>
   skills?: boolean | Prisma.AppClient$skillsArgs<ExtArgs>
   approvalRequests?: boolean | Prisma.AppClient$approvalRequestsArgs<ExtArgs>
   pageAgentLlmProxyAudits?: boolean | Prisma.AppClient$pageAgentLlmProxyAuditsArgs<ExtArgs>
@@ -3102,6 +3327,7 @@ export type AppClientInclude<ExtArgs extends runtime.Types.Extensions.InternalAr
   pageActions?: boolean | Prisma.AppClient$pageActionsArgs<ExtArgs>
   pageActionRuns?: boolean | Prisma.AppClient$pageActionRunsArgs<ExtArgs>
   workflows?: boolean | Prisma.AppClient$workflowsArgs<ExtArgs>
+  flows?: boolean | Prisma.AppClient$flowsArgs<ExtArgs>
   skills?: boolean | Prisma.AppClient$skillsArgs<ExtArgs>
   approvalRequests?: boolean | Prisma.AppClient$approvalRequestsArgs<ExtArgs>
   pageAgentLlmProxyAudits?: boolean | Prisma.AppClient$pageAgentLlmProxyAuditsArgs<ExtArgs>
@@ -3127,6 +3353,7 @@ export type $AppClientPayload<ExtArgs extends runtime.Types.Extensions.InternalA
     pageActions: Prisma.$PageActionPayload<ExtArgs>[]
     pageActionRuns: Prisma.$PageActionRunPayload<ExtArgs>[]
     workflows: Prisma.$WorkflowPayload<ExtArgs>[]
+    flows: Prisma.$FlowPayload<ExtArgs>[]
     skills: Prisma.$SkillPayload<ExtArgs>[]
     approvalRequests: Prisma.$ApprovalRequestPayload<ExtArgs>[]
     pageAgentLlmProxyAudits: Prisma.$PageAgentLlmProxyAuditPayload<ExtArgs>[]
@@ -3551,6 +3778,7 @@ export interface Prisma__AppClientClient<T, Null = never, ExtArgs extends runtim
   pageActions<T extends Prisma.AppClient$pageActionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClient$pageActionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PageActionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   pageActionRuns<T extends Prisma.AppClient$pageActionRunsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClient$pageActionRunsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PageActionRunPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   workflows<T extends Prisma.AppClient$workflowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClient$workflowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WorkflowPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  flows<T extends Prisma.AppClient$flowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClient$flowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$FlowPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   skills<T extends Prisma.AppClient$skillsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClient$skillsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SkillPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   approvalRequests<T extends Prisma.AppClient$approvalRequestsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClient$approvalRequestsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ApprovalRequestPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   pageAgentLlmProxyAudits<T extends Prisma.AppClient$pageAgentLlmProxyAuditsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.AppClient$pageAgentLlmProxyAuditsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PageAgentLlmProxyAuditPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -4317,6 +4545,30 @@ export type AppClient$workflowsArgs<ExtArgs extends runtime.Types.Extensions.Int
   take?: number
   skip?: number
   distinct?: Prisma.WorkflowScalarFieldEnum | Prisma.WorkflowScalarFieldEnum[]
+}
+
+/**
+ * AppClient.flows
+ */
+export type AppClient$flowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Flow
+   */
+  select?: Prisma.FlowSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Flow
+   */
+  omit?: Prisma.FlowOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.FlowInclude<ExtArgs> | null
+  where?: Prisma.FlowWhereInput
+  orderBy?: Prisma.FlowOrderByWithRelationInput | Prisma.FlowOrderByWithRelationInput[]
+  cursor?: Prisma.FlowWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.FlowScalarFieldEnum | Prisma.FlowScalarFieldEnum[]
 }
 
 /**

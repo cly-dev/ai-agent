@@ -134,6 +134,7 @@ export class ApprovalController {
       row,
       writeTool,
     );
+    // flow / workflow 二选一；workflowKey/Name 回退 flow，兼容只读旧字段的客户端。
     return {
       id: row.id,
       source: row.source,
@@ -142,8 +143,12 @@ export class ApprovalController {
       summary: row.summary,
       workflowId: row.workflowId,
       workflowVersion: row.workflowVersion,
-      workflowKey: row.workflow?.workflowKey ?? null,
-      workflowName: row.workflow?.name ?? null,
+      flowId: row.flowId,
+      flowVersion: row.flowVersion,
+      workflowKey: row.workflow?.workflowKey ?? row.flow?.flowKey ?? null,
+      workflowName: row.workflow?.name ?? row.flow?.name ?? null,
+      flowKey: row.flow?.flowKey ?? null,
+      flowName: row.flow?.name ?? null,
       nodeId: row.nodeId,
       sessionId: row.sessionId,
       pageActionRunId: row.pageActionRunId,

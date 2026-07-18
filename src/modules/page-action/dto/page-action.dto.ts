@@ -139,19 +139,42 @@ export class CreatePageActionDto {
   @IsInt()
   sourceSkillId?: number | null;
 
-  @ApiPropertyOptional({ description: '引用的 Workflow 资产 ID' })
+  @ApiPropertyOptional({
+    description:
+      '【已移除】禁止新绑；请用 flowId。存量迁移：POST /admin/flow/migrate-from-workflow/:id',
+    deprecated: true,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   workflowId?: number | null;
 
-  @ApiPropertyOptional({ description: 'pin Workflow revision version' })
+  @ApiPropertyOptional({
+    description: '【已移除】随 workflowId 废弃',
+    deprecated: true,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   workflowVersion?: number | null;
+
+  @ApiPropertyOptional({
+    description: '引用的 Flow 资产 ID（Intent/IR；编排唯一绑定）',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  flowId?: number | null;
+
+  @ApiPropertyOptional({ description: 'pin Flow revision version' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  flowVersion?: number | null;
 
   @ApiPropertyOptional({ description: '按 nodeId 覆盖 objective 等字段' })
   @IsOptional()
@@ -225,19 +248,41 @@ export class UpdatePageActionDto {
   @IsObject()
   config?: Record<string, unknown> | null;
 
-  @ApiPropertyOptional({ description: '引用的 Workflow 资产 ID；传 null 可清空' })
+  @ApiPropertyOptional({
+    description: '【已移除】禁止新绑正数；仅允许 null 清空。请用 flowId / migrate',
+    deprecated: true,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   workflowId?: number | null;
 
-  @ApiPropertyOptional({ description: 'pin Workflow revision version' })
+  @ApiPropertyOptional({
+    description: '【已移除】随 workflowId 废弃',
+    deprecated: true,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   workflowVersion?: number | null;
+
+  @ApiPropertyOptional({
+    description: '引用的 Flow 资产 ID；传 null 可清空',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  flowId?: number | null;
+
+  @ApiPropertyOptional({ description: 'pin Flow revision version' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  flowVersion?: number | null;
 
   @ApiPropertyOptional({ description: '按 nodeId 覆盖 objective 等字段' })
   @IsOptional()

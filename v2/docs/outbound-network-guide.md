@@ -324,6 +324,7 @@ es.onmessage = (raw) => {
 | 用户见「查询超时」但 B 端 debug 成功 | 用户密钥 vs 系统密钥、参数不同 | 用该用户 `userIntegration` 复现 |
 | 「生成回复超时」 | `LLM_OUTBOUND_TIMEOUT_MS` 过小 | B 端 `test-connection` + 调大超时 |
 | 刷新后看不到结果 | SSE 缓冲仅 8 条 | 拉历史消息；考虑加长缓冲或 run-state 轮询 |
+| 长等待中途 SSE 无声断开 | 代理空闲超时 + 无心跳 | 服务端已发 15s `ping` / `: ping`；核对 nginx `proxy_read_timeout` ≥ 60s |
 
 ### 7.3 CLI 冒烟（非 HTTP）
 

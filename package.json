@@ -48,8 +48,7 @@
     "db:backfill-app-client-auth": "ts-node prisma/scripts/backfill-app-client-auth-from-env.ts",
     "db:configure-app-client-2-auth": "ts-node prisma/scripts/configure-app-client-2-admin-auth.ts",
     "db:delete-public-buyer-tools": "ts-node prisma/scripts/delete-public-buyer-tools.ts",
-    "db:delete-obsolete-prompts": "ts-node prisma/scripts/delete-obsolete-prompt-templates.ts",
-    "db:migrate:skill-config-workflow": "ts-node -r tsconfig-paths/register prisma/scripts/migrate-skill-config-workflow.ts"
+    "db:delete-obsolete-prompts": "ts-node prisma/scripts/delete-obsolete-prompt-templates.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.1.45",

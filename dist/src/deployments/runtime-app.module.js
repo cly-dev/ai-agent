@@ -37,6 +37,7 @@ const page_action_module_1 = require("../modules/page-action/page-action.module"
 const page_agent_module_1 = require("../modules/page-agent/page-agent.module");
 const approval_module_1 = require("../modules/approval/approval.module");
 const workflow_module_1 = require("../modules/workflow/workflow.module");
+const flow_module_1 = require("../modules/flow/flow.module");
 const connectivity_module_1 = require("../modules/connectivity/connectivity.module");
 const shared_infra_module_1 = require("./shared-infra.module");
 let RuntimeAppModule = class RuntimeAppModule {
@@ -59,6 +60,7 @@ RuntimeAppModule = __decorate([
             page_agent_module_1.PageAgentModule,
             approval_module_1.ApprovalModule,
             workflow_module_1.WorkflowModule,
+            flow_module_1.FlowModule,
             agent_module_1.AgentModule,
             chat_module_1.ChatModule,
             message_module_1.MessageModule,

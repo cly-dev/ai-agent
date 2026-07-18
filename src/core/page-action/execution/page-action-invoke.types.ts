@@ -26,6 +26,9 @@ export type PageActionRunExecutionInput = {
   appClientId: number;
   pageActionId: number;
   actionKey: string;
+  /** 优先；有值时走 Flow Intent/IR */
+  flowId: number | null;
+  flowVersion: number | null;
   workflowId: number | null;
   workflowVersion: number | null;
   workflowOverrides: unknown;

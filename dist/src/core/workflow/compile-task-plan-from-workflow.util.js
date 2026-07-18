@@ -34,8 +34,6 @@ function mapSummarizeToPlanStep(node) {
 }
 function mapWorkflowNodeToPlanSteps(node) {
     switch (node.action) {
-        case 'load_page_context':
-            return [];
         case 'detect_clues':
             return [];
         case 'summarize_images':

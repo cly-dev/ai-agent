@@ -13,6 +13,7 @@ const host_action_instant_dispatch_util_1 = require("../../../host-bridge/host-a
 const page_action_inline_sse_util_1 = require("../../../page-action/page-action-inline-sse.util");
 const page_action_constants_1 = require("../../../page-action/page-action.constants");
 const executor_host_util_1 = require("../executor-host.util");
+const resolve_workflow_node_runtime_input_util_1 = require("../../resolve-workflow-node-runtime-input.util");
 function isRecord(value) {
     return value != null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -21,7 +22,8 @@ exports.pageGenerateAndPushExecutor = {
     async run(ctx) {
         var _a, _b, _c;
         const { runtime } = (0, executor_host_util_1.requirePageExecutorHost)(ctx.host);
-        const nodeInput = (isRecord(ctx.def.input) ? ctx.def.input : {});
+        const resolved = (0, resolve_workflow_node_runtime_input_util_1.resolveWorkflowNodeRuntimeInput)(ctx.def);
+        const nodeInput = (isRecord(resolved) ? resolved : {});
         const hostTools = await (0, page_action_workflow_host_util_1.resolvePageActionHostToolsForPushNode)(runtime.prisma, {
             appClientId: runtime.appClientId,
             nodeInput,

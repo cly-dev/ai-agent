@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.finalizeWorkflowRunAfterAdvance = exports.allWorkflowNodesTerminal = exports.getWorkflowRunNode = exports.finalizeWorkflowRun = exports.advanceWorkflowRun = exports.skipWorkflowNode = exports.failWorkflowNode = exports.completeWorkflowNode = exports.startWorkflowNode = exports.initWorkflowRun = exports.cloneWorkflowRun = void 0;
+exports.finalizeWorkflowRunAfterAdvance = exports.allWorkflowNodesTerminal = exports.getWorkflowRunNode = exports.finalizeWorkflowRun = exports.advanceWorkflowRun = exports.skipWorkflowNode = exports.failWorkflowNode = exports.tryAdvanceNativePhaseAfterNodeSuccess = exports.completeWorkflowNodeOrAdvancePhase = exports.completeWorkflowNode = exports.startWorkflowNode = exports.initWorkflowRun = exports.cloneWorkflowRun = void 0;
 const workflow_run_advance_util_1 = require("./graph/workflow-run-advance.util");
 const workflow_edge_util_1 = require("./graph/workflow-edge.util");
+const workflow_ir_native_phase_util_1 = require("./workflow-ir-native-phase.util");
 function cloneWorkflowRun(run) {
     var _a;
     return Object.assign(Object.assign({}, run), { nodes: run.nodes.map((node) => (Object.assign({}, node))), edges: (_a = run.edges) === null || _a === void 0 ? void 0 : _a.map((edge) => (Object.assign(Object.assign({}, edge), { clue: edge.clue ? Object.assign({}, edge.clue) : undefined }))), routing: run.routing
@@ -24,12 +25,12 @@ function initWorkflowRun(input) {
     if (input.nodes.length === 0) {
         throw new Error('workflow must contain at least one node');
     }
-    const runNodes = input.nodes.map((node) => ({
-        nodeId: node.id,
-        action: node.action,
-        name: node.name,
-        status: 'pending',
-    }));
+    const runNodes = input.nodes.map((node) => {
+        var _a;
+        return (Object.assign(Object.assign(Object.assign({ nodeId: node.id, action: node.action, name: node.name, status: 'pending' }, (node.irNodeId ? { irNodeId: node.irNodeId } : {})), (node.irType ? { irType: node.irType } : {})), (((_a = input.phasesByNodeId) === null || _a === void 0 ? void 0 : _a[node.id])
+            ? { phase: input.phasesByNodeId[node.id] }
+            : {})));
+    });
     const edges = input.edges != null
         ? input.edges
         : (0, workflow_edge_util_1.synthesizeLinearWorkflowEdges)(input.nodes);
@@ -73,6 +74,50 @@ function completeWorkflowNode(run, nodeId, outputRef, now = new Date().toISOStri
     return next;
 }
 exports.completeWorkflowNode = completeWorkflowNode;
+function completeWorkflowNodeOrAdvancePhase(input) {
+    var _a, _b;
+    const now = (_a = input.now) !== null && _a !== void 0 ? _a : new Date().toISOString();
+    const current = input.run.nodes.find((n) => n.nodeId === input.nodeId);
+    const currentPhase = (_b = current === null || current === void 0 ? void 0 : current.phase) !== null && _b !== void 0 ? _b : 'execute';
+    const nextPhase = (0, workflow_ir_native_phase_util_1.nextWorkflowIrNativePhase)(input.irNode, currentPhase);
+    if (nextPhase == null) {
+        return {
+            workflowRun: completeWorkflowNode(input.run, input.nodeId, input.outputRef, now),
+            advancedPhase: false,
+        };
+    }
+    const next = cloneWorkflowRun(input.run);
+    const index = assertNodeExists(next, input.nodeId);
+    const node = next.nodes[index];
+    const phaseDef = (0, workflow_ir_native_phase_util_1.materializeWorkflowIrNodeForPhase)(input.irNode, nextPhase);
+    node.phase = nextPhase;
+    node.action = (0, workflow_ir_native_phase_util_1.actionForWorkflowIrNativePhase)(input.irNode, nextPhase);
+    node.name = phaseDef.name;
+    node.status = 'pending';
+    delete node.startedAt;
+    delete node.finishedAt;
+    delete node.outputRef;
+    delete node.error;
+    next.currentNodeId = input.nodeId;
+    next.status = 'running';
+    return { workflowRun: next, advancedPhase: true };
+}
+exports.completeWorkflowNodeOrAdvancePhase = completeWorkflowNodeOrAdvancePhase;
+function tryAdvanceNativePhaseAfterNodeSuccess(input) {
+    var _a;
+    const current = input.run.nodes.find((n) => n.nodeId === input.nodeId);
+    const currentPhase = (_a = current === null || current === void 0 ? void 0 : current.phase) !== null && _a !== void 0 ? _a : 'execute';
+    const nextPhase = (0, workflow_ir_native_phase_util_1.nextWorkflowIrNativePhase)(input.irNode, currentPhase);
+    if (nextPhase == null) {
+        return { workflowRun: input.run, advancedPhase: false };
+    }
+    return completeWorkflowNodeOrAdvancePhase({
+        run: input.run,
+        nodeId: input.nodeId,
+        irNode: input.irNode,
+    });
+}
+exports.tryAdvanceNativePhaseAfterNodeSuccess = tryAdvanceNativePhaseAfterNodeSuccess;
 function failWorkflowNode(run, nodeId, error, now = new Date().toISOString()) {
     const next = cloneWorkflowRun(run);
     const index = assertNodeExists(next, nodeId);

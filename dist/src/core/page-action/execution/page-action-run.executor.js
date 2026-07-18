@@ -17,6 +17,7 @@ const approval_gate_service_1 = require("../../approval/approval-gate.service");
 const approval_trigger_permission_service_1 = require("../../approval/approval-trigger-permission.service");
 const resolve_approval_parties_util_1 = require("../../approval/resolve-approval-parties.util");
 const load_workflow_definition_util_1 = require("../../workflow/load-workflow-definition.util");
+const load_flow_for_run_util_1 = require("../../workflow/load-flow-for-run.util");
 const tool_engine_service_1 = require("../../tool-engine/tool-engine.service");
 const llm_service_1 = require("../../llm/llm.service");
 const prisma_service_1 = require("../../../prisma/prisma.service");
@@ -67,7 +68,9 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
             clientActionId: input.clientActionId,
             streamId,
         };
-        const emitInitialStarted = Boolean(input.workflowId) || !input.hostToolResolved;
+        const emitInitialStarted = Boolean(input.flowId) ||
+            Boolean(input.workflowId) ||
+            !input.hostToolResolved;
         if (emitInitialStarted) {
             (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sseSink, Object.assign({ phase: 'started' }, lifecycleBase), stepRecorder);
         }
@@ -82,6 +85,7 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
             actionKey: input.actionKey,
             generation: input.generation,
             workflowId: input.workflowId,
+            flowId: input.flowId,
             hostTool: input.hostToolResolved
                 ? {
                     id: input.hostToolResolved.definition.id,
@@ -102,12 +106,12 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
             phase: 'initial_messages',
             messages,
             meta: {
-                hasWorkflow: Boolean(input.workflowId),
+                hasWorkflow: Boolean(input.workflowId || input.flowId),
                 hasHostTool: Boolean(input.hostToolResolved),
             },
         });
         try {
-            if (input.workflowId) {
+            if (input.flowId) {
                 await this.executeWorkflow({
                     input,
                     messages,
@@ -115,6 +119,24 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
                     stepRecorder,
                     startedAt,
                     lifecycleBase,
+                });
+                return;
+            }
+            if (input.workflowId) {
+                const errorCode = 'FLOW_REQUIRED';
+                const errorMessage = 'PageAction 编排须绑定 flowId；存量 Workflow 请先 POST /admin/flow/migrate-from-workflow/:workflowId';
+                (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sseSink, Object.assign(Object.assign({ phase: 'failed' }, lifecycleBase), { errorCode,
+                    errorMessage }), stepRecorder);
+                await this.prisma.pageActionRun.update({
+                    where: { id: input.runId },
+                    data: {
+                        status: client_1.PageActionRunStatus.failed,
+                        errorCode,
+                        errorMessage,
+                        durationMs: Date.now() - startedAt,
+                        finishedAt: new Date(),
+                        steps: stepRecorder.toJson(),
+                    },
                 });
                 return;
             }
@@ -271,14 +293,33 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
         }
     }
     async executeWorkflow(input) {
-        var _a;
+        var _a, _b;
         const { input: run, messages, sseSink, stepRecorder, startedAt, lifecycleBase } = input;
+        const overrides = (0, load_workflow_definition_util_1.parseWorkflowOverridesJson)(run.workflowOverrides);
+        if (run.flowId == null || run.flowId <= 0) {
+            const errorCode = 'FLOW_REQUIRED';
+            const errorMessage = 'PageAction 编排须绑定 flowId；存量 Workflow 请先 migrate';
+            (0, page_action_inline_sse_util_1.writePageActionLifecycle)(sseSink, Object.assign(Object.assign({ phase: 'failed' }, lifecycleBase), { errorCode,
+                errorMessage }), stepRecorder);
+            await this.prisma.pageActionRun.update({
+                where: { id: run.runId },
+                data: {
+                    status: client_1.PageActionRunStatus.failed,
+                    errorCode,
+                    errorMessage,
+                    durationMs: Date.now() - startedAt,
+                    finishedAt: new Date(),
+                    steps: stepRecorder.toJson(),
+                },
+            });
+            return;
+        }
         const [loadResult, allowedToolIds] = await Promise.all([
-            (0, load_workflow_definition_util_1.loadWorkflowForRunDetailed)(this.prisma, {
-                workflowId: run.workflowId,
+            (0, load_flow_for_run_util_1.loadFlowForRunDetailed)(this.prisma, {
+                flowId: run.flowId,
                 appClientId: run.appClientId,
-                workflowVersion: run.workflowVersion,
-                workflowOverrides: (0, load_workflow_definition_util_1.parseWorkflowOverridesJson)(run.workflowOverrides),
+                flowVersion: run.flowVersion,
+                workflowOverrides: overrides,
             }),
             this.triggerPermission.resolveUserAllowedToolIdsForApp({
                 userId: run.userId,
@@ -292,15 +333,8 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
                 errorMessage }), stepRecorder);
             await this.prisma.pageActionRun.update({
                 where: { id: run.runId },
-                data: {
-                    status: client_1.PageActionRunStatus.failed,
-                    workflowId: loadResult.workflowId,
-                    errorCode,
-                    errorMessage,
-                    durationMs: Date.now() - startedAt,
-                    finishedAt: new Date(),
-                    steps: stepRecorder.toJson(),
-                },
+                data: Object.assign(Object.assign({ status: client_1.PageActionRunStatus.failed }, pageActionRunAssetWrite(run, loadResult)), { errorCode,
+                    errorMessage, durationMs: Date.now() - startedAt, finishedAt: new Date(), steps: stepRecorder.toJson() }),
             });
             return;
         }
@@ -315,15 +349,8 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
                 errorMessage }), stepRecorder);
             await this.prisma.pageActionRun.update({
                 where: { id: run.runId },
-                data: {
-                    status: client_1.PageActionRunStatus.failed,
-                    workflowId: loadResult.workflowId,
-                    errorCode,
-                    errorMessage,
-                    durationMs: Date.now() - startedAt,
-                    finishedAt: new Date(),
-                    steps: stepRecorder.toJson(),
-                },
+                data: Object.assign(Object.assign({ status: client_1.PageActionRunStatus.failed }, pageActionRunAssetWrite(run, loadResult)), { errorCode,
+                    errorMessage, durationMs: Date.now() - startedAt, finishedAt: new Date(), steps: stepRecorder.toJson() }),
             });
             return;
         }
@@ -337,14 +364,18 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
         const result = await (0, page_workflow_orchestrator_1.orchestratePageWorkflow)({
             workflowId: loadResult.workflowId,
             version: loadResult.version,
+            flowId: run.flowId,
+            flowVersion: (_a = run.flowVersion) !== null && _a !== void 0 ? _a : loadResult.version,
             nodes: loadResult.nodes,
             edges: loadResult.edges,
             entryNodeId: loadResult.entryNodeId,
+            ir: loadResult.ir,
+            executionMode: loadResult.executionMode,
             systemPrompt: run.systemPrompt,
             objectivePrefix: run.instruction,
             messages,
             pageContext: run.pageContext,
-            actionContext: (_a = run.context) !== null && _a !== void 0 ? _a : null,
+            actionContext: (_b = run.context) !== null && _b !== void 0 ? _b : null,
             hostTool: run.hostToolResolved,
             llmService: this.llmService,
             prisma: this.prisma,
@@ -383,40 +414,15 @@ let PageActionRunExecutor = PageActionRunExecutor_1 = class PageActionRunExecuto
         });
         await this.prisma.pageActionRun.update({
             where: { id: run.runId },
-            data: {
-                workflowId: loadResult.workflowId,
-                workflowVersion: loadResult.version,
-                workflowRun: result.workflowRun,
-                status: (0, page_action_run_terminal_sse_util_1.mapTerminalPhaseToRunStatus)(terminalOutcome.phase),
-                fillText: persistedFillText,
-                dslOutcome: result.dslOutcome,
-                model: result.model,
-                promptTokens: result.promptTokens,
-                completionTokens: result.completionTokens,
-                durationMs: Date.now() - startedAt,
-                finishedAt: terminalOutcome.phase === 'awaiting_approval' ? null : new Date(),
-                steps: result.steps,
-                errorCode: terminalOutcome.errorCode,
-                errorMessage: terminalOutcome.errorMessage,
-            },
+            data: Object.assign(Object.assign({}, pageActionRunAssetWrite(run, loadResult)), { workflowRun: result.workflowRun, status: (0, page_action_run_terminal_sse_util_1.mapTerminalPhaseToRunStatus)(terminalOutcome.phase), fillText: persistedFillText, dslOutcome: result.dslOutcome, model: result.model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, durationMs: Date.now() - startedAt, finishedAt: terminalOutcome.phase === 'awaiting_approval' ? null : new Date(), steps: result.steps, errorCode: terminalOutcome.errorCode, errorMessage: terminalOutcome.errorMessage }),
         });
         (0, page_action_run_debug_util_1.logPageActionRunDebug)('result', {
             actionRunId: run.runId,
             actionKey: run.actionKey,
-            path: 'workflow',
-            workflowId: loadResult.workflowId,
-            workflowVersion: loadResult.version,
-            terminalPhase: terminalOutcome.phase,
-            dslOutcome: result.dslOutcome,
-            model: result.model,
-            promptTokens: result.promptTokens,
-            completionTokens: result.completionTokens,
-            fillText: persistedFillText,
-            errorCode: terminalOutcome.errorCode,
-            errorMessage: terminalOutcome.errorMessage,
-            durationMs: Date.now() - startedAt,
-            steps: result.steps,
-            workflowRun: result.workflowRun,
+            path: 'flow',
+            workflowId: null,
+            flowId: run.flowId,
+            phase: terminalOutcome.phase,
         });
     }
 };
@@ -430,4 +436,13 @@ PageActionRunExecutor = PageActionRunExecutor_1 = __decorate([
         page_action_run_stream_hub_1.PageActionRunStreamHub])
 ], PageActionRunExecutor);
 exports.PageActionRunExecutor = PageActionRunExecutor;
+function pageActionRunAssetWrite(run, loadResult) {
+    var _a, _b;
+    return {
+        flowId: run.flowId,
+        flowVersion: (_b = (_a = loadResult.version) !== null && _a !== void 0 ? _a : run.flowVersion) !== null && _b !== void 0 ? _b : null,
+        workflowId: null,
+        workflowVersion: null,
+    };
+}
 //# sourceMappingURL=page-action-run.executor.js.map

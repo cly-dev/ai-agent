@@ -3,8 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.summarizeImagesExecutor = void 0;
 const workflow_run_util_1 = require("../workflow-run.util");
 const workflow_node_output_util_1 = require("../workflow-node-output.util");
+const resolve_workflow_node_runtime_input_util_1 = require("../resolve-workflow-node-runtime-input.util");
 const executor_host_util_1 = require("../executors/executor-host.util");
-const collect_image_urls_util_1 = require("../../image-panel/collect-image-urls.util");
+const entity_materialization_1 = require("../../entity-materialization");
 const image_panel_env_util_1 = require("../../image-panel/image-panel-env.util");
 const image_panel_service_1 = require("../../image-panel/image-panel.service");
 function resolvePriorOutputs(host) {
@@ -13,6 +14,13 @@ function resolvePriorOutputs(host) {
         return host.runtime.nodeOutputs;
     }
     return (_a = host.state.workflowNodeOutputs) !== null && _a !== void 0 ? _a : {};
+}
+function resolveMaterializedEntities(host) {
+    var _a;
+    if (host.profile === 'page') {
+        return host.runtime.materializedEntities;
+    }
+    return (_a = host.state.materializedEntities) !== null && _a !== void 0 ? _a : [];
 }
 function parseInput(raw) {
     const input = raw != null && typeof raw === 'object' && !Array.isArray(raw)
@@ -65,7 +73,7 @@ function emptyDisabledOutput(reason) {
 exports.summarizeImagesExecutor = {
     action: 'summarize_images',
     async run(ctx) {
-        const parsed = parseInput(ctx.def.input);
+        const parsed = parseInput((0, resolve_workflow_node_runtime_input_util_1.resolveWorkflowNodeRuntimeInput)(ctx.def));
         const outputRef = (0, workflow_node_output_util_1.buildWorkflowNodeOutputRef)(ctx.def.action, ctx.nodeId);
         const service = (0, image_panel_service_1.getImagePanelService)();
         if (!service) {
@@ -88,8 +96,9 @@ exports.summarizeImagesExecutor = {
                 nodeOutput: emptyDisabledOutput('SHARP_OR_SERVICE_UNAVAILABLE'),
             };
         }
-        const urls = (0, collect_image_urls_util_1.collectImageUrlsFromSources)({
+        const urls = (0, entity_materialization_1.resolveImageUrlsForVision)({
             from: parsed.from,
+            entities: resolveMaterializedEntities(ctx.host),
             upstreamOutputs: resolvePriorOutputs(ctx.host),
             pageContext: (0, executor_host_util_1.resolveExecutorPageContext)(ctx.host),
         });

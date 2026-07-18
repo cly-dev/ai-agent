@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.formatWorkflowRunPendingSummary = exports.resolveActiveTaskStatusFromWorkflow = exports.buildStepProgressFromWorkflowRun = void 0;
+const project_ir_run_status_util_1 = require("./project-ir-run-status.util");
 function mapWorkflowNodeStatus(status) {
     switch (status) {
         case 'pending':
@@ -28,21 +29,21 @@ function workflowActionToKind(action) {
         case 'summarize':
         case 'present_mutation':
             return 'summarize';
-        case 'load_page_context':
-            return 'context';
         case 'summarize_images':
             return 'image_context';
         case 'await_user_confirm':
             return 'confirm';
+        case 'detect_clues':
+            return 'judge';
         default:
             return action;
     }
 }
 function workflowActionToPhase(action) {
     switch (action) {
-        case 'load_page_context':
         case 'fetch_data':
         case 'summarize_images':
+        case 'detect_clues':
             return 'gather';
         case 'compose_mutation':
             return 'analyze';
@@ -92,7 +93,17 @@ function formatWorkflowRunPendingSummary(workflowRun) {
     const current = workflowRun.currentNodeId
         ? `current=${workflowRun.currentNodeId}`
         : 'current=none';
-    return `workflowStatus=${workflowRun.status}; ${current}; pending=${pending.join(', ') || 'none'}`;
+    const currentIr = (0, project_ir_run_status_util_1.resolveCurrentIrNodeId)(workflowRun);
+    const irPart = currentIr != null && currentIr !== workflowRun.currentNodeId
+        ? ` currentIr=${currentIr}`
+        : '';
+    const irProj = (0, project_ir_run_status_util_1.projectIrRunNodeStatuses)(workflowRun)
+        .filter((row) => row.status === 'pending' || row.status === 'running')
+        .map((row) => { var _a; return `${row.irNodeId}(${(_a = row.irType) !== null && _a !== void 0 ? _a : '?'}/${row.status})`; });
+    const irPending = irProj.length > 0 && irProj.join(',') !== pending.join(',')
+        ? `; irPending=${irProj.join(', ') || 'none'}`
+        : '';
+    return `workflowStatus=${workflowRun.status}; ${current}${irPart}; pending=${pending.join(', ') || 'none'}${irPending}`;
 }
 exports.formatWorkflowRunPendingSummary = formatWorkflowRunPendingSummary;
 //# sourceMappingURL=workflow-goa-projection.util.js.map

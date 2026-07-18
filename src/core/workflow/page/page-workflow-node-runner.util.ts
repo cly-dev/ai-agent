@@ -12,7 +12,8 @@ import { failWorkflowNode } from '../workflow-run.util';
 import { logWorkflowDebug } from '../trace/workflow-debug.util';
 import type { WorkflowActionKind } from '../workflow.types';
 import { pageExecutorContext } from '../executors/executor-host.util';
-import { getWorkflowExecutor } from '../executors/executor-registry';
+import { resolveWorkflowNodeExecutor } from '../executors/resolve-workflow-node-executor.util';
+import { resolveCurrentIrNodeId } from '../project-ir-run-status.util';
 import type { PageWorkflowExecutorRuntime } from './page-workflow-runtime.types';
 import type { WorkflowExecutorOutcome } from '../executors/workflow-executor.types';
 import type { WorkflowNodeDef, WorkflowRunState } from '../workflow.types';
@@ -49,22 +50,39 @@ export async function executePageWorkflowNode(input: {
   actionRunId: number;
   actionKey: string;
 }): Promise<PageWorkflowNodeExecutionResult> {
-  const executor = getWorkflowExecutor(input.def.action, 'page');
+  const resolved = resolveWorkflowNodeExecutor(input.def, 'page');
+  const executor = resolved.executor;
   if (!executor) {
     return {
       kind: 'failed',
       workflowRun: failWorkflowNode(input.workflowRun, input.nodeId, {
         code: 'action_not_implemented',
-        message: `Page workflow action not implemented: ${input.def.action}`,
+        message: `Page workflow action not implemented: ${resolved.action}`,
       }),
       errorCode: 'action_not_implemented',
-      errorMessage: `Page workflow action not implemented: ${input.def.action}`,
+      errorMessage: `Page workflow action not implemented: ${resolved.action}`,
     };
   }
 
+  logWorkflowDebug('page_execute_node_dispatch', {
+    actionRunId: input.actionRunId,
+    actionKey: input.actionKey,
+    nodeId: input.nodeId,
+    action: resolved.action,
+    irType: resolved.irType,
+    irNodeId: resolved.irNodeId,
+    dispatchKind: resolved.dispatchKind,
+    currentIrNodeId: resolveCurrentIrNodeId(input.workflowRun),
+  });
+
   const harness = createPageHarnessRunner(
-    harnessSensorsForWorkflowAction(input.def.action),
+    harnessSensorsForWorkflowAction(resolved.action),
   );
+
+  const irSseFields = {
+    irNodeId: resolved.irNodeId ?? null,
+    irType: resolved.irType ?? null,
+  };
 
   writePageWorkflowNodeSse(input.runtime.sseSink, {
     phase: 'start',
@@ -73,9 +91,11 @@ export async function executePageWorkflowNode(input: {
     generation: input.runtime.generation,
     clientActionId: input.runtime.clientActionId,
     nodeId: input.nodeId,
-    action: input.def.action,
+    action: resolved.action,
+    ...irSseFields,
     workflowStatus: input.workflowRun.status,
     currentNodeId: input.workflowRun.currentNodeId,
+    currentIrNodeId: resolveCurrentIrNodeId(input.workflowRun),
   });
 
   const emitWorkflowNodeFailed = (
@@ -90,9 +110,11 @@ export async function executePageWorkflowNode(input: {
       generation: input.runtime.generation,
       clientActionId: input.runtime.clientActionId,
       nodeId: input.nodeId,
-      action: input.def.action,
+      action: resolved.action,
+      ...irSseFields,
       workflowStatus: workflowRun.status,
       currentNodeId: workflowRun.currentNodeId,
+      currentIrNodeId: resolveCurrentIrNodeId(workflowRun),
       errorCode,
       errorMessage,
     });
@@ -114,7 +136,7 @@ export async function executePageWorkflowNode(input: {
       actionRunId: input.actionRunId,
       actionKey: input.actionKey,
       nodeId: input.nodeId,
-      action: input.def.action,
+      action: resolved.action,
       outcome: 'executor_error',
       errorMessage: message,
       workflowRun: input.workflowRun,
@@ -159,15 +181,17 @@ export async function executePageWorkflowNode(input: {
       generation: input.runtime.generation,
       clientActionId: input.runtime.clientActionId,
       nodeId: input.nodeId,
-      action: input.def.action,
+      action: resolved.action,
+      ...irSseFields,
       workflowStatus: dispatch.workflowRun.status,
       currentNodeId: dispatch.workflowRun.currentNodeId,
+      currentIrNodeId: resolveCurrentIrNodeId(dispatch.workflowRun),
     });
     logWorkflowDebug('page_execute_node', {
       actionRunId: input.actionRunId,
       actionKey: input.actionKey,
       nodeId: input.nodeId,
-      action: input.def.action,
+      action: resolved.action,
       outcome: 'awaiting_user_confirm',
       workflowRun: dispatch.workflowRun,
     });
@@ -184,7 +208,7 @@ export async function executePageWorkflowNode(input: {
       actionRunId: input.actionRunId,
       actionKey: input.actionKey,
       nodeId: input.nodeId,
-      action: input.def.action,
+      action: resolved.action,
       outcome: 'delegate_react',
       workflowRun: dispatch.workflowRun,
     });
@@ -199,8 +223,8 @@ export async function executePageWorkflowNode(input: {
   const sensorFailed = await runPageWorkflowHarnessSensors({
     harness,
     nodeId: input.nodeId,
-    action: input.def.action,
-    payload: buildPageHarnessSensorPayload(input.def.action, outcome),
+    action: resolved.action,
+    payload: buildPageHarnessSensorPayload(resolved.action, outcome),
     recorder: input.runtime.stepRecorder,
   });
   if (sensorFailed) {
@@ -227,8 +251,8 @@ export async function executePageWorkflowNode(input: {
     name: `${input.nodeId}:complete`,
     detail: {
       outputRef: outcome.outputRef,
-      action: input.def.action,
-      ...buildWorkflowNodeCompleteAudit(input.def.action, outcome.nodeOutput),
+      action: resolved.action,
+      ...buildWorkflowNodeCompleteAudit(resolved.action, outcome.nodeOutput),
     },
   });
 
@@ -239,9 +263,11 @@ export async function executePageWorkflowNode(input: {
     generation: input.runtime.generation,
     clientActionId: input.runtime.clientActionId,
     nodeId: input.nodeId,
-    action: input.def.action,
+    action: resolved.action,
+    ...irSseFields,
     workflowStatus: outcome.workflowRun.status,
     currentNodeId: outcome.workflowRun.currentNodeId,
+    currentIrNodeId: resolveCurrentIrNodeId(outcome.workflowRun),
     outputRef: outcome.outputRef ?? null,
   });
 
@@ -249,7 +275,9 @@ export async function executePageWorkflowNode(input: {
     actionRunId: input.actionRunId,
     actionKey: input.actionKey,
     nodeId: input.nodeId,
-    action: input.def.action,
+    action: resolved.action,
+    irType: resolved.irType,
+    dispatchKind: resolved.dispatchKind,
     outcome: 'completed',
     outputRef: outcome.outputRef ?? null,
     workflowRun: outcome.workflowRun,

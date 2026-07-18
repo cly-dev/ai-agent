@@ -151,6 +151,7 @@ model AppClient {
   pageActions     PageAction[]
   pageActionRuns  PageActionRun[]
   workflows       Workflow[]
+  flows           Flow[]
   skills          Skill[]
   approvalRequests ApprovalRequest[]
   pageAgentLlmProxyAudits PageAgentLlmProxyAudit[]
@@ -346,6 +347,7 @@ model Tool {
   skillTools     SkillTool[]
   agentTools     AgentTool[]
   workflowTools  WorkflowTool[]
+  flowTools      FlowTool[]
   inputSchema    Json
   outputSchema   Json?
   /// 工具响应裁剪与字段语义（coreFields / optionalFields / arrayLimits）
@@ -428,6 +430,11 @@ model Skill {
   workflowOverrides  Json?
   workflow           Workflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
 
+  /// 新 Intent/IR 资产（与 legacy Workflow 分表）
+  flowId             Int?
+  flowVersion        Int?
+  flow               Flow? @relation(fields: [flowId], references: [id], onDelete: SetNull)
+
   appClient    AppClient     @relation(fields: [appClientId], references: [id], onDelete: Cascade)
   agentSkills  AgentSkill[]
   skillTools   SkillTool[]
@@ -438,6 +445,7 @@ model Skill {
   @@unique([appClientId, capabilityKey])
   @@index([appClientId, isActive])
   @@index([workflowId])
+  @@index([flowId])
 }
 
 /// Agent 可见 Skill 白名单（收紧模式）；默认共享 App 级 Skill 库时可为空。
@@ -735,6 +743,7 @@ model HostTool {
   roleHostTools  RoleHostTool[]
   pageActions    PageAction[]
   workflowHostTools WorkflowHostTool[]
+  flowHostTools     FlowHostTool[]
 
   @@unique([appClientId, definitionKey])
   @@unique([appClientId, name])
@@ -831,12 +840,15 @@ model PageAction {
   workflowId         Int?
   workflowVersion    Int?
   workflowOverrides  Json?
+  flowId             Int?
+  flowVersion        Int?
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
   appClient AppClient       @relation(fields: [appClientId], references: [id], onDelete: Cascade)
   hostTool  HostTool?       @relation(fields: [hostToolId], references: [id], onDelete: Restrict)
   workflow  Workflow?       @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  flow      Flow?           @relation(fields: [flowId], references: [id], onDelete: SetNull)
   runs      PageActionRun[]
 
   @@unique([appClientId, actionKey])
@@ -844,6 +856,7 @@ model PageAction {
   @@index([appClientId, pageScope, isActive])
   @@index([hostToolId])
   @@index([workflowId])
+  @@index([flowId])
 }
 
 /// 每次 PageAction invoke 的审计记录（无 Session / AgentRun）。
@@ -874,6 +887,9 @@ model PageActionRun {
   steps            Json                 @default("[]")
   workflowId       Int?
   workflowVersion  Int?
+  /// Flow 运行审计（与 workflowId 二选一；不再把 flowId 写入 Workflow FK）
+  flowId           Int?
+  flowVersion      Int?
   workflowRun      Json?
   /// 与 host_action SSE generation 对齐；默认等于 run id。
   generation       Int                  @default(1)
@@ -883,11 +899,13 @@ model PageActionRun {
   pageAction PageAction @relation(fields: [pageActionId], references: [id], onDelete: Cascade)
   appClient  AppClient  @relation(fields: [appClientId], references: [id], onDelete: Cascade)
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flow       Flow?      @relation(fields: [flowId], references: [id], onDelete: SetNull)
 
   @@index([pageActionId, createdAt])
   @@index([appClientId, userId, createdAt])
   @@index([appClientId, idempotencyKey])
   @@index([pageActionId, userId, pageActionKey])
+  @@index([flowId])
 
   approvalRequest ApprovalRequest?
 }
@@ -918,8 +936,12 @@ model ApprovalRequest {
   initiatorUserId Int?
   /// 谁必须审批（权威决策字段）：chat/pageAction = 发起人；webhook = workflow 配置指定
   approverUserId  Int
-  workflowId      Int
-  workflowVersion Int
+  /// legacy Workflow 资产；与 flowId 二选一
+  workflowId      Int?
+  workflowVersion Int?
+  /// 新 Flow 资产；与 workflowId 二选一
+  flowId          Int?
+  flowVersion     Int?
   /// 挂起节点
   nodeId          String
   /// C 端展示用（标题 / 摘要 / 待写参数预览），不含敏感全量
@@ -943,12 +965,14 @@ model ApprovalRequest {
   appClient     AppClient      @relation(fields: [appClientId], references: [id], onDelete: Cascade)
   initiator     User?          @relation("ApprovalInitiator", fields: [initiatorUserId], references: [id], onDelete: SetNull)
   approver      User           @relation("ApprovalApprover", fields: [approverUserId], references: [id], onDelete: Cascade)
-  workflow      Workflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflow      Workflow?      @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  flow          Flow?          @relation(fields: [flowId], references: [id], onDelete: Cascade)
   pageActionRun PageActionRun? @relation(fields: [pageActionRunId], references: [id], onDelete: SetNull)
 
   @@index([appClientId, approverUserId, status, createdAt])
   @@index([appClientId, status])
   @@index([workflowId])
+  @@index([flowId])
 }
 
 enum WorkflowProfile {
@@ -965,7 +989,7 @@ enum WorkflowDeliverable {
   answer
 }
 
-/// AppClient 级可复用 Workflow 资产（动作节点编排）。
+/// Legacy Workflow：旧版原子 action 图（nodes IR）。新 Intent/IR 请用 Flow。
 model Workflow {
   id            Int                 @id @default(autoincrement())
   appClientId   Int
@@ -975,6 +999,7 @@ model Workflow {
   goal          String?             @db.Text
   profile       WorkflowProfile
   deliverable   WorkflowDeliverable @default(answer)
+  /** Legacy 图文档：{ nodes, edges, entryNodeId } */
   nodes         Json
   version       Int                 @default(1)
   constraints   Json                @default("[]")
@@ -1036,5 +1061,84 @@ model WorkflowHostTool {
 
   @@unique([workflowId, hostToolId])
   @@index([workflowId])
+  @@index([hostToolId])
+}
+
+/// 新编排资产：Intent SSOT + 编译 IR（与 legacy Workflow 分表）。
+model Flow {
+  id            Int                 @id @default(autoincrement())
+  appClientId   Int
+  flowKey       String
+  name          String
+  description   String?
+  goal          String?             @db.Text
+  profile       WorkflowProfile
+  deliverable   WorkflowDeliverable @default(answer)
+  /** WorkflowIntent JSON */
+  intent        Json
+  /** WorkflowIrDocument JSON */
+  ir            Json
+  version       Int                 @default(1)
+  constraints   Json                @default("[]")
+  isActive      Boolean             @default(true)
+  sortOrder     Int                 @default(0)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  appClient    AppClient     @relation(fields: [appClientId], references: [id], onDelete: Cascade)
+  flowTools    FlowTool[]
+  flowHostTools FlowHostTool[]
+  revisions    FlowRevision[]
+  skills       Skill[]
+  pageActions  PageAction[]
+  pageActionRuns PageActionRun[]
+  approvalRequests ApprovalRequest[]
+
+  @@unique([appClientId, flowKey])
+  @@index([appClientId, isActive])
+}
+
+model FlowRevision {
+  id          Int                 @id @default(autoincrement())
+  flowId      Int
+  version     Int
+  intent      Json
+  ir          Json
+  deliverable WorkflowDeliverable
+  constraints Json                @default("[]")
+  changeNote  String?
+  createdAt   DateTime            @default(now())
+
+  flow Flow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@unique([flowId, version])
+  @@index([flowId, version])
+}
+
+model FlowTool {
+  id         Int     @id @default(autoincrement())
+  flowId     Int
+  toolId     Int
+  isRequired Boolean @default(false)
+
+  flow Flow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  tool Tool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@unique([flowId, toolId])
+  @@index([flowId])
+  @@index([toolId])
+}
+
+model FlowHostTool {
+  id         Int     @id @default(autoincrement())
+  flowId     Int
+  hostToolId Int
+  isRequired Boolean @default(false)
+
+  flow     Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  hostTool HostTool @relation(fields: [hostToolId], references: [id], onDelete: Cascade)
+
+  @@unique([flowId, hostToolId])
+  @@index([flowId])
   @@index([hostToolId])
 }

@@ -175,6 +175,9 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
           handlers?.onDelta?.({
             model,
             contentDelta: extracted.content,
+            ...(extracted.reasoning
+              ? { reasoningDelta: extracted.reasoning }
+              : {}),
             toolCalls: extracted.toolCalls,
             done,
             raw: data,
@@ -196,6 +199,9 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
           handlers?.onDelta?.({
             model,
             contentDelta: extracted.content,
+            ...(extracted.reasoning
+              ? { reasoningDelta: extracted.reasoning }
+              : {}),
             toolCalls: extracted.toolCalls,
             done,
             raw: data,
@@ -266,25 +272,21 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
     this.logger.log(line);
   }
 
+  /** 仅取 content 通道；reasoning_content 由 extractReasoning 单独下发，不并入正文。 */
   private extractContent(data: OpenAiCompatibleResponse): string {
     const choice = data.choices?.[0];
     const text =
       data.message?.content ??
       choice?.message?.content ??
       choice?.delta?.content;
-    if (typeof text === 'string' && text.length > 0) {
-      return text;
-    }
-    const reasoning =
-      choice?.delta?.reasoning_content ??
-      choice?.message?.reasoning_content;
-    if (typeof reasoning === 'string' && reasoning.length > 0) {
-      this.logger.warn(
-        `[OpenAiCompatibleAdapter] using reasoning_content as content fallback (${reasoning.length} chars)`,
-      );
-      return reasoning;
-    }
     return typeof text === 'string' ? text : '';
+  }
+
+  private extractReasoning(data: OpenAiCompatibleResponse): string {
+    const choice = data.choices?.[0];
+    const reasoning =
+      choice?.delta?.reasoning_content ?? choice?.message?.reasoning_content;
+    return typeof reasoning === 'string' ? reasoning : '';
   }
 
   private noteStreamChunk(data: OpenAiCompatibleResponse): void {
@@ -328,10 +330,12 @@ export class OpenAiCompatibleAdapter implements LlmAdapter {
 
   private extractMessage(data: OpenAiCompatibleResponse): {
     content: string;
+    reasoning: string;
     toolCalls: LlmToolCall[];
   } {
     return {
       content: this.extractContent(data),
+      reasoning: this.extractReasoning(data),
       toolCalls: this.extractToolCalls(data),
     };
   }

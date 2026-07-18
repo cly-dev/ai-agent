@@ -2,15 +2,19 @@ export type SkillRunnableCapabilities = {
     skillToolIds: number[];
     hostToolIds: number[];
     workflowId?: number | null;
+    flowId?: number | null;
 };
 export declare function skillIsWorkflowBound(skill: {
     workflowId?: number | null;
+    flowId?: number | null;
 }): boolean;
 export type SkillRunnableKind = 'http' | 'host' | 'both';
 export declare function normalizeSkillRunnableCapabilities(skill: {
     skillToolIds?: number[];
     toolIds?: number[];
     hostToolIds?: number[];
+    workflowId?: number | null;
+    flowId?: number | null;
 }): SkillRunnableCapabilities;
 export declare function deriveSkillRunnableKind(skill: SkillRunnableCapabilities): SkillRunnableKind;
 export declare function skillIsHostOnlySkill(skill: SkillRunnableCapabilities): boolean;
@@ -22,6 +26,7 @@ export declare function skillIsRunnableForUser(skill: {
     toolIds: number[];
     hostToolIds?: number[];
     workflowId?: number | null;
+    flowId?: number | null;
 }, allowedToolIds: ReadonlySet<number>): boolean;
 export declare function skillIsRunnable(skill: {
     toolIds: number[];
@@ -35,6 +40,7 @@ export declare function filterRunnableSkills<T extends {
     toolIds: number[];
     hostToolIds?: number[];
     workflowId?: number | null;
+    flowId?: number | null;
 }>(skills: T[], allowedToolIds: ReadonlySet<number>): T[];
 export declare function filterSkillsWithRunnableToolIds<T extends {
     toolIds: number[];

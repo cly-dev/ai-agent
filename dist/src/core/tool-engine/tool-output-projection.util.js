@@ -228,14 +228,15 @@ function parseResponseProfile(raw) {
             .filter((field) => field != null)
         : undefined;
     const decisionRole = (0, tool_decision_role_enum_1.parseConfiguredToolDecisionRole)(raw.decisionRole);
-    return {
-        coreFields,
+    const entityType = typeof raw.entityType === 'string' && raw.entityType.trim()
+        ? raw.entityType.trim()
+        : undefined;
+    return Object.assign({ coreFields,
         optionalFields,
         arrayLimits,
         listPath,
         listMetaFields,
-        decisionRole,
-    };
+        decisionRole }, (entityType ? { entityType } : {}));
 }
 exports.parseResponseProfile = parseResponseProfile;
 function projectToolOutput(raw, userQuestion, profile) {

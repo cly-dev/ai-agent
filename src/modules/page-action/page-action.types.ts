@@ -40,6 +40,8 @@ export type PageActionResponse = {
   sourceSkillId: number | null;
   workflowId: number | null;
   workflowVersion: number | null;
+  flowId: number | null;
+  flowVersion: number | null;
   workflowOverrides: unknown | null;
   createdAt: Date;
   updatedAt: Date;
@@ -88,6 +90,8 @@ export type PageActionRunAdminDetail = PageActionRunAdminListItem & {
   idempotencyKey: string | null;
   workflowId: number | null;
   workflowVersion: number | null;
+  flowId: number | null;
+  flowVersion: number | null;
   workflowRun: unknown | null;
   steps: PageActionRunStep[];
 };

@@ -165,7 +165,7 @@ function buildWriteDraftStepDetail(draft) {
 }
 exports.buildWriteDraftStepDetail = buildWriteDraftStepDetail;
 function buildWorkflowNodeCompleteAudit(action, nodeOutput) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     if (!nodeOutput || typeof nodeOutput !== 'object' || Array.isArray(nodeOutput)) {
         return {};
     }
@@ -204,13 +204,10 @@ function buildWorkflowNodeCompleteAudit(action, nodeOutput) {
                     ? summarizeRecordForAudit(row.arguments)
                     : null,
             };
-        case 'load_page_context':
+        case 'summarize_images':
             return {
-                page: (_h = row.page) !== null && _h !== void 0 ? _h : null,
-                entityType: (_j = row.entityType) !== null && _j !== void 0 ? _j : null,
-                entityId: (_k = row.entityId) !== null && _k !== void 0 ? _k : null,
-                dataSufficiency: (_l = row.dataSufficiency) !== null && _l !== void 0 ? _l : null,
-                inlineContentKinds: (_m = row.inlineContentKinds) !== null && _m !== void 0 ? _m : null,
+                groupCount: (_h = row.groupCount) !== null && _h !== void 0 ? _h : null,
+                cellCount: (_j = row.cellCount) !== null && _j !== void 0 ? _j : null,
             };
         default:
             return {};

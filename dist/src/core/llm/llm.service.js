@@ -385,30 +385,23 @@ let LlmService = LlmService_1 = class LlmService {
                         }
                         const row = chunk;
                         streamChunkCount += 1;
-                        let delta = this.extractAiMessageContent(row.content);
-                        if (!delta) {
-                            const reasoningDelta = this.extractAiMessageReasoning(row);
-                            if (reasoningDelta) {
-                                reasoningOnlyChunkCount += 1;
-                                delta = reasoningDelta;
-                                if (emittedDeltaCount === 0 && reasoningOnlyChunkCount === 1) {
-                                    this.logger.warn(`[LlmService] stream using reasoning_content fallback (model=${modelFallback})`);
-                                }
-                            }
-                            else {
-                                emptyStreamChunkCount += 1;
+                        const delta = this.extractAiMessageContent(row.content);
+                        const reasoningDelta = this.extractAiMessageReasoning(row);
+                        if (!delta && reasoningDelta) {
+                            reasoningOnlyChunkCount += 1;
+                            if (reasoningOnlyChunkCount === 1) {
+                                this.logger.log(`[LlmService] stream emitting reasoning_content on separate channel (model=${modelFallback})`);
                             }
                         }
-                        if (delta) {
-                            content += delta;
-                            emittedDeltaCount += 1;
-                            (_d = handlers.onDelta) === null || _d === void 0 ? void 0 : _d.call(handlers, {
-                                model: this.extractModelName(row.response_metadata, modelFallback),
-                                contentDelta: delta,
-                                toolCalls: [],
-                                done: false,
-                                raw: row,
-                            });
+                        else if (!delta) {
+                            emptyStreamChunkCount += 1;
+                        }
+                        if (delta || reasoningDelta) {
+                            if (delta) {
+                                content += delta;
+                                emittedDeltaCount += 1;
+                            }
+                            (_d = handlers.onDelta) === null || _d === void 0 ? void 0 : _d.call(handlers, Object.assign(Object.assign({ model: this.extractModelName(row.response_metadata, modelFallback), contentDelta: delta }, (reasoningDelta ? { reasoningDelta } : {})), { toolCalls: [], done: false, raw: row }));
                         }
                         merged = merged ? merged.concat(row) : row;
                     }
@@ -431,12 +424,13 @@ let LlmService = LlmService_1 = class LlmService {
             }
             this.logger.warn(`llm stream failed, fallback invoke: ${error instanceof Error ? error.message : String(error)}`);
             const response = await runnable.invoke(messages);
-            content =
-                this.extractAiMessageContent(response.content) ||
-                    this.extractAiMessageReasoning(response);
+            content = this.extractAiMessageContent(response.content);
             merged = undefined;
             if (emittedDeltaCount === 0 && content) {
                 this.logger.warn(`[LlmService] stream fellBackToInvoke with contentLen=${content.length} (model=${modelFallback})`);
+            }
+            if (!content && this.extractAiMessageReasoning(response)) {
+                this.logger.warn(`[LlmService] invoke fallback returned reasoning_content only; content left empty (model=${modelFallback})`);
             }
             return {
                 content,
@@ -446,6 +440,7 @@ let LlmService = LlmService_1 = class LlmService {
                 streamMeta: {
                     emittedDeltaCount,
                     fellBackToInvoke: true,
+                    reasoningDeltaCount: reasoningOnlyChunkCount,
                 },
             };
         }
@@ -459,9 +454,7 @@ let LlmService = LlmService_1 = class LlmService {
             : new messages_1.AIMessage({ content });
         const toolCalls = this.extractToolCalls(response);
         const modelName = this.extractModelName(response.response_metadata, modelFallback);
-        const mergedContent = content ||
-            this.extractAiMessageContent(response.content) ||
-            (merged ? this.extractAiMessageReasoning(merged) : '');
+        const mergedContent = content || this.extractAiMessageContent(response.content);
         if (emittedDeltaCount === 0 && streamChunkCount > 0) {
             this.logger.warn(`[LlmService] stream ended with zero content deltas model=${modelName}` +
                 ` chunks=${streamChunkCount} emptyChunks=${emptyStreamChunkCount}` +
@@ -483,6 +476,7 @@ let LlmService = LlmService_1 = class LlmService {
             streamMeta: {
                 emittedDeltaCount,
                 fellBackToInvoke: false,
+                reasoningDeltaCount: reasoningOnlyChunkCount,
             },
         };
     }

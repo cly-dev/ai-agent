@@ -106,6 +106,8 @@ export class ChatEventsService
 {
   /** 保留最近事件，避免 SSE 晚于发消息连接时收不到推送 */
   private static readonly REPLAY_BUFFER = 8;
+  /** 空闲心跳间隔（ms）；对齐常见 nginx proxy_read_timeout 下限 */
+  private static readonly SSE_HEARTBEAT_MS = 15_000;
   private readonly logger = new Logger(ChatEventsService.name);
   private readonly instanceId = `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
   private readonly subjects = new Map<string, Subject<ChatSseEvent>>();
@@ -169,25 +171,49 @@ export class ChatEventsService
     const subject = this.getSubject(normalized);
     return new Observable<ChatSseEvent>((subscriber) => {
       let inner: Subscription | null = null;
+      // 先挂上 Subject，再异步补 pending-write，避免竞态丢事件
+      inner = subject.subscribe({
+        next: (evt) => subscriber.next(evt),
+        error: (err: unknown) => subscriber.error(err),
+        complete: () => subscriber.complete(),
+      });
       for (const evt of this.getReplayEvents(normalized)) {
         subscriber.next(evt);
       }
+      // 空闲心跳：长等待 LLM/tool 时防止代理掐断 SSE
+      const heartbeat = setInterval(() => {
+        if (subscriber.closed) {
+          clearInterval(heartbeat);
+          return;
+        }
+        // 复用既有 think 协议，避免严格客户端因未知 ping event 判定流失败。
+        subscriber.next({
+          event: 'think',
+          payload: { content: '', mode: 'delta' },
+        });
+      }, ChatEventsService.SSE_HEARTBEAT_MS);
+
       void this.pendingWriteConfirmationStore
         .get(normalized, userId)
         .then(async (pending) => {
+          if (subscriber.closed) {
+            return;
+          }
           if (pending) {
             subscriber.next(
               await this.buildPendingWriteConfirmationEvent(pending),
             );
           }
-          inner = subject.subscribe({
-            next: (evt) => subscriber.next(evt),
-            error: (err: unknown) => subscriber.error(err),
-            complete: () => subscriber.complete(),
-          });
         })
-        .catch((err: unknown) => subscriber.error(err));
-      return () => inner?.unsubscribe();
+        .catch((err: unknown) => {
+          if (!subscriber.closed) {
+            subscriber.error(err);
+          }
+        });
+      return () => {
+        clearInterval(heartbeat);
+        inner?.unsubscribe();
+      };
     });
   }
 

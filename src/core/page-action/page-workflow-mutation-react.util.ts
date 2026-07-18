@@ -10,6 +10,7 @@ import type { ComposeMutationNodeInput } from '../workflow/workflow-node-input.t
 import type { WriteDataNodeInput } from '../workflow/workflow-node-input.types';
 import type { PageWorkflowExecutorRuntime } from '../workflow/page/page-workflow-runtime.types';
 import type { WorkflowNodeDef, WorkflowRunState } from '../workflow/workflow.types';
+import { resolveWorkflowNodeRuntimeInput } from '../workflow/resolve-workflow-node-runtime-input.util';
 import {
   buildPageComposeNodeOutput,
   readComposeMutationToolId,
@@ -75,7 +76,9 @@ export async function runPageWorkflowMutationReact(input: {
   const { def, nodeId, runtime } = input;
 
   if (def.action === 'compose_mutation') {
-    const nodeInput = def.input as ComposeMutationNodeInput;
+    const nodeInput = resolveWorkflowNodeRuntimeInput(
+      def,
+    ) as ComposeMutationNodeInput;
     const toolId = readComposeMutationToolId(nodeInput);
     if (toolId == null) {
       const failed = failWorkflowNode(input.workflowRun, nodeId, {
@@ -159,7 +162,7 @@ export async function runPageWorkflowMutationReact(input: {
   }
 
   if (def.action === 'write_data') {
-    const nodeInput = def.input as WriteDataNodeInput;
+    const nodeInput = resolveWorkflowNodeRuntimeInput(def) as WriteDataNodeInput;
     const toolId = readWriteDataToolId(nodeInput);
     const pending =
       input.pendingWrite ??

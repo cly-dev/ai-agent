@@ -62,7 +62,16 @@ export type LoadedWorkflowForRun = {
   workflowRun: WorkflowRunState;
   workflowId: number;
   version: number;
-  compiledFrom: 'workflow_db';
+  compiledFrom: 'workflow_db' | 'flow_db';
+  /** Flow 编译 IR 快照；legacy Workflow 加载无此字段 */
+  ir?: import('./workflow-ir.types').WorkflowIrDocument;
+  /** direct-only 物化时为 true（未走 expand） */
+  materializedDirectFromIr?: boolean;
+  /**
+   * Plan A：`ir_native_direct` = 图真源为 IR（仅 direct 节点）；
+   * `materialized_expand` = 仍经 expand materialize。
+   */
+  executionMode?: import('./workflow-ir-native-direct.util').WorkflowExecutionMode;
 };
 
 export type WorkflowLoadFailureReason =
@@ -80,6 +89,11 @@ export type WorkflowLoadResult =
       workflowId: number;
     };
 
+/**
+ * @deprecated 当前运行时只认 Flow（`loadFlowForRunDetailed`）。
+ * 本函数保留给未来「独立 Workflow 链路 / Runtime」，勿在 Skill/PageAction/Chat 现网路径调用。
+ * Admin migrate / 归档读表请用 Prisma 或专用 util，不要把它当兼容回退。
+ */
 export async function loadWorkflowForRunDetailed(
   prisma: PrismaService,
   input: {
@@ -245,6 +259,7 @@ export async function loadWorkflowForRunDetailed(
   };
 }
 
+/** @deprecated 见 `loadWorkflowForRunDetailed`；现网请用 `loadFlowForRun`。 */
 export async function loadWorkflowForRun(
   prisma: PrismaService,
   input: {

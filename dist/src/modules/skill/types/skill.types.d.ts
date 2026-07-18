@@ -222,6 +222,8 @@ export type SkillResponse = {
     config: unknown;
     workflowId: number | null;
     workflowVersion: number | null;
+    flowId: number | null;
+    flowVersion: number | null;
     workflowOverrides: unknown;
     isActive: boolean;
     createdAt: Date;

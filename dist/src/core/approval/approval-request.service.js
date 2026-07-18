@@ -22,6 +22,7 @@ exports.APPROVAL_INBOX_SOURCES = [
 ];
 const APPROVAL_INBOX_INCLUDE = {
     workflow: { select: { workflowKey: true, name: true } },
+    flow: { select: { flowKey: true, name: true } },
     initiator: { select: { id: true, username: true, employeeId: true } },
 };
 let ApprovalRequestService = class ApprovalRequestService {
@@ -29,7 +30,10 @@ let ApprovalRequestService = class ApprovalRequestService {
         this.prisma = prisma;
     }
     async createPending(input) {
-        var _a, _b, _c, _d;
+        var _a, _b, _c, _d, _e;
+        if (input.flowId == null || input.flowId <= 0) {
+            throw new Error('ApprovalRequest requires flowId');
+        }
         return this.prisma.approvalRequest.create({
             data: {
                 appClientId: input.appClientId,
@@ -37,18 +41,20 @@ let ApprovalRequestService = class ApprovalRequestService {
                 status: client_1.ApprovalStatus.pending,
                 initiatorUserId: input.initiatorUserId,
                 approverUserId: input.approverUserId,
-                workflowId: input.workflowId,
-                workflowVersion: input.workflowVersion,
+                workflowId: null,
+                workflowVersion: null,
+                flowId: input.flowId,
+                flowVersion: (_a = input.flowVersion) !== null && _a !== void 0 ? _a : null,
                 nodeId: input.nodeId,
                 title: input.title,
-                summary: (_a = input.summary) !== null && _a !== void 0 ? _a : null,
+                summary: (_b = input.summary) !== null && _b !== void 0 ? _b : null,
                 previewBlocks: input.previewBlocks === undefined
                     ? undefined
                     : input.previewBlocks,
                 resumeSnapshot: input.resumeSnapshot,
-                pageActionRunId: (_b = input.pageActionRunId) !== null && _b !== void 0 ? _b : null,
-                sessionId: (_c = input.sessionId) !== null && _c !== void 0 ? _c : null,
-                idempotencyKey: (_d = input.idempotencyKey) !== null && _d !== void 0 ? _d : null,
+                pageActionRunId: (_c = input.pageActionRunId) !== null && _c !== void 0 ? _c : null,
+                sessionId: (_d = input.sessionId) !== null && _d !== void 0 ? _d : null,
+                idempotencyKey: (_e = input.idempotencyKey) !== null && _e !== void 0 ? _e : null,
             },
         });
     }

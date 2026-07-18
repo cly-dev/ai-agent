@@ -36,6 +36,8 @@ function mapWorkflowCore(row) {
         updatedAt: row.updatedAt,
         skillRefCount: row._count.skills,
         pageActionRefCount: row._count.pageActions,
+        configWritable: false,
+        deprecated: true,
     };
 }
 function toWorkflowResponse(row) {

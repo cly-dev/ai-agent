@@ -1,21 +1,20 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.expandPendingSkillStepIfNeeded = exports.filterDecisionHostToolsForSkill = void 0;
+const skill_runnable_util_1 = require("../../../../skill/skill-runnable.util");
 const requested_skill_run_error_1 = require("./requested-skill-run.error");
 const plan_stack_util_1 = require("../plan/plan-stack.util");
 const task_plan_llm_util_1 = require("../plan/task-plan-llm.util");
 const task_plan_util_1 = require("../plan/task-plan.util");
 function filterHostToolSummariesForSkill(hostTools, skill) {
-    var _a;
-    if (!hostTools || ((_a = skill.workflowId) !== null && _a !== void 0 ? _a : 0) > 0 || skill.hostToolIds.length === 0) {
+    if (!hostTools || (0, skill_runnable_util_1.skillIsWorkflowBound)(skill) || skill.hostToolIds.length === 0) {
         return hostTools;
     }
     const allowedIds = new Set(skill.hostToolIds);
     return hostTools.filter((tool) => tool.id == null || allowedIds.has(tool.id));
 }
 function filterDecisionHostToolsForSkill(hostTools, skill) {
-    var _a;
-    if (!skill || ((_a = skill.workflowId) !== null && _a !== void 0 ? _a : 0) > 0 || skill.hostToolIds.length === 0) {
+    if (!skill || (0, skill_runnable_util_1.skillIsWorkflowBound)(skill) || skill.hostToolIds.length === 0) {
         return hostTools;
     }
     const allowedIds = new Set(skill.hostToolIds);

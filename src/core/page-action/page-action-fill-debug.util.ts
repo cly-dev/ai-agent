@@ -214,7 +214,7 @@ export function logPageActionFillStreamEnd(input: {
   }
   if (input.sessionFillTextLen === 0 && input.streamResultContentLen > 0) {
     record.hint =
-      'LLM output present but sanitize/routing left empty (likely thinking-only in )';
+      'content channel present but sanitize/routing left empty (likely <think>-only content; reasoning_content is on a separate channel and never enters fill)';
     emitPageActionFillDebug('warn', `${line} → ${record.hint}`, record);
     return;
   }
@@ -278,7 +278,7 @@ export function logPageActionFillEmpty(input: {
     rawPreview: input.rawPreview,
     streamResultPreview: input.streamResultPreview,
     hint:
-      'model returned text but fill path empty after think/message routing + sanitize; disable Qwen thinking or ensure content outside ',
+      'model returned text but fill path empty after think/message routing + sanitize; content channel was <think>-only or scaffolding-only (reasoning_content never enters fill); check model thinking config',
   };
   emitPageActionFillDebug(
     'warn',

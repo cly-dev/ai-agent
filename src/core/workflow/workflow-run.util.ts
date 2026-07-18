@@ -10,6 +10,12 @@ import {
   resolveEntryNodeId,
 } from './graph/workflow-run-advance.util';
 import { synthesizeLinearWorkflowEdges } from './graph/workflow-edge.util';
+import type { WorkflowIrNode } from './workflow-ir.types';
+import {
+  actionForWorkflowIrNativePhase,
+  materializeWorkflowIrNodeForPhase,
+  nextWorkflowIrNativePhase,
+} from './workflow-ir-native-phase.util';
 
 export function cloneWorkflowRun(run: WorkflowRunState): WorkflowRunState {
   return {
@@ -45,16 +51,27 @@ export function initWorkflowRun(input: {
   entryNodeId?: string | null;
   compiledFrom?: WorkflowRunCompiledFrom;
   now?: string;
+  /** Plan A：native 入口相位（nodeId → phase） */
+  phasesByNodeId?: Record<
+    string,
+    import('./workflow-ir-native-phase.util').WorkflowIrNativePhase
+  >;
 }): WorkflowRunState {
   if (input.nodes.length === 0) {
     throw new Error('workflow must contain at least one node');
   }
 
+  // irNodeId/irType 从物化 def 带入 run；native 多相位写 phase（§4.3f）。
   const runNodes = input.nodes.map((node) => ({
     nodeId: node.id,
     action: node.action,
     name: node.name,
     status: 'pending' as const,
+    ...(node.irNodeId ? { irNodeId: node.irNodeId } : {}),
+    ...(node.irType ? { irType: node.irType } : {}),
+    ...(input.phasesByNodeId?.[node.id]
+      ? { phase: input.phasesByNodeId[node.id] }
+      : {}),
   }));
 
   const edges =
@@ -108,6 +125,74 @@ export function completeWorkflowNode(
     node.outputRef = outputRef;
   }
   return next;
+}
+
+export function completeWorkflowNodeOrAdvancePhase(input: {
+  run: WorkflowRunState;
+  nodeId: string;
+  irNode: WorkflowIrNode;
+  outputRef?: string;
+  now?: string;
+}): {
+  workflowRun: WorkflowRunState;
+  advancedPhase: boolean;
+} {
+  const now = input.now ?? new Date().toISOString();
+  const current = input.run.nodes.find((n) => n.nodeId === input.nodeId);
+  const currentPhase = current?.phase ?? 'execute';
+  const nextPhase = nextWorkflowIrNativePhase(input.irNode, currentPhase);
+  if (nextPhase == null) {
+    return {
+      workflowRun: completeWorkflowNode(
+        input.run,
+        input.nodeId,
+        input.outputRef,
+        now,
+      ),
+      advancedPhase: false,
+    };
+  }
+
+  const next = cloneWorkflowRun(input.run);
+  const index = assertNodeExists(next, input.nodeId);
+  const node = next.nodes[index];
+  const phaseDef = materializeWorkflowIrNodeForPhase(input.irNode, nextPhase);
+  node.phase = nextPhase;
+  node.action = actionForWorkflowIrNativePhase(input.irNode, nextPhase);
+  node.name = phaseDef.name;
+  node.status = 'pending';
+  delete node.startedAt;
+  delete node.finishedAt;
+  delete node.outputRef;
+  delete node.error;
+  next.currentNodeId = input.nodeId;
+  next.status = 'running';
+  return { workflowRun: next, advancedPhase: true };
+}
+
+/**
+ * 节点已 succeeded 后：若还有下一相位，回退为 pending 并切换相位；
+ * 否则不动（由调用方 edge advance）。
+ */
+export function tryAdvanceNativePhaseAfterNodeSuccess(input: {
+  run: WorkflowRunState;
+  nodeId: string;
+  irNode: WorkflowIrNode;
+}): {
+  workflowRun: WorkflowRunState;
+  advancedPhase: boolean;
+} {
+  const current = input.run.nodes.find((n) => n.nodeId === input.nodeId);
+  const currentPhase = current?.phase ?? 'execute';
+  const nextPhase = nextWorkflowIrNativePhase(input.irNode, currentPhase);
+  if (nextPhase == null) {
+    return { workflowRun: input.run, advancedPhase: false };
+  }
+  return completeWorkflowNodeOrAdvancePhase({
+    run: input.run,
+    nodeId: input.nodeId,
+    irNode: input.irNode,
+  });
 }
 
 export function failWorkflowNode(
